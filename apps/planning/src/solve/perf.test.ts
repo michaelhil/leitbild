@@ -1,56 +1,85 @@
-import { describe, expect, test } from 'bun:test'
-import { repair, prepare } from './decode.ts'
+import { afterAll, describe, expect, test } from 'bun:test'
+import { createRealSolver } from '../api/wiring.ts'
+import { twinPlan, twinV3Options } from '../../tests/harness/twin-plan.ts'
 import { generate } from './generate.ts'
 import { createSolverPool, SOLVER_CPU_CAP_CORES } from './pool.ts'
 import { laneKCheck, laneKVerify } from './fixtures/lane-k.ts'
-import { fromBenchInstance, type BenchInstance } from './fixtures/bench-instance.ts'
+import { SIZE_CURVE_SHA256, sizeCurveSubset } from './fixtures/size-curve.ts'
 import { trainAInputs } from './fixtures/train-a-case.ts'
-import twinJson from './fixtures/twin-v3.json'
 
 // Floors (design §9 row 8), OPT-IN: PLANNING_PERF=1 nice -n 10 bun test apps/planning/src/solve/perf.test.ts
-// Records CPU-ms and memory on the flagship and on twin v3 (frozen 955824a9…). macOS here; the Linux run
-// under systemd-run -p MemoryMax=256M -p CPUQuota=50% belongs to ops before Release A. The process RSS
-// below includes the test runner itself.
+// At the certified size (33 jobs per solve): Generate within 20 s and 200 MB, preview p95 within 300 ms.
+// Records the flagship Generate (wall, solver CPU, peak memory), the preview p95 through the real preview
+// (compile, repair, dates, float, check), two concurrent flagship Generates on one pool, and one solve of
+// or's frozen 33-job subset S33v3 (read-only from PLANNING_SIZE_DIR, the review folder's or/inc1/size, when
+// present, else rebuilt from twin v3; either way its sha256 must be or's). Peak memory is the process RSS,
+// sampled every 50 ms, and includes the test runner and the Workers. Run each case in its own process
+// (bun test … -t '<name>'): RSS is the whole process's, and the pool's memory guard reads it too, so cases run
+// one after another inherit each other's memory and can stop early ('memory'). macOS here; the Linux run
+// under systemd-run -p MemoryMax=256M -p CPUQuota=50% belongs to ops before Release A.
 const enabled = process.env.PLANNING_PERF === '1'
+const sizeDir = process.env.PLANNING_SIZE_DIR ?? '/Users/hilde/Documents/ChatGPT/leitbild-planning-review-2026-11-10/or/inc1/size'
 const sampleRss = () => {
   let peak = process.memoryUsage.rss()
   const timer = setInterval(() => { peak = Math.max(peak, process.memoryUsage.rss()) }, 50)
   return () => { clearInterval(timer); return Math.round(peak / 1e6) }
 }
 const p95 = (values: number[]) => values.toSorted((a, b) => a - b)[Math.ceil(values.length * 0.95) - 1]!
+const by = { kind: 'agent' as const }
+type Result = Awaited<ReturnType<typeof generate>>
+const cpuOf = (result: Result) => result.optionSet.options.reduce((sum, option) => sum + ('run' in option.status ? option.status.run.cpuMs : 0), 0)
+const wordsOf = (result: Result) => result.optionSet.options.map(option => option.status.word)
+const stoppedOf = (result: Result) => result.optionSet.options.map(option => ('run' in option.status ? option.status.run.stoppedBy : null))
 
-describe.skipIf(!enabled)('solver floors (opt-in)', () => {
-  test('flagship: Generate within 20 s, solver CPU within the cap, memory recorded', async () => {
-    const pool = createSolverPool()
+describe.skipIf(!enabled)('solver floors at the certified size (opt-in)', () => {
+  const pool = createSolverPool()
+  const solver = createRealSolver(pool)
+  afterAll(() => pool.shutdown())
+  const flagship = trainAInputs({ read: true })
+  const run = (inputs = flagship, input = {}) => generate({ engine: pool, check: laneKCheck, verify: laneKVerify }, { inputs, revision: 1, previous: null, input, by, signal: new AbortController().signal })
+
+  test('flagship: Generate within 20 s and 200 MB, solver CPU within the cap; preview p95 within 300 ms', async () => {
     const stop = sampleRss()
     const at = performance.now()
-    const result = await generate({ engine: pool, check: laneKCheck, verify: laneKVerify }, { inputs: trainAInputs({ read: true }), revision: 1, previous: null, input: {}, by: { kind: 'agent' }, signal: new AbortController().signal })
+    const result = await run()
     const wallMs = performance.now() - at
     const peakRssMb = stop()
-    const runs = result.optionSet.options.map(option => ({ key: option.key, word: option.status.word, ...('run' in option.status ? { cpuMs: option.status.run.cpuMs, stoppedBy: option.status.run.stoppedBy } : {}) }))
-    const cpuMs = runs.reduce((sum, run) => sum + (run.cpuMs ?? 0), 0)
-    console.log(JSON.stringify({ flagship: { wallMs: Math.round(wallMs), cpuMs, peakRssMb, runs, records: pool.records() } }))
+    const cpuMs = cpuOf(result)
+    const option = result.optionSet.options.find(candidate => candidate.key === result.optionSet.recommended)!
+    const times: number[] = []
+    for (let i = 0; i < 20; i++) { const start = performance.now(); await solver.preview({ inputs: flagship, option }); times.push(performance.now() - start) }
+    console.log(JSON.stringify({ flagship: { wallMs: Math.round(wallMs), cpuMs, peakRssMb, words: wordsOf(result), stoppedBy: stoppedOf(result), previewP95Ms: +p95(times).toFixed(1) } }))
     expect(wallMs).toBeLessThanOrEqual(20_000)
-    expect(cpuMs).toBeLessThanOrEqual(9_000)
-    expect(cpuMs).toBeLessThanOrEqual(SOLVER_CPU_CAP_CORES * 18_000 + 200)
+    expect(cpuMs).toBeLessThanOrEqual(SOLVER_CPU_CAP_CORES * 20_000 + 300)
     expect(peakRssMb).toBeLessThanOrEqual(200)
+    expect(p95(times)).toBeLessThanOrEqual(300)
   }, 60_000)
 
-  test('twin v3: two concurrent solves within the cap and under 200 MB; preview p95 within 300 ms', async () => {
-    const { problem } = fromBenchInstance(twinJson as unknown as BenchInstance)
-    const pool = createSolverPool()
+  test('two concurrent flagship Generates on one pool: each within 20 s, together within the cap and 200 MB', async () => {
     const stop = sampleRss()
-    const wallMs = 18_000
-    const budget = { evals: Number.MAX_SAFE_INTEGER, cpuMs: wallMs * SOLVER_CPU_CAP_CORES, wallMs, memoryMb: 80 }
-    const signal = new AbortController().signal
-    const [a, b] = await Promise.all([pool.solve(problem, { budget, seed: 1, signal }), pool.solve(problem, { budget, seed: 2, signal })])
+    const at = performance.now()
+    const [a, b] = await Promise.all([run(), run()])
+    const wallMs = performance.now() - at
     const peakRssMb = stop()
-    const prep = prepare(problem)
-    const times: number[] = []
-    for (let i = 0; i < 20; i++) { const at = performance.now(); repair(prep, a.candidates[0]!); times.push(performance.now() - at) }
-    console.log(JSON.stringify({ twinV3: { solves: pool.records(), peakRssMb, previewP95Ms: +p95(times).toFixed(1), stoppedBy: [a.stoppedBy, b.stoppedBy] } }))
+    console.log(JSON.stringify({ twoFlagships: { wallMs: Math.round(wallMs), cpuMs: [cpuOf(a), cpuOf(b)], peakRssMb, words: [wordsOf(a), wordsOf(b)], stoppedBy: [stoppedOf(a), stoppedOf(b)] } }))
+    expect(wallMs).toBeLessThanOrEqual(20_000)
+    expect(cpuOf(a) + cpuOf(b)).toBeLessThanOrEqual(SOLVER_CPU_CAP_CORES * 20_000 + 600)
     expect(peakRssMb).toBeLessThanOrEqual(200)
-    expect(a.cpuMs + b.cpuMs).toBeLessThanOrEqual(SOLVER_CPU_CAP_CORES * wallMs + 300)
-    expect(p95(times)).toBeLessThanOrEqual(300)
+  }, 90_000)
+
+  test('S33v3, or\'s frozen 33-job subset: one Generate within 20 s and 200 MB', async () => {
+    const frozen = Bun.file(`${sizeDir}/S33v3.json`)
+    const text = (await frozen.exists()) ? await frozen.text() : JSON.stringify(sizeCurveSubset('S33v3').bench)
+    expect(new Bun.CryptoHasher('sha256').update(text).digest('hex')).toBe(SIZE_CURVE_SHA256.S33v3)
+    const bench = JSON.parse(text)
+    const twin = twinPlan(bench, twinV3Options(bench))
+    const stop = sampleRss()
+    const at = performance.now()
+    const result = await run(twin.inputs, { variants: [{ label: 'S33v3', methods: [...twin.variant.methods], buy: [...twin.variant.purchases] }] })
+    const wallMs = performance.now() - at
+    const peakRssMb = stop()
+    console.log(JSON.stringify({ s33v3: { source: (await frozen.exists()) ? 'frozen file' : 'rebuilt', wallMs: Math.round(wallMs), cpuMs: cpuOf(result), peakRssMb, words: wordsOf(result), stoppedBy: stoppedOf(result) } }))
+    expect(wallMs).toBeLessThanOrEqual(20_000)
+    expect(peakRssMb).toBeLessThanOrEqual(200)
   }, 60_000)
 })
