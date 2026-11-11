@@ -11,7 +11,7 @@ import { isPlanningError, planningError } from '../errors.ts'
 import { applyEdits, requireAuthority, type ChangeRecord, type EditOutcome, type StoredActor } from '../plan/edits.ts'
 import { definitionRevision, startPlan } from '../definitions/start.ts'
 import type { PlanDefinitionsPort } from '../definitions/index.ts'
-import { optionWarnings, readiness, worldSubjects, type ReadinessItem } from '../plan/readiness.ts'
+import { outTogether, readiness, worldSubjects, type ReadinessItem } from '../plan/readiness.ts'
 import {
   certificateSchema, certifiedSizeSchema, optionSetSchema, planInputsSchema,
   type CertifiedSize, type Plan, type PlanInputs, type Status, type WorldFactCopy,
@@ -19,12 +19,12 @@ import {
 import type { Edit } from '../plan/edit-schema.ts'
 import { assertRevision, type PlanStore, type RevisionGuard } from '../plan/store.ts'
 import {
-  attentionKind, basisWords, buildSection, byteLength, changeLines, changeSummary, nameOf, optionWarningText, readinessText,
-  resultLimitBytes, sectionDataSchemas, statusSentence, timeWords, valueWords, type OptionState, type Section, type SectionContext,
+  attentionKind, basisWords, buildSection, byteLength, changeLines, changeSummary, nameOf, optionWarning, readinessText,
+  statusSentence, timeWords, valueWords, type OptionState, type Section, type SectionContext,
 } from '../plan/summary.ts'
 import type { Grid } from '../time/units.ts'
 import {
-  explainResultSchema, generateResultSchema, writeResultSchema,
+  explainResultSchema, generateResultSchema, resultLimitBytes, sectionDataSchemas, writeResultSchema,
   type baselineInputSchema, type createInputSchema, type editInputSchema, type explainInputSchema, type generateInputSchema, type readInputSchema, type StatusOut,
 } from './contract.ts'
 
@@ -180,7 +180,7 @@ export const createPlanningOperations = (ports: PlanningOperationsPorts) => {
   /** Proof words apply only on the current revision and formulation, after the checker re-checks the option. */
   const optionState = (plan: Plan, option: Option): OptionState => {
     const formulation = 'run' in option.status ? option.status.run.formulation : undefined
-    const warnings = option.rows.length === 0 ? [] : optionWarnings(plan.inputs, option)
+    const warnings = option.rows.length === 0 ? [] : outTogether(plan.inputs, option).map(warning => optionWarning(warning, plan.inputs))
     if (option.inputsRevision !== plan.revision) return { stale: true, reason: 'revision', warnings }
     if (formulation !== undefined && formulation !== solver.formulation(plan.inputs.settings.grid)) return { stale: true, reason: 'formulation', warnings }
     if (option.status.word === 'validated feasible' && checker.check(plan.inputs, option).violations.length > 0) return { stale: true, reason: 'recheck', warnings }
@@ -312,12 +312,13 @@ export const createPlanningOperations = (ports: PlanningOperationsPorts) => {
         key: option.key, label: option.label.slice(0, 80), status: statusOut(option.status),
         ...(option.metrics.find(entry => entry.id === 'span') === undefined ? {} : { span: option.metrics.find(entry => entry.id === 'span')!.value }),
         ...(option.metrics.find(entry => entry.id === 'extra-cost') === undefined ? {} : { cost: option.metrics.find(entry => entry.id === 'extra-cost')!.value }),
+        // The redundancy warning sits beside the status wherever the status is shown (adversary item 7).
+        warnings: [...(states.get(option.key)?.warnings ?? []).slice(0, 4)],
       }))
       const recommended = generated.data.options.find(option => option.key === generated.data.recommended)
-      const warning = recommended === undefined ? undefined : states.get(recommended.key)?.warnings[0]
       const sentence = recommended === undefined
         ? 'No option can be recommended: none is validated feasible.'
-        : `${recommended.label}: ${statusSentence(recommended.status, saved.inputs)}${warning === undefined ? '' : ` Warning: ${optionWarningText(warning, saved.inputs)}`}`
+        : `${recommended.label}: ${statusSentence(recommended.status, saved.inputs)}`
       const result: GenerateResult = {
         plan: { id: saved.id, revision: saved.revision }, options,
         ...(generated.data.recommended === undefined ? {} : { recommended: generated.data.recommended }),

@@ -162,9 +162,10 @@ export const readiness = (plan: Plan, context: { readonly staleOptions: readonly
 }
 
 // ───────────── the redundancy warning on an option (adversary item 7) ─────────────
+// summary.ts words it into the option's `warnings` (api/contract.ts optionWarningSchema).
 
-export interface OptionWarning {
-  readonly code: 'redundancy'
+export interface OutTogether {
+  readonly kind: 'redundancy'
   /** Items out of service together in this option with no keep-in-service or protected rule naming any of them. */
   readonly about: readonly string[]
   readonly from: string
@@ -176,7 +177,7 @@ export interface OptionWarning {
  * them. An item is out from its first tag-out start to its last test finish, and while any supporter is
  * out. The status may stay "validated feasible"; the warning is shown beside it.
  */
-export const optionWarnings = (inputs: Inputs, option: Option): readonly OptionWarning[] => {
+export const outTogether = (inputs: Inputs, option: Option): readonly OutTogether[] => {
   const rows = new Map(option.rows.map(row => [row.job, row]))
   const jobs = new Map(inputs.jobs.map(job => [job.key, job]))
   // An item never tested again stays out to the window end (or the option's last finish without a window).
@@ -214,5 +215,5 @@ export const optionWarnings = (inputs: Inputs, option: Option): readonly OptionW
     }
   }
   if (together === undefined) return []
-  return [{ code: 'redundancy', about: together.keys.slice(0, 8), from: new Date(together.from).toISOString(), to: new Date(together.to).toISOString() }]
+  return [{ kind: 'redundancy', about: together.keys.slice(0, 8), from: new Date(together.from).toISOString(), to: new Date(together.to).toISOString() }]
 }

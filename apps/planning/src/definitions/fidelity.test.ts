@@ -13,10 +13,10 @@ describe('Definition fidelity', () => {
     expect((await read('./train-a-work-week.plan-definition.json')).inputs).toEqual(await fixture('train-a.fragment.json'))
   })
 
-  test('Supply run is the converted case2 fixture, unchanged, from the frozen case2.json', async () => {
+  test('Supply run is the converted case2 fixture, unchanged, from the frozen case2 v1.1', async () => {
     expect((await read('./supply-run.plan-definition.json')).inputs).toEqual(await fixture('supply-run.case2.json'))
-    const recorded = (await Bun.file(new URL('../plan/fixtures/supply-run.case2.sha256', import.meta.url)).text()).split(/\s+/)[0]
-    expect(recorded).toBe('7339108b116d0e86c9cb7380ef1eb389dddf2694c3556ab2b7146540705fdb42')
+    const recorded = (await Bun.file(new URL('../plan/fixtures/supply-run.case2.sha256', import.meta.url)).text()).trim().split(/\s+/)
+    expect(recorded).toEqual(['b1f7ee7d112ebfb55fbb3a683f958c96019a785f7d8f272642e6e6ed6637e542', 'case2-v1.1.json'])
   })
 
   test('each Definition starts unlinked; the cases name their World Scenario; the revision is 16 hex of its document', async () => {

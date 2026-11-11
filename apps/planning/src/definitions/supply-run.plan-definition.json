@@ -41,7 +41,7 @@
       },
       {
         "key": "joins-0802",
-        "label": "Joins at 08:02 (Truck 2)",
+        "label": "Joins Thu 10:02 (Truck 2)",
         "weekly": [],
         "periods": [
           {
@@ -52,12 +52,12 @@
         "except": [],
         "source": {
           "by": "assumption",
-          "note": "Announced in the Scenario: a 1,000 kg truck joins at Brekke depot 2 minutes in (cue second-truck, 120 s)."
+          "note": "Announced in the exercise: a 1,000 kg truck joins at Brekke depot at Thu 10:02."
         }
       },
       {
         "key": "joins-08053",
-        "label": "Joins at 08:05:30 (Truck 5)",
+        "label": "Joins Thu 10:05:30 (Truck 5)",
         "weekly": [],
         "periods": [
           {
@@ -68,7 +68,7 @@
         "except": [],
         "source": {
           "by": "assumption",
-          "note": "Announced in the Scenario: a hired 700 kg truck joins at Brekke depot at 5 min 30 s (cue hired-truck, 330 s)."
+          "note": "Announced in the exercise: a hired 700 kg truck joins at Brekke depot at Thu 10:05:30."
         }
       }
     ],
@@ -103,7 +103,7 @@
             }
           }
         ],
-        "words": "At Brekke depot. Upgraded to 600 kg at 08:03 (announced: second axle fitted).",
+        "words": "At Brekke depot. Upgraded to 600 kg at Thu 10:03 (announced: second axle fitted).",
         "locator": "einsatz/unit/unit%3Atruck-1",
         "source": {
           "by": "planner",
@@ -194,10 +194,10 @@
             }
           }
         ],
-        "words": "Joins at Brekke depot at 08:02; not in World at 08:00. Its travel times are taken from Truck 1's World estimates: both start at Brekke depot (same Scenario coordinates), same truck type.",
+        "words": "Joins at Brekke depot at Thu 10:02; not in the simulation at the start (Thu 10:00). Its travel times are taken from Truck 1's World estimates: both start at Brekke depot, same truck type.",
         "source": {
           "by": "assumption",
-          "note": "Announced join (Scenario cue second-truck)."
+          "note": "Announced join at Thu 10:02."
         }
       },
       {
@@ -220,10 +220,10 @@
             }
           }
         ],
-        "words": "Hired; joins at Brekke depot at 08:05:30; not in World at 08:00. Its travel times are taken from Truck 1's World estimates (same start point, same truck type).",
+        "words": "Hired; joins at Brekke depot at Thu 10:05:30; not in the simulation at the start (Thu 10:00). Its travel times are taken from Truck 1's World estimates (same start point, same truck type).",
         "source": {
           "by": "assumption",
-          "note": "Announced join (Scenario cue hired-truck)."
+          "note": "Announced join at Thu 10:05:30."
         }
       }
     ],
@@ -307,7 +307,7 @@
         "continuous": true,
         "target": {
           "finishBy": "2026-09-03T08:07:00Z",
-          "words": "Reach within 4 minutes of the request, then 3 minutes unloading (World on-scene time)."
+          "words": "Reach within 4 minutes of the request, then 3 minutes unloading (World on-scene time): finish by Thu 10:07."
         },
         "checks": [],
         "tags": [
@@ -435,7 +435,7 @@
         "continuous": true,
         "target": {
           "finishBy": "2026-09-03T08:13:00Z",
-          "words": "A truck arrives within 10 minutes of the request, then 3 minutes unloading (World on-scene time)."
+          "words": "A truck arrives within 10 minutes of the request, then 3 minutes unloading (World on-scene time): finish by Thu 10:13."
         },
         "checks": [],
         "tags": [

@@ -1,19 +1,14 @@
 // The presenter: planner words generated from structure (never stored), and the bounded sections that
 // planning.plan.read returns. The UI's format.ts mirrors these rules. Every section fits the 4 KB result.
-import { z } from 'zod'
-import {
-  calendarSchema, certifiedSizeSchema, changeSchema, datedRowSchema, equipmentSchema, groupSchema, instantSchema, jobSchema, keySchema,
-  labelSchema, linkSchema, methodChoiceSchema, optionSchema, planInputsSchema, purchaseSchema, resourceSchema, ruleSchema, worldFactCopySchema,
-  type Certificate, type CertifiedSize, type Plan, type PlanInputs, type Status,
-} from './schema.ts'
-import { writeResultSchema } from '../api/contract.ts'
+import type { Certificate, CertifiedSize, Plan, PlanInputs, Status } from './schema.ts'
+import { resultLimitBytes, type OptionWarning, type SectionName } from '../api/contract.ts'
 import type { ChangeRecord } from './edits.ts'
-import type { OptionWarning, Precondition, ReadinessItem } from './readiness.ts'
+import type { OutTogether, Precondition, ReadinessItem } from './readiness.ts'
 
 type Inputs = PlanInputs
 type Option = NonNullable<Plan['options']>['options'][number]
 
-export const resultLimitBytes = 4_096
+export { resultLimitBytes }
 export const byteLength = (value: unknown): number => new TextEncoder().encode(JSON.stringify(value)).byteLength
 
 // ───────────── words for values ─────────────
@@ -140,7 +135,10 @@ export const preconditionText = (check: Precondition, zone: string | null): stri
   check.state === 'unread' ? `${check.words} (not read yet)`
     : `${check.words}${check.state === 'met' ? '' : ': not so'} (at read time, ${timeWords(check.at!, zone)})`
 
-export const optionWarningText = (warning: OptionWarning, inputs: Inputs): string =>
+/** The redundancy warning beside an option's status, in words with its keys (api/contract.ts optionWarningSchema). */
+export const optionWarning = (warning: OutTogether, inputs: Inputs): OptionWarning => ({ kind: warning.kind, text: optionWarningText(warning, inputs), about: [...warning.about.slice(0, 4)] })
+
+export const optionWarningText = (warning: OutTogether, inputs: Inputs): string =>
   clip(`${names(inputs, warning.about)} are out together (${timeWords(warning.from, inputs.settings.timeZone)} to ${timeWords(warning.to, inputs.settings.timeZone)}) and no rule keeps any of them in service.`, 240)
 
 // ───────────── status ─────────────
@@ -174,35 +172,9 @@ export const statusSentence = (status: Status, inputs: Inputs): string => {
 export const certifiedSizeWords = (size: CertifiedSize): string => `certified for ${size.family} up to ${size.maxJobs} jobs; ${size.evidence}`
 
 // ───────────── read sections ─────────────
-// The `data` of each planning.plan.read section, shared by the service, the screen (ui/sections.ts) and the
-// Assistant. Records are the stored plan's own schemas; words come with attention and warnings only. Every
-// section but summary pages within the 4 KB result as {items, more?}; `more` is the next read's cursor.
-
-const paged = <T extends z.ZodType>(item: T) => z.object({ items: z.array(item), more: z.string().min(1).max(256).optional() }).strict()
-
-export const summaryDataSchema = z.object({
-  plan: z.object({ id: z.uuid(), title: labelSchema, revision: z.number().int().positive(), updatedAt: instantSchema }).strict(),
-  settings: planInputsSchema.shape.settings,
-  goals: planInputsSchema.shape.goals,
-  refreshedAt: instantSchema.nullable(),
-  attention: writeResultSchema.shape.attention,
-  certifiedSize: certifiedSizeSchema.nullable(),
-}).strict()
-
-export const sectionDataSchemas = {
-  summary: summaryDataSchema,
-  jobs: paged(z.union([z.object({ job: jobSchema }).strict(), z.object({ link: linkSchema }).strict(), z.object({ method: methodChoiceSchema }).strict()])),
-  rules: paged(z.object({ rule: ruleSchema }).strict()),
-  crews: paged(z.union([z.object({ calendar: calendarSchema }).strict(), z.object({ resource: resourceSchema }).strict(), z.object({ purchase: purchaseSchema }).strict()])),
-  sources: paged(z.union([z.object({ equipment: equipmentSchema }).strict(), z.object({ group: groupSchema }).strict(), z.object({ fact: worldFactCopySchema }).strict()])),
-  options: paged(optionSchema.omit({ rows: true }).extend({
-    fresh: z.boolean(),
-    warnings: z.array(z.object({ text: z.string().max(240), about: z.array(keySchema).max(4) }).strict()).max(4),
-  }).strict()).extend({ at: instantSchema.nullable(), recommended: keySchema.nullable() }).strict(),
-  schedule: paged(datedRowSchema).extend({ option: keySchema }).strict(),
-  history: paged(changeSchema),
-} as const
-export type SectionName = keyof typeof sectionDataSchemas
+// The `data` of each planning.plan.read section, in the shapes of api/contract.ts sectionDataSchemas, which
+// the service, the screen and the Assistant share. Records are the stored plan's own schemas; words come
+// with attention and warnings only. Every section but summary pages within the 4 KB result.
 
 export interface OptionState {
   readonly stale: boolean
@@ -268,7 +240,7 @@ export const buildSection = (name: SectionName, context: SectionContext, offset:
     case 'sources': return pagedSection(name, [...inputs.equipment.map(equipment => ({ equipment })), ...inputs.groups.map(group => ({ group })), ...inputs.world.facts.map(fact => ({ fact }))], offset, budget)
     case 'options': return pagedSection(name, (plan.options?.options ?? []).map(({ rows: _rows, ...rest }) => {
       const state = context.options.get(rest.key)
-      return { ...rest, fresh: state !== undefined && !state.stale, warnings: (state?.warnings ?? []).slice(0, 4).map(warning => ({ text: optionWarningText(warning, inputs), about: [...warning.about.slice(0, 4)] })) }
+      return { ...rest, fresh: state !== undefined && !state.stale, warnings: [...(state?.warnings ?? []).slice(0, 4)] }
     }), offset, budget, { at: plan.options?.at ?? null, recommended: plan.options?.recommended ?? null })
     case 'schedule': {
       if (option === undefined) throw new RangeError('A schedule names its option')

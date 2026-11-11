@@ -1,8 +1,9 @@
 import { describe, expect, test } from 'bun:test'
 import { workspaceIdSchema } from '@leitbild/contracts'
-import { optionWarnings, preconditions, readiness, takenOut, worldSubjects } from './readiness.ts'
+import { outTogether, preconditions, readiness, takenOut, worldSubjects } from './readiness.ts'
 import { planInputsSchema, type Plan, type PlanInputs } from './schema.ts'
-import { buildSection, byteLength, readinessText, sectionDataSchemas, statusSentence, timeWords } from './summary.ts'
+import { buildSection, byteLength, readinessText, statusSentence, timeWords } from './summary.ts'
+import { sectionDataSchemas } from '../api/contract.ts'
 
 const fixture = async (name: string): Promise<PlanInputs> => planInputsSchema.parse(await Bun.file(new URL(`./fixtures/${name}`, import.meta.url)).json())
 const trainA = await fixture('train-a.fragment.json')
@@ -77,10 +78,10 @@ describe('readiness: warnings only, never a score (T2)', () => {
       status: { word: 'invalid input' as const, problems: [{ about: [], code: 'test' }] },
       rows: [row('TAG-0', '2026-11-16T06:00:00Z', '2026-11-16T07:00:00Z'), row('TAG-1', '2026-11-16T07:00:00Z', '2026-11-16T08:00:00Z'), row('TEST-0', '2026-11-16T10:00:00Z', '2026-11-16T11:00:00Z'), row('TEST-1', '2026-11-16T11:00:00Z', '2026-11-16T12:00:00Z')],
     }
-    expect(optionWarnings(inputs, option).map(warning => [warning.code, warning.from, warning.to])).toEqual([['redundancy', '2026-11-16T07:00:00.000Z', '2026-11-16T11:00:00.000Z']])
+    expect(outTogether(inputs, option).map(warning => [warning.kind, warning.from, warning.to])).toEqual([['redundancy', '2026-11-16T07:00:00.000Z', '2026-11-16T11:00:00.000Z']])
     const keepOne: PlanInputs = { ...inputs, rules: [...inputs.rules, { kind: 'keep-in-service', key: 'K', members: two.map(equipment => ({ equipment })), atLeast: 1, words: 'Keep one in service', source: { by: 'planner' } }] }
     expect(codes(keepOne)).not.toContain('redundancy')
-    expect(optionWarnings(keepOne, option)).toEqual([])
+    expect(outTogether(keepOne, option)).toEqual([])
   })
 })
 
