@@ -12,7 +12,7 @@ import { compile, formulationOf, methodCombinations, type Buy, type CompileIndex
 import { dateSchedule, slotInstant } from './date.ts'
 import { finishOf, prepare } from './decode.ts'
 import { totalFloat, withFloat } from './float.ts'
-import { estimateMemoryMb } from './pool.ts'
+import { estimateMemoryMb, SOLVER_CPU_CAP_CORES } from './pool.ts'
 import type { Engine, EngineResult, NormalizedProblem } from './problem.ts'
 import { compareOptions, goalKeys, type RawMetric } from './rank.ts'
 import { cancelledStatus, feasibleStatus, infeasibleStatus, refusedStatus, unresolvedStatus, type CheckPlan } from './status.ts'
@@ -119,9 +119,9 @@ export const generate = async (deps: GenerateDeps, request: GenerateRequest): Pr
   if (subSolves > MAX_SUB_SOLVES) throw planningError(422, 'too_many_sub_solves', `These what-ifs need ${subSolves} method combinations; at most ${MAX_SUB_SOLVES} are solved at once`, { subSolves })
   const formulation = formulationOf(inputs.settings.grid)
   const seconds = request.input.seconds ?? DEFAULT_SECONDS
-  // Half a core: CPU is half the wall time; 10 % of the wall is kept for dating and checking.
+  // CPU within the solver cap (80 % of half a core); 10 % of the wall is kept for dating and checking.
   const wallMs = seconds * 1_000 * 0.9
-  const share = { wallMs: wallMs / Math.max(1, subSolves), cpuMs: wallMs / 2 / Math.max(1, subSolves) }
+  const share = { wallMs: wallMs / Math.max(1, subSolves), cpuMs: wallMs * SOLVER_CPU_CAP_CORES / Math.max(1, subSolves) }
   const seed = request.seed ?? 1
   const rounded: Array<CompileIndex['rounded'][number]> = []
   const dropped: Array<CompileIndex['dropped'][number]> = []

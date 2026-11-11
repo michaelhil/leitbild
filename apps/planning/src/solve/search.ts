@@ -79,6 +79,11 @@ export interface SearchOptions {
   readonly clock?: () => number
   /** Late-acceptance history length. */
   readonly lateAcceptance?: number
+  /**
+   * Spread the CPU budget over the wall budget (cpuMs / wallMs cores at most), sleeping when ahead, so a
+   * solve never takes the whole CPU quota from reads and health checks. The worker pool sets it.
+   */
+  readonly pace?: boolean
 }
 
 export const searchEngine = (searchOptions: SearchOptions = {}): Engine => ({
@@ -131,7 +136,9 @@ export const searchEngine = (searchOptions: SearchOptions = {}): Engine => ({
       const now = performance.now()
       if (now - wall0 >= budget.wallMs) { stoppedBy = 'wall'; return true }
       if (now - lastYield > 50) {
-        await new Promise(resolve => setTimeout(resolve, 0))
+        // Re-read the budget: the pool may lower it while the solve runs.
+        const ahead = searchOptions.pace === true ? (cpu() - cpu0) - budget.cpuMs / budget.wallMs * (now - wall0) : 0
+        await new Promise(resolve => setTimeout(resolve, ahead > 20 ? Math.min(200, ahead * budget.wallMs / budget.cpuMs) : 0))
         lastYield = performance.now()
         if (signal.aborted) { stoppedBy = 'cancelled'; return true }
       }

@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'bun:test'
 import { compile } from './compile.ts'
 import { generate, rawOf } from './generate.ts'
-import { createSolverPool } from './pool.ts'
+import { createSolverPool, SOLVER_CPU_CAP_CORES } from './pool.ts'
 import { goalKeys, compareKeys } from './rank.ts'
 import { checkDouble } from './fixtures/check-double.ts'
 import { trainAInputs } from './fixtures/train-a-case.ts'
@@ -65,5 +65,43 @@ describe('cancel', () => {
     const tight = createSolverPool({ rssLimitMb: 1 })
     expect((await tight.solve(compiled.problem, { budget, seed: 1, signal })).stoppedBy).toBe('memory')
     await expect(busyPool.solve(compiled.problem, { budget: { ...budget, memoryMb: 0.01 }, seed: 1, signal })).rejects.toMatchObject({ code: 'above_certified_size' })
+  }, 30_000)
+
+  test('solves stay within the CPU cap together, and the records show it', async () => {
+    const compiled = compile(inputs, { methods: [{ choice: 'SWA-method', option: 'swap' }], buy: 'allowed' })
+    if (!compiled.ok) throw new Error('compiles')
+    // The test runner's own memory counts in the process RSS, so the memory guard is set out of the way.
+    const capped = createSolverPool({ rssLimitMb: 4_000 })
+    const signal = new AbortController().signal
+    // Each asks for a full core over 3 s; alone it gets the cap, 0.4 x 3 s = 1.2 CPU-s.
+    const wallMs = 3_000
+    const ask = { evals: Number.MAX_SAFE_INTEGER, cpuMs: wallMs, wallMs, memoryMb: 80 }
+    const first = capped.solve(compiled.problem, { budget: ask, seed: 1, signal })
+    await Bun.sleep(500)
+    // A second solve: each now gets half the cap (0.2 x 3 s = 0.6 CPU-s), and the first is re-budgeted.
+    const second = capped.solve(compiled.problem, { budget: ask, seed: 2, signal })
+    const [a, b] = await Promise.all([first, second])
+    const recordA = capped.records().find(record => record.id === 'solve-1'), recordB = capped.records().find(record => record.id === 'solve-2')
+    expect(recordA!.grantedCpuMs).toBe(Math.floor(SOLVER_CPU_CAP_CORES * wallMs))
+    expect(recordB!.grantedCpuMs).toBe(Math.floor(SOLVER_CPU_CAP_CORES / 2 * wallMs))
+    // Paced: neither runs ahead of its share; together within the cap over the 3 s (plus one pacing step).
+    expect(a.cpuMs + b.cpuMs).toBeLessThanOrEqual(SOLVER_CPU_CAP_CORES * (wallMs + 500) + 100)
+    expect(a.cpuMs).toBeLessThan(recordA!.grantedCpuMs)
+    expect(b.cpuMs).toBeLessThanOrEqual(recordB!.grantedCpuMs + 50)
+  }, 30_000)
+
+  test('shutdown cancels running solves within a second and refuses new ones', async () => {
+    const compiled = compile(inputs, { methods: [{ choice: 'SWA-method', option: 'swap' }], buy: 'allowed' })
+    if (!compiled.ok) throw new Error('compiles')
+    const closing = createSolverPool({ rssLimitMb: 4_000 })
+    const signal = new AbortController().signal
+    const budget = { evals: Number.MAX_SAFE_INTEGER, cpuMs: 8_000, wallMs: 20_000, memoryMb: 80 }
+    const solving = closing.solve(compiled.problem, { budget, seed: 1, signal })
+    await Bun.sleep(800)
+    const at = performance.now()
+    await closing.shutdown()
+    expect(performance.now() - at).toBeLessThan(1_000)
+    expect((await solving).stoppedBy).toBe('cancelled')
+    await expect(closing.solve(compiled.problem, { budget, seed: 2, signal })).rejects.toMatchObject({ code: 'planning_stopping' })
   }, 30_000)
 })
