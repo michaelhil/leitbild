@@ -55,8 +55,8 @@ test('named research fixtures capture finite owner quantities with original qual
   const gridBasis = await registry.engineering.capture(grid.id, { profile: 'grid-balance', subjectId: 'grid:engineering' })
   expect(gridBasis.quantities).toHaveLength(5)
   expect(gridBasis.quantities.every(row => row.quantity === 'power' && row.unit === 'MW' && Number.isFinite(row.value))).toBe(true)
-  const other = await registry.create({ scenarioId: 'planning-component-work' })
-  await expect(registry.engineering.capture(other.id, { ...thermal, subjectId: 'plant:planning-work' })).rejects.toThrow('shared engineering')
+  const other = await registry.create({ scenarioId: 'train-a-work-week' })
+  await expect(registry.engineering.capture(other.id, { ...thermal, subjectId: 'plant:train-a' })).rejects.toThrow('shared engineering')
 }, 60_000)
 
 test('a real coupled Plant/Grid clone is refused rather than silently dropping the Grid dependency', async () => {

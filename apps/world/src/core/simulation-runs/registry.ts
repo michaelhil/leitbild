@@ -711,7 +711,6 @@ export const createSimulationRunRegistry = (config: {
         procedureSourceService,
         procedureProvider: object => scenarioRuntime.packs.find(pack => pack.descriptor.id === object.packId)?.procedures,
         packs: scenarioRuntime.packs,
-        planningSourceEpoch: () => readPlanningSourceEpoch(join(simulationRunRoot, id, 'planning-source-epoch.json')),
         runtimeStateLoaders: Object.fromEntries(Object.entries(runtimeStateStores).map(([runtimeId, store]) => [runtimeId, store.load])),
         ...(historian === undefined ? {} : { historian }),
       })
