@@ -76,10 +76,11 @@
           <strong>{purchase.label}</strong> <small>{price(purchase)}</small>
           {#if purchase.orderBy}<small>{purchase.ordered ? 'Ordered' : `Order by ${context.format.clock(purchase.orderBy)}`}</small>{/if}
           {#if purchase.replaces.length > 0}<small>Gives up the booked time it replaces.</small>{/if}
-          <label class="inline"><input type="checkbox" checked={purchase.allowed} disabled={busy} onchange={(event) => {
-            const built = purchaseAllowedEdit(purchase.key, event.currentTarget.checked)
-            if (built.ok) onPreview(built.edits, `${event.currentTarget.checked ? 'Allow' : 'Do not allow'} ${purchase.label}`)
-          }} /> Generate may buy it</label>
+          <small>{purchase.allowed ? 'Generate may buy it.' : 'Generate may not buy it.'}</small>
+          <button type="button" class="quiet" disabled={busy} onclick={() => {
+            const built = purchaseAllowedEdit(purchase.key, !purchase.allowed)
+            if (built.ok) onPreview(built.edits, `${purchase.allowed ? 'Do not allow' : 'Allow'} “${purchase.label}”`)
+          }}>{purchase.allowed ? 'Do not allow it' : 'Allow it'}</button>
         </li>
       {/each}
     </ul>

@@ -9,7 +9,7 @@
 
   // Link a simulation the person started in World, find items in it by name, and add them as equipment
   // or as crews and tools. Planning only reads World; every value shows its basis and read time.
-  let { context, runs, linkedRun, busy = false, onLink, onRefresh, onOpenWorkspace, onSearch, onDetail, onPreview }: {
+  let { context, runs, linkedRun, busy = false, onLink, onRefresh, onOpenWorkspace, onFindRuns, onSearch, onDetail, onPreview }: {
     context: Context
     runs: readonly RunChoice[]
     linkedRun: string | null
@@ -17,6 +17,7 @@
     onLink: (run: string) => void
     onRefresh: () => void
     onOpenWorkspace: () => void
+    onFindRuns: () => void
     onSearch: (text: string) => Promise<readonly PlanningSubject[]>
     onDetail: (locator: string) => Promise<PlanningSubject>
     onPreview: (edits: readonly Edit[], label: string) => void
@@ -60,7 +61,11 @@
   {#if settings.run === null}
     <p>Planning reads values from a simulation you start in World. It never starts, pauses or changes one.</p>
     {#if matching.length === 0 && scenario !== undefined}<p class="hint">No “{scenario.title}” simulation is running yet. Start it from its card on the Workspace page, then come back.</p>{/if}
-    <button type="button" onclick={onOpenWorkspace}>Open the Workspace</button>
+    <div class="actions">
+      <button type="button" onclick={onOpenWorkspace}>Open the Workspace</button>
+      <button type="button" disabled={busy} onclick={onFindRuns}>Look for running simulations again</button>
+    </div>
+    {#if runs.length === 0}<p class="hint">No simulation is running in this Workspace yet.</p>{/if}
     {#if runs.length > 0}
       <form class="mini-form" onsubmit={(event) => { event.preventDefault(); if (chosenRun !== '') onLink(chosenRun) }}>
         <fieldset>

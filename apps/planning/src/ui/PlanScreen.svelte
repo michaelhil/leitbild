@@ -160,6 +160,7 @@
     else if (action === 'generate') generate({})
     else explainFinish()
   }
+  const findRuns = (): void => { void attempt(async () => { runs = await actions.runs(model?.inputs.settings.scenario?.id) }) }
   const search = async (text: string): Promise<readonly PlanningSubject[]> => model === null ? [] : actions.search(model, text)
   const detail = async (locator: string): Promise<PlanningSubject> => {
     if (model === null) throw new Error('The plan is not read yet.')
@@ -195,7 +196,7 @@
         {:else if view === 'add'}
           <JobForm {context} {busy} onPreview={previewEdits} />
         {:else if view === 'equipment'}
-          <EquipmentPicker {context} {runs} {linkedRun} {busy} onLink={link} onRefresh={refresh} {onOpenWorkspace} onSearch={search} onDetail={detail} onPreview={previewEdits} />
+          <EquipmentPicker {context} {runs} {linkedRun} {busy} onLink={link} onRefresh={refresh} {onOpenWorkspace} onFindRuns={findRuns} onSearch={search} onDetail={detail} onPreview={previewEdits} />
         {:else if view === 'crews'}
           <CrewForm {context} {busy} onPreview={previewEdits} />
         {:else if view === 'rules'}
