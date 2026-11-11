@@ -41,7 +41,8 @@ describe('the Supply run cycle through the operations', () => {
     const refreshed = await harness.call('planning.sources.refresh', { input: { plan: created.id }, expectedRevision: 2 })
     expectSmall(refreshed)
     expect(refreshed.body.result.plan.revision).toBe(3)
-    expect(refreshed.body.result.notReady).toEqual([])
+    expect(refreshed.body.result.problems).toEqual([])
+    expect(refreshed.body.result.attention.some((item: { kind: string }) => item.kind === 'world')).toBe(false)
     // One read for all subjects, followed over its pages with the same question.
     const subjects = worldSubjects(supplyRun)
     expect(harness.journal.length).toBeGreaterThan(1)
@@ -52,7 +53,7 @@ describe('the Supply run cycle through the operations', () => {
 
     // Unchanged World values refresh the read time without raising the revision.
     const again = await harness.call('planning.sources.refresh', { input: { plan: created.id }, expectedRevision: 3 })
-    expect([again.body.result.plan.revision, again.body.result.changed]).toEqual([3, []])
+    expect([again.body.result.plan.revision, again.body.result.changed.length, again.body.result.changed[0].endsWith('none changed')]).toEqual([3, 1, true])
 
     const generated = await harness.call('planning.plan.generate', { resource: created.id, input: {}, expectedRevision: 3 })
     expectSmall(generated)
@@ -74,13 +75,15 @@ describe('the Supply run cycle through the operations', () => {
       expectSmall(read)
     }
     const summary = (await harness.call('planning.plan.read', { resource: created.id })).body.result
-    expect(summary.sections.map((section: { id: string }) => section.id)).toEqual(['status', 'attention', 'options'])
-    expect(summary.sections[0].data.counts.baselines).toBe(1)
+    expect(summary.sections.map((section: { id: string }) => section.id)).toEqual(['summary'])
+    expect(summary.sections[0].data.plan).toMatchObject({ id: created.id, revision: 3 })
+    const history = (await harness.call('planning.plan.read', { resource: created.id, input: { section: 'history' } })).body.result.sections[0].data.items
+    expect(history[0].summary).toBe("Baseline 'Dispatch at 08:00' from " + generated.body.result.options.find((option: { key: string }) => option.key === recommended).label)
 
     // A changed World value raises the revision and makes the options out of date.
     world = padded(subjectsFor(supplyRun, valuesFor(2), '2026-09-03T08:01:00Z'))
     const changed = await harness.call('planning.sources.refresh', { input: { plan: created.id }, expectedRevision: 3 })
-    expect([changed.body.result.plan.revision, changed.body.result.staleOptions.includes(recommended), changed.body.result.changed.length > 0]).toEqual([4, true, true])
+    expect([changed.body.result.plan.revision, changed.body.result.attention.some((item: { kind: string; about: string[] }) => item.kind === 'stale' && item.about.includes(recommended)), changed.body.result.changed.length > 1]).toEqual([4, true, true])
     expectSmall(changed)
   })
 
@@ -121,19 +124,18 @@ describe('Train A: preview, read and status on the generic operations', () => {
       expect(keys.length).toBe(trainA.methods[0]!.options.length)
       refusing.add(keys[0])
       const options = (await local.call('planning.plan.read', { resource: created.id, input: { section: 'options' } })).body.result.sections[0].data.items
-      expect(options.find((option: { key: string }) => option.key === keys[0])).toMatchObject({ stale: true })
-      expect(options.find((option: { key: string }) => option.key === keys[0]).words).toContain('re-check')
-      expect(options.find((option: { key: string }) => option.key === keys[1])).toMatchObject({ stale: false, status: 'validated feasible' })
+      expect(options.find((option: { key: string }) => option.key === keys[0])).toMatchObject({ fresh: false })
+      expect(options.find((option: { key: string }) => option.key === keys[1])).toMatchObject({ fresh: true, status: { word: 'validated feasible' } })
       expect((await local.call('planning.plan.baseline', { resource: created.id, input: { option: keys[0], name: 'x' }, expectedRevision: 1 })).body.error.code).toBe('option_stale')
     } finally { await local.close() }
   })
 
-  test('the plan Resource shows its status and jobs without proof words', async () => {
+  test('the plan Resource shows its status and option count without proof words', async () => {
     const created = await harness.create('train-a-work-week')
     const resource = (await harness.request(`/internal/workspaces/${harness.workspaceId}/resources`)).body.resources.find((entry: { ref: { id: string } }) => entry.ref.id === created.id)
     expect(resource.summary).toEqual([
       { key: 'status', label: 'Status', kind: 'status', value: 'Not linked yet' },
-      { key: 'job-count', label: 'Jobs', kind: 'count', value: trainA.jobs.length },
+      { key: 'option-count', label: 'Options', kind: 'count', value: 0 },
       { key: 'updated-at', label: 'Updated', kind: 'timestamp', value: resource.summary[2].value },
     ])
   })

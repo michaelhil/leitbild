@@ -18,7 +18,7 @@ import {
   baselineInputSchema, createInputSchema, deleteInputSchema, editInputSchema, explainInputSchema, explainResultSchema,
   generateInputSchema, generateResultSchema, publishedInputSchema, readInputSchema, refreshInputSchema, writeResultSchema,
 } from './contract.ts'
-import { planReference, refreshResultSchema, type PlanningOperations } from './operations.ts'
+import { planReference, type PlanningOperations } from './operations.ts'
 import type { PlanDefinitionsPort } from '../definitions/index.ts'
 
 export const planningModuleManifest = workspaceModuleManifestSchema.parse({
@@ -106,7 +106,7 @@ export const planningOperations: ReadonlyArray<Operation<any>> = [
   {
     id: 'planning.plan.read', kind: 'query', scope: 'plan', risk: 'read',
     title: 'Read a plan',
-    description: 'See where a plan stands: its status in words, what needs attention, the options and the baseline. Ask for one section for detail: the jobs with their estimates, the rules, crews, tools and purchases, the World values with how they are known and when they were read, the options, the schedule of one option, or the change history. Long sections come in pages. Every status shown is checked again against the plan as it is now. Reads only.',
+    description: 'See where a plan stands: its settings and goals, what needs attention, when World values were last read, and the size of plan Generate is certified for. Ask for one section for the plan\'s own records: jobs with their links and methods, rules, calendars, crews, tools and purchases, equipment and World values with how each is known and when it was read, the options with their status checked again against the plan as it is now and any warning, the schedule of one option, or the change history. Long sections come in pages. Reads only.',
     searchTerms: ['status', 'overview', 'attention', 'summary', 'rules', 'crews', 'schedule', 'history'],
     input: readInputSchema, output: inspectionViewSchema,
     invoke: async ({ operations }, invocation, input: z.infer<typeof readInputSchema>) => ({ result: await operations.read(invocation.workspaceId, planIdOf(invocation), input) }),
@@ -124,7 +124,7 @@ export const planningOperations: ReadonlyArray<Operation<any>> = [
     title: 'Refresh World values',
     description: 'Read again, from the linked World simulation, every value this plan uses: equipment state, durations, arrival times and payloads, each with how it is known and the simulation time it describes. Shows which values changed, which options are now out of date, and preconditions that are not met at read time. Values you entered yourself are never changed, and reading never pauses or changes the simulation. Needs the plan\'s current revision.',
     searchTerms: ['refresh', 'update', 'latest', 'World', 'changed', 'reread'],
-    input: refreshInputSchema, output: refreshResultSchema,
+    input: refreshInputSchema, output: writeResultSchema,
     invoke: async ({ operations }, invocation, input: z.infer<typeof refreshInputSchema>) => ({ result: await operations.refresh(invocation.workspaceId, input.plan, invocation.expectedRevision, invocation.access) }),
   },
   {
@@ -200,7 +200,7 @@ export const createPlanningModuleApi = (config: {
         capabilityIds: planCapabilities, inspectionCapabilityId: 'planning.plan.read', deleteCapabilityId: 'planning.plan.delete',
         summary: [
           { key: 'status', label: 'Status', kind: 'status', value: statusLabel(plan) },
-          { key: 'job-count', label: 'Jobs', kind: 'count', value: plan.inputs.jobs.length },
+          { key: 'option-count', label: 'Options', kind: 'count', value: plan.options?.options.length ?? 0 },
           { key: 'updated-at', label: 'Updated', kind: 'timestamp', value: plan.updatedAt },
         ],
         observedAt,

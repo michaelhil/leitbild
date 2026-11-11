@@ -2,7 +2,7 @@ import { describe, expect, test } from 'bun:test'
 import { workspaceIdSchema } from '@leitbild/contracts'
 import { optionWarnings, preconditions, readiness, takenOut, worldSubjects } from './readiness.ts'
 import { planInputsSchema, type Plan, type PlanInputs } from './schema.ts'
-import { buildSection, byteLength, readinessText, statusSentence, timeWords } from './summary.ts'
+import { buildSection, byteLength, readinessText, sectionDataSchemas, statusSentence, timeWords } from './summary.ts'
 
 const fixture = async (name: string): Promise<PlanInputs> => planInputsSchema.parse(await Bun.file(new URL(`./fixtures/${name}`, import.meta.url)).json())
 const trainA = await fixture('train-a.fragment.json')
@@ -85,22 +85,24 @@ describe('readiness: warnings only, never a score (T2)', () => {
 })
 
 describe('the presenter', () => {
-  test('every section of both cases fits a 4 KB result and pages the rest', () => {
+  test('every section of both cases matches its shared schema, fits its budget and pages every record exactly once', () => {
     for (const inputs of [trainA, supplyRun]) {
       const plan = planOf(inputs)
-      const context = { plan, readiness: readiness(plan, { staleOptions: [], now: '2026-11-12T09:00:00Z' }), preconditions: preconditions(inputs), options: new Map(), certifiedSize: { family: 'test plans', maxJobs: 100, evidence: 'test' } }
-      for (const name of ['summary', 'jobs', 'rules', 'crews', 'sources', 'options', 'history'] as const) {
-        let offset = 0, seen = 0, pages = 0
+      const context = { plan, readiness: readiness(plan, { staleOptions: [], now: '2026-11-12T09:00:00Z' }), options: new Map(), certifiedSize: { family: 'test plans', maxJobs: 100, evidence: 'test' } }
+      const summary = buildSection('summary', context, 0, 3_500)[0]!.data
+      expect(sectionDataSchemas.summary.parse(summary).settings).toEqual(inputs.settings)
+      const records = { jobs: inputs.jobs.length + inputs.links.length + inputs.methods.length, rules: inputs.rules.length, crews: inputs.calendars.length + inputs.resources.length + inputs.purchases.length, sources: inputs.equipment.length + inputs.groups.length + inputs.world.facts.length, history: plan.changes.length }
+      for (const [name, count] of Object.entries(records) as Array<[keyof typeof records, number]>) {
+        let offset = 0, seen = 0
         for (;;) {
-          const sections = buildSection(name, context, offset, 3_500)
-          expect(byteLength(sections)).toBeLessThanOrEqual(3_500)
-          const data = sections[0]!.data as { items?: unknown[]; more?: string | number; total?: number }
-          seen += data.items?.length ?? 0
-          pages += 1
-          if (typeof data.more !== 'string' || name === 'summary') break
-          offset = Number(data.more)
+          const data = buildSection(name, context, offset, 3_500)[0]!.data
+          expect(byteLength(data)).toBeLessThanOrEqual(3_500)
+          const parsed = sectionDataSchemas[name].parse(data) as { items: unknown[]; more?: string }
+          seen += parsed.items.length
+          if (parsed.more === undefined) break
+          offset = Number(parsed.more)
         }
-        if (name === 'jobs') expect([seen, pages > 1]).toEqual([inputs.jobs.length, byteLength(inputs.jobs) > 3_500])
+        expect([name, seen]).toEqual([name, count])
       }
     }
   })

@@ -29,9 +29,10 @@ export interface ReadinessItem {
 }
 
 const order: Readonly<Record<ReadinessCode, number>> = {
-  'link-run': 0, 'world-unread': 1, 'world-unusable': 1, 'no-tag-out': 2, 'no-test': 2, 'not-returned': 3,
-  'precondition-unmet': 4, 'precondition-unread': 4, 'order-passed': 5, 'order-by': 6, 'no-crew': 7,
-  'assumption': 8, 'redundancy': 9, 'world-duration': 10, 'options-stale': 11,
+  // Out-of-date options come right after the link card: every status shown depends on them.
+  'link-run': 0, 'options-stale': 1, 'world-unread': 2, 'world-unusable': 2, 'no-tag-out': 3, 'no-test': 3, 'not-returned': 4,
+  'precondition-unmet': 5, 'precondition-unread': 5, 'order-passed': 6, 'order-by': 7, 'no-crew': 8,
+  'assumption': 9, 'redundancy': 10, 'world-duration': 11,
 }
 
 /** Every World reference a plan holds, with the plan item that holds it. */

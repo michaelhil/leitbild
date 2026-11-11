@@ -43,7 +43,7 @@ test('the whole plan cycle through Host, with no World write', async () => {
   const linked = await one(assistant, { operationId: 'planning.plan.edit', target: plan, input: { edits: [{ edit: 'plan', run: stack.runId }] }, expectedRevision: 1 })
   expect(linked.plan.revision).toBe(2)
   const refreshed = await one(assistant, { operationId: 'planning.sources.refresh', input: { plan: created.plan.id }, expectedRevision: 2 })
-  expect([refreshed.plan.revision, refreshed.notReady]).toEqual([3, []])
+  expect([refreshed.plan.revision, refreshed.problems]).toEqual([3, []])
 
   const job = supplyRun.jobs[0]!
   const edited = await one(assistant, { operationId: 'planning.plan.edit', target: plan, input: { edits: [{ edit: 'job', key: job.key, tags: [...job.tags, 'checked'] }], reason: 'Dispatcher checked the request' }, expectedRevision: 3 })
@@ -61,7 +61,9 @@ test('the whole plan cycle through Host, with no World write', async () => {
   const again = await fresh.explore({ view: 'scope', moduleId: 'planning' }) as { data: { resources: any[] } }
   const target = again.data.resources.find(resource => resource.target.ref.id === created.plan.id).target
   const summary = await one(fresh, { operationId: 'planning.plan.read', target, input: {} })
-  expect(summary.sections[0].data).toMatchObject({ title: supplyRun.settings.title, revision: 4, counts: { baselines: 1 } })
+  expect(summary.sections[0].data.plan).toMatchObject({ id: created.plan.id, title: supplyRun.settings.title, revision: 4 })
+  const options = await one(fresh, { operationId: 'planning.plan.read', target, input: { section: 'options' } })
+  expect(options.sections[0].data).toMatchObject({ recommended: generated.recommended, items: [{ key: generated.recommended, fresh: true }] })
 
   const stored = await stack.store.read(stack.workspaceId, created.plan.id)
   expect([stored.revision, stored.baselines.length, stored.options?.options.length]).toEqual([4, 1, 1])

@@ -55,7 +55,7 @@ describe('refusals name their cause and stay within 4 KB', () => {
     const agreed = await harness.call('planning.plan.edit', { resource: plan.id, input: { edits: [{ edit: 'equipment', key: supported.key, supportedBy: [] }], authority: { name: 'Shift supervisor', reason: 'Support restored by a temporary line' }, reason: 'Temporary cooling' }, expectedRevision: 2 })
     expect(agreed.status).toBe(200)
     const history = (await harness.call('planning.plan.read', { resource: plan.id, input: { section: 'history' } })).body.result.sections[0].data.items[0]
-    expect(history).toMatchObject({ revision: 3, authority: 'Shift supervisor: Support restored by a temporary line', reason: 'Temporary cooling' })
+    expect(history).toMatchObject({ revision: 3, authority: { name: 'Shift supervisor', reason: 'Support restored by a temporary line' }, reason: 'Temporary cooling' })
   })
 
   test('a malformed edit names the failing field with its schema and the kind\'s fields', async () => {

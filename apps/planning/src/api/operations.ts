@@ -4,14 +4,14 @@
 // (lane S); every status shown is re-checked on the checker port (lane K).
 import { z } from 'zod'
 import {
-  planningFactsOutputSchema, workspaceResourceReferenceSchema,
+  inspectionViewSchema, planningFactsOutputSchema, workspaceResourceReferenceSchema,
   type AccessContext, type InspectionView, type PlanningFactsInput, type PlanningFactsOutput, type WorkspaceId, type WorkspaceResourceReference,
 } from '@leitbild/contracts'
 import { isPlanningError, planningError } from '../errors.ts'
 import { applyEdits, requireAuthority, type ChangeRecord, type EditOutcome, type StoredActor } from '../plan/edits.ts'
 import { definitionRevision, startPlan } from '../definitions/start.ts'
 import type { PlanDefinitionsPort } from '../definitions/index.ts'
-import { optionWarnings, preconditions, readiness, worldSubjects, type ReadinessItem } from '../plan/readiness.ts'
+import { optionWarnings, readiness, worldSubjects, type ReadinessItem } from '../plan/readiness.ts'
 import {
   certificateSchema, certifiedSizeSchema, optionSetSchema, planInputsSchema,
   type CertifiedSize, type Plan, type PlanInputs, type Status, type WorldFactCopy,
@@ -19,8 +19,8 @@ import {
 import type { Edit } from '../plan/edit-schema.ts'
 import { assertRevision, type PlanStore, type RevisionGuard } from '../plan/store.ts'
 import {
-  attentionKind, buildSection, byteLength, changeLines, changeSummary, nameOf, optionWarningText, readinessText,
-  resultLimitBytes, scheduleSection, statusSentence, timeWords, valueWords, type OptionState, type Section, type SectionContext, type SectionName,
+  attentionKind, basisWords, buildSection, byteLength, changeLines, changeSummary, nameOf, optionWarningText, readinessText,
+  resultLimitBytes, sectionDataSchemas, statusSentence, timeWords, valueWords, type OptionState, type Section, type SectionContext,
 } from '../plan/summary.ts'
 import type { Grid } from '../time/units.ts'
 import {
@@ -95,15 +95,6 @@ export interface PlanningOperationsPorts {
 }
 
 // ───────────── results ─────────────
-
-export const refreshResultSchema = z.object({
-  plan: z.object({ id: z.uuid(), revision: z.number().int().positive() }).strict(),
-  read: z.string().max(80),
-  changed: z.array(z.string().max(200)).max(12),
-  staleOptions: z.array(z.string().max(64)).max(8),
-  notReady: z.array(z.object({ text: z.string().max(240), about: z.array(z.string().max(64)).max(4) }).strict()).max(6),
-}).strict()
-export type RefreshResult = z.infer<typeof refreshResultSchema>
 
 const fit = <T extends object>(result: T, lists: ReadonlyArray<string>, overflow: (dropped: number) => unknown): T => {
   const next = { ...result } as Record<string, unknown>
@@ -347,15 +338,21 @@ export const createPlanningOperations = (ports: PlanningOperationsPorts) => {
     read: async (workspaceId: WorkspaceId, planId: string, input: z.infer<typeof readInputSchema>): Promise<InspectionView> => {
       const plan = await store.read(workspaceId, planId)
       const states = optionStates(plan)
-      const context: SectionContext = { plan, readiness: readinessOf(plan, states), preconditions: preconditions(plan.inputs), options: states, certifiedSize }
+      const context: SectionContext = { plan, readiness: readinessOf(plan, states), options: states, certifiedSize }
       const section = input.section ?? 'summary'
+      const option = section === 'schedule' ? findOption(plan, input.option) : undefined
       const offset = sliceCursor(input.cursor)
       const frame = { target: { kind: 'resource' as const, resource: planReference(workspaceId, plan.id) }, title: plan.inputs.settings.title, observedAt: now() }
-      const budget = resultLimitBytes - byteLength({ ...frame, sections: [] }) - 160
-      const sections: Section[] = section === 'schedule'
-        ? scheduleSection(context, findOption(plan, input.option), offset, budget)
-        : buildSection(section as SectionName, context, offset, budget)
-      return { ...frame, sections: sections.map(entry => ({ ...entry, data: JSON.parse(JSON.stringify(entry.data)) })) }
+      const budget = resultLimitBytes - byteLength({ ...frame, sections: [{ id: section, title: 'Calendars, crews, tools and purchases', data: null }] })
+      let sections: Section[]
+      try { sections = buildSection(section, context, offset, budget, option) } catch (error) {
+        if (error instanceof RangeError) throw planningError(400, 'invalid_request', error.message, { expected: { cursor: 'the "more" value of the previous page of the same section' } })
+        throw error
+      }
+      for (const entry of sections) {
+        if (!sectionDataSchemas[section].safeParse(entry.data).success) throw planningError(500, 'invalid_planning_result', `Planning built a ${section} section that does not match its schema`)
+      }
+      return resultOf(inspectionViewSchema, { ...frame, sections: sections.map(entry => ({ ...entry, data: JSON.parse(JSON.stringify(entry.data)) })) })
     },
 
     baseline: async (workspaceId: WorkspaceId, planId: string, input: z.infer<typeof baselineInputSchema>, expectedRevision: number | undefined, access: AccessContext): Promise<WriteResult> => {
@@ -377,15 +374,12 @@ export const createPlanningOperations = (ports: PlanningOperationsPorts) => {
       return writeResult(saved, [`Made ${baseline.option.label} the baseline '${baseline.name}'`])
     },
 
-    refresh: async (workspaceId: WorkspaceId, planId: string, expectedRevision: number | undefined, access: AccessContext): Promise<RefreshResult> => {
+    refresh: async (workspaceId: WorkspaceId, planId: string, expectedRevision: number | undefined, access: AccessContext): Promise<WriteResult> => {
       const guard = { expectedRevision, required: true }
       const plan = await readGuarded(workspaceId, planId, guard)
       const run = plan.inputs.settings.run
       const zone = plan.inputs.settings.timeZone
-      if (run === null) {
-        return resultOf(refreshResultSchema, { plan: { id: plan.id, revision: plan.revision }, read: 'nothing read', changed: [], staleOptions: [],
-          notReady: [{ text: readinessText({ kind: 'world', code: 'link-run', about: [], blocks: false, ...(plan.inputs.settings.scenario === undefined ? {} : { label: plan.inputs.settings.scenario.title }) }, plan.inputs), about: [] }] })
-      }
+      if (run === null) return writeResult(plan, ['Nothing read: no simulation is linked to this plan'])
       const subjects = worldSubjects(plan.inputs)
       // One read for every subject: some facts (Einsatz arrivals) exist only for subjects read together.
       if (subjects.length > 32) throw planningError(400, 'invalid_request', `This plan names ${subjects.length} World items; a refresh reads at most 32 together`, { about: [] })
@@ -425,19 +419,10 @@ export const createPlanningOperations = (ports: PlanningOperationsPorts) => {
         }
       })
       const owners = new Map([...saved.inputs.equipment, ...saved.inputs.resources].flatMap(item => item.locator === undefined ? [] : [[item.locator, item.label] as const]))
-      const factWords = (fact: WorldFactCopy) => `${owners.get(fact.locator) ?? fact.locator}: ${fact.label} ${typeof fact.value === 'number' && fact.unit !== undefined ? valueWords(fact.value, fact.unit) : String(fact.value)} (${fact.basis === 'owner-estimate' ? 'owner estimate' : fact.basis}, ${timeWords(fact.at, zone)})`
-      const states = optionStates(saved)
-      const notReady = readinessOf(saved, states).filter(item => item.code === 'world-unread' || item.code === 'world-unusable' || item.code.startsWith('precondition'))
-      const result: RefreshResult = {
-        plan: { id: saved.id, revision: saved.revision }, read: `read ${timeWords(observedAt, zone)}`,
-        changed: [
-          ...changedFacts.slice(0, changedFacts.length > 12 ? 11 : 12).map(fact => factWords(fact).slice(0, 200)),
-          ...(changedFacts.length > 12 ? [`…and ${changedFacts.length - 11} more values`] : []),
-        ],
-        staleOptions: [...states].filter(([, state]) => state.stale).map(([option]) => option).slice(0, 8),
-        notReady: notReady.slice(0, 6).map(item => ({ text: readinessText(item, saved.inputs), about: [...item.about.slice(0, 4)] })),
-      }
-      return resultOf(refreshResultSchema, fit(result, ['notReady', 'changed'], dropped => `…and ${dropped} more lines: read the sources section`))
+      const factWords = (fact: WorldFactCopy) => `${owners.get(fact.locator) ?? fact.locator}: ${fact.label} ${typeof fact.value === 'number' && fact.unit !== undefined ? valueWords(fact.value, fact.unit) : String(fact.value)} (${basisWords[fact.basis]}, ${timeWords(fact.at, zone)})`
+      const head = `Read ${facts.length} World value${facts.length === 1 ? '' : 's'} at ${timeWords(observedAt, zone)}: ${changedFacts.length === 0 && removed.length === 0 ? 'none changed' : `${changedFacts.length} new or changed${removed.length === 0 ? '' : `, ${removed.length} gone`}`}`
+      const lines = [head, ...changedFacts.map(factWords)]
+      return writeResult(saved, lines.length <= 12 ? lines : [...lines.slice(0, 11), `…and ${lines.length - 11} more values: read the sources section`])
     },
 
     delete: async (workspaceId: WorkspaceId, planId: string, expectedRevision: number | undefined): Promise<{ readonly deleted: true }> => {

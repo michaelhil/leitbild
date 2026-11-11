@@ -1,6 +1,12 @@
 // The presenter: planner words generated from structure (never stored), and the bounded sections that
 // planning.plan.read returns. The UI's format.ts mirrors these rules. Every section fits the 4 KB result.
-import { combineWorldFacts, type Certificate, type CertifiedSize, type Origin, type Plan, type PlanInputs, type Status } from './schema.ts'
+import { z } from 'zod'
+import {
+  calendarSchema, certifiedSizeSchema, changeSchema, datedRowSchema, equipmentSchema, groupSchema, instantSchema, jobSchema, keySchema,
+  labelSchema, linkSchema, methodChoiceSchema, optionSchema, planInputsSchema, purchaseSchema, resourceSchema, ruleSchema, worldFactCopySchema,
+  type Certificate, type CertifiedSize, type Plan, type PlanInputs, type Status,
+} from './schema.ts'
+import { writeResultSchema } from '../api/contract.ts'
 import type { ChangeRecord } from './edits.ts'
 import type { OptionWarning, Precondition, ReadinessItem } from './readiness.ts'
 
@@ -168,6 +174,35 @@ export const statusSentence = (status: Status, inputs: Inputs): string => {
 export const certifiedSizeWords = (size: CertifiedSize): string => `certified for ${size.family} up to ${size.maxJobs} jobs; ${size.evidence}`
 
 // ───────────── read sections ─────────────
+// The `data` of each planning.plan.read section, shared by the service, the screen (ui/sections.ts) and the
+// Assistant. Records are the stored plan's own schemas; words come with attention and warnings only. Every
+// section but summary pages within the 4 KB result as {items, more?}; `more` is the next read's cursor.
+
+const paged = <T extends z.ZodType>(item: T) => z.object({ items: z.array(item), more: z.string().min(1).max(256).optional() }).strict()
+
+export const summaryDataSchema = z.object({
+  plan: z.object({ id: z.uuid(), title: labelSchema, revision: z.number().int().positive(), updatedAt: instantSchema }).strict(),
+  settings: planInputsSchema.shape.settings,
+  goals: planInputsSchema.shape.goals,
+  refreshedAt: instantSchema.nullable(),
+  attention: writeResultSchema.shape.attention,
+  certifiedSize: certifiedSizeSchema.nullable(),
+}).strict()
+
+export const sectionDataSchemas = {
+  summary: summaryDataSchema,
+  jobs: paged(z.union([z.object({ job: jobSchema }).strict(), z.object({ link: linkSchema }).strict(), z.object({ method: methodChoiceSchema }).strict()])),
+  rules: paged(z.object({ rule: ruleSchema }).strict()),
+  crews: paged(z.union([z.object({ calendar: calendarSchema }).strict(), z.object({ resource: resourceSchema }).strict(), z.object({ purchase: purchaseSchema }).strict()])),
+  sources: paged(z.union([z.object({ equipment: equipmentSchema }).strict(), z.object({ group: groupSchema }).strict(), z.object({ fact: worldFactCopySchema }).strict()])),
+  options: paged(optionSchema.omit({ rows: true }).extend({
+    fresh: z.boolean(),
+    warnings: z.array(z.object({ text: z.string().max(240), about: z.array(keySchema).max(4) }).strict()).max(4),
+  }).strict()).extend({ at: instantSchema.nullable(), recommended: keySchema.nullable() }).strict(),
+  schedule: paged(datedRowSchema).extend({ option: keySchema }).strict(),
+  history: paged(changeSchema),
+} as const
+export type SectionName = keyof typeof sectionDataSchemas
 
 export interface OptionState {
   readonly stale: boolean
@@ -178,202 +213,67 @@ export interface OptionState {
 export interface SectionContext {
   readonly plan: Plan
   readonly readiness: readonly ReadinessItem[]
-  readonly preconditions: readonly Precondition[]
   readonly options: ReadonlyMap<string, OptionState>
   readonly certifiedSize: CertifiedSize
 }
 
 export interface Section { readonly id: string; readonly title: string; readonly description?: string; readonly data: unknown }
 
-const metric = (option: Option, id: string): number | undefined => option.metrics.find(entry => entry.id === id)?.value
-
-/** What a person sees of an option: its status in words, beside its warnings, stale or not. */
-export const optionLine = (option: Option, state: OptionState | undefined, inputs: Inputs) => ({
-  key: option.key, label: option.label, status: option.status.word,
-  words: state?.stale ? `Out of date: ${state.reason === 'formulation' ? 'the solver changed' : state.reason === 'recheck' ? 'the re-check against the current plan failed' : 'the plan changed'} since it was generated.` : statusSentence(option.status, inputs),
-  stale: state?.stale ?? true,
-  ...(state === undefined || state.warnings.length === 0 ? {} : { warnings: state.warnings.map(warning => optionWarningText(warning, inputs)) }),
-  ...(metric(option, 'span') === undefined ? {} : { spanHours: metric(option, 'span') }),
-  ...(metric(option, 'extra-cost') === undefined ? {} : { cost: metric(option, 'extra-cost') }),
-})
-
-/** Takes items from `offset` while the section stays inside `budget` bytes; `more` continues it. */
+/** Takes items from `offset` while the section data stays inside `budget` bytes; `more` continues it. */
 export const page = <T>(items: readonly T[], offset: number, budget: number, wrap: (shown: readonly T[], more: string | undefined) => unknown): unknown => {
+  if (offset > items.length) throw new RangeError('The cursor is past the end of this section')
   let count = 0
-  let best = wrap([], items.length > offset ? String(offset) : undefined)
+  let best = wrap([], offset < items.length ? String(offset) : undefined)
   while (offset + count < items.length) {
-    const shown = items.slice(offset, offset + count + 1)
     const more = offset + count + 1 < items.length ? String(offset + count + 1) : undefined
-    const candidate = wrap(shown, more)
+    const candidate = wrap(items.slice(offset, offset + count + 1), more)
     if (byteLength(candidate) > budget) break
     best = candidate
     count += 1
   }
+  if (count === 0 && offset < items.length) throw new RangeError('One record of this section is larger than a page')
   return best
 }
 
-/** A stored value, or a World value computed from the read facts with its basis and read time. */
-export const valueOf = (value: number | null, unit: string, origin: Origin, inputs: Inputs): string => {
-  if (origin.by !== 'world') return value === null ? 'not given' : valueWords(value, unit)
-  const combined = combineWorldFacts(origin.refs, inputs.world.facts, unit)
-  return combined.ok ? `${valueWords(combined.value, unit)} · ${basisWords[combined.basis]} · read ${timeWords(combined.at, inputs.settings.timeZone)}` : 'not read yet'
+const titles: Readonly<Record<SectionName, string>> = {
+  summary: 'Summary', jobs: 'Jobs, links and methods', rules: 'Rules', crews: 'Calendars, crews, tools and purchases',
+  sources: 'Equipment, groups and World values', options: 'Options', schedule: 'Schedule', history: 'Change history',
 }
 
-// Reads duration.range (T1 "estimate ranges").
-const durationLine = (job: Inputs['jobs'][number], inputs: Inputs) =>
-  `${valueOf(job.duration.value, job.duration.unit, job.duration.origin, inputs)}${job.duration.range === undefined ? '' : ` (${decimal(job.duration.range.low)}–${decimal(job.duration.range.high)} ${job.duration.unit})`}${job.duration.calendar === 'working' ? ' working' : ''}`
+const pagedSection = (name: SectionName, items: readonly unknown[], offset: number, budget: number, extra: Record<string, unknown> = {}): Section[] =>
+  [{ id: name, title: titles[name], data: page(items, offset, budget, (shown, more) => ({ ...extra, items: shown, ...(more === undefined ? {} : { more }) })) }]
 
-const sourceWords = (origin: Origin): string =>
-  origin.by === 'world' ? 'from World' : origin.by === 'reference' ? `reference: ${origin.note ?? ''}` : origin.by === 'assumption' ? `assumption${origin.note === undefined ? '' : `: ${origin.note}`}` : origin.note ?? 'planner'
-
-const sectionBuilders = {
-  summary: (context: SectionContext, _offset: number, budget: number): Section[] => {
-    const { plan } = context
-    const inputs = plan.inputs
-    const zone = inputs.settings.timeZone
-    const recommended = plan.options?.options.find(option => option.key === plan.options?.recommended)
-    const status = {
-      title: inputs.settings.title, revision: plan.revision,
-      ...(inputs.settings.purpose === undefined ? {} : { purpose: inputs.settings.purpose }),
-      window: inputs.settings.window === null ? 'not set' : `${timeWords(inputs.settings.window.start, zone)} to ${timeWords(inputs.settings.window.end, zone)}`,
-      simulation: inputs.settings.run === null ? 'not linked' : `linked ${timeWords(inputs.settings.run.linkedAt, zone)}${inputs.world.refreshedAt === null ? ', not read yet' : `, read ${timeWords(inputs.world.refreshedAt, zone)}`}`,
-      plan: recommended === undefined ? 'Not generated yet.' : optionLine(recommended, context.options.get(recommended.key), inputs).words,
-      counts: { jobs: inputs.jobs.length, crewsAndTools: inputs.resources.length, rules: inputs.rules.length, options: plan.options?.options.length ?? 0, baselines: plan.baselines.length },
-      ...(context.preconditions.length === 0 ? {} : { preconditions: context.preconditions.slice(0, 4).map(check => preconditionText(check, zone)) }),
-    }
-    const attention = context.readiness.slice(0, 6).map(item => ({ kind: attentionKind(item), text: readinessText(item, inputs), about: item.about.slice(0, 4) }))
-    const options = (plan.options?.options ?? []).map(option => optionLine(option, context.options.get(option.key), inputs))
-    const sections = (shownOptions: readonly unknown[], shownAttention: readonly unknown[]): Section[] => [
-      { id: 'status', title: 'Status', data: status },
-      { id: 'attention', title: 'Needs attention', data: { items: shownAttention, ...(context.readiness.length > shownAttention.length ? { more: context.readiness.length - shownAttention.length } : {}) } },
-      { id: 'options', title: 'Options', data: { ...(plan.options?.recommended === undefined ? {} : { recommended: plan.options.recommended }), items: shownOptions, ...(options.length > shownOptions.length ? { more: 'read the options section' } : {}) } },
-    ]
-    for (let shown = options.length; shown >= 0; shown -= 1) {
-      for (let items = attention.length; items >= 0; items -= 1) {
-        const candidate = sections(options.slice(0, shown), attention.slice(0, items))
-        if (byteLength(candidate) <= budget) return candidate
-      }
-    }
-    return sections([], [])
-  },
-  jobs: (context: SectionContext, offset: number, budget: number): Section[] => {
-    const inputs = context.plan.inputs
-    const zone = inputs.settings.timeZone
-    const items = inputs.jobs.map(job => ({
-      key: job.key, title: job.title, kind: job.kind,
-      ...(job.equipment.length === 0 ? {} : { equipment: names(inputs, job.equipment) }),
-      duration: durationLine(job, inputs), source: sourceWords(job.duration.origin),
-      ...(job.minimum === undefined ? {} : { minimum: valueWords(job.minimum.value, job.minimum.unit) }),
-      ...(job.needs.length === 0 ? {} : { needs: job.needs.map(need => `${need.amount} of ${names(inputs, need.anyOf)}`) }),
-      ...(job.method === undefined ? {} : { method: `${nameOf(inputs, job.method.choice)}: ${inputs.methods.find(method => method.key === job.method!.choice)?.options.find(option => option.key === job.method!.option)?.label ?? job.method.option}` }),
-      ...(job.notBefore === undefined ? {} : { notBefore: `${timeWords(job.notBefore.at, zone)}${job.notBefore.source.by === 'assumption' ? ' (assumption)' : ''}` }),
-      ...(job.target === undefined ? {} : { finishBy: timeWords(job.target.finishBy, zone) }),
-      ...(job.lock === undefined ? {} : { locked: timeWords(job.lock.start, zone) }),
-    }))
-    return [{ id: 'jobs', title: 'Jobs', data: page(items, offset, budget, (shown, more) => ({ total: items.length, items: shown, ...(more === undefined ? {} : { more }) })) }]
-  },
-  rules: (context: SectionContext, offset: number, budget: number): Section[] => {
-    const inputs = context.plan.inputs
-    const zone = inputs.settings.timeZone
-    const items = [
-      ...(inputs.settings.window === null ? [] : [{ kind: 'window', words: `Work fits inside ${timeWords(inputs.settings.window.start, zone)} to ${timeWords(inputs.settings.window.end, zone)}`, source: 'setting' }]),
-      ...inputs.resources.filter(resource => resource.count === 1 && resource.kind === 'crew').map(resource => ({ kind: 'one at a time', words: `${resource.label}: one at a time`, source: 'crew count' })),
-      ...inputs.rules.map(rule => ({
-        key: rule.key, kind: rule.kind, words: rule.words,
-        source: sourceWords(rule.source),
-        about: rule.kind === 'protected' ? names(inputs, rule.equipment, 6)
-          : rule.kind === 'keep-in-service' ? `at least ${rule.atLeast} of ${names(inputs, rule.members.map(member => 'equipment' in member ? member.equipment : member.resource), 6)}`
-            : rule.kind === 'due' ? `${nameOf(inputs, rule.job)} finished by ${timeWords(rule.finishBy, zone)}`
-              : `${nameOf(inputs, rule.group)} within ${valueWords(rule.limit.value, rule.limit.unit)}`,
-      })),
-    ]
-    return [{ id: 'rules', title: 'Rules', data: page(items, offset, budget, (shown, more) => ({ total: items.length, items: shown, ...(more === undefined ? {} : { more }) })) }]
-  },
-  crews: (context: SectionContext, offset: number, budget: number): Section[] => {
-    const inputs = context.plan.inputs
-    const zone = inputs.settings.timeZone
-    const items = [
-      ...inputs.resources.map(resource => ({
-        key: resource.key, label: resource.label, kind: resource.kind, count: resource.count,
-        ...(resource.crewSize === undefined ? {} : { crewSize: resource.crewSize }),
-        calendar: nameOf(inputs, resource.calendar),
-        ...(resource.attributes.length === 0 ? {} : { attributes: resource.attributes.map(attribute => `${attribute.label} ${valueOf(attribute.value, attribute.unit, attribute.origin, inputs)}${attribute.changes.length === 0 ? '' : `, changes ${attribute.changes.map(change => `${timeWords(change.at, zone)} to ${valueWords(change.value, attribute.unit)}`).join(', ')}`}`) }),
-        ...(resource.source.by === 'planner' ? {} : { source: resource.source.by }),
-        ...(resource.words === undefined ? {} : { words: resource.words }),   // reads resource.words (T1)
-      })),
-      ...inputs.purchases.map(purchase => ({
-        key: purchase.key, label: purchase.label, kind: 'purchase', for: nameOf(inputs, purchase.resource),
-        price: [purchase.price.perPersonHour === undefined ? undefined : `${valueWords(purchase.price.perPersonHour, inputs.settings.currency)} per person-hour`,
-          purchase.price.perPeriodUsed === undefined ? undefined : `${valueWords(purchase.price.perPeriodUsed, inputs.settings.currency)} per period used`,
-          purchase.price.once === undefined ? undefined : `${valueWords(purchase.price.once, inputs.settings.currency)} once`].filter(Boolean).join(', '),
-        allowed: purchase.allowed,
-        ...(purchase.orderBy === undefined ? {} : { orderBy: timeWords(purchase.orderBy, zone) }),
-        ...(purchase.ordered === undefined ? {} : { ordered: timeWords(purchase.ordered.at, zone) }),
-      })),
-    ]
-    return [{ id: 'crews', title: 'Crews, tools and purchases', data: page(items, offset, budget, (shown, more) => ({ total: items.length, items: shown, ...(more === undefined ? {} : { more }) })) }]
-  },
-  sources: (context: SectionContext, offset: number, budget: number): Section[] => {
-    const inputs = context.plan.inputs
-    const zone = inputs.settings.timeZone
-    const owners = new Map([...inputs.equipment, ...inputs.resources].flatMap(item => item.locator === undefined ? [] : [[item.locator, item.label] as const]))
-    const items = inputs.world.facts.map(fact => ({
-      item: owners.get(fact.locator) ?? fact.locator, value: `${fact.label} ${typeof fact.value === 'number' ? valueWords(fact.value, fact.unit ?? '') : String(fact.value)}`,
-      basis: basisWords[fact.basis], read: timeWords(fact.at, zone),
-    }))
-    return [{ id: 'sources', title: 'World values', data: page(items, offset, budget, (shown, more) => ({
-      simulation: inputs.settings.run === null ? 'not linked' : `linked ${timeWords(inputs.settings.run.linkedAt, zone)}`,
-      read: inputs.world.refreshedAt === null ? 'not read yet' : timeWords(inputs.world.refreshedAt, zone),
-      ...(context.preconditions.length === 0 ? {} : { preconditions: context.preconditions.slice(0, 4).map(check => preconditionText(check, zone)) }),
-      total: items.length, items: shown, ...(more === undefined ? {} : { more }),
-    })) }]
-  },
-  options: (context: SectionContext, offset: number, budget: number): Section[] => {
-    const { plan } = context
-    const items = (plan.options?.options ?? []).map(option => ({
-      ...optionLine(option, context.options.get(option.key), plan.inputs),
-      variant: { methods: option.variant.methods.map(method => `${nameOf(plan.inputs, method.choice)}: ${method.option}`), purchases: option.variant.purchases.map(key => nameOf(plan.inputs, key)) },
-    }))
-    return [{ id: 'options', title: 'Options', data: page(items, offset, budget, (shown, more) => ({
-      ...(plan.options?.recommended === undefined ? {} : { recommended: plan.options.recommended }),
-      certified: certifiedSizeWords(context.certifiedSize),
-      total: items.length, items: shown, ...(more === undefined ? {} : { more }),
-    })) }]
-  },
-  history: (context: SectionContext, offset: number, budget: number): Section[] => {
-    const { plan } = context
-    const zone = plan.inputs.settings.timeZone
-    const items = [...plan.changes].reverse().map(change => ({
-      revision: change.revision, at: timeWords(change.at, zone), by: change.by.name ?? change.by.kind, summary: change.summary,
-      ...(change.reason === undefined ? {} : { reason: change.reason }),
-      ...(change.authority === undefined ? {} : { authority: `${change.authority.name}: ${change.authority.reason}` }),
-    }))
-    return [{ id: 'history', title: 'Change history', data: page(items, offset, budget, (shown, more) => ({
-      total: items.length + plan.droppedChanges, items: shown, ...(more === undefined ? {} : { more }),
-    })) }]
-  },
-} as const
-
-/** The schedule of one option: dated rows with float, paged. */
-export const scheduleSection = (context: SectionContext, option: Option, offset: number, budget: number): Section[] => {
-  const inputs = context.plan.inputs
-  const zone = inputs.settings.timeZone
-  const state = context.options.get(option.key)
-  const items = [...option.rows].sort((left, right) => left.start.localeCompare(right.start) || left.job.localeCompare(right.job)).map(row => ({
-    job: row.job, title: nameOf(inputs, row.job), start: timeWords(row.start, zone), finish: timeWords(row.finish, zone),
-    floatHours: row.float.workingHours,
-    floatTo: row.float.limitedBy.kind === 'window-end' ? 'window end' : nameOf(inputs, row.float.limitedBy.rule),
-    by: [...new Set(row.uses.map(use => nameOf(inputs, use.resource)))].join(', '),
-  }))
-  return [{
-    id: 'schedule', title: `Schedule: ${option.label}`,
-    description: 'Float to the window end: logic and calendars; crews and outage limits not included.',
-    data: page(items, offset, budget, (shown, more) => ({
-      option: option.key, status: optionLine(option, state, inputs).words,
-      total: items.length, items: shown, ...(more === undefined ? {} : { more }),
-    })),
-  }]
+/** The summary: the plan's frame, settings and goals, what needs attention, and the certified size. */
+const summarySection = (context: SectionContext, budget: number): Section[] => {
+  const { plan } = context
+  const attention = context.readiness.slice(0, 6).map(item => ({ kind: attentionKind(item), text: readinessText(item, plan.inputs), about: [...item.about.slice(0, 4)] }))
+  const data = (shown: number) => ({
+    plan: { id: plan.id, title: plan.inputs.settings.title, revision: plan.revision, updatedAt: plan.updatedAt },
+    settings: plan.inputs.settings, goals: plan.inputs.goals, refreshedAt: plan.inputs.world.refreshedAt,
+    attention: attention.slice(0, shown), certifiedSize: context.certifiedSize,
+  })
+  for (let shown = attention.length; shown >= 0; shown -= 1) if (byteLength(data(shown)) <= budget) return [{ id: 'summary', title: titles.summary, data: data(shown) }]
+  throw new RangeError('The plan summary does not fit a page')
 }
 
-export type SectionName = keyof typeof sectionBuilders
-export const buildSection = (name: SectionName, context: SectionContext, offset: number, budget: number): Section[] => sectionBuilders[name](context, offset, budget)
+/** One section of planning.plan.read. `option` names the schedule's option. */
+export const buildSection = (name: SectionName, context: SectionContext, offset: number, budget: number, option?: Option): Section[] => {
+  const { plan } = context
+  const inputs = plan.inputs
+  switch (name) {
+    case 'summary': return summarySection(context, budget)
+    case 'jobs': return pagedSection(name, [...inputs.jobs.map(job => ({ job })), ...inputs.links.map(link => ({ link })), ...inputs.methods.map(method => ({ method }))], offset, budget)
+    case 'rules': return pagedSection(name, inputs.rules.map(rule => ({ rule })), offset, budget)
+    case 'crews': return pagedSection(name, [...inputs.calendars.map(calendar => ({ calendar })), ...inputs.resources.map(resource => ({ resource })), ...inputs.purchases.map(purchase => ({ purchase }))], offset, budget)
+    case 'sources': return pagedSection(name, [...inputs.equipment.map(equipment => ({ equipment })), ...inputs.groups.map(group => ({ group })), ...inputs.world.facts.map(fact => ({ fact }))], offset, budget)
+    case 'options': return pagedSection(name, (plan.options?.options ?? []).map(({ rows: _rows, ...rest }) => {
+      const state = context.options.get(rest.key)
+      return { ...rest, fresh: state !== undefined && !state.stale, warnings: (state?.warnings ?? []).slice(0, 4).map(warning => ({ text: optionWarningText(warning, inputs), about: [...warning.about.slice(0, 4)] })) }
+    }), offset, budget, { at: plan.options?.at ?? null, recommended: plan.options?.recommended ?? null })
+    case 'schedule': {
+      if (option === undefined) throw new RangeError('A schedule names its option')
+      return pagedSection(name, [...option.rows].sort((left, right) => left.start.localeCompare(right.start) || left.job.localeCompare(right.job)), offset, budget, { option: option.key })
+    }
+    case 'history': return pagedSection(name, [...plan.changes].reverse(), offset, budget)
+  }
+}
