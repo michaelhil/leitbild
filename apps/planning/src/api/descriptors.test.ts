@@ -7,16 +7,17 @@ afterAll(() => harness.close())
 const capabilities: ModuleCapabilityDescriptor[] = (await harness.request(`/internal/workspaces/${harness.workspaceId}/capabilities`)).body.capabilities.map((entry: unknown) => moduleCapabilityDescriptorSchema.parse(entry))
 const byId = new Map(capabilities.map(entry => [String(entry.id), entry]))
 
-// Design §5.1: ids, scopes, kinds and risks, and the searchTerms table, exactly.
+// Design §5.1: ids, scopes, kinds and risks, exactly; the searchTerms as tuned on the controls phrasings
+// (packages/integration-tests/tests/planning-vocabulary.test.ts).
 const table = {
-  'planning.plan.create': ['definition', 'command', 'write', ['plan', 'planning', 'new', 'start', 'maintenance', 'outage', 'schedule', 'work', 'week', 'template', 'demo']],
-  'planning.plan.edit': ['resource', 'command', 'write', ['change', 'edit', 'add', 'job', 'task', 'link', 'crew', 'shift', 'calendar', 'rule', 'estimate', 'lock', 'move', 'overtime', 'method']],
-  'planning.plan.generate': ['resource', 'command', 'write', ['generate', 'schedule', 'plan', 'optimise', 'options', 'alternatives', 'what-if', 'replan', 'fit', 'window']],
-  'planning.plan.explain': ['resource', 'query', 'read', ['why', 'explain', 'late', 'critical', 'limits', 'finish', 'driving', 'refused', 'impossible', 'float']],
+  'planning.plan.create': ['definition', 'command', 'write', ['new', 'blank', 'empty', 'template', 'example', 'demo', 'start', 'outage', 'maintenance', 'work week']],
+  'planning.plan.edit': ['resource', 'command', 'write', ['job', 'activity', 'crew', 'shift', 'calendar', 'buy', 'scope', 'supported by', 'tag-out', 'link', 'FS', 'SS', 'FF', 'lag', 'protected', 'off limits', 'keep in service', 'at least one', 'available', 'finish on or before', 'data date', 'simulation run', 'schedule']],
+  'planning.plan.generate': ['resource', 'command', 'write', ['optimise', 'alternatives', 'what-if', 'replan', 'reschedule', 'level', 'levelling', 'fit', 'window', 'variants', 'compress', 'overtime']],
+  'planning.plan.explain': ['resource', 'query', 'read', ['why', 'late', 'critical path', 'longest path', 'driving', 'completion', 'limits', 'float', 'slack', 'held up', 'refused', 'impossible', 'why not earlier']],
   'planning.plan.read': ['resource', 'query', 'read', ['status', 'overview', 'attention', 'summary', 'rules', 'crews', 'schedule', 'history']],
-  'planning.plan.baseline': ['resource', 'command', 'write', ['baseline', 'commit', 'freeze', 'approve', 'choose']],
-  'planning.sources.refresh': ['workspace', 'command', 'write', ['refresh', 'update', 'latest', 'World', 'changed', 'reread']],
-  'planning.plan.delete': ['resource', 'command', 'destructive', ['delete', 'remove']],
+  'planning.plan.baseline': ['resource', 'command', 'write', ['baseline', 'commit', 'freeze', 'approve', 'choose', 'target']],
+  'planning.sources.refresh': ['workspace', 'command', 'write', ['refresh', 'update', 'latest', 'World', 'changed', 'reread', 'sync']],
+  'planning.plan.delete': ['resource', 'command', 'destructive', ['delete', 'remove', 'get rid of', 'discard', 'scrap', 'throw away']],
 } as const
 
 const undescribed = (schema: unknown, path = ''): string[] => {
