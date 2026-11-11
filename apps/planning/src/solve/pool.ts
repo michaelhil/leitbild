@@ -4,7 +4,7 @@
 // stopped at the RSS limit with stoppedBy 'memory'. A cancel is answered within a second, with the best
 // plan found so far, or with no plan if the worker does not answer in time (it is then terminated).
 import { planningError } from '../errors.ts'
-import { SOLVER_VERSIONS } from './compile.ts'
+import { SOLVER_VERSIONS } from './search.ts'
 import type { Engine, EngineResult, NormalizedProblem } from './problem.ts'
 import type { WorkerRequest, WorkerResponse } from './worker.ts'
 
@@ -73,7 +73,8 @@ export const createSolverPool = (options: PoolOptions = {}): SolverPool => {
     const requested = solveOptions.budget.cpuMs / solveOptions.budget.wallMs
     const rate = Math.min(requested, running.size === 0 ? cap : share)
     const id = `solve-${++next}`
-    const worker = new Worker(workerUrl)
+    // smol: a smaller heap per Worker; the solve is small next to the 256 MB unit.
+    const worker = new Worker(workerUrl, { smol: true } as WorkerOptions)
     const budget = { ...solveOptions.budget, cpuMs: Math.floor(rate * solveOptions.budget.wallMs) }
     let resolveSettled: (value: unknown) => void = () => {}
     const settled = new Promise(resolve => { resolveSettled = resolve })

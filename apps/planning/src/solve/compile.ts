@@ -6,9 +6,8 @@ import { expandCalendar, isOnGrid } from '../time/calendar.ts'
 import { convertUnit, gridSlotMs, isTimeUnit, timeUnitMs, type TimeUnit } from '../time/units.ts'
 import { zoneDataFingerprint, zoneOffGridOffset } from '../time/zone.ts'
 import type { NormalizedProblem } from './problem.ts'
+import { SOLVER_VERSIONS } from './search.ts'
 
-/** Bumped whenever compile, bounds or the engine change meaning; part of every formulation. */
-export const SOLVER_VERSIONS = { compile: 1, bounds: 1, engine: 'lahc-1' } as const
 
 /** At most this many modes per job (schema hard cap). */
 export const MAX_MODES = 16
