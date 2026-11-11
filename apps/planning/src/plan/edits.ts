@@ -391,6 +391,7 @@ const ruleFields = {
   protected: ['equipment'],
   'keep-in-service': ['members', 'atLeast', 'during'],
   'span-limit': ['group', 'limit', 'singleEntry'],
+  due: ['job', 'finishBy'],
 } as const
 
 const editRule = (state: Working, edit: EditOf<'rule'>, index: number): void => {
@@ -419,6 +420,9 @@ const editRule = (state: Working, edit: EditOf<'rule'>, index: number): void => 
     })
     const during = edit.during === null ? undefined : edit.during === undefined ? current?.during : period(edit.during)
     rule = { kind, key: edit.key, members, atLeast: field(edit.atLeast, current?.atLeast, 'atLeast'), ...(during === undefined ? {} : { during }), words, source }
+  } else if (kind === 'due') {
+    const current = base?.kind === 'due' ? base : undefined
+    rule = { kind, key: edit.key, job: field(edit.job, current?.job, 'job'), finishBy: edit.finishBy === undefined ? field(undefined, current?.finishBy, 'finishBy') : utc(edit.finishBy), words, source }
   } else {
     const current = base?.kind === 'span-limit' ? base : undefined
     rule = { kind, key: edit.key, group: field(edit.group, current?.group, 'group'), limit: field(edit.limit, current?.limit, 'limit'), singleEntry: field(edit.singleEntry, current?.singleEntry, 'singleEntry'), words, source }
@@ -546,6 +550,7 @@ export const checkReferences = (inputs: Inputs): void => {
       else missing(rule.key, member.resource, resources, 'crew or tool')
     }
     if (rule.kind === 'span-limit') missing(rule.key, rule.group, groups, 'group')
+    if (rule.kind === 'due') missing(rule.key, rule.job, jobs, 'job')
   }
   for (const goal of inputs.goals) for (const group of goal.scope?.groups ?? []) missing('a goal', group, groups, 'group')
 }

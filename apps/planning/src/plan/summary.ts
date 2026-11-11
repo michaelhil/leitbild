@@ -283,7 +283,8 @@ const sectionBuilders = {
         source: sourceWords(rule.source),
         about: rule.kind === 'protected' ? names(inputs, rule.equipment, 6)
           : rule.kind === 'keep-in-service' ? `at least ${rule.atLeast} of ${names(inputs, rule.members.map(member => 'equipment' in member ? member.equipment : member.resource), 6)}`
-            : `${nameOf(inputs, rule.group)} within ${valueWords(rule.limit.value, rule.limit.unit)}`,
+            : rule.kind === 'due' ? `${nameOf(inputs, rule.job)} finished by ${timeWords(rule.finishBy, zone)}`
+              : `${nameOf(inputs, rule.group)} within ${valueWords(rule.limit.value, rule.limit.unit)}`,
       })),
     ]
     return [{ id: 'rules', title: 'Rules', data: page(items, offset, budget, (shown, more) => ({ total: items.length, items: shown, ...(more === undefined ? {} : { more }) })) }]

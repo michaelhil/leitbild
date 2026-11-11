@@ -107,6 +107,20 @@ describe('hard rules: protection, authority and minimums (A2, adversary item 8)'
     expect(weakenings(trainA, { edit: 'rule', key: 'R9', kind: 'keep-in-service', members: [supported.key, supported.supportedBy[0]!], atLeast: 1, words: 'Keep one in service.' })).toEqual([])
   })
 
+  test('a due rule: adding it needs none; moving its time later or removing it needs authority', () => {
+    const window = trainA.settings.window!
+    const at = (fraction: number) => new Date(Date.parse(window.start) + (Date.parse(window.end) - Date.parse(window.start)) * fraction).toISOString()
+    const due = { edit: 'rule', key: 'D1', kind: 'due', job: minimumTest.key, finishBy: at(0.5), words: 'Surveillance due', source: { by: 'reference', note: 'Technical specification surveillance' } }
+    const added = apply(trainA, due)
+    expect(added.weakens).toEqual([])
+    expect(added.inputs.rules.find(rule => rule.key === 'D1')).toEqual({ kind: 'due', key: 'D1', job: minimumTest.key, finishBy: at(0.5).replace('.000Z', 'Z'), words: 'Surveillance due', source: { by: 'reference', note: 'Technical specification surveillance' } })
+    expect(weakenings(added.inputs, { edit: 'rule', key: 'D1', finishBy: at(0.75) })).toEqual([['needs_authority', 'rule', 'D1']])
+    expect(weakenings(added.inputs, { edit: 'remove', what: 'rule', key: 'D1' })).toEqual([['needs_authority', 'rule', 'D1']])
+    expect(refusal(() => requireAuthority(apply(added.inputs, { edit: 'rule', key: 'D1', finishBy: at(0.75) }).weakens, undefined)).code).toBe('needs_authority')
+    expect(refusal(() => apply(trainA, { ...due, job: 'nothing' })).code).toBe('unknown_reference')
+    expect(refusal(() => apply(trainA, { ...due, group: 'COOL-A' })).code).toBe('invalid_request')
+  })
+
   test('removing protected equipment needs authority; with it the edit is saved and can then touch the item', () => {
     const remaining = protectedRule.kind === 'protected' ? protectedRule.equipment.slice(1) : []
     const edit = remaining.length === 0 ? { edit: 'remove', what: 'rule', key: protectedRule.key } : { edit: 'rule', key: protectedRule.key, equipment: remaining }
