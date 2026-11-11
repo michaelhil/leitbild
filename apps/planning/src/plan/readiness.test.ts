@@ -37,9 +37,9 @@ describe('readiness: warnings only, never a score (T2)', () => {
   })
 
   test('the precondition is checked at read time: unread, met, or not met, with the read time', () => {
-    expect(preconditions(trainA).map(entry => entry.state)).toEqual(['unread'])
+    expect(preconditions(trainA).map(entry => entry.state)).toEqual(trainA.jobs.flatMap(job => job.checks.map(() => 'unread')))
     const fact = (value: boolean) => [{ id: check.entry.fact, label: 'running', quantity: 'state', value, basis: 'observed' as const, at: '2026-11-12T09:02:00Z', locator: checkLocator }]
-    expect(preconditions(read(trainA, fact(check.entry.expect as boolean)))).toEqual([{ job: check.job.key, equipment: check.entry.equipment, words: check.entry.words, state: 'met', at: '2026-11-12T09:02:00Z', value: check.entry.expect }])
+    expect(preconditions(read(trainA, fact(check.entry.expect as boolean))).filter(entry => entry.job === check.job.key)).toEqual([{ job: check.job.key, equipment: check.entry.equipment, words: check.entry.words, state: 'met', at: '2026-11-12T09:02:00Z', value: check.entry.expect }])
     const unmet = readiness(planOf(read(trainA, fact(!check.entry.expect))), { staleOptions: [], now: '2026-11-12T09:00:00Z' }).find(item => item.code === 'precondition-unmet')!
     expect(unmet.blocks).toBe(false)
     expect(readinessText(unmet, trainA)).toBe(`Not ready at read time (${timeWords('2026-11-12T09:02:00Z', trainA.settings.timeZone)}): ${check.entry.words} is not so.`)
