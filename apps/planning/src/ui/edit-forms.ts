@@ -342,7 +342,7 @@ export const crewEdit = (job: string, crew: string, also = ''): Built =>
 export const simulationNow = (inputs: PlanInputs): string | null =>
   inputs.world.facts.reduce<string | null>((last, fact) => last === null || Date.parse(fact.at) > Date.parse(last) ? fact.at : last, null)
 
-/** Calendars that are exactly the plan window ("Available for the whole window"); they move with it. */
+/** Calendars that are exactly the plan window ("Available for the whole window"); the Module moves them with it. */
 export const wholeWindowCalendars = (inputs: PlanInputs): PlanInputs['calendars'] => {
   const window = inputs.settings.window
   if (window === null) return []
@@ -352,8 +352,8 @@ export const wholeWindowCalendars = (inputs: PlanInputs): PlanInputs['calendars'
 
 /**
  * Moves the window to the linked simulation's time, keeping its length: it starts at the simulation's
- * hour, and the plan's "now" becomes the simulation time on the plan's time step. Every calendar that is
- * exactly the window moves with it, so crews and tools "available for the whole window" stay available.
+ * hour, and the plan's "now" becomes the simulation time on the plan's time step. The Module moves every
+ * calendar that is exactly the old window with it (plan/edits.ts), so the screen sends only this edit.
  */
 export const alignWindowEdit = (inputs: PlanInputs, simulationAt: string): Built => {
   const window = inputs.settings.window
@@ -362,11 +362,11 @@ export const alignWindowEdit = (inputs: PlanInputs, simulationAt: string): Built
   const hour = Math.floor(at / 3_600_000) * 3_600_000
   const length = Date.parse(window.end) - Date.parse(window.start)
   const slot = inputs.settings.grid === '30s' ? 30_000 : 1_800_000
-  const moved = { start: new Date(hour).toISOString(), end: new Date(hour + length).toISOString() }
-  return done(
-    { edit: 'plan', window: moved, dataDate: new Date(Math.floor(at / slot) * slot).toISOString() },
-    ...wholeWindowCalendars(inputs).map((calendar): Edit => ({ edit: 'calendar', key: calendar.key, periods: [moved] })),
-  )
+  return done({
+    edit: 'plan',
+    window: { start: new Date(hour).toISOString(), end: new Date(hour + length).toISOString() },
+    dataDate: new Date(Math.floor(at / slot) * slot).toISOString(),
+  })
 }
 
 export const runLinkEdit = (runId: string | null): Built => done({ edit: 'plan', run: runId })

@@ -5,6 +5,7 @@ import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import type { Component } from 'svelte'
 import type { PlanningSubject } from '@leitbild/contracts'
+import { applyEdits } from '../plan/edits.ts'
 import { createPlanningClient } from './api.ts'
 import { attentionCards } from './attention.ts'
 import { alignWindowEdit, resourceFromWorld, simulationNow, wholeWindowCalendars, worldAttributes } from './edit-forms.ts'
@@ -55,10 +56,15 @@ describe("maint's third walk, screen defects", () => {
     })
     expect(wholeWindowCalendars(moved.inputs).map(calendar => calendar.key)).toEqual(['exercise'])
     const aligned = alignWindowEdit(moved.inputs, simulationNow(moved.inputs)!)
-    expect(aligned.ok && aligned.edits).toEqual([
-      { edit: 'plan', window: { start: '2026-09-03T08:00:00.000Z', end: '2026-09-03T08:30:00.000Z' }, dataDate: '2026-09-03T08:00:00.000Z' },
-      { edit: 'calendar', key: 'exercise', periods: [{ start: '2026-09-03T08:00:00.000Z', end: '2026-09-03T08:30:00.000Z' }] },
-    ])
+    const september = { start: '2026-09-03T08:00:00.000Z', end: '2026-09-03T08:30:00.000Z' }
+    // N-C-05: the screen sends only the window edit; the Module moves the whole-window calendar, once.
+    expect(aligned.ok && aligned.edits).toEqual([{ edit: 'plan', window: september, dataDate: '2026-09-03T08:00:00.000Z' }])
+    if (!aligned.ok) return
+    const applied = applyEdits(moved.inputs, aligned.edits, { now: '2026-11-11T08:00:00.000Z', by: { kind: 'human' } }).inputs
+    const periods = (key: string) => applied.calendars.find(calendar => calendar.key === key)!.periods.map(period => [Date.parse(period.start), Date.parse(period.end)])
+    expect(periods('exercise')).toEqual([[Date.parse(september.start), Date.parse(september.end)]])
+    // The announced joins are not the window: they stay where they were.
+    for (const join of ['joins-0802', 'joins-08053']) expect(periods(join)).toEqual(moved.inputs.calendars.find(calendar => calendar.key === join)!.periods.map(period => [Date.parse(period.start), Date.parse(period.end)]))
     const picker = readableText(renderHtml(EquipmentPicker, {
       context: contextOf(moved), runs: [], linkedRun: 'Supply run', onLink: none, onRefresh: none, onOpenWorkspace: none, onFindRuns: none,
       onSearch: async () => [truck], onDetail: async () => truck, onPreview: none,
@@ -100,7 +106,7 @@ describe("maint's third walk, screen defects", () => {
     const planned = trainAPlanned()
     const stale: PlanModel = { ...planned, attention: [{ kind: 'stale', text: 'The options were made before the latest change; generate again.', about: [] }], options: { ...planned.options!, items: planned.options!.items.map(option => ({ ...option, fresh: false })) } }
     const cards = attentionCards(stale, contextOf(stale)).map(card => card.title)
-    expect(cards.filter(title => /before the latest change/.test(title))).toHaveLength(1)
+    expect(cards.filter(title => /before the latest change|generate again/.test(title))).toEqual(['The options were made before the latest change; generate again.'])
     const inputs = supplyRunInputs()
     const readNone = modelOf({ ...inputs, settings: { ...inputs.settings, run: { id: 'run-1', linkedAt: at } }, world: { refreshedAt: at, facts: [] } })
     const picker = readableText(renderHtml(EquipmentPicker, {

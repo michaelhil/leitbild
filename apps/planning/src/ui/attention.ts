@@ -110,9 +110,8 @@ export const attentionCards = (model: PlanModel, context: Context, wallNowMs: nu
     cards.push({ mark: { shape: '!', word: 'Stopped early' }, title: `The search stopped early, ${early}.`, text: 'The options shown may not be the best possible. Generate again.', steps: [], actions: ['generate'] })
   }
   const recommended = model.options?.items.find(option => option.key === model.options?.recommended)
-  // One card for one stale state: when the Module already says the options are out of date, say nothing more.
-  const moduleSaysStale = model.attention.some(item => item.kind === 'stale')
-  if (recommended !== undefined && !(moduleSaysStale && !recommended.fresh)) {
+  // A stale option gets no card here: the Module sends the one stale item (maint's walk 3, R2-4-03).
+  if (recommended !== undefined && recommended.fresh) {
     const view = statusView(recommended.status, context)
     const first = view.goals[0]
     const warnings = recommended.warnings.map(warning => warning.text)

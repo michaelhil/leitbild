@@ -53,7 +53,8 @@ describe('Needs your attention', () => {
   test('a stale option claims no status; above the certified size Generate is refused in words', () => {
     const planned = trainAPlanned()
     const stale: PlanModel = { ...planned, options: { ...planned.options!, items: planned.options!.items.map(option => ({ ...option, fresh: false })) } }
-    expect(attentionCards(stale, contextOf(stale)).at(-1)!.title).toContain('was made before the latest change')
+    // A stale option claims nothing; the Module's one stale item says so (the screen adds no card of its own).
+    expect(attentionCards(stale, contextOf(stale)).some(card => card.title.includes(stale.options!.items[0]!.label))).toBe(false)
     const size = { decided: false, family: 'single-train work weeks', maxJobs: jobsPerSolve(planned.inputs) - 1, evidence: 'measured 11 Nov' }
     const large: PlanModel = { ...planned, certifiedSize: size }
     const refusal = attentionCards(large, contextOf(large)).find(card => card.title === 'Too large for the certified size.')!
