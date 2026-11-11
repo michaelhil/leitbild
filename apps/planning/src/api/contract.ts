@@ -96,13 +96,21 @@ export const explainResultSchema = z.object({
 // planning.plan.read returns the Host inspection view (@leitbild/contracts inspection); input {} gives the summary.
 
 // ───────────── publication ─────────────
-const dropped = new Set(['pattern', 'format', 'minLength', 'maxLength', 'minimum', 'maximum', 'exclusiveMinimum', 'exclusiveMaximum', 'minItems', 'maxItems'])
+export const strippedKeywords: ReadonlySet<string> = new Set(['pattern', 'format', 'minLength', 'maxLength', 'minimum', 'maximum', 'exclusiveMinimum', 'exclusiveMaximum', 'minItems', 'maxItems'])
+/** Keywords whose value maps field names to schemas. Those names are data (a field may be called "minimum"), never keywords. */
+export const schemaMapKeywords: ReadonlySet<string> = new Set(['properties', '$defs', 'definitions'])
 
-/** Removes patterns, formats and numeric, length and item bounds; keeps types, enums, required, descriptions and additionalProperties. */
+const stripMap = (map: unknown): unknown => map === null || typeof map !== 'object' || Array.isArray(map)
+  ? stripForPublication(map)
+  : Object.fromEntries(Object.entries(map).map(([name, child]) => [name, stripForPublication(child)]))
+
+/** Removes patterns, formats and numeric, length and item bounds; keeps types, enums, required, descriptions, additionalProperties and every field. */
 export const stripForPublication = (schema: unknown): unknown => {
   if (Array.isArray(schema)) return schema.map(stripForPublication)
   if (schema === null || typeof schema !== 'object') return schema
-  const node = Object.fromEntries(Object.entries(schema).filter(([name]) => !dropped.has(name)).map(([name, value]) => [name, stripForPublication(value)])) as Record<string, unknown>
+  const node = Object.fromEntries(Object.entries(schema)
+    .filter(([name]) => !strippedKeywords.has(name))
+    .map(([name, value]) => [name, schemaMapKeywords.has(name) ? stripMap(value) : stripForPublication(value)])) as Record<string, unknown>
   // {anyOf: [{type: T}, {type: 'null'}]} -> {type: [T, 'null']}: the same meaning, fewer bytes
   const branches = node.anyOf as Array<Record<string, unknown>> | undefined
   if (branches?.length === 2 && branches[1]?.type === 'null' && Object.keys(branches[1]).length === 1 && typeof branches[0]?.type === 'string') {

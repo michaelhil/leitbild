@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test'
 import {
-  planningFactSchema, planningFactsInputSchema, planningLocatorSchema, planningProjectionInputSchema, planningSubjectSchema,
+  planningFactSchema, planningFactsInputSchema, planningFactsOutputSchema, planningLocatorSchema, planningProjectionInputSchema, planningSubjectSchema,
 } from './planning-facts.ts'
 
 const fact = { id: 'unit:truck-4/property/payloadKg', label: 'Payload', quantity: 'payload', unit: 'kg', value: 1500, basis: 'configured', at: '2026-09-03T08:00:00Z' }
@@ -36,6 +36,20 @@ describe('World planning facts contract', () => {
     expect(planningFactsInputSchema.safeParse({ subjects: [] }).success).toBe(false)
     expect(planningProjectionInputSchema.parse({ subjects: locators(32), detail: 'facts' }).subjects).toHaveLength(32)
     expect(planningProjectionInputSchema.safeParse({ subjects: locators(33), detail: 'facts' }).success).toBe(false)
+  })
+
+  test('an answer names its World Run exactly and holds one bounded page', () => {
+    const run = { workspaceId: '0c4008f3-ffac-47ce-9be0-a0c71e68a781', moduleId: 'world', type: 'world.simulation-run', id: 'run-1' }
+    const subject = (index: number) => ({ locator: `einsatz/unit/unit%3Atruck-${index}`, label: `Truck ${index}`, kind: 'unit', facts: [fact] })
+    const answer = (fields: object) => planningFactsOutputSchema.safeParse({ run, observedAt: '2026-09-03T08:00:01Z', items: [subject(1)], ...fields }).success
+    expect(answer({})).toBe(true)
+    expect(answer({ items: Array.from({ length: 32 }, (_, index) => subject(index)) })).toBe(true)
+    expect(answer({ items: Array.from({ length: 33 }, (_, index) => subject(index)) })).toBe(false)
+    expect(answer({ run: { ...run, extra: true } })).toBe(false)
+    expect(answer({ run: { ...run, workspaceId: 'not-a-uuid' } })).toBe(false)
+    expect(answer({ run: { ...run, moduleId: 'agents', type: 'agents.room' } })).toBe(false)
+    expect(answer({ run: { ...run, type: 'world.scenario' } })).toBe(false)
+    expect(planningFactsInputSchema.safeParse({ kind: '' }).success).toBe(false)
   })
 
   test('exact subjects are not mixed with a search', () => {

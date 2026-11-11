@@ -1,4 +1,5 @@
 import { z } from 'zod'
+import { workspaceResourceReferenceSchema } from './resources.ts'
 
 /** A World item, as `<owning Pack id>/<Pack-local path>`. Planning stores it and never parses the rest. */
 export const planningLocatorSchema = z.string().min(3).max(512)
@@ -51,7 +52,7 @@ export type PlanningProjectionOutput = z.infer<typeof planningProjectionOutputSc
 /** Input of world.simulation-run.planning-facts: search with text or kind, or read exact subjects. */
 export const planningFactsInputSchema = z.object({
   text: z.string().trim().min(1).max(120).optional().describe('Words to find in names, e.g. "feed pump" or "truck". All words must match.'),
-  kind: z.string().max(80).optional().describe('Only items of this kind, as named in a previous answer, e.g. "pump".'),
+  kind: z.string().min(1).max(80).optional().describe('Only items of this kind, as named in a previous answer, e.g. "pump".'),
   subjects: z.array(planningLocatorSchema).min(1).max(32).optional().describe('Exact locators from a previous answer, to get all their values, read together. Not with text, kind or limit.'),
   limit: z.number().int().min(1).max(20).optional().describe('Items per page when searching; default 10.'),
   cursor: z.string().max(512).optional().describe('The "more" value of the previous page.'),
@@ -63,11 +64,18 @@ export const planningFactsInputSchema = z.object({
 })
 export type PlanningFactsInput = z.infer<typeof planningFactsInputSchema>
 
+/** The World Simulation Run a facts answer was read from. */
+export const planningFactsRunSchema = workspaceResourceReferenceSchema.refine(
+  run => run.moduleId === 'world' && run.type === 'world.simulation-run',
+  'Planning facts are read from a World Simulation Run',
+)
+
 export const planningFactsOutputSchema = z.object({
-  run: z.object({ workspaceId: z.string(), moduleId: z.literal('world'), type: z.literal('world.simulation-run'), id: z.string() }).strict(),
+  run: planningFactsRunSchema,
   // Wall time of the read; each fact keeps its own simulation `at`.
   observedAt: z.iso.datetime(),
-  items: z.array(planningSubjectSchema),
+  // One page: at most 32 exact subjects, or at most 20 search results.
+  items: z.array(planningSubjectSchema).max(32),
   more: z.string().max(512).optional(),
 }).strict()
 export type PlanningFactsOutput = z.infer<typeof planningFactsOutputSchema>
