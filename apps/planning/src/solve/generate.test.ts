@@ -1,4 +1,5 @@
 import { describe, expect, test } from 'bun:test'
+import { CHECKER_VERSION } from '../check/check.ts'
 import { formulationOf, methodCombinations } from './compile.ts'
 import { CERTIFIED_SIZE, generate } from './generate.ts'
 import { certifiedSizeWords, jobsPerSolve, measuredSizeWords, withinCertifiedSize } from '../plan/summary.ts'
@@ -76,6 +77,23 @@ describe('generate with the real checker', () => {
       expect(option.status.run.stoppedBy).toBe('memory')
     }
   }, 120_000)
+
+  test('a change to lane K\'s rules (CHECKER_VERSION) makes every stored option out of date by formulation', async () => {
+    const grid = supplyRun.settings.grid
+    expect(formulationOf(grid)).toContain(CHECKER_VERSION)
+    const deps = { engine: searchEngine(), check: laneKCheck, verify: laneKVerify, verifyBound: laneKVerifyBound }
+    const stored = (await generate(deps, { inputs: supplyRun, revision: 1, previous: null, input: {}, by, signal: new AbortController().signal, evals: 200 })).optionSet
+    // The same options as checked under an older version of lane K's rules.
+    const older = { ...stored, options: stored.options.map(option => ('run' in option.status ? { ...option, status: { ...option.status, run: { ...option.status.run, formulation: option.status.run.formulation.replace(CHECKER_VERSION, `${CHECKER_VERSION} (older)`) } } } : option)) }
+    for (const option of older.options) {
+      const shown = showStatus(option, { inputs: supplyRun, revision: 1, formulation: formulationOf(grid) }, laneKCheck, laneKVerify)
+      expect(shown.stale?.codes).toContain('formulation_changed')
+    }
+    // Generate keeps none of them: never-demote applies only under the same rules.
+    const again = await generate(deps, { inputs: supplyRun, revision: 1, previous: older, input: {}, by, signal: new AbortController().signal, evals: 200 })
+    expect(again.kept).toEqual([])
+    for (const option of again.optionSet.options) if ('run' in option.status) expect(option.status.run.formulation).toBe(formulationOf(grid))
+  })
 
   test('every "proven optimal" carries its bound certificate and stands only when lane K re-derives the bound', async () => {
     const proven = (result: Awaited<ReturnType<typeof generate>>) => result.optionSet.options.flatMap(option => (option.status.word === 'validated feasible' ? option.status.goals : []))

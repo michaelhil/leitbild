@@ -2,6 +2,7 @@
 // Pure and deterministic. Off-grid durations and lags are rounded up and listed; off-grid calendar
 // boundaries are refused (time/calendar.ts). No domain word appears here: every rule is generic.
 import { combineWorldFacts, type PlanInputs } from '../plan/schema.ts'
+import { CHECKER_VERSION } from '../check/check.ts'
 import { expandCalendar, isOnGrid } from '../time/calendar.ts'
 import { convertUnit, gridSlotMs, isTimeUnit, timeUnitMs, type TimeUnit } from '../time/units.ts'
 import { zoneDataFingerprint, zoneOffGridOffset } from '../time/zone.ts'
@@ -65,8 +66,13 @@ export interface CompileIndex {
 }
 export type Compiled = { readonly ok: true; readonly problem: NormalizedProblem; readonly index: CompileIndex } | CompileFailure
 
+/**
+ * What a stored status was made and checked under: the solver's versions, the grid, the zone data, and lane
+ * K's rules (CHECKER_VERSION). With no re-check on read, a stored option stands only while all of these are
+ * unchanged; a change to any makes it out of date by formulation.
+ */
 export const formulationOf = (grid: PlanInputs['settings']['grid']): string =>
-  `planning solver: compile ${SOLVER_VERSIONS.compile}, bounds ${SOLVER_VERSIONS.bounds}, engine ${SOLVER_VERSIONS.engine}; grid ${grid}; ${zoneDataFingerprint()}`
+  `planning solver: compile ${SOLVER_VERSIONS.compile}, bounds ${SOLVER_VERSIONS.bounds}, engine ${SOLVER_VERSIONS.engine}; ${CHECKER_VERSION}; grid ${grid}; ${zoneDataFingerprint()}`
 
 /** Every combination of method options, each a full pick list; `fixed` narrows the choices. */
 export const methodCombinations = (inputs: PlanInputs, fixed: readonly MethodPick[] = []): MethodPick[][] =>
