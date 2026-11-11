@@ -2,7 +2,11 @@
 // Host and the Assistant is stripForPublication(exact).
 import { z } from 'zod'
 import { editSchema } from '../plan/edit-schema.ts'
-import { goalOrderBreaks, goalWordSchema, instantSchema, keySchema, labelSchema, statusWordSchema, wordsSchema } from '../plan/schema.ts'
+import {
+  calendarSchema, certifiedSizeSchema, changeSchema, datedRowSchema, equipmentSchema, goalOrderBreaks, goalWordSchema, groupSchema, instantSchema, jobSchema,
+  keySchema, labelSchema, linkSchema, methodChoiceSchema, optionSchema, planInputsSchema, purchaseSchema, resourceSchema, ruleSchema, statusWordSchema,
+  wordsSchema, worldFactCopySchema,
+} from '../plan/schema.ts'
 
 // ───────────── inputs ─────────────
 export const createInputSchema = z.object({
@@ -75,12 +79,31 @@ export const writeResultSchema = z.object({
   problems: z.array(z.object({ edit: z.number().int().nonnegative().optional(), about: z.array(keySchema).max(4), code: z.string().max(64), text: z.string().max(300), expected: z.unknown().optional() }).strict()).max(8),
   preview: z.object({ saved: z.literal(false), consequence: z.string().max(300), violations: z.array(z.string().max(200)).max(6), weakens: z.array(keySchema).max(6), nearestAllowed: instantSchema.optional() }).strict().optional(),
 }).strict()
+/** Every operation result fits 4 KB of JSON. */
+export const resultLimitBytes = 4_096
+const byteLength = (value: unknown): number => new TextEncoder().encode(JSON.stringify(value)).length
+
+/**
+ * Something about an option a planner should see beside its status, which no hard rule refuses. redundancy:
+ * items out together that no keep-in-service rule covers, e.g. "Both MFW pumps A and B are out Tue
+ * 08:00-14:00 and no keep-in-service rule covers them". `about` names the jobs and equipment involved.
+ */
+export const optionWarningSchema = z.object({
+  kind: z.enum(['redundancy']),
+  text: z.string().min(1).max(240),
+  about: z.array(keySchema).max(4),
+}).strict()
+export type OptionWarning = z.infer<typeof optionWarningSchema>
+
 export const generateResultSchema = z.object({
   plan: z.object({ id: z.uuid(), revision: z.number().int().positive() }).strict(),
-  options: z.array(z.object({ key: keySchema, label: z.string().max(80), status: statusOutSchema, span: z.number().optional(), cost: z.number().optional() }).strict()).max(8),
+  options: z.array(z.object({
+    key: keySchema, label: z.string().max(80), status: statusOutSchema, span: z.number().optional(), cost: z.number().optional(),
+    warnings: z.array(optionWarningSchema).max(4),
+  }).strict()).max(8),
   recommended: keySchema.optional(),
   text: z.string().max(300),   // one generated sentence for the recommended option
-}).strict()
+}).strict().refine(result => byteLength(result) <= resultLimitBytes, `A generate result fits ${resultLimitBytes} B; read the options section for the rest`)
 export const explainResultSchema = z.object({
   lines: z.array(z.string().max(240)).max(20),
   items: z.array(z.object({
@@ -93,7 +116,36 @@ export const explainResultSchema = z.object({
   }).strict()).max(20),
   more: z.string().max(256).optional(),
 }).strict()
-// planning.plan.read returns the Host inspection view (@leitbild/contracts inspection); input {} gives the summary.
+// ───────────── read sections ─────────────
+// planning.plan.read returns the Host inspection view (@leitbild/contracts inspection); input {} gives the
+// summary. Each section's `data` has one of these shapes, shared by the service, the screen and the
+// Assistant. Records are the stored plan's own schemas; words come with attention and warnings only. Every
+// section but summary pages as {items, more?} within the 4 KB result; `more` is the next read's cursor.
+const paged = <T extends z.ZodType>(item: T) => z.object({ items: z.array(item), more: z.string().min(1).max(256).optional() }).strict()
+
+export const summaryDataSchema = z.object({
+  plan: z.object({ id: z.uuid(), title: labelSchema, revision: z.number().int().positive(), updatedAt: instantSchema }).strict(),
+  settings: planInputsSchema.shape.settings,
+  goals: planInputsSchema.shape.goals,
+  refreshedAt: instantSchema.nullable(),
+  attention: writeResultSchema.shape.attention,
+  certifiedSize: certifiedSizeSchema.nullable(),
+}).strict()
+
+export const sectionDataSchemas = {
+  summary: summaryDataSchema,
+  jobs: paged(z.union([z.object({ job: jobSchema }).strict(), z.object({ link: linkSchema }).strict(), z.object({ method: methodChoiceSchema }).strict()])),
+  rules: paged(z.object({ rule: ruleSchema }).strict()),
+  crews: paged(z.union([z.object({ calendar: calendarSchema }).strict(), z.object({ resource: resourceSchema }).strict(), z.object({ purchase: purchaseSchema }).strict()])),
+  sources: paged(z.union([z.object({ equipment: equipmentSchema }).strict(), z.object({ group: groupSchema }).strict(), z.object({ fact: worldFactCopySchema }).strict()])),
+  // fresh: the option re-checks on the current inputs revision and formulation.
+  options: paged(optionSchema.omit({ rows: true }).extend({ fresh: z.boolean(), warnings: z.array(optionWarningSchema).max(4) }).strict())
+    .extend({ at: instantSchema.nullable(), recommended: keySchema.nullable() }).strict(),
+  schedule: paged(datedRowSchema).extend({ option: keySchema }).strict(),
+  history: paged(changeSchema),
+} as const satisfies Record<NonNullable<z.infer<typeof readInputSchema>['section']>, z.ZodType>
+export type SectionName = keyof typeof sectionDataSchemas
+export type PagedSectionName = Exclude<SectionName, 'summary'>
 
 // ───────────── publication ─────────────
 export const strippedKeywords: ReadonlySet<string> = new Set(['pattern', 'format', 'minLength', 'maxLength', 'minimum', 'maximum', 'exclusiveMinimum', 'exclusiveMaximum', 'minItems', 'maxItems'])

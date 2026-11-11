@@ -3,7 +3,8 @@ import { z } from 'zod'
 import { planningFactsInputSchema } from '@leitbild/contracts'
 import {
   baselineInputSchema, createInputSchema, deleteInputSchema, editInputSchema, explainInputSchema, generateInputSchema, publishedInputSchema,
-  readInputSchema, refreshInputSchema, schemaMapKeywords, stripForPublication, strippedKeywords,
+  generateResultSchema, readInputSchema, refreshInputSchema, resultLimitBytes, schemaMapKeywords, sectionDataSchemas, stripForPublication, strippedKeywords,
+  summaryDataSchema,
 } from './contract.ts'
 
 const inputs: Record<string, z.ZodType> = {
@@ -108,5 +109,62 @@ describe('published operation inputs', () => {
     expect(generateInputSchema.safeParse({ variants: [{ buy: 'no-extra-crew-hours', methods: [{ choice: 'SWA-method', option: 'rebuild' }] }] }).success).toBe(true)
     expect(deleteInputSchema.safeParse({}).success).toBe(true)
     expect(deleteInputSchema.safeParse({ confirm: true }).success).toBe(false)
+  })
+})
+
+const trainA: any = await Bun.file(new URL('../plan/fixtures/train-a.fragment.json', import.meta.url)).json()
+
+describe('read section data and option warnings', () => {
+  const plan = { id: '0c4008f3-ffac-47ce-9be0-a0c71e68a781', title: 'Train A work week', revision: 3, updatedAt: '2026-11-12T09:05:00Z' }
+  const run = { grid: '30min', engine: 'ts-lahc', formulation: 'f1', seed: 1, budget: { evals: 1, cpuMs: 1, wallMs: 1 }, stoppedBy: 'done', evals: 1, cpuMs: 1 }
+  const warning = { kind: 'redundancy', text: 'Both MFW pumps A and B are out Tue 08:00-14:00 and no keep-in-service rule covers them', about: ['MFWA', 'MFWB'] }
+  const option = { key: 'swap', label: 'Swap in the spare', variant: { methods: [{ choice: 'SWA-method', option: 'swap' }], purchases: ['ot-mech'] },
+    status: { word: 'unresolved', run }, metrics: [{ id: 'span-COOL-A', value: 56, unit: 'h' }], inputsRevision: 3 }
+  const row = { job: 'SWA-TAG', start: '2026-11-17T06:00:00Z', finish: '2026-11-17T09:00:00Z', uses: [], float: { workingHours: 2, limitedBy: { kind: 'span-limit', rule: 'R2' } } }
+  const fact = { locator: 'process-plant/plant%3Atrain-a/serviceWaterPumpB', id: 'plant:train-a/serviceWaterPumpB/runningState', label: 'Running', quantity: 'state', value: true, basis: 'observed', at: '2026-11-12T09:00:00Z' }
+  const change = { seq: 1, at: '2026-11-12T09:00:00Z', by: { kind: 'human' }, revision: 1, summary: 'Created from Train A work week', kinds: ['job'] }
+
+  test('each section shape parses, and summary has no paging', () => {
+    const sections: Record<string, unknown> = {
+      summary: { plan, settings: trainA.settings, goals: trainA.goals, refreshedAt: null, attention: [{ kind: 'not-ready', text: 'Link the running simulation', about: [] }],
+        certifiedSize: { family: 'single-train work weeks', maxJobs: 100, evidence: 'measured 11 Nov' } },
+      jobs: { items: [{ job: trainA.jobs[0] }, { link: trainA.links[0] }, { method: trainA.methods[0] }], more: '3' },
+      rules: { items: trainA.rules.map((rule: unknown) => ({ rule })) },
+      crews: { items: [{ calendar: trainA.calendars[0] }, { resource: trainA.resources[0] }, { purchase: trainA.purchases[0] }] },
+      sources: { items: [{ equipment: trainA.equipment[0] }, { group: trainA.groups[0] }, { fact }] },
+      options: { at: '2026-11-12T09:04:00Z', recommended: 'swap', items: [{ ...option, fresh: true, warnings: [warning] }] },
+      schedule: { option: 'swap', items: [row] },
+      history: { items: [change] },
+    }
+    expect(Object.keys(sectionDataSchemas)).toEqual(readInputSchema.shape.section.unwrap().options)
+    for (const [name, data] of Object.entries(sections)) expect({ name, ok: sectionDataSchemas[name as keyof typeof sectionDataSchemas].safeParse(data).success }).toEqual({ name, ok: true })
+    expect(summaryDataSchema.safeParse({ ...(sections.summary as object), more: '1' }).success).toBe(false)
+    expect(sectionDataSchemas.options.safeParse({ at: null, recommended: null, items: [] }).success).toBe(true)
+    expect(sectionDataSchemas.options.safeParse({ ...(sections.options as object), items: [{ ...option, fresh: true, warnings: [], rows: [row] }] }).success).toBe(false)
+    expect(sectionDataSchemas.options.safeParse({ ...(sections.options as object), items: [{ ...option, warnings: [] }] }).success).toBe(false)
+    expect(sectionDataSchemas.schedule.safeParse({ items: [row] }).success).toBe(false)
+    expect(sectionDataSchemas.jobs.safeParse({ items: [{ rule: trainA.rules[0] }] }).success).toBe(false)
+    expect(sectionDataSchemas.history.safeParse({ items: [change], more: '' }).success).toBe(false)
+  })
+
+  test('an option warning has a kind, planner words and the keys involved', () => {
+    const page = (warnings: unknown[]) => sectionDataSchemas.options.safeParse({ at: null, recommended: null, items: [{ ...option, fresh: false, warnings }] }).success
+    expect(page([warning])).toBe(true)
+    const { kind: _kind, ...unkinded } = warning
+    expect(page([unkinded])).toBe(false)
+    expect(page([{ ...warning, kind: 'risk' }])).toBe(false)
+    expect(page([{ ...warning, about: ['A', 'B', 'C', 'D', 'E'] }])).toBe(false)
+    expect(page([warning, warning, warning, warning, warning])).toBe(false)
+  })
+
+  test('generate options carry their warnings, and the whole result stays within 4 KB', () => {
+    const status = { word: 'unresolved', goals: [] }
+    const result = (options: unknown[]) => generateResultSchema.safeParse({ plan: { id: plan.id, revision: 3 }, options, recommended: 'o0', text: 'Swap in the spare is the best found.' })
+    expect(result([{ key: 'o0', label: 'Swap', status, warnings: [warning] }]).success).toBe(true)
+    expect(result([{ key: 'o0', label: 'Swap', status }]).success).toBe(false)
+    const full = Array.from({ length: 8 }, (_, index) => ({ key: `o${index}`, label: 'Swap in the spare, overtime, two contractor nights', status, span: 56.5, cost: 464250, warnings: [warning, warning, warning] }))
+    expect(JSON.stringify(full).length).toBeGreaterThan(resultLimitBytes)
+    expect(result(full).success).toBe(false)
+    expect(result(full.slice(0, 3)).success).toBe(true)
   })
 })

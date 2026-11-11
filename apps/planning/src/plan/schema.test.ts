@@ -93,7 +93,7 @@ describe('adversary r2 check (coordinator-adopted)', () => {
   })
 
   test('3. the Assistant-facing status uses the status words and the goal order rule', () => {
-    const result = (status: object) => generateResultSchema.safeParse({ plan: { id: '0c4008f3-ffac-47ce-9be0-a0c71e68a781', revision: 3 }, options: [{ key: 'o1', label: 'Swap', status }], text: 'x' }).success
+    const result = (status: object) => generateResultSchema.safeParse({ plan: { id: '0c4008f3-ffac-47ce-9be0-a0c71e68a781', revision: 3 }, options: [{ key: 'o1', label: 'Swap', status, warnings: [] }], text: 'x' }).success
     expect(result({ word: 'validated feasible', goals: [{ word: 'best found under budget', value: 2.5, unit: 'h' }, { word: 'proven optimal', value: 398800, unit: 'NOK', bound: 398800, gap: 0 }] })).toBe(false)
     expect(result({ word: 'optimal', goals: [] })).toBe(false)
     expect(result({ word: 'validated feasible', goals: [{ word: 'optimal', value: 2.5, unit: 'h' }] })).toBe(false)
