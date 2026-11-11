@@ -1,0 +1,38 @@
+{
+  "id": "blank",
+  "title": "New plan",
+  "description": "An empty plan. Add the equipment, crews and calendars, the jobs and how they follow each other, and the rules that must hold, then generate schedules. Link a running simulation to use its equipment and live values.",
+  "inputs": {
+    "settings": {
+      "title": "New plan",
+      "timeZone": null,
+      "window": null,
+      "dataDate": null,
+      "grid": "30min",
+      "currency": "NOK",
+      "run": null
+    },
+    "equipment": [],
+    "groups": [],
+    "calendars": [],
+    "resources": [],
+    "purchases": [],
+    "methods": [],
+    "jobs": [],
+    "links": [],
+    "rules": [],
+    "goals": [
+      {
+        "metric": "finish",
+        "tolerance": {
+          "value": 0,
+          "unit": "h"
+        }
+      }
+    ],
+    "world": {
+      "refreshedAt": null,
+      "facts": []
+    }
+  }
+}
