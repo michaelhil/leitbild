@@ -48,6 +48,8 @@ export interface GenerateDeps {
   readonly verify: VerifyCertificate
   /** Lane K's re-derivation of each "proven optimal" bound: a goal is stored as proven only when it proves. */
   readonly verifyBound: VerifyBound
+  /** Runs each sub-solve; by default in this process on `engine` and these checks. Production: the pool's child. */
+  readonly subSolver?: SubSolver
   readonly certifiedSize?: CertifiedSize
   readonly now?: () => string
 }
@@ -133,6 +135,86 @@ const withOwnFloat = (inputs: PlanInputs, variant: Option['variant'], rows: Retu
   return withFloat(rows, totalFloat(prep, own.index, found.schedule), own.index)
 }
 
+/** One sub-solve: a variant's method combination of the plan, with the budget and seed Generate gives it. */
+export interface SubSolveTask {
+  readonly inputs: PlanInputs
+  readonly revision: number
+  readonly variant: { readonly key: string; readonly label: string; readonly buy: Buy }
+  readonly combo: readonly MethodPick[]
+  readonly budget: { readonly evals: number; readonly cpuMs: number; readonly wallMs: number }
+  readonly seed: number
+}
+export interface SubSolveOutcome {
+  readonly option: Option
+  readonly rounded: CompileIndex['rounded']
+  readonly dropped: CompileIndex['dropped']
+}
+/** What a sub-solve runs on: the search engine, lane K's checker and its re-verifications. */
+export interface SubSolveDeps { readonly engine: Engine; readonly check: CheckPlan; readonly verify: VerifyCertificate; readonly verifyBound: VerifyBound }
+/** Runs sub-solves: in this process (`subSolve`), or in a solver child process (pool.ts `subSolver`). */
+export type SubSolver = (task: SubSolveTask, signal: AbortSignal, stoppedByWho?: () => 'person' | 'host' | undefined) => Promise<SubSolveOutcome>
+
+/**
+ * A sub-solve: compile, bounds (a refusal stored as proof only when lane K proves it), search, dating,
+ * float on the option's own purchases, lane K's check and its bound re-derivation. Pure apart from the
+ * engine; the solver child runs exactly this.
+ */
+export const subSolve = (deps: SubSolveDeps): SubSolver => async (task, signal, stoppedByWho) => {
+  const { inputs, variant, combo, budget, seed } = task
+  const formulation = formulationOf(inputs.settings.grid)
+  const base = { key: variant.key, label: variant.label.slice(0, 160), inputsRevision: task.revision }
+  const compiled = compile(inputs, { methods: [...combo], buy: variant.buy })
+  if (!compiled.ok) return { option: { ...base, variant: { methods: [...combo], purchases: [] }, status: refusedStatus(compiled.word, compiled.problems), rows: [], metrics: [] }, rounded: [], dropped: [] }
+  const { problem, index } = compiled
+  const outcome = (option: Option): SubSolveOutcome => ({ option, rounded: index.rounded, dropped: index.dropped })
+  const variantOut = { methods: [...combo], purchases: [...index.allowedPurchases] }
+  const runBasis = (result: Pick<EngineResult, 'stoppedBy' | 'evals' | 'cpuMs'>) => {
+    const who = result.stoppedBy === 'cancelled' ? stoppedByWho?.() : undefined
+    return { grid: inputs.settings.grid, engine: deps.engine.name, formulation, seed, budget: { ...budget }, stoppedBy: result.stoppedBy, ...(who === undefined ? {} : { stoppedByWho: who }), evals: result.evals, cpuMs: Math.round(result.cpuMs) }
+  }
+  // Readiness blocks before any search: an input finding (a precondition not read from World, say) is
+  // "invalid input" with the checker's cause, whatever a schedule would look like.
+  const blockers = inputProblems(deps.check({ inputs, variant: variantOut, rows: [] }).violations)
+  if (blockers.length > 0) return outcome({ ...base, variant: variantOut, status: refusedStatus('invalid input', blockers), rows: [], metrics: [] })
+  const prep = prepare(problem)
+  const found = bounds(problem, index, prep)
+  // A refusal is stored as proof only when lane K re-verifies it with nothing left unverified.
+  if (found.certificate !== undefined && deps.verify(inputs, variantOut, found.certificate).proves) {
+    return outcome({ ...base, variant: variantOut, status: infeasibleStatus(found.certificate, runBasis({ stoppedBy: 'done', evals: 0, cpuMs: 0 })), rows: [], metrics: [] })
+  }
+  if (estimateMemoryMb(problem) > MEMORY_BUDGET_MB) throw planningError(413, 'above_certified_size', 'This plan is too large for the certified size', { estimateMb: Math.ceil(estimateMemoryMb(problem)) })
+  const result = await deps.engine.solve(problem, { budget: { ...budget, memoryMb: MEMORY_BUDGET_MB }, seed, signal: signal })
+  const run = runBasis(result)
+  const candidate = result.candidates[0]
+  if (candidate === undefined) return outcome({ ...base, variant: variantOut, status: result.stoppedBy === 'cancelled' ? cancelledStatus(run) : unresolvedStatus(run), rows: [], metrics: [] })
+  const late = problem.activities.flatMap((activity, a) => {
+    const finish = finishOf(prep, a, candidate.mode[a]!, candidate.start[a]!)
+    return finish < 0 || finish > activity.deadline ? [{ a, finish: finish < 0 ? problem.horizon : finish }] : []
+  })
+  if (late.length > 0) {
+    // Not a plan: the best attempt runs past the window. Its lateness is explanation only, not proof.
+    const worst = late.reduce((x, y) => (y.finish > x.finish ? y : x))
+    const job = index.jobs[worst.a] ?? problem.activities[worst.a]!.id
+    return outcome({
+      ...base, variant: variantOut, rows: [], metrics: [],
+      status: unresolvedStatus(run, { job, wouldFinish: slotInstant(index, worst.finish), pastWindowHours: (worst.finish - index.windowSlots) * index.slotMs / 3_600_000 }),
+    })
+  }
+  const dated = dateSchedule(prep, index, candidate)
+  // Cost and order lists come from what the rows use (plus purchases already ordered, charged anyway).
+  const used = [...new Set([...dated.flatMap(row => row.uses.flatMap(use => (use.purchase === undefined ? [] : [use.purchase]))), ...index.purchases.filter(purchase => purchase.committed).map(purchase => purchase.key)])]
+  const planned = { methods: [...combo], purchases: index.allowedPurchases.filter(key => used.includes(key)) }
+  const rows = withOwnFloat(inputs, planned, dated)
+  const report = deps.check({ inputs, variant: planned, rows })
+  const problems = inputProblems(report.violations)
+  if (problems.length > 0) return outcome({ ...base, variant: planned, status: refusedStatus('invalid input', problems), rows: [], metrics: [] })
+  if (report.violations.length > 0) return outcome({ ...base, variant: variantOut, status: unresolvedStatus(run), rows: [], metrics: [] })
+  // Every "proven optimal" carries its bound's certificate; lane K re-derives the bound, or it reads "best found".
+  const status = verifiedGoals(feasibleStatus(inputs.goals, run, report.goals, found.goals).status, (goal, bound) => deps.verifyBound(inputs, planned, goal, bound))
+  return outcome({ ...base, variant: planned, status, rows, metrics: metricsOf(problem, index, report.goals) })
+}
+
+
 export const generate = async (deps: GenerateDeps, request: GenerateRequest): Promise<GenerateResult> => {
   const { inputs } = request
   const certified = deps.certifiedSize ?? CERTIFIED_SIZE
@@ -151,59 +233,13 @@ export const generate = async (deps: GenerateDeps, request: GenerateRequest): Pr
   const rounded: Array<CompileIndex['rounded'][number]> = []
   const dropped: Array<CompileIndex['dropped'][number]> = []
 
+  const runSubSolve = deps.subSolver ?? subSolve(deps)
   const solveOne = async (variant: Variant, combo: MethodPick[]): Promise<Option> => {
-    const base = { key: variant.key, label: variant.label.slice(0, 160), inputsRevision: request.revision }
-    const compiled = compile(inputs, { methods: combo, buy: variant.buy })
-    if (!compiled.ok) return { ...base, variant: { methods: combo, purchases: [] }, status: refusedStatus(compiled.word, compiled.problems), rows: [], metrics: [] }
-    const { problem, index } = compiled
-    rounded.push(...index.rounded.filter(entry => !rounded.some(known => known.about === entry.about && known.code === entry.code)))
-    dropped.push(...index.dropped.filter(entry => !dropped.some(known => known.purchase === entry.purchase)))
-    const variantOut = { methods: combo, purchases: [...index.allowedPurchases] }
     const budget = { evals: request.evals ?? Number.MAX_SAFE_INTEGER, cpuMs: Math.round(share.cpuMs), wallMs: Math.round(share.wallMs) }
-    const runBasis = (result: Pick<EngineResult, 'stoppedBy' | 'evals' | 'cpuMs'>) => {
-      const who = result.stoppedBy === 'cancelled' ? request.stoppedByWho?.() : undefined
-      return { grid: inputs.settings.grid, engine: deps.engine.name, formulation, seed, budget, stoppedBy: result.stoppedBy, ...(who === undefined ? {} : { stoppedByWho: who }), evals: result.evals, cpuMs: Math.round(result.cpuMs) }
-    }
-    // Readiness blocks before any search: an input finding (a precondition not read from World, say) is
-    // "invalid input" with the checker's cause, whatever a schedule would look like.
-    const blockers = inputProblems(deps.check({ inputs, variant: variantOut, rows: [] }).violations)
-    if (blockers.length > 0) return { ...base, variant: variantOut, status: refusedStatus('invalid input', blockers), rows: [], metrics: [] }
-    const prep = prepare(problem)
-    const found = bounds(problem, index, prep)
-    // A refusal is stored as proof only when lane K re-verifies it with nothing left unverified.
-    if (found.certificate !== undefined && deps.verify(inputs, variantOut, found.certificate).proves) {
-      return { ...base, variant: variantOut, status: infeasibleStatus(found.certificate, runBasis({ stoppedBy: 'done', evals: 0, cpuMs: 0 })), rows: [], metrics: [] }
-    }
-    if (estimateMemoryMb(problem) > MEMORY_BUDGET_MB) throw planningError(413, 'above_certified_size', 'This plan is too large for the certified size', { estimateMb: Math.ceil(estimateMemoryMb(problem)) })
-    const result = await deps.engine.solve(problem, { budget: { ...budget, memoryMb: MEMORY_BUDGET_MB }, seed, signal: request.signal })
-    const run = runBasis(result)
-    const candidate = result.candidates[0]
-    if (candidate === undefined) return { ...base, variant: variantOut, status: result.stoppedBy === 'cancelled' ? cancelledStatus(run) : unresolvedStatus(run), rows: [], metrics: [] }
-    const late = problem.activities.flatMap((activity, a) => {
-      const finish = finishOf(prep, a, candidate.mode[a]!, candidate.start[a]!)
-      return finish < 0 || finish > activity.deadline ? [{ a, finish: finish < 0 ? problem.horizon : finish }] : []
-    })
-    if (late.length > 0) {
-      // Not a plan: the best attempt runs past the window. Its lateness is explanation only, not proof.
-      const worst = late.reduce((x, y) => (y.finish > x.finish ? y : x))
-      const job = index.jobs[worst.a] ?? problem.activities[worst.a]!.id
-      return {
-        ...base, variant: variantOut, rows: [], metrics: [],
-        status: unresolvedStatus(run, { job, wouldFinish: slotInstant(index, worst.finish), pastWindowHours: (worst.finish - index.windowSlots) * index.slotMs / 3_600_000 }),
-      }
-    }
-    const dated = dateSchedule(prep, index, candidate)
-    // Cost and order lists come from what the rows use (plus purchases already ordered, charged anyway).
-    const used = [...new Set([...dated.flatMap(row => row.uses.flatMap(use => (use.purchase === undefined ? [] : [use.purchase]))), ...index.purchases.filter(purchase => purchase.committed).map(purchase => purchase.key)])]
-    const planned = { methods: combo, purchases: index.allowedPurchases.filter(key => used.includes(key)) }
-    const rows = withOwnFloat(inputs, planned, dated)
-    const report = deps.check({ inputs, variant: planned, rows })
-    const problems = inputProblems(report.violations)
-    if (problems.length > 0) return { ...base, variant: planned, status: refusedStatus('invalid input', problems), rows: [], metrics: [] }
-    if (report.violations.length > 0) return { ...base, variant: variantOut, status: unresolvedStatus(run), rows: [], metrics: [] }
-    // Every "proven optimal" carries its bound's certificate; lane K re-derives the bound, or it reads "best found".
-    const status = verifiedGoals(feasibleStatus(inputs.goals, run, report.goals, found.goals).status, (goal, bound) => deps.verifyBound(inputs, planned, goal, bound))
-    return { ...base, variant: planned, status, rows, metrics: metricsOf(problem, index, report.goals) }
+    const outcome = await runSubSolve({ inputs, revision: request.revision, variant: { key: variant.key, label: variant.label, buy: variant.buy }, combo, budget, seed }, request.signal, request.stoppedByWho)
+    rounded.push(...outcome.rounded.filter(entry => !rounded.some(known => known.about === entry.about && known.code === entry.code)))
+    dropped.push(...outcome.dropped.filter(entry => !dropped.some(known => known.purchase === entry.purchase)))
+    return outcome.option
   }
 
   const fresh: Option[] = []

@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'bun:test'
 import { compile } from './compile.ts'
 import { generate, rawOf } from './generate.ts'
-import { createSolverPool, SOLVER_CPU_CAP_CORES } from './pool.ts'
+import { createSolverPool, SOLVER_BUSY_WORDS, SOLVER_CPU_CAP_CORES } from './pool.ts'
 import { goalKeys, compareKeys } from './rank.ts'
 import { laneKCheck, laneKVerify, laneKVerifyBound } from './fixtures/lane-k.ts'
 import { trainAInputs } from './fixtures/train-a-case.ts'
@@ -55,15 +55,15 @@ describe('cancel', () => {
     expect(result.optionSet.options.every(option => option.inputsRevision === 2)).toBe(true)
   }, 60_000)
 
-  test('a third solve while two run is refused as busy; the memory guard stops a solve', async () => {
+  test('a second solve while one runs is refused as busy, never queued; the memory guard stops a solve', async () => {
     const compiled = compile(inputs, { methods: [{ choice: 'SWA-method', option: 'swap' }], buy: 'allowed' })
     if (!compiled.ok) throw new Error('compiles')
     const budget = { evals: Number.MAX_SAFE_INTEGER, cpuMs: 1_000, wallMs: 2_000, memoryMb: 80 }
     const busyPool = createSolverPool()
     const signal = new AbortController().signal
-    const running = [busyPool.solve(compiled.problem, { budget, seed: 1, signal }), busyPool.solve(compiled.problem, { budget, seed: 2, signal })]
-    await expect(busyPool.solve(compiled.problem, { budget, seed: 3, signal })).rejects.toMatchObject({ code: 'planning_busy' })
-    await Promise.all(running)
+    const running = busyPool.solve(compiled.problem, { budget, seed: 1, signal })
+    await expect(busyPool.solve(compiled.problem, { budget, seed: 2, signal })).rejects.toMatchObject({ status: 409, code: 'solver_busy', message: SOLVER_BUSY_WORDS })
+    await running
     const tight = createSolverPool({ rssLimitMb: 1 })
     expect((await tight.solve(compiled.problem, { budget, seed: 1, signal })).stoppedBy).toBe('memory')
     await expect(busyPool.solve(compiled.problem, { budget: { ...budget, memoryMb: 0.01 }, seed: 1, signal })).rejects.toMatchObject({ code: 'above_certified_size' })
@@ -72,8 +72,8 @@ describe('cancel', () => {
   test('solves stay within the CPU cap together, and the records show it', async () => {
     const compiled = compile(inputs, { methods: [{ choice: 'SWA-method', option: 'swap' }], buy: 'allowed' })
     if (!compiled.ok) throw new Error('compiles')
-    // The test runner's own memory counts in the process RSS, so the memory guard is set out of the way.
-    const capped = createSolverPool({ rssLimitMb: 4_000 })
+    // The pool can still run two at once when asked to (the service runs one); the cap holds across both.
+    const capped = createSolverPool({ rssLimitMb: 4_000, maxSolves: 2 })
     const signal = new AbortController().signal
     // Each asks for a full core over 3 s; alone it gets the cap, 0.4 x 3 s = 1.2 CPU-s.
     const wallMs = 3_000

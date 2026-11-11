@@ -1,4 +1,4 @@
-// At most two solves at once, each in its own short-lived Bun child process (child.ts), behind the Engine
+// One solve at a time (a second is refused 'solver_busy'), in its own short-lived Bun child process (child.ts), behind the Engine
 // seam: a solve's memory goes back to the OS when its process ends, so the service does not grow solve by
 // solve (walk 3, R3-3). Budgets are CPU (within SOLVER_CPU_CAP_CORES together, across the children), wall
 // and evaluations. Before a solve its memory is estimated and a plan over `budget.memoryMb` is refused;
@@ -9,7 +9,10 @@
 import { planningError } from '../errors.ts'
 import { SOLVER_VERSIONS } from './search.ts'
 import type { Engine, EngineResult, NormalizedProblem } from './problem.ts'
-import { encodeProblem, encodeSchedule, resultFromWire, type ChildRequest, type ChildResponse } from './wire.ts'
+import { formulationOf } from './compile.ts'
+import type { SubSolveOutcome, SubSolver } from './generate.ts'
+import { unresolvedStatus } from './status.ts'
+import { decode, encode, encodeProblem, encodeSchedule, outcomeFromWire, resultFromWire, type ChildRequest, type ChildResponse } from './wire.ts'
 
 /** A rough upper estimate of one solve's working memory in MB: slot arrays, modes and links, copied a few times. */
 export const estimateMemoryMb = (problem: NormalizedProblem): number => {
@@ -28,12 +31,16 @@ export const estimateMemoryMb = (problem: NormalizedProblem): number => {
 export const SOLVER_CPU_CAP_CORES = 0.8 * 0.5
 
 /**
- * A solver child's own RSS ceiling (MB). Measured on macOS: a child peaks at 84-93 MB on the flagship and
- * 97 MB on or's S33v3, so 110 MB lets a certified-size solve finish. The service levels off near 200 MB, so
- * service plus one child (about 300 MB) is still above the unit's 256 MB MemoryMax: an open decision, and the
- * Linux proof is the Release A ops gate.
+ * A solver child's own RSS ceiling (MB). Measured on macOS with the whole sub-solve in the child (compile,
+ * bounds, search, lane K's check): 140 MB on the flagship, 133 MB on or's S33v3, so 150 MB lets a
+ * certified-size solve finish. The service itself stays near 66 MB through a Generate; lane K's re-checks in
+ * the operations raise it to about 170 MB, so service plus child can still pass 256 MB: an open decision,
+ * and the Linux proof is the Release A ops gate.
  */
-export const CHILD_RSS_LIMIT_MB = 110
+export const CHILD_RSS_LIMIT_MB = 150
+
+/** One solve at a time across the service (walk 3 decision): a second is refused, never queued. */
+export const SOLVER_BUSY_WORDS = 'Planning is generating another plan; try again in about 20 seconds.'
 
 export interface PoolOptions {
   readonly maxSolves?: number
@@ -56,6 +63,8 @@ export interface SolveRecord {
 }
 
 export interface SolverPool extends Engine {
+  /** Generate's sub-solves, each whole in a child (compile, bounds, search, lane K's check). */
+  readonly subSolver: SubSolver
   readonly active: () => number
   /** The last 100 solves. */
   readonly records: () => readonly SolveRecord[]
@@ -69,7 +78,7 @@ export interface SolverPool extends Engine {
 interface Running { readonly rate: number; readonly wallMs: number; readonly startedAt: number; readonly rebudget: (rate: number) => void; readonly stop: () => void; readonly settled: Promise<unknown> }
 
 export const createSolverPool = (options: PoolOptions = {}): SolverPool => {
-  const maxSolves = options.maxSolves ?? 2
+  const maxSolves = options.maxSolves ?? 1
   const rssLimitMb = options.rssLimitMb ?? CHILD_RSS_LIMIT_MB
   const sampleMs = options.sampleMs ?? 100
   const graceMs = options.cancelGraceMs ?? 1_000
@@ -80,74 +89,137 @@ export const createSolverPool = (options: PoolOptions = {}): SolverPool => {
   const records: SolveRecord[] = []
   let stopping = false
   let next = 0
-  const solve: Engine['solve'] = (problem, solveOptions) => {
-    if (stopping) return Promise.reject(planningError(503, 'planning_stopping', 'Planning is shutting down; try again shortly'))
-    if (running.size >= maxSolves) return Promise.reject(planningError(503, 'planning_busy', 'Two plans are being generated; try again when one finishes'))
-    if (estimateMemoryMb(problem) > solveOptions.budget.memoryMb) {
-      return Promise.reject(planningError(413, 'above_certified_size', 'This plan is too large for the certified size', { estimateMb: Math.ceil(estimateMemoryMb(problem)), limitMb: solveOptions.budget.memoryMb }))
-    }
-    // CPU admission: a fair share of the cap per solve when several run; the running ones give way.
-    const share = cap / (running.size + 1)
-    for (const other of running.values()) if (other.rate > share) other.rebudget(share)
-    const requested = solveOptions.budget.cpuMs / solveOptions.budget.wallMs
-    const rate = Math.min(requested, running.size === 0 ? cap : share)
+
+  /** Admission: refused while shutting down or while the pool is full ('solver_busy', never queued). */
+  const admit = (): void => {
+    if (stopping) throw planningError(503, 'planning_stopping', 'Planning is shutting down; try again shortly')
+    if (running.size >= maxSolves) throw planningError(409, 'solver_busy', SOLVER_BUSY_WORDS)
+  }
+
+  /**
+   * One child for one job: spawned, sent `request`, and answered once (its answer, a refusal, an error, or no
+   * answer). A cancel is answered within `graceMs` or the child is killed; a child that ends without an
+   * answer gives `unanswered('ended')`. The child is always gone when the job settles.
+   */
+  const job = <T>(spec: {
+    readonly request: (id: string) => ChildRequest
+    readonly rate: number
+    readonly wallMs: number
+    readonly grantedCpuMs: number
+    readonly signal: AbortSignal
+    readonly stoppedByWho?: () => 'person' | 'host' | undefined
+    readonly answer: (message: Extract<ChildResponse, { type: 'result' | 'outcome' }>) => { readonly value: T; readonly record: Omit<SolveRecord, 'id' | 'grantedCpuMs' | 'spawnToAnswerMs'> } | { readonly problem: string }
+    readonly unanswered: (stoppedBy: 'cancelled' | 'ended', wallMs: number) => { readonly value: T; readonly record: Omit<SolveRecord, 'id' | 'grantedCpuMs' | 'spawnToAnswerMs'> }
+  }): Promise<T> => {
     const id = `solve-${++next}`
-    const budget = { ...solveOptions.budget, cpuMs: Math.floor(rate * solveOptions.budget.wallMs) }
     const startedAt = performance.now()
     let resolveSettled: (value: unknown) => void = () => {}
     const settled = new Promise(resolve => { resolveSettled = resolve })
-    return new Promise<EngineResult>((resolve, reject) => {
+    return new Promise<T>((resolve, reject) => {
       let done = false
       let grace: ReturnType<typeof setTimeout> | undefined
       let stopReason: 'cancelled' | undefined
-      const finish = (outcome: () => void, result?: EngineResult, peakRssMb?: number): void => {
+      const finish = (outcome: () => void, record?: Omit<SolveRecord, 'id' | 'grantedCpuMs' | 'spawnToAnswerMs'>): void => {
         if (done) return
         done = true
         if (grace !== undefined) clearTimeout(grace)
-        solveOptions.signal.removeEventListener('abort', onAbort)
+        spec.signal.removeEventListener('abort', onAbort)
         if (child.exitCode === null && child.signalCode === null) child.kill('SIGKILL')
         running.delete(id)
-        if (result !== undefined) {
-          records.push({ id, grantedCpuMs: budget.cpuMs, wallMs: result.wallMs, cpuMs: result.cpuMs, evals: result.evals, stoppedBy: result.stoppedBy, spawnToAnswerMs: Math.round(performance.now() - startedAt), ...(peakRssMb === undefined ? {} : { peakRssMb }) })
+        if (record !== undefined) {
+          records.push({ id, grantedCpuMs: spec.grantedCpuMs, spawnToAnswerMs: Math.round(performance.now() - startedAt), ...record })
           if (records.length > 100) records.shift()
         }
         resolveSettled(undefined)
         outcome()
       }
-      /** No answer: the child was killed after a cancel, or ended on its own ('ended', said as such). */
-      const unanswered = (stoppedBy: EngineResult['stoppedBy']): EngineResult => ({ candidates: [], stoppedBy, evals: 0, cpuMs: 0, wallMs: performance.now() - startedAt, bounds: [] })
+      const settle = (answer: { readonly value: T; readonly record: Omit<SolveRecord, 'id' | 'grantedCpuMs' | 'spawnToAnswerMs'> }): void => finish(() => resolve(answer.value), answer.record)
       const send = (request: ChildRequest): void => { if (!done) child.send(request) }
       const child = Bun.spawn([process.execPath, ...(smol ? ['--smol'] : []), childEntry], {
         stdin: 'ignore', stdout: 'inherit', stderr: 'inherit', serialization: 'json',
         ipc: (message: ChildResponse) => {
           if (message.id !== id) return
           if (message.type === 'error') { finish(() => reject(new Error(`The solver failed: ${message.message}`))); return }
-          const result = resultFromWire(message.result)
-          if ('problem' in result) { finish(() => reject(new Error(`The solver process answered with an unreadable result: ${result.problem}`))); return }
-          finish(() => resolve(result), result, message.peakRssMb)
+          if (message.type === 'refusal') { finish(() => reject(planningError(message.status, message.code, message.message, message.details === undefined ? undefined : decode(message.details) as Record<string, unknown>))); return }
+          const answer = spec.answer(message)
+          if ('problem' in answer) { finish(() => reject(new Error(`The solver process answered with an unreadable result: ${answer.problem}`))); return }
+          settle(answer)
         },
       })
-      void child.exited.then(() => {
-        const result = unanswered(stopReason ?? 'ended')
-        finish(() => resolve(result), result)
-      })
+      void child.exited.then(() => settle(spec.unanswered(stopReason ?? 'ended', performance.now() - startedAt)))
       const stop = (): void => {
         stopReason = 'cancelled'
-        send({ type: 'cancel', id })
-        grace ??= setTimeout(() => { const result = unanswered('cancelled'); finish(() => resolve(result), result) }, graceMs)
+        const who = spec.stoppedByWho?.()
+        send({ type: 'cancel', id, ...(who === undefined ? {} : { who }) })
+        grace ??= setTimeout(() => settle(spec.unanswered('cancelled', performance.now() - startedAt)), graceMs)
       }
       const onAbort = (): void => stop()
-      running.set(id, { rate, wallMs: budget.wallMs, startedAt, stop, settled, rebudget: (lower: number) => send({ type: 'rebudget', id, rate: lower }) })
-      solveOptions.signal.addEventListener('abort', onAbort)
-      send({ type: 'solve', id, problem: encodeProblem(problem), budget, seed: solveOptions.seed, rssLimitMb, sampleMs, ...(solveOptions.initial === undefined ? {} : { initial: encodeSchedule(solveOptions.initial) }) })
-      if (solveOptions.signal.aborted) stop()
+      running.set(id, { rate: spec.rate, wallMs: spec.wallMs, startedAt, stop, settled, rebudget: (lower: number) => send({ type: 'rebudget', id, rate: lower }) })
+      spec.signal.addEventListener('abort', onAbort)
+      send(spec.request(id))
+      if (spec.signal.aborted) stop()
     })
   }
+
+  /** CPU admission: a fair share of the cap per job when several run; the running ones give way. */
+  const rateFor = (cpuMs: number, wallMs: number): number => {
+    const share = cap / (running.size + 1)
+    for (const other of running.values()) if (other.rate > share) other.rebudget(share)
+    return Math.min(cpuMs / wallMs, running.size === 0 ? cap : share)
+  }
+
+  const solve: Engine['solve'] = async (problem, solveOptions) => {
+    admit()
+    if (estimateMemoryMb(problem) > solveOptions.budget.memoryMb) {
+      throw planningError(413, 'above_certified_size', 'This plan is too large for the certified size', { estimateMb: Math.ceil(estimateMemoryMb(problem)), limitMb: solveOptions.budget.memoryMb })
+    }
+    const rate = rateFor(solveOptions.budget.cpuMs, solveOptions.budget.wallMs)
+    const budget = { ...solveOptions.budget, cpuMs: Math.floor(rate * solveOptions.budget.wallMs) }
+    const recordOf = (result: EngineResult) => ({ wallMs: result.wallMs, cpuMs: result.cpuMs, evals: result.evals, stoppedBy: result.stoppedBy })
+    return job<EngineResult>({
+      request: id => ({ type: 'solve', id, problem: encodeProblem(problem), budget, seed: solveOptions.seed, rssLimitMb, sampleMs, ...(solveOptions.initial === undefined ? {} : { initial: encodeSchedule(solveOptions.initial) }) }),
+      rate, wallMs: budget.wallMs, grantedCpuMs: budget.cpuMs, signal: solveOptions.signal,
+      answer: message => {
+        const result = message.type === 'result' ? resultFromWire(message.result) : { problem: 'a search answered with a sub-solve outcome' }
+        return 'problem' in result ? result : { value: result, record: { ...recordOf(result), peakRssMb: message.peakRssMb } }
+      },
+      unanswered: (stoppedBy, wallMs) => { const result: EngineResult = { candidates: [], stoppedBy, evals: 0, cpuMs: 0, wallMs, bounds: [] }; return { value: result, record: recordOf(result) } },
+    })
+  }
+
+  /**
+   * A whole sub-solve of Generate in a child (generate.ts subSolve): the service keeps none of its compile,
+   * bounds, search or check memory. The outcome is validated against the plan schema before it is used.
+   */
+  const subSolver: SubSolver = async (task, signal, stoppedByWho) => {
+    admit()
+    const rate = rateFor(task.budget.cpuMs, task.budget.wallMs)
+    const budget = { ...task.budget, cpuMs: Math.floor(rate * task.budget.wallMs) }
+    const runOf = (outcome: SubSolveOutcome) => ('run' in outcome.option.status ? outcome.option.status.run : undefined)
+    return job<SubSolveOutcome>({
+      request: id => ({ type: 'subsolve', id, task: encode({ ...task, budget }), rssLimitMb, sampleMs }),
+      rate, wallMs: budget.wallMs, grantedCpuMs: budget.cpuMs, signal, ...(stoppedByWho === undefined ? {} : { stoppedByWho }),
+      answer: message => {
+        const outcome = message.type === 'outcome' ? outcomeFromWire(message.outcome) : { problem: 'a sub-solve answered with a bare search result' }
+        if ('problem' in outcome) return outcome
+        const run = runOf(outcome)
+        return { value: outcome, record: { wallMs: 0, cpuMs: run?.cpuMs ?? 0, evals: run?.evals ?? 0, stoppedBy: run?.stoppedBy ?? 'done', peakRssMb: message.peakRssMb } }
+      },
+      // No answer: the sub-solve's option says so in its own words (unresolved, the process ended or was cancelled).
+      unanswered: (stoppedBy, wallMs) => {
+        const who = stoppedBy === 'cancelled' ? stoppedByWho?.() : undefined
+        const status = unresolvedStatus({ grid: task.inputs.settings.grid, engine: SOLVER_VERSIONS.engine, formulation: formulationOf(task.inputs.settings.grid), seed: task.seed, budget: { ...budget }, stoppedBy, ...(who === undefined ? {} : { stoppedByWho: who }), evals: 0, cpuMs: 0 })
+        const option = { key: task.variant.key, label: task.variant.label.slice(0, 160), inputsRevision: task.revision, variant: { methods: [...task.combo], purchases: [] }, status, rows: [], metrics: [] }
+        return { value: { option, rounded: [], dropped: [] }, record: { wallMs, cpuMs: 0, evals: 0, stoppedBy } }
+      },
+    })
+  }
+
   const shutdown = async (): Promise<void> => {
     stopping = true
     const all = [...running.values()]
     for (const entry of all) entry.stop()
     await Promise.all(all.map(entry => entry.settled))
   }
-  return { name: SOLVER_VERSIONS.engine, solve, active: () => running.size, records: () => [...records], shutdown }
+  return { name: SOLVER_VERSIONS.engine, solve, subSolver, active: () => running.size, records: () => [...records], shutdown }
 }

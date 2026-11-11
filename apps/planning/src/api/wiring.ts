@@ -4,6 +4,7 @@ import { checkPlan, inputCodes, type CheckRow } from '../check/check.ts'
 import { recheckOption } from '../check/recheck.ts'
 import { verifyCertificate } from '../check/certificate.ts'
 import { verifyBound } from '../check/optimal.ts'
+import { checkForSolver } from '../solve/lane-k-ports.ts'
 import { bounds } from '../solve/bounds.ts'
 import { compile, formulationOf, type CompileIndex } from '../solve/compile.ts'
 import { dateSchedule, undate } from '../solve/date.ts'
@@ -11,7 +12,7 @@ import { finishOf, nearestFit, prepare, repair, type Prepared } from '../solve/d
 import { makeExplainer, refusalLines, type ExplainItem } from '../solve/explain.ts'
 import { totalFloat, withFloat } from '../solve/float.ts'
 import { CERTIFIED_SIZE, generate } from '../solve/generate.ts'
-import type { SolverPool } from '../solve/pool.ts'
+import { SOLVER_BUSY_WORDS, type SolverPool } from '../solve/pool.ts'
 import type { Schedule } from '../solve/problem.ts'
 import type { CheckPlan } from '../solve/status.ts'
 import type { Plan, PlanInputs } from '../plan/schema.ts'
@@ -23,14 +24,6 @@ import type { CheckerPort, ExplainResult, SolverPort } from './operations.ts'
 
 type Option = NonNullable<Plan['options']>['options'][number]
 
-/** Lane K's checker in the shape lane S's Generate asks for: violations and the raw goal values. */
-export const checkForSolver: CheckPlan = ({ inputs, variant, rows }) => {
-  const result = checkPlan(inputs, variant, rows)
-  return {
-    violations: result.violations.map(violation => ({ code: violation.code, about: violation.about })),
-    goals: result.goals.map(goal => goal.metric === 'span-over' ? goal.spans.map(span => span.value) : goal.value),
-  }
-}
 
 /**
  * Every shown or stored status is re-checked by lane K; proof is decided on the certificate's `proves`, and
@@ -117,57 +110,67 @@ const lockAgainstSaved = (inputs: PlanInputs, option: Option, index: CompileInde
 }
 
 /** Lane S's Generate on the Worker pool, its explainer and preview re-timing, checked by lane K. */
-export const createRealSolver = (pool: SolverPool): SolverPort => ({
-  certifiedSize: CERTIFIED_SIZE,
-  formulation: grid => formulationOf(grid),
-  generate: async request => (await generate({ engine: pool, check: checkForSolver, verify: verifyCertificate, verifyBound, certifiedSize: CERTIFIED_SIZE }, {
-    inputs: request.inputs, revision: request.inputsRevision, previous: request.stored,
-    input: { ...(request.variants === undefined ? {} : { variants: [...request.variants] }), seconds: request.seconds },
-    by: request.by, signal: request.signal, ...(request.stoppedByWho === undefined ? {} : { stoppedByWho: request.stoppedByWho }),
-  })).optionSet,
-  explain: async ({ inputs, option, ask, job }) => {
-    const { problem, index, prep } = compiled(inputs, option)
-    if (ask === 'refusal') {
-      if (option.status.word !== 'proven infeasible') {
-        const attempt = option.status.word === 'unresolved' ? option.status.attempt : undefined
-        return { lines: [attempt === undefined ? 'No proof either way: the search found no plan in the time allowed. That is not proof that none exists.'
-          : `No proof either way: the best attempt finishes ${nameOf(inputs, attempt.job)} ${attempt.pastWindowHours} h past the window. That is not proof that none exists.`], items: [] }
+export const createRealSolver = (pool: SolverPool): SolverPort => {
+  let generating = false
+  return {
+    certifiedSize: CERTIFIED_SIZE,
+    formulation: grid => formulationOf(grid),
+    // One Generate at a time across the service, from any plan or Workspace: a second is refused, never queued.
+    generate: async request => {
+      if (generating) throw planningError(409, 'solver_busy', SOLVER_BUSY_WORDS)
+      generating = true
+      try {
+        return (await generate({ engine: pool, check: checkForSolver, verify: verifyCertificate, verifyBound, subSolver: pool.subSolver, certifiedSize: CERTIFIED_SIZE }, {
+          inputs: request.inputs, revision: request.inputsRevision, previous: request.stored,
+          input: { ...(request.variants === undefined ? {} : { variants: [...request.variants] }), seconds: request.seconds },
+          by: request.by, signal: request.signal, ...(request.stoppedByWho === undefined ? {} : { stoppedByWho: request.stoppedByWho }),
+        })).optionSet
+      } finally { generating = false }
+    },
+    explain: async ({ inputs, option, ask, job }) => {
+      const { problem, index, prep } = compiled(inputs, option)
+      if (ask === 'refusal') {
+        if (option.status.word !== 'proven infeasible') {
+          const attempt = option.status.word === 'unresolved' ? option.status.attempt : undefined
+          return { lines: [attempt === undefined ? 'No proof either way: the search found no plan in the time allowed. That is not proof that none exists.'
+            : `No proof either way: the best attempt finishes ${nameOf(inputs, attempt.job)} ${attempt.pastWindowHours} h past the window. That is not proof that none exists.`], items: [] }
+        }
+        // The second (energy) proof is worded only when lane K re-verifies it too.
+        const span = bounds(problem, index, prep).span
+        const shown = span?.alsoProven === undefined || verifyCertificate(inputs, option.variant, span.alsoProven).proves ? span : (({ alsoProven: _also, ...rest }) => rest)(span)
+        return bounded({ lines: refusalLines(option.status.cause, inputs, shown, option.variant.purchases), items: [] })
       }
-      // The second (energy) proof is worded only when lane K re-verifies it too.
-      const span = bounds(problem, index, prep).span
-      const shown = span?.alsoProven === undefined || verifyCertificate(inputs, option.variant, span.alsoProven).proves ? span : (({ alsoProven: _also, ...rest }) => rest)(span)
-      return bounded({ lines: refusalLines(option.status.cause, inputs, shown, option.variant.purchases), items: [] })
-    }
-    const schedule = scheduleOf(prep, index, option)
-    const dataDate = inputs.settings.dataDate === null ? undefined : Math.floor((Date.parse(inputs.settings.dataDate) - index.origin) / index.slotMs)
-    const explainer = makeExplainer({ prep, index, schedule, floats: totalFloat(prep, index, schedule), purchases: option.variant.purchases, inputs, ...(dataDate === undefined || dataDate < 0 || dataDate >= index.windowSlots ? {} : { dataDateSlot: dataDate }) })
-    const activity = job === undefined ? undefined : index.jobs.indexOf(job)
-    if (job !== undefined && (activity === undefined || activity < 0)) throw planningError(400, 'unknown_reference', `${job} is not in this option's schedule`, { about: [job] })
-    const items = ask === 'why-start'
-      ? [explainer.whyStart(activity ?? index.jobs.findIndex(key => key !== null))]
-      : explainer.finishChain(activity)
-    return bounded({ lines: items.map(item => lineOf(inputs, item)), items })
-  },
-  preview: async ({ inputs, option }) => {
-    // Repair from the option's own dated schedule: with no edit it comes back exactly; after an edit only
-    // the jobs it forces, and what they push, move.
-    const { index, prep } = compiled(inputs, option)
-    const saved = scheduleOf(prep, index, option, true)
-    const { decoded } = repair(prep, saved)
-    const lost = decoded.finish.findIndex((finish, a) => index.jobs[a] !== null && finish >= prep.H)
-    if (lost >= 0) throw planningError(409, 'option_stale', `After this edit ${nameOf(inputs, index.jobs[lost]!)} has no time left in the plan's horizon; generate again`, { about: [index.jobs[lost]!] })
-    const schedule = { start: decoded.start, mode: decoded.mode }
-    // A preview may show an edit that breaks a limit in every schedule (a test lengthened past the span
-    // limit), with no repair penalty: float is measured as for an overrun, which is the same on a schedule
-    // that keeps every limit; the check names the break.
-    const rows = withFloat(dateSchedule(prep, index, schedule), totalFloat(prep, index, schedule, true), index)
-    const check = checkPlan(inputs, option.variant, rows)
-    const lock = lockAgainstSaved(inputs, option, index, prep, saved)
-    const result = {
-      rows,
-      violations: check.violations.map(violation => ({ code: violation.code, about: violation.about, words: violation.words })),
-      ...(lock === undefined ? {} : { lockFindings: lock.findings, ...(lock.nearest === undefined ? {} : { nearestAllowed: { job: lock.job, at: lock.nearest } }) }),
-    }
-    return result
-  },
-})
+      const schedule = scheduleOf(prep, index, option)
+      const dataDate = inputs.settings.dataDate === null ? undefined : Math.floor((Date.parse(inputs.settings.dataDate) - index.origin) / index.slotMs)
+      const explainer = makeExplainer({ prep, index, schedule, floats: totalFloat(prep, index, schedule), purchases: option.variant.purchases, inputs, ...(dataDate === undefined || dataDate < 0 || dataDate >= index.windowSlots ? {} : { dataDateSlot: dataDate }) })
+      const activity = job === undefined ? undefined : index.jobs.indexOf(job)
+      if (job !== undefined && (activity === undefined || activity < 0)) throw planningError(400, 'unknown_reference', `${job} is not in this option's schedule`, { about: [job] })
+      const items = ask === 'why-start'
+        ? [explainer.whyStart(activity ?? index.jobs.findIndex(key => key !== null))]
+        : explainer.finishChain(activity)
+      return bounded({ lines: items.map(item => lineOf(inputs, item)), items })
+    },
+    preview: async ({ inputs, option }) => {
+      // Repair from the option's own dated schedule: with no edit it comes back exactly; after an edit only
+      // the jobs it forces, and what they push, move.
+      const { index, prep } = compiled(inputs, option)
+      const saved = scheduleOf(prep, index, option, true)
+      const { decoded } = repair(prep, saved)
+      const lost = decoded.finish.findIndex((finish, a) => index.jobs[a] !== null && finish >= prep.H)
+      if (lost >= 0) throw planningError(409, 'option_stale', `After this edit ${nameOf(inputs, index.jobs[lost]!)} has no time left in the plan's horizon; generate again`, { about: [index.jobs[lost]!] })
+      const schedule = { start: decoded.start, mode: decoded.mode }
+      // A preview may show an edit that breaks a limit in every schedule (a test lengthened past the span
+      // limit), with no repair penalty: float is measured as for an overrun, which is the same on a schedule
+      // that keeps every limit; the check names the break.
+      const rows = withFloat(dateSchedule(prep, index, schedule), totalFloat(prep, index, schedule, true), index)
+      const check = checkPlan(inputs, option.variant, rows)
+      const lock = lockAgainstSaved(inputs, option, index, prep, saved)
+      const result = {
+        rows,
+        violations: check.violations.map(violation => ({ code: violation.code, about: violation.about, words: violation.words })),
+        ...(lock === undefined ? {} : { lockFindings: lock.findings, ...(lock.nearest === undefined ? {} : { nearestAllowed: { job: lock.job, at: lock.nearest } }) }),
+      }
+      return result
+    },
+  }
+}

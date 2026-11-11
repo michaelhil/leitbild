@@ -1,16 +1,23 @@
 // The solver process boundary (pool.ts <-> child.ts): messages are JSON. Typed arrays and non-finite numbers
 // are tagged on the way out and restored on the way in; a result is validated before the pool trusts it.
 import { z } from 'zod'
+import { optionSchema } from '../plan/schema.ts'
+import type { SubSolveOutcome } from './generate.ts'
 import type { EngineBudget, EngineResult, NormalizedProblem, Schedule } from './problem.ts'
 
 export type ChildRequest =
   | { readonly type: 'solve'; readonly id: string; readonly problem: unknown; readonly budget: EngineBudget; readonly seed: number; readonly initial?: unknown; readonly rssLimitMb: number; readonly sampleMs: number }
-  | { readonly type: 'cancel'; readonly id: string }
+  /** A whole sub-solve (generate.ts subSolve): compile, bounds, search and lane K's check, in the child. */
+  | { readonly type: 'subsolve'; readonly id: string; readonly task: unknown; readonly rssLimitMb: number; readonly sampleMs: number }
+  | { readonly type: 'cancel'; readonly id: string; readonly who?: 'person' | 'host' }
   /** Lower the CPU budget so that from now on the solve uses at most `rate` cores. */
   | { readonly type: 'rebudget'; readonly id: string; readonly rate: number }
 export type ChildResponse =
   /** `peakRssMb`: the child's own peak RSS, sampled while it solved. */
   | { readonly type: 'result'; readonly id: string; readonly result: unknown; readonly peakRssMb: number }
+  | { readonly type: 'outcome'; readonly id: string; readonly outcome: unknown; readonly peakRssMb: number }
+  /** A planning refusal raised in the child (code, HTTP status, details), passed on as it is. */
+  | { readonly type: 'refusal'; readonly id: string; readonly status: number; readonly code: string; readonly message: string; readonly details?: Record<string, unknown> }
   | { readonly type: 'error'; readonly id: string; readonly message: string }
 
 const typed = { Int8Array, Uint8Array, Int16Array, Uint16Array, Int32Array, Uint32Array, Float32Array, Float64Array } as const
@@ -67,4 +74,16 @@ export const resultFromWire = (wire: unknown): EngineResult | { readonly problem
   const parsed = resultSchema.safeParse(wire)
   if (!parsed.success) return { problem: parsed.error.issues.slice(0, 3).map(issue => `${issue.path.join('.')}: ${issue.message}`).join('; ') }
   return { ...parsed.data, candidates: parsed.data.candidates.map(candidate => ({ mode: Int32Array.from(candidate.mode), start: Int32Array.from(candidate.start) })) }
+}
+
+const outcomeSchema = z.object({
+  option: optionSchema,
+  rounded: z.array(z.object({ about: z.string(), code: z.enum(['duration_rounded_up', 'lag_rounded_up', 'limit_rounded_down']), fromMs: z.number(), toMs: z.number() }).strict()),
+  dropped: z.array(z.object({ purchase: z.string(), code: z.enum(['order_deadline_passed', 'not_in_variant', 'adds_crew_hours']) }).strict()),
+}).strict()
+
+/** The child's sub-solve outcome, validated (the option against the plan schema); refused, never patched. */
+export const outcomeFromWire = (wire: unknown): SubSolveOutcome | { readonly problem: string } => {
+  const parsed = outcomeSchema.safeParse(decode(wire))
+  return parsed.success ? parsed.data : { problem: parsed.error.issues.slice(0, 3).map(issue => `${issue.path.join('.')}: ${issue.message}`).join('; ') }
 }

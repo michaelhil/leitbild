@@ -41,3 +41,33 @@ describe('solves on one pool are independent', () => {
     expect(together[0]!.map(option => option.word)).toEqual(['validated feasible', 'validated feasible'])
   }, 300_000)
 })
+
+describe('a sub-solve runs whole in a solver child', () => {
+  test('the child gives the same option as the same sub-solve in this process; a second Generate is refused, never queued', async () => {
+    const { subSolve } = await import('./generate.ts')
+    const { searchEngine } = await import('./search.ts')
+    const { checkForSolver, verifyBoundForSolver, verifyForSolver } = await import('./lane-k-ports.ts')
+    const { createRealSolver } = await import('../api/wiring.ts')
+    const { SOLVER_BUSY_WORDS } = await import('./pool.ts')
+    const task = { inputs: flagship, revision: 1, variant: { key: 'swap', label: 'Swap', buy: 'allowed' as const }, combo: [{ choice: 'SWA-method', option: 'swap' }], budget: { evals: 1_500, cpuMs: 20_000, wallMs: 40_000 }, seed: 1 }
+    const here = await subSolve({ engine: searchEngine({ pace: true }), check: checkForSolver, verify: verifyForSolver, verifyBound: verifyBoundForSolver })(task, new AbortController().signal)
+    const pool = createSolverPool()
+    try {
+      const there = await pool.subSolver(task, new AbortController().signal)
+      expect(there.option.status.word).toBe('validated feasible')
+      // The same plan: rows, metrics, purchases, goal words and the search's own count. CPU time and the CPU
+      // budget the pool granted are the run's, not the plan's.
+      const plan = (outcome: typeof here) => {
+        const { status, ...option } = outcome.option
+        return { option, goals: status.word === 'validated feasible' ? status.goals : [], evals: 'run' in status ? status.run.evals : 0, rounded: outcome.rounded, dropped: outcome.dropped }
+      }
+      expect(plan(there)).toEqual(plan(here))
+      expect(pool.records().at(-1)!.peakRssMb).toBeGreaterThan(0)
+      const solver = createRealSolver(pool)
+      const request = { inputs: flagship, inputsRevision: 1, variants: undefined, seconds: 2, stored: null, at: new Date().toISOString(), by: { kind: 'service' as const, name: 'test' }, signal: new AbortController().signal }
+      const first = solver.generate(request)
+      await expect(solver.generate(request)).rejects.toMatchObject({ status: 409, code: 'solver_busy', message: SOLVER_BUSY_WORDS })
+      await first
+    } finally { await pool.shutdown() }
+  }, 120_000)
+})
