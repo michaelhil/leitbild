@@ -2,6 +2,11 @@ import { describe, expect, test } from 'bun:test'
 import { bounds } from './bounds.ts'
 import { searchEngine } from './search.ts'
 import { fromBenchInstance, type BenchInstance } from './fixtures/bench-instance.ts'
+import { compile } from './compile.ts'
+import { dateSchedule } from './date.ts'
+import { finishOf, prepare as prepareProblem } from './decode.ts'
+import { checkPlan } from '../check/check.ts'
+import { twinPlan, twinV3Options } from '../../tests/harness/twin-plan.ts'
 
 // The solver gate (acceptance row 9), ON DEMAND: PLANNING_GATE=1 nice -n 10 bun test apps/planning/src/solve/gate.test.ts
 // It reads or's frozen gate files (PLANNING_GATE_DIR, default the review folder's or/gate), runs this
@@ -53,6 +58,42 @@ describe.skipIf(!enabled)('solver gate on the frozen twins (on demand)', () => {
       }
     }
     console.log(JSON.stringify({ gate: rows }, null, 1))
+  }, 600_000)
+
+  test('the product path: lane K twin plan -> compile -> search -> lane K checker, same seeds and pass rule', async () => {
+    const verdict = await Bun.file(`${dir}/runs/verdict-v3.json`).json()
+    const best: Record<string, [number, number, number]> = {
+      'twin-v3': [verdict.bestKnown.guidelineH, verdict.bestKnown.finishH, verdict.bestKnown.costNok],
+      ...Object.fromEntries(verdict.sizeCurve.filter((row: { subset: string }) => row.subset !== 'full v3').map((row: { subset: string; bestKnown: [number, number, number] }) => [{ 'U1 only': 'v3-U1', 'U2 only': 'v3-U2', S240: 'v3-S240' }[row.subset]!, row.bestKnown])),
+    }
+    const within = (value: number, ref: number, tolerance: number) => value <= ref + Math.max(tolerance, 0.05 * ref) + 1e-9
+    const rows: unknown[] = []
+    for (const name of ['twin-v3', 'v3-U1', 'v3-U2', 'v3-S240']) {
+      const path = `${dir}/runs/${name}.json`
+      expect(await sha256(path)).toBe(frozen[name]!)
+      const bench = await Bun.file(path).json()
+      const twin = twinPlan(bench, twinV3Options(bench))
+      const compiled = compile(twin.inputs, { methods: [...twin.variant.methods], buy: [...twin.variant.purchases] })
+      if (!compiled.ok) throw new Error(`${name}: ${compiled.word} ${JSON.stringify(compiled.problems)}`)
+      const prep = prepareProblem(compiled.problem)
+      const threshold = twin.inputs.goals[0]!.threshold?.value ?? 0
+      for (const seed of seeds) {
+        const result = await searchEngine().solve(compiled.problem, { budget: { evals: Number.MAX_SAFE_INTEGER, cpuMs, wallMs: 10 * cpuMs, memoryMb: 80 }, seed, signal: new AbortController().signal })
+        const candidate = result.candidates[0]!
+        const placeable = compiled.problem.activities.every((activity, a) => { const f = finishOf(prep, a, candidate.mode[a]!, candidate.start[a]!); return f >= 0 && f <= activity.deadline })
+        if (!placeable) { rows.push({ instance: name, seed, cpuMs: result.cpuMs, evals: result.evals, pass: false, note: 'no plan inside the window' }); continue }
+        const checked = checkPlan(twin.inputs, twin.variant, dateSchedule(prep, compiled.index, candidate))
+        const goal = (metric: string) => checked.goals.find(entry => entry.metric === metric)!
+        const span = goal('span-over')
+        const g = 'spans' in span ? span.spans.reduce((sum, entry) => sum + Math.max(0, entry.value - threshold), 0) : 0
+        const f = 'value' in goal('finish') ? (goal('finish') as { value: number }).value : NaN
+        const c = 'value' in goal('extra-cost') ? (goal('extra-cost') as { value: number }).value : NaN
+        const [bg, bf, bc] = best[name]!
+        const pass = checked.feasible && within(g, bg, 0) && within(f, bf, 1) && within(c, bc, 5_000)
+        rows.push({ instance: name, seed, cpuMs: result.cpuMs, evals: result.evals, violations: checked.violations.length, guidelineH: g, finishH: f, costNok: c, costVsBestPct: +((100 * (c - bc)) / bc).toFixed(2), pass })
+      }
+    }
+    console.log(JSON.stringify({ productGate: rows }, null, 1))
   }, 600_000)
 
   test('twin v1 (stress case): no plan, the binding resource named', async () => {
