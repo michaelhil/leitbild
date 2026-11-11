@@ -1,0 +1,140 @@
+import { afterAll, describe, expect, test } from 'bun:test'
+import type { PlanningSubject } from '@leitbild/contracts'
+import { planInputsSchema } from '../plan/schema.ts'
+import { worldSubjects } from '../plan/readiness.ts'
+import { subjectsFor } from './fixtures/doubles.ts'
+import { createHarness } from './fixtures/harness.ts'
+
+const supplyRun = planInputsSchema.parse(await Bun.file(new URL('../plan/fixtures/supply-run.case2.json', import.meta.url)).json())
+const trainA = planInputsSchema.parse(await Bun.file(new URL('../plan/fixtures/train-a.fragment.json', import.meta.url)).json())
+
+// World values the double answers: one per fact id the Supply run names. They are World inputs, not schedules.
+const factIds = [...new Set([
+  ...supplyRun.jobs.flatMap(job => [...(job.duration.origin.by === 'world' ? job.duration.origin.refs : []), ...job.durationWith.flatMap(entry => 'refs' in entry ? entry.refs : [])]),
+  ...supplyRun.resources.flatMap(resource => resource.attributes.flatMap(attribute => attribute.origin.by === 'world' ? attribute.origin.refs : [])),
+].map(ref => ref.fact))]
+let world: PlanningSubject[] = []
+const valuesFor = (scale: number) => Object.fromEntries(factIds.map((id, index) => [id, id.includes('payload')
+  ? { value: (index + 3) * 100 * scale, unit: 'kg', basis: 'configured' as const }
+  : { value: (index + 1) * 30 * scale, unit: 's', basis: 'owner-estimate' as const }]))
+// One large item: more facts than one 4 KB page holds, so it continues on the next page under its locator.
+const padded = (subjects: PlanningSubject[]) => subjects.map((subject, index) => index !== 0 ? subject : {
+  ...subject, facts: [...subject.facts, ...Array.from({ length: 40 }, (_, at) => ({ id: `${subject.locator}/extra/${at}`, label: `Extra value ${at}`, quantity: 'count', unit: '1', value: at, basis: 'observed' as const, at: '2026-09-03T08:00:00Z' }))],
+})
+
+const harness = await createHarness({ subjects: () => world })
+afterAll(() => harness.close())
+const expectSmall = (answer: { bytes: number }) => expect(answer.bytes).toBeLessThanOrEqual(4_096)
+
+describe('the Supply run cycle through the operations', () => {
+  test('create, link, refresh, edit, generate, explain, baseline and read: results within 4 KB, World only read', async () => {
+    world = padded(subjectsFor(supplyRun, valuesFor(1), '2026-09-03T08:00:00Z'))
+    const created = await harness.create('supply-run')
+    expect(created.answer.body.createdResources).toEqual([{ workspaceId: harness.workspaceId, moduleId: 'planning', type: 'planning.plan', id: created.id }])
+    expect(created.answer.body.result.attention[0].kind).toBe('world')
+    expect(created.answer.body.result.problems.every((problem: { code: string }) => problem.code === 'world-unread')).toBe(true)
+    expectSmall(created.answer)
+
+    const linked = await harness.call('planning.plan.edit', { resource: created.id, input: { edits: [{ edit: 'plan', run: 'run-supply' }] }, expectedRevision: 1 })
+    expect(linked.body.result.plan.revision).toBe(2)
+
+    const refreshed = await harness.call('planning.sources.refresh', { input: { plan: created.id }, expectedRevision: 2 })
+    expectSmall(refreshed)
+    expect(refreshed.body.result.plan.revision).toBe(3)
+    expect(refreshed.body.result.notReady).toEqual([])
+    // One read for all subjects, followed over its pages with the same question.
+    const subjects = worldSubjects(supplyRun)
+    expect(harness.journal.length).toBeGreaterThan(1)
+    expect(harness.journal.every(entry => entry.capabilityId === 'world.simulation-run.planning-facts' && JSON.stringify((entry.input as { subjects: string[] }).subjects) === JSON.stringify(subjects))).toBe(true)
+    const stored = await harness.store.read(harness.workspaceId, created.id)
+    expect(stored.inputs.world.facts.length).toBe(world.reduce((sum, subject) => sum + subject.facts.length, 0))
+    expect(stored.inputs.jobs.every(job => job.duration.origin.by !== 'world' || job.duration.value === null)).toBe(true)
+
+    // Unchanged World values refresh the read time without raising the revision.
+    const again = await harness.call('planning.sources.refresh', { input: { plan: created.id }, expectedRevision: 3 })
+    expect([again.body.result.plan.revision, again.body.result.changed]).toEqual([3, []])
+
+    const generated = await harness.call('planning.plan.generate', { resource: created.id, input: {}, expectedRevision: 3 })
+    expectSmall(generated)
+    expect(generated.body.result.plan.revision).toBe(3)
+    const recommended = generated.body.result.recommended
+    expect(generated.body.result.options.find((option: { key: string }) => option.key === recommended).status.word).toBe('validated feasible')
+
+    const explained = await harness.call('planning.plan.explain', { resource: created.id, input: { ask: 'finish' } })
+    expectSmall(explained)
+    expect(explained.body.result.items.length).toBeGreaterThan(0)
+
+    const baselined = await harness.call('planning.plan.baseline', { resource: created.id, input: { option: recommended, name: 'Dispatch at 08:00' }, expectedRevision: 3 })
+    expectSmall(baselined)
+    expect(baselined.body.result.plan.revision).toBe(3)
+
+    for (const section of [undefined, 'jobs', 'rules', 'crews', 'sources', 'options', 'schedule', 'history']) {
+      const read = await harness.call('planning.plan.read', { resource: created.id, input: section === undefined ? {} : { section } })
+      expect(read.status).toBe(200)
+      expectSmall(read)
+    }
+    const summary = (await harness.call('planning.plan.read', { resource: created.id })).body.result
+    expect(summary.sections.map((section: { id: string }) => section.id)).toEqual(['status', 'attention', 'options'])
+    expect(summary.sections[0].data.counts.baselines).toBe(1)
+
+    // A changed World value raises the revision and makes the options out of date.
+    world = padded(subjectsFor(supplyRun, valuesFor(2), '2026-09-03T08:01:00Z'))
+    const changed = await harness.call('planning.sources.refresh', { input: { plan: created.id }, expectedRevision: 3 })
+    expect([changed.body.result.plan.revision, changed.body.result.staleOptions.includes(recommended), changed.body.result.changed.length > 0]).toEqual([4, true, true])
+    expectSmall(changed)
+  })
+
+  test('a refresh with an unknown locator is refused as World named it, and nothing is saved', async () => {
+    world = []
+    const created = await harness.create('supply-run')
+    await harness.call('planning.plan.edit', { resource: created.id, input: { edits: [{ edit: 'plan', run: 'run-other' }] }, expectedRevision: 1 })
+    const refused = await harness.call('planning.sources.refresh', { input: { plan: created.id }, expectedRevision: 2 })
+    expect([refused.status, refused.body.error.code, refused.body.error.details.subjects.length]).toEqual([404, 'unknown_subject', worldSubjects(supplyRun).length])
+    expect((await harness.store.read(harness.workspaceId, created.id)).revision).toBe(2)
+  })
+})
+
+describe('Train A: preview, read and status on the generic operations', () => {
+  test('a lock preview shows the violation and the nearest allowed time and saves nothing (T20)', async () => {
+    const created = await harness.create('train-a-work-week')
+    await harness.call('planning.plan.generate', { resource: created.id, input: {}, expectedRevision: 1 })
+    const job = trainA.jobs[0]!
+    const before = new Date(Date.parse(trainA.settings.window!.start) - 3_600_000).toISOString()
+    const preview = await harness.call('planning.plan.edit', { resource: created.id, input: { edits: [{ edit: 'job', key: job.key, lock: before }], preview: true } })
+    expectSmall(preview)
+    expect(preview.body.result.preview).toMatchObject({ saved: false, nearestAllowed: trainA.settings.window!.start })
+    expect(preview.body.result.preview.violations.length).toBe(1)
+    expect((await harness.store.read(harness.workspaceId, created.id)).revision).toBe(1)
+    const weakening = await harness.call('planning.plan.edit', { resource: created.id, input: { edits: [{ edit: 'remove', what: 'rule', key: trainA.rules[0]!.key }], preview: true } })
+    expect(weakening.body.result.preview.weakens).toEqual([trainA.rules[0]!.key])
+    expect(weakening.body.result.preview.consequence).toContain('needs authority')
+  })
+
+  test('read re-checks every status: an option the checker refuses is shown out of date, never with proof words', async () => {
+    const { createCheckerDouble } = await import('./fixtures/doubles.ts')
+    const refusing = new Set<string>()
+    const local = await createHarness({ checker: createCheckerDouble(refusing) })
+    try {
+      const created = await local.create('train-a-work-week')
+      const generated = await local.call('planning.plan.generate', { resource: created.id, input: {}, expectedRevision: 1 })
+      const keys = generated.body.result.options.map((option: { key: string }) => option.key)
+      expect(keys.length).toBe(trainA.methods[0]!.options.length)
+      refusing.add(keys[0])
+      const options = (await local.call('planning.plan.read', { resource: created.id, input: { section: 'options' } })).body.result.sections[0].data.items
+      expect(options.find((option: { key: string }) => option.key === keys[0])).toMatchObject({ stale: true })
+      expect(options.find((option: { key: string }) => option.key === keys[0]).words).toContain('re-check')
+      expect(options.find((option: { key: string }) => option.key === keys[1])).toMatchObject({ stale: false, status: 'validated feasible' })
+      expect((await local.call('planning.plan.baseline', { resource: created.id, input: { option: keys[0], name: 'x' }, expectedRevision: 1 })).body.error.code).toBe('option_stale')
+    } finally { await local.close() }
+  })
+
+  test('the plan Resource shows its status and jobs without proof words', async () => {
+    const created = await harness.create('train-a-work-week')
+    const resource = (await harness.request(`/internal/workspaces/${harness.workspaceId}/resources`)).body.resources.find((entry: { ref: { id: string } }) => entry.ref.id === created.id)
+    expect(resource.summary).toEqual([
+      { key: 'status', label: 'Status', kind: 'status', value: 'Not linked yet' },
+      { key: 'job-count', label: 'Jobs', kind: 'count', value: trainA.jobs.length },
+      { key: 'updated-at', label: 'Updated', kind: 'timestamp', value: resource.summary[2].value },
+    ])
+  })
+})
