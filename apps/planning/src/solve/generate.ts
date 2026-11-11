@@ -15,7 +15,7 @@ import { totalFloat, withFloat } from './float.ts'
 import { estimateMemoryMb, SOLVER_CPU_CAP_CORES } from './pool.ts'
 import type { Engine, EngineResult, NormalizedProblem } from './problem.ts'
 import { compareOptions, goalKeys, type RawMetric } from './rank.ts'
-import { cancelledStatus, feasibleStatus, infeasibleStatus, refusedStatus, unresolvedStatus, type CheckPlan } from './status.ts'
+import { cancelledStatus, feasibleStatus, infeasibleStatus, inputProblems, refusedStatus, unresolvedStatus, type CheckPlan, type VerifyCertificate } from './status.ts'
 
 type OptionSet = z.infer<typeof optionSetSchema>
 type Option = OptionSet['options'][number]
@@ -23,15 +23,22 @@ type Actor = OptionSet['by']
 export type GenerateInput = z.infer<typeof generateInputSchema>
 
 /**
- * The certified size (G2, A8). PLACEHOLDER pending the owner's scale-gate decision: the family is the one
- * or measured on twin v3; the gate did not pass at every seed and subset, so no size is certified yet.
- * Generate refuses plans with more jobs than `maxJobs`.
+ * The certified size (G2, A8). The owner's scale-gate decision is PENDING, so nothing is certified: the
+ * family is the one or measured on twin v3, and `maxJobs` is only the size above which Generate refuses
+ * while the decision is pending. Say it with certifiedSizeText, never as "certified ... up to N jobs".
  */
 export const CERTIFIED_SIZE: CertifiedSize = {
   family: 'two-unit site, concurrent single-train windows, tagging crews per unit',
   maxJobs: 330,
-  evidence: 'pending owner decision: or gate on twin v3, 11 Nov; no size passes every seed at every subset under the 5 % rule (U1 176 jobs 3/3 seeds, S240 3/3, v3 330 2/3, U2 154 1/3); maxJobs 330 is a placeholder',
+  evidence: 'or gate on twin v3, 11 Nov: no size passes every seed at every subset under the 5 % rule; the owner decides',
 }
+/** False until the owner decides the scale gate; then CERTIFIED_SIZE holds the certified size. */
+export const CERTIFIED_SIZE_DECIDED = false
+
+/** The certified size in words, for refusals and status: "pending" until the owner decides. */
+export const certifiedSizeText = (size: CertifiedSize = CERTIFIED_SIZE, decided = CERTIFIED_SIZE_DECIDED): string => decided
+  ? `certified for ${size.family} up to ${size.maxJobs} jobs; ${size.evidence}`
+  : `certified size: pending the owner's decision; measured family: ${size.family}; plans above ${size.maxJobs} jobs are refused until then`
 
 export const MAX_SUB_SOLVES = 8
 /** Memory a solve may be estimated to need before it is refused (A7). */
@@ -41,6 +48,8 @@ const DEFAULT_SECONDS = 20
 export interface GenerateDeps {
   readonly engine: Engine
   readonly check: CheckPlan
+  /** Lane K's certificate re-verification: a refusal is stored as proof only when it proves. */
+  readonly verify: VerifyCertificate
   readonly certifiedSize?: CertifiedSize
   readonly now?: () => string
 }
@@ -112,7 +121,7 @@ export const generate = async (deps: GenerateDeps, request: GenerateRequest): Pr
   const { inputs } = request
   const certified = deps.certifiedSize ?? CERTIFIED_SIZE
   if (inputs.jobs.length > certified.maxJobs) {
-    throw planningError(413, 'above_certified_size', `This plan has ${inputs.jobs.length} jobs; the solver is certified for ${certified.family} up to ${certified.maxJobs} jobs`, { jobs: inputs.jobs.length, certifiedSize: certified })
+    throw planningError(413, 'above_certified_size', `This plan has ${inputs.jobs.length} jobs; ${certifiedSizeText(certified)}`, { jobs: inputs.jobs.length, certifiedSize: certified })
   }
   const variants = variantsOf(inputs, request.input)
   const subSolves = variants.reduce((sum, variant) => sum + variant.combos.length, 0)
@@ -139,15 +148,21 @@ export const generate = async (deps: GenerateDeps, request: GenerateRequest): Pr
       const who = result.stoppedBy === 'cancelled' ? request.stoppedByWho?.() : undefined
       return { grid: inputs.settings.grid, engine: deps.engine.name, formulation, seed, budget, stoppedBy: result.stoppedBy, ...(who === undefined ? {} : { stoppedByWho: who }), evals: result.evals, cpuMs: Math.round(result.cpuMs) }
     }
+    // Readiness blocks before any search: an input finding (a precondition not read from World, say) is
+    // "invalid input" with the checker's cause, whatever a schedule would look like.
+    const blockers = inputProblems(deps.check({ inputs, variant: variantOut, rows: [] }).violations)
+    if (blockers.length > 0) return { ...base, variant: variantOut, status: refusedStatus('invalid input', blockers), rows: [], metrics: [] }
     const prep = prepare(problem)
     const found = bounds(problem, index, prep)
-    if (found.certificate !== undefined) return { ...base, variant: variantOut, status: infeasibleStatus(found.certificate, runBasis({ stoppedBy: 'done', evals: 0, cpuMs: 0 })), rows: [], metrics: [] }
+    // A refusal is stored as proof only when lane K re-verifies it with nothing left unverified.
+    if (found.certificate !== undefined && deps.verify(inputs, variantOut, found.certificate).proves) {
+      return { ...base, variant: variantOut, status: infeasibleStatus(found.certificate, runBasis({ stoppedBy: 'done', evals: 0, cpuMs: 0 })), rows: [], metrics: [] }
+    }
     if (estimateMemoryMb(problem) > MEMORY_BUDGET_MB) throw planningError(413, 'above_certified_size', 'This plan is too large for the certified size', { estimateMb: Math.ceil(estimateMemoryMb(problem)) })
     const result = await deps.engine.solve(problem, { budget: { ...budget, memoryMb: MEMORY_BUDGET_MB }, seed, signal: request.signal })
     const run = runBasis(result)
     const candidate = result.candidates[0]
     if (candidate === undefined) return { ...base, variant: variantOut, status: result.stoppedBy === 'cancelled' ? cancelledStatus(run) : unresolvedStatus(run), rows: [], metrics: [] }
-    const undated = dateSchedule(prep, index, candidate)
     const late = problem.activities.flatMap((activity, a) => {
       const finish = finishOf(prep, a, candidate.mode[a]!, candidate.start[a]!)
       return finish < 0 || finish > activity.deadline ? [{ a, finish: finish < 0 ? problem.horizon : finish }] : []
@@ -161,11 +176,16 @@ export const generate = async (deps: GenerateDeps, request: GenerateRequest): Pr
         status: unresolvedStatus(run, { job, wouldFinish: slotInstant(index, worst.finish), pastWindowHours: (worst.finish - index.windowSlots) * index.slotMs / 3_600_000 }),
       }
     }
-    const rows = withFloat(undated, totalFloat(prep, index, candidate), index)
-    const report = deps.check({ inputs, variant: variantOut, rows })
+    const rows = withFloat(dateSchedule(prep, index, candidate), totalFloat(prep, index, candidate), index)
+    // Cost and order lists come from what the rows use (plus purchases already ordered, charged anyway).
+    const used = [...new Set([...rows.flatMap(row => row.uses.flatMap(use => (use.purchase === undefined ? [] : [use.purchase]))), ...index.purchases.filter(purchase => purchase.committed).map(purchase => purchase.key)])]
+    const planned = { methods: combo, purchases: index.allowedPurchases.filter(key => used.includes(key)) }
+    const report = deps.check({ inputs, variant: planned, rows })
+    const problems = inputProblems(report.violations)
+    if (problems.length > 0) return { ...base, variant: planned, status: refusedStatus('invalid input', problems), rows: [], metrics: [] }
     if (report.violations.length > 0) return { ...base, variant: variantOut, status: unresolvedStatus(run), rows: [], metrics: [] }
     const { status } = feasibleStatus(inputs.goals, run, report.goals, found.goals)
-    return { ...base, variant: variantOut, status, rows, metrics: metricsOf(problem, index, report.goals) }
+    return { ...base, variant: planned, status, rows, metrics: metricsOf(problem, index, report.goals) }
   }
 
   const fresh: Option[] = []

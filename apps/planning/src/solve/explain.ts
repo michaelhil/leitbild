@@ -8,8 +8,9 @@ import type { explainResultSchema } from '../api/contract.ts'
 import type { Certificate, PlanInputs } from '../plan/schema.ts'
 import { gridSlotMs } from '../time/units.ts'
 import { localParts } from '../time/zone.ts'
-import type { SpanRefusal } from './bounds.ts'
-import type { CompileIndex } from './compile.ts'
+import { bounds, type SpanRefusal } from './bounds.ts'
+import { compile, type CompileIndex, type SubSolve } from './compile.ts'
+import type { VerifyCertificate } from './status.ts'
 import { ffHolds, finishOf, makeDecoder, progressAt, workedSlots, type Prepared } from './decode.ts'
 import type { Float } from './float.ts'
 import type { Schedule } from './problem.ts'
@@ -164,7 +165,34 @@ const clip = (line: string): string => (line.length <= 240 ? line : `${line.slic
  * A proven-infeasible refusal in planner words and hours, generated from the certificate (and, for a
  * span limit, the least span bounds() found). Never a raw propagation fact.
  */
-export const refusalLines = (cause: Certificate, inputs: PlanInputs, span?: SpanRefusal): string[] => {
+export const refusalLines = (cause: Certificate, inputs: PlanInputs, span?: SpanRefusal, purchases?: readonly string[]): string[] => {
+  const lines = refusalBody(cause, inputs, span)
+  if (purchases === undefined) return lines
+  // Say what the answer assumes may be bought (e.g. "days only": a tool day and a rebooking, no crew hours).
+  const label = (key: string) => inputs.purchases.find(purchase => purchase.key === key)?.label ?? key
+  const without = inputs.purchases.filter(purchase => !purchases.includes(purchase.key)).map(purchase => purchase.label)
+  const assumes = clip(`This answer allows ${purchases.length === 0 ? 'no purchases' : list(purchases.map(label))}${without.length === 0 ? '' : `, and not ${list(without)}`}.`)
+  return [...lines.slice(0, 19), assumes]
+}
+
+/**
+ * The refusal of one sub-solve, from the inputs: compiles, finds the bounds, and keeps the second proof
+ * only when lane K's re-verification confirms it. Undefined when bounds find no proof.
+ */
+export const explainRefusal = (inputs: PlanInputs, sub: SubSolve, verify: VerifyCertificate): { readonly cause: Certificate; readonly proves: boolean; readonly lines: string[] } | undefined => {
+  const compiled = compile(inputs, sub)
+  if (!compiled.ok) return undefined
+  const found = bounds(compiled.problem, compiled.index)
+  if (found.certificate === undefined) return undefined
+  const variant = { methods: sub.methods, purchases: compiled.index.allowedPurchases }
+  const proves = verify(inputs, variant, found.certificate).proves
+  const also = found.span?.alsoProven
+  const span = found.span === undefined ? undefined
+    : also !== undefined && verify(inputs, variant, also).proves ? found.span : (({ alsoProven: _also, ...rest }) => rest)(found.span)
+  return { cause: found.certificate, proves, lines: refusalLines(found.certificate, inputs, span, compiled.index.allowedPurchases) }
+}
+
+const refusalBody = (cause: Certificate, inputs: PlanInputs, span?: SpanRefusal): string[] => {
   const zone = inputs.settings.timeZone
   const slotMs = gridSlotMs[inputs.settings.grid]
   const lastStart = (to: string) => localTime(new Date(Date.parse(to) - slotMs).toISOString(), zone)
@@ -193,17 +221,17 @@ export const refusalLines = (cause: Certificate, inputs: PlanInputs, span?: Span
     const lines = [
       clip(`Not possible: ${ruleWords(span.rule)} The shortest span this plan allows is ${hoursText(span.leastHours)}, against ${hoursText(span.limitHours)}: first tag-out ${localTime(span.firstOut, zone)}, last test passed ${localTime(span.lastBack, zone)}.`),
       'What sets the last test, each job at its earliest:',
-      ...span.path.map(step),
+      ...span.path.slice(0, 9).map(step),
     ]
     if (span.later !== undefined) {
       const changed = span.later.path.filter(entry => !span.path.some(known => known.job === entry.job && known.start === entry.start))
-      lines.push(clip(`A later first tag-out does not help: from ${localTime(span.later.firstOut, zone)} the span is ${hoursText(span.later.hours)}, because:`), ...(changed.length > 0 ? changed : span.later.path).map(step))
+      lines.push(clip(`A later first tag-out does not help: from ${localTime(span.later.firstOut, zone)} the span is ${hoursText(span.later.hours)}, because:`), ...(changed.length > 0 ? changed : span.later.path).slice(0, 6).map(step))
     }
     if (span.alsoProven?.kind === 'energy') {
       const energy = span.alsoProven
       lines.push(clip(`Also: in any such span starting between ${localTime(energy.from, zone)} and ${lastStart(energy.to)}, ${hoursText(energy.requiredHours)} of ${list(energy.resources.map(crew))} work must fit, and only ${hoursText(energy.availableHours)} exist.`))
     }
-    return lines.length <= 20 ? lines : [...lines.slice(0, 19), lines.at(-1)!]
+    return lines.length <= 19 ? lines : [...lines.slice(0, 18), lines.at(-1)!]
   }
   const first = cause.steps.at(0)
   return [clip(`Not possible: ${first === undefined ? 'the plan' : title(first.job)} cannot fit ${first?.via === 'due' ? 'before its due time' : first?.via === 'release' ? 'after its release' : first?.via === 'lock' ? 'at its locked start' : 'inside the plan window'}, after ${list(cause.steps.slice(1).map(entry => title(entry.job)))}.`)]

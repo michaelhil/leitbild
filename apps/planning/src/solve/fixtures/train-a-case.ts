@@ -48,8 +48,14 @@ const convertJob = (job: CaseJob): PlanInputs['jobs'][number] => ({
   checks: [], tags: [],
 })
 
-/** The full flagship: 34 jobs, 41 planner links, every 72 h group rule. */
-export const trainAInputs = (): PlanInputs => {
+/**
+ * The World fact SW A's tag-out checks ("World shows SW B running"), as a refresh would copy it. A TEST
+ * INPUT, not a World recording: without it every option is invalid input (precondition not read).
+ */
+export const swbRunning = { locator: 'process-plant/plant%3Atrain-a/serviceWaterPumpB', id: 'plant:train-a/serviceWaterPumpB/runningState', label: 'Running', quantity: 'state', value: true, basis: 'observed', at: '2026-11-12T09:00:00Z' } as const
+
+/** The full flagship: 34 jobs, 41 planner links, every 72 h group rule; `read` adds the SW B fact. */
+export const trainAInputs = (options: { readonly read?: boolean } = {}): PlanInputs => {
   const byKey = new Map(fragment.jobs.map(job => [job.key, job]))
   const jobs = frozen.jobs.map(job => byKey.get(job.id) ?? convertJob(job))
   const links: PlanInputs['links'] = frozen.links.map(link => ({
@@ -74,7 +80,8 @@ export const trainAInputs = (): PlanInputs => {
     if (limit.kind !== 'span-limit') throw new Error('unreachable')
     rules.push({ ...limit, key: `R2-${group.id}`, group: group.id, limit: { value: group.allowedOutageHours, unit: 'h' }, singleEntry: group.singleEntry })
   }
-  return planInputsSchema.parse({ ...fragment, resources, purchases, jobs, links, rules })
+  const world = options.read === true ? { refreshedAt: swbRunning.at, facts: [swbRunning] } : fragment.world
+  return planInputsSchema.parse({ ...fragment, resources, purchases, jobs, links, rules, world })
 }
 
 /** The flagship with one variant edit applied to every job: the generate input decides purchases. */

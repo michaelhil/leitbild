@@ -1,7 +1,8 @@
 import { describe, expect, test } from 'bun:test'
 import { certificateSchema } from '../plan/schema.ts'
 import { bounds, propagate } from './bounds.ts'
-import { refusalLines } from './explain.ts'
+import { explainRefusal, refusalLines } from './explain.ts'
+import { laneKVerify } from './fixtures/lane-k.ts'
 import { compile, type SubSolve } from './compile.ts'
 import { prepare } from './decode.ts'
 import caseJson from './fixtures/train-a-case-v0.2.json'
@@ -48,9 +49,14 @@ describe('V1 and V2 are proven infeasible with their cause', () => {
     })
     expect(hoursOf(chain)).toBe(37)
     expect(certificateSchema.safeParse(result.certificate).success).toBe(true)
-    const lines = refusalLines(result.certificate!, trainAInputs(), result.span)
-    expect(lines[0]).toBe('Not possible: 6 jobs must run one after another and need 37 h of work, but from Tue 07:00 to Fri 15:00 their crews and tools are on duty together for only 32 h.')
-    expect(lines.slice(1)).toEqual(chain.map(key => `- ${trainAInputs().jobs.find(job => job.key === key)!.title}: ${hoursOf([key])} h`))
+    // Lane K re-verifies it: proven, nothing left unverified.
+    expect(laneKVerify(trainAInputs(), { methods: daysOnly('rebuild').methods, purchases: ['crane-fri', 'ect-friday'] }, result.certificate!).proves).toBe(true)
+    const refusal = explainRefusal(trainAInputs(), daysOnly('rebuild'), laneKVerify)!
+    expect(refusal.proves).toBe(true)
+    expect(refusal.lines[0]).toBe('Not possible: 6 jobs must run one after another and need 37 h of work, but from Tue 07:00 to Fri 15:00 their crews and tools are on duty together for only 32 h.')
+    expect(refusal.lines.slice(1, 7)).toEqual(chain.map(key => `- ${trainAInputs().jobs.find(job => job.key === key)!.title}: ${hoursOf([key])} h`))
+    // "Days only" says what it assumes: the crane's Friday and the ECT rebooking, no overtime or nights.
+    expect(refusal.lines.at(-1)).toBe('This answer allows Crane extra day, Fri 20 Nov and Rebook the eddy-current team to Friday, and not Station mechanical overtime to 19:00, Contractor night crew (nights Mon to Thu) and Station electrical crew overtime.')
   })
 
   test('V2 (swap, days only): refused by time, with the span energy count as a second proof', () => {
@@ -64,7 +70,12 @@ describe('V1 and V2 are proven infeasible with their cause', () => {
     // the 5 h and 4 h lifts, unbroken in 8 h day shifts after it, each slip a day.
     expect(result.certificate?.kind).toBe('temporal')
     expect(result.span).toMatchObject({ rule: 'R2', limitHours: 72, leastHours: 80.5, firstOut: iso('2026-11-16T11:00:00'), lastBack: iso('2026-11-19T19:30:00') })
-    expect(result.span!.path.map(step => step.job)).toEqual(['SWA-TAG', 'CCWHXA-OPEN', 'CCWHXA-CLEAN', 'CCWHXA-ECT', 'CCWHXA-CLOSE', 'SWA-RTS', 'CCWA-RTS', 'RHRA-RTS'])
+    expect(result.span!.path.map(step => [step.job, step.via])).toEqual([
+      ['SWA-TAG', 'span-limit'], ['CCWHXA-OPEN', 'link'], ['CCWHXA-CLEAN', 'link'], ['CCWHXA-ECT', 'link'], ['CCWHXA-CLOSE', 'link'], ['SWA-RTS', 'link'], ['CCWA-RTS', 'link'], ['RHRA-RTS', 'link'],   // the case links the tests in support order itself
+    ])
+    // Over every later first tag-out the least span is 85.5 h, from Tue 04:00 (SW A's motor waits for
+    // Tuesday's shift; the lifts slip; SW A's test ends Fri 12:30, the last test Fri 17:30).
+    expect(result.span!.later).toMatchObject({ firstOut: iso('2026-11-17T04:00:00'), hours: 85.5 })
     expect(result.span!.path.find(step => step.job === 'CCWHXA-CLEAN')!.start).toBe(iso('2026-11-17T08:00:00'))
     // By energy, independently. Work that must lie inside the span: every station-mechanical job on a
     // cooling-chain item between a covering tag-out and test, read from the frozen case (10 jobs).
@@ -89,8 +100,10 @@ describe('V1 and V2 are proven infeasible with their cause', () => {
     //   starts by Tue 09:00; both tag-outs before it (SW A 3 h, CCW A 2 h) share the one work-control
     //   operator, so the first starts by Tue 04:00. (Under case v0.1's FS link this bound was Tue 02:00, the
     //   figure in design §6.4; the frozen v0.2 adds the 2 h SS lag.)
+    // The pool counts every crew that could do the work: the contractor may lance the tubes but has no
+    // hours without nights, so it is in the pool with 0 h.
     expect(result.span!.alsoProven).toEqual({
-      kind: 'energy', resources: ['mech-station'], jobs: expect.any(Array), requiredHours: hoursOf(inside) + spareInside, availableHours: 2 * 3 * 8,
+      kind: 'energy', resources: ['mech-station', 'mech-contractor'], jobs: expect.any(Array), requiredHours: hoursOf(inside) + spareInside, availableHours: 2 * 3 * 8 + 0,
       from: iso('2026-11-16T21:00:00'), to: iso('2026-11-17T04:30:00'), span: 'R2',
     })
     const jobs = (result.span!.alsoProven as { jobs: string[] }).jobs
@@ -99,10 +112,18 @@ describe('V1 and V2 are proven infeasible with their cause', () => {
     expect(certificateSchema.safeParse(result.span!.alsoProven).success).toBe(true)
     // Logic and calendars alone, with the span limit as max-lags, also fail (the case's own reason).
     expect(propagate(prepare(compiled.problem)).ok).toBe(false)
-    const lines = refusalLines(result.certificate!, trainAInputs(), result.span)
+    // Lane K re-verifies both proofs, with nothing left unverified.
+    const variant = { methods: daysOnly('swap').methods, purchases: ['crane-fri', 'ect-friday'] }
+    expect(laneKVerify(trainAInputs(), variant, result.certificate!).proves).toBe(true)
+    expect(laneKVerify(trainAInputs(), variant, result.span!.alsoProven!).proves).toBe(true)
+    const lines = explainRefusal(trainAInputs(), daysOnly('swap'), laneKVerify)!.lines
     expect(lines[0]).toBe(`Not possible: ${trainAInputs().rules.find(rule => rule.key === 'R2')!.words} The shortest span this plan allows is 80.5 h, against 72 h: first tag-out Mon 11:00, last test passed Thu 19:30.`)
-    expect(lines.at(-1)).toBe('Also: in any such span starting between Mon 21:00 and Tue 04:00, 49 h of Station mechanical crew work must fit, and only 48 h exist.')
+    expect(lines).toContain('A later first tag-out does not help: from Tue 04:00 the span is 85.5 h, because:')
+    expect(lines).toContain('Also: in any such span starting between Mon 21:00 and Tue 04:00, 49 h of Station mechanical crew and Contractor mechanical night crew work must fit, and only 48 h exist.')
     expect(lines.every(line => line.length <= 240 && !/earliest start|latest start|slot/i.test(line))).toBe(true)
+    // With a verifier that does not confirm the energy count, it is not shown.
+    const strict = explainRefusal(trainAInputs(), daysOnly('swap'), (inputs, used, cause) => (cause.kind === 'energy' ? { proves: false } : laneKVerify(inputs, used, cause)))!
+    expect(strict.lines.some(line => line.startsWith('Also:'))).toBe(false)
   })
 
   test('with crew hours allowed, neither method is refused by a bound', () => {

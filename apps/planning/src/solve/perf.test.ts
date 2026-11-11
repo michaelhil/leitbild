@@ -2,7 +2,7 @@ import { describe, expect, test } from 'bun:test'
 import { retime, prepare } from './decode.ts'
 import { generate } from './generate.ts'
 import { createSolverPool, SOLVER_CPU_CAP_CORES } from './pool.ts'
-import { checkDouble } from './fixtures/check-double.ts'
+import { laneKCheck, laneKVerify } from './fixtures/lane-k.ts'
 import { fromBenchInstance, type BenchInstance } from './fixtures/bench-instance.ts'
 import { trainAInputs } from './fixtures/train-a-case.ts'
 import twinJson from './fixtures/twin-v3.json'
@@ -24,7 +24,7 @@ describe.skipIf(!enabled)('solver floors (opt-in)', () => {
     const pool = createSolverPool()
     const stop = sampleRss()
     const at = performance.now()
-    const result = await generate({ engine: pool, check: checkDouble() }, { inputs: trainAInputs(), revision: 1, previous: null, input: {}, by: { kind: 'agent' }, signal: new AbortController().signal })
+    const result = await generate({ engine: pool, check: laneKCheck, verify: laneKVerify }, { inputs: trainAInputs({ read: true }), revision: 1, previous: null, input: {}, by: { kind: 'agent' }, signal: new AbortController().signal })
     const wallMs = performance.now() - at
     const peakRssMb = stop()
     const runs = result.optionSet.options.map(option => ({ key: option.key, word: option.status.word, ...('run' in option.status ? { cpuMs: option.status.run.cpuMs, stoppedBy: option.status.run.stoppedBy } : {}) }))

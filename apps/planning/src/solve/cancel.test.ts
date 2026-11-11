@@ -3,12 +3,12 @@ import { compile } from './compile.ts'
 import { generate, rawOf } from './generate.ts'
 import { createSolverPool, SOLVER_CPU_CAP_CORES } from './pool.ts'
 import { goalKeys, compareKeys } from './rank.ts'
-import { checkDouble } from './fixtures/check-double.ts'
+import { laneKCheck, laneKVerify } from './fixtures/lane-k.ts'
 import { trainAInputs } from './fixtures/train-a-case.ts'
 
 // Cancel (A7, design §6.5): answered within one second, keeping per variant the better of the stored
 // and the new option; a stored option is replaced only by a valid better one, or when it is stale.
-const inputs = trainAInputs()
+const inputs = trainAInputs({ read: true })
 const goals = inputs.goals.map(goal => ({ threshold: goal.threshold?.value ?? 0, step: goal.tolerance.value }))
 const by = { kind: 'human' as const, name: 'Planner' }
 
@@ -16,7 +16,7 @@ const run = (pool: ReturnType<typeof createSolverPool>, request: { revision: num
   const controller = new AbortController()
   let abortedAt = 0
   if (request.abortAfterMs !== undefined) setTimeout(() => { abortedAt = performance.now(); controller.abort() }, request.abortAfterMs)
-  return generate({ engine: pool, check: checkDouble() }, {
+  return generate({ engine: pool, check: laneKCheck, verify: laneKVerify }, {
     inputs, revision: request.revision, previous: request.previous, input: { seconds: request.seconds }, by, signal: controller.signal, stoppedByWho: () => 'person',
   }).then(result => ({ result, answeredAfterAbortMs: abortedAt === 0 ? undefined : performance.now() - abortedAt }))
 }

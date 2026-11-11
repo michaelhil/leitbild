@@ -22,6 +22,26 @@ export interface CheckReport {
 export type CheckPlan = (plan: { readonly inputs: PlanInputs; readonly variant: Option['variant']; readonly rows: readonly DatedRow[] }) => CheckReport
 
 /**
+ * Lane K's certificate re-verification. A refusal is "proven infeasible" only when it `proves`: no problem
+ * found and nothing left unverified. Required wherever a proof is stored or shown (adversary fix 6).
+ */
+export type VerifyCertificate = (inputs: PlanInputs, variant: Option['variant'], cause: Certificate) => { readonly proves: boolean }
+
+/**
+ * Checker findings that come from the inputs, not from a schedule: lane K's input codes and the readiness
+ * blockers (a precondition not read from World, or not met at read time). They make an option "invalid
+ * input" with the finding as its cause, never "unresolved".
+ */
+export const INPUT_VIOLATIONS: ReadonlySet<string> = new Set([
+  'no-window', 'window-off-grid', 'calendar-needs-zone', 'calendar-off-grid', 'unknown-key', 'method-choice', 'support-cycle',
+  'bracket-missing', 'equipment-missing', 'world-value-unread', 'below-minimum', 'duration-ambiguous', 'no-working-calendar', 'where-unit',
+  'precondition-unread', 'precondition-unmet',
+])
+/** The input findings of a check, as status problems; empty when none. */
+export const inputProblems = (violations: CheckReport['violations']): Array<{ about: string[]; code: string }> =>
+  violations.filter(violation => INPUT_VIOLATIONS.has(violation.code)).map(violation => ({ about: violation.about.slice(0, 4), code: violation.code }))
+
+/**
  * Goal words in order. A goal is "proven optimal" when its value equals its bound at the goal's
  * resolution and every earlier goal is proven; otherwise "best found under budget", with the bound
  * when it is a valid lower bound. A bound above the value is not shown (and is reported in `conflicts`).
@@ -117,16 +137,16 @@ export const redundancyWarning = (inputs: PlanInputs, rows: readonly DatedRow[])
 export interface ShownStatus {
   readonly status: Status
   /** Why proofs or feasibility were withdrawn for display; undefined when the stored status stands. */
-  readonly stale?: { readonly codes: ReadonlyArray<'inputs_changed' | 'formulation_changed' | 'violations' | 'certificate_rejected'>; readonly violations?: CheckReport['violations'] }
+  readonly stale?: { readonly codes: ReadonlyArray<'inputs_changed' | 'formulation_changed' | 'violations' | 'invalid_input' | 'certificate_rejected'>; readonly violations?: CheckReport['violations'] }
   readonly warnings: readonly RedundancyWarning[]
 }
 
 /**
  * The status to show for a stored option, re-checked against the current inputs: proofs only on an
- * exact inputs revision and formulation; a feasible plan re-checked by the checker every time; an
- * infeasibility certificate re-verified when a verifier is given (lane K's).
+ * exact inputs revision and formulation; a feasible plan re-checked by the checker every time (an input
+ * finding makes it "invalid input"); an infeasibility certificate re-verified by lane K every time.
  */
-export const showStatus = (option: Option, current: { readonly inputs: PlanInputs; readonly revision: number; readonly formulation: string }, check: CheckPlan, verifyCertificate?: (cause: Certificate, inputs: PlanInputs) => boolean): ShownStatus => {
+export const showStatus = (option: Option, current: { readonly inputs: PlanInputs; readonly revision: number; readonly formulation: string }, check: CheckPlan, verify: VerifyCertificate): ShownStatus => {
   const codes: Array<NonNullable<ShownStatus['stale']>['codes'][number]> = []
   let status = option.status
   if (option.inputsRevision !== current.revision) codes.push('inputs_changed')
@@ -138,11 +158,12 @@ export const showStatus = (option: Option, current: { readonly inputs: PlanInput
     const report = check({ inputs: current.inputs, variant: option.variant, rows: option.rows })
     if (report.violations.length > 0) {
       violations = report.violations
-      codes.push('violations')
-      status = unresolvedStatus(status.run)
+      const problems = inputProblems(report.violations)
+      codes.push(problems.length > 0 ? 'invalid_input' : 'violations')
+      status = problems.length > 0 ? refusedStatus('invalid input', problems) : unresolvedStatus(status.run)
     }
   }
-  if (status.word === 'proven infeasible' && verifyCertificate !== undefined && !verifyCertificate(status.cause, current.inputs)) {
+  if (status.word === 'proven infeasible' && !verify(current.inputs, option.variant, status.cause).proves) {
     codes.push('certificate_rejected')
     status = withoutProof(status)
   }

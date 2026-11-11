@@ -7,6 +7,7 @@ const inputs: PlanInputs = planInputsSchema.parse(fragmentJson)
 const run = { grid: '30min' as const, engine: 'lahc-1', formulation: 'F1', seed: 1, budget: { evals: 1, cpuMs: 1, wallMs: 1 }, stoppedBy: 'cpu' as const, evals: 1, cpuMs: 1 }
 const goals = inputs.goals   // span over 54 h, extra cost (step NOK 25,000), unavailable hours
 const clean: CheckPlan = () => ({ violations: [], goals: [] })
+const proves = () => ({ proves: true })
 
 describe('status words', () => {
   test('optimal at the goal resolution: half a 30 min slot of MILP noise still equals', () => {
@@ -46,24 +47,31 @@ describe('every shown status is re-checked against the current inputs', () => {
   const option = { key: 'swap', status, rows: [], inputsRevision: 3, variant: { methods: [], purchases: [] } }
 
   test('proof is reused only on the exact inputs revision and formulation', () => {
-    expect(showStatus(option, { inputs, revision: 3, formulation: 'F1' }, clean)).toEqual({ status, warnings: [] })
-    const newer = showStatus(option, { inputs, revision: 4, formulation: 'F1' }, clean)
+    expect(showStatus(option, { inputs, revision: 3, formulation: 'F1' }, clean, proves)).toEqual({ status, warnings: [] })
+    const newer = showStatus(option, { inputs, revision: 4, formulation: 'F1' }, clean, proves)
     expect(newer.stale?.codes).toEqual(['inputs_changed'])
     expect(newer.status.word === 'validated feasible' && newer.status.goals.some(goal => goal.word === 'proven optimal')).toBe(false)
-    expect(showStatus(option, { inputs, revision: 3, formulation: 'F2' }, clean).stale?.codes).toEqual(['formulation_changed'])
+    expect(showStatus(option, { inputs, revision: 3, formulation: 'F2' }, clean, proves).stale?.codes).toEqual(['formulation_changed'])
   })
 
   test('a plan that breaks a rule on the current inputs is never shown as feasible', () => {
     const broken: CheckPlan = () => ({ violations: [{ code: 'protected_equipment', about: ['SWB'] }], goals: [] })
-    const shown = showStatus(option, { inputs, revision: 3, formulation: 'F1' }, broken)
+    const shown = showStatus(option, { inputs, revision: 3, formulation: 'F1' }, broken, proves)
     expect(shown.status.word).toBe('unresolved')
     expect(shown.stale?.codes).toEqual(['violations'])
   })
 
+  test('an input finding on the current inputs shows "invalid input" with its cause', () => {
+    const unread: CheckPlan = () => ({ violations: [{ code: 'precondition-unread', about: ['SWA-TAG', 'SWB'] }], goals: [] })
+    const shown = showStatus(option, { inputs, revision: 3, formulation: 'F1' }, unread, proves)
+    expect(shown.status).toEqual({ word: 'invalid input', problems: [{ about: ['SWA-TAG', 'SWB'], code: 'precondition-unread' }] })
+    expect(shown.stale?.codes).toEqual(['invalid_input'])
+  })
+
   test('a certificate that lane K rejects is not shown as proof', () => {
     const refused = { ...option, status: { word: 'proven infeasible' as const, cause: { kind: 'temporal' as const, steps: [] }, run } }
-    expect(showStatus(refused, { inputs, revision: 3, formulation: 'F1' }, clean, () => false).status.word).toBe('unresolved')
-    expect(showStatus(refused, { inputs, revision: 3, formulation: 'F1' }, clean, () => true).status.word).toBe('proven infeasible')
+    expect(showStatus(refused, { inputs, revision: 3, formulation: 'F1' }, clean, () => ({ proves: false })).status.word).toBe('unresolved')
+    expect(showStatus(refused, { inputs, revision: 3, formulation: 'F1' }, clean, proves).status.word).toBe('proven infeasible')
   })
 })
 
@@ -84,7 +92,7 @@ describe('redundancy warning beside the status (adversary r2 item 7)', () => {
 
   test('both out together with no rule: warned, from B tagged (08:00Z) to A back (11:00Z)', () => {
     expect(redundancyWarning(pair, rows)).toEqual({ code: 'redundancy_unruled', items: ['MFWA', 'MFWB'], from: '2026-11-16T08:00:00.000Z', to: '2026-11-16T11:00:00.000Z' })
-    const shown = showStatus({ key: 'o', status: feasibleStatus(pair.goals, run, [10], undefined).status, rows, inputsRevision: 1, variant: { methods: [], purchases: [] } }, { inputs: pair, revision: 1, formulation: 'F1' }, clean)
+    const shown = showStatus({ key: 'o', status: feasibleStatus(pair.goals, run, [10], undefined).status, rows, inputsRevision: 1, variant: { methods: [], purchases: [] } }, { inputs: pair, revision: 1, formulation: 'F1' }, clean, proves)
     expect(shown.status.word).toBe('validated feasible')
     expect(shown.warnings.map(warning => warning.code)).toEqual(['redundancy_unruled'])
   })

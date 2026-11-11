@@ -8,7 +8,7 @@ import { prepare } from './decode.ts'
 import { totalFloat } from './float.ts'
 import { generate } from './generate.ts'
 import { searchEngine } from './search.ts'
-import { checkDouble } from './fixtures/check-double.ts'
+import { laneKCheck, laneKVerify } from './fixtures/lane-k.ts'
 
 // The Supply run (maint/case2.json, sha256 7339108b…, converted by lane A) solved by the same core.
 // World values are never stored, so this test supplies a recorded-facts fixture. These are TEST INPUTS
@@ -37,7 +37,7 @@ const lateTruck = planInputsSchema.parse({ ...supplyRun, calendars: supplyRun.ca
 const lifted = planInputsSchema.parse({ ...supplyRun, rules: [] })
 
 const run = async (inputs: PlanInputs) => {
-  const result = await generate({ engine: searchEngine(), check: checkDouble() }, { inputs, revision: 1, previous: null, input: { seconds: 2 }, by: { kind: 'agent' }, signal: new AbortController().signal })
+  const result = await generate({ engine: searchEngine(), check: laneKCheck, verify: laneKVerify }, { inputs, revision: 1, previous: null, input: { seconds: 2 }, by: { kind: 'agent' }, signal: new AbortController().signal })
   const option = result.optionSet.options[0]!
   const row = (job: string) => option.rows.find(entry => entry.job === job)!
   return { option, row }
