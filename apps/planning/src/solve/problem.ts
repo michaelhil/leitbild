@@ -46,10 +46,13 @@ export interface NormalizedProblem {
    * Ranking goals, in order, in the goal's unit. Metrics (solve/compile, check/metrics) report the raw value
    * with no threshold applied. solve/rank.ts alone subtracts it, once: x = max(0, raw - threshold), and the
    * key is x when `step` is 0, else floor(x / step). For example span-over reports the span, 56 h, and
-   * rank.ts makes it 2 h over the 54 h threshold. The engine ranks only through rank.ts. Options compare
-   * by keys lexicographically; exact ties are broken by option key.
+   * rank.ts makes it 2 h over the 54 h threshold. With several spans in scope, span-over reports one raw
+   * span per group and rank.ts sums the per-group excess, x = sum over groups of max(0, span - threshold):
+   * the guideline-excess measure of the frozen cases and the gate. The engine ranks only through rank.ts.
+   * Options compare by keys lexicographically; exact ties are broken by option key. `unit` is the goal's
+   * unit ('h', 'min', 's' or the currency code); threshold and step are in that unit, never in grid slots.
    */
-  readonly goals: ReadonlyArray<{ readonly metric: string; readonly spans?: readonly number[]; readonly tagged?: readonly number[]; readonly threshold: number; readonly step: number }>
+  readonly goals: ReadonlyArray<{ readonly metric: string; readonly unit: string; readonly spans?: readonly number[]; readonly tagged?: readonly number[]; readonly threshold: number; readonly step: number }>
 }
 
 export interface Schedule { readonly mode: Int32Array; readonly start: Int32Array }
