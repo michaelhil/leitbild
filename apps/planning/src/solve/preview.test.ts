@@ -1,7 +1,8 @@
 import { afterAll, describe, expect, test } from 'bun:test'
-import { createRealSolver } from '../api/wiring.ts'
+import { createHarness } from '../api/fixtures/harness.ts'
+import { createRealSolver, realChecker } from '../api/wiring.ts'
 import { checkPlan } from '../check/check.ts'
-import { planInputsSchema, type PlanInputs } from '../plan/schema.ts'
+import { planInputsSchema, planSchema, type PlanInputs } from '../plan/schema.ts'
 import { twinPlan, twinV3Options } from '../../tests/harness/twin-plan.ts'
 import { compile } from './compile.ts'
 import { prepare } from './decode.ts'
@@ -19,15 +20,16 @@ describe('preview re-timing repairs the option, never re-solves it', () => {
   const pool = createSolverPool({ rssLimitMb: 4_000 })
   const solver = createRealSolver(pool)
   afterAll(() => pool.shutdown())
-  const optionOf = async (inputs: PlanInputs, variants?: GenerateInput['variants']) => {
+  const generated = async (inputs: PlanInputs, variants?: GenerateInput['variants'], seed = 1, evals = 1_500) => {
     // S60 to S130 are above the certified size (33 jobs): solved directly here, the size lifted, as or's size curve did.
     const result = await generate({ engine: pool, check: laneKCheck, verify: laneKVerify, certifiedSize: { ...CERTIFIED_SIZE, maxJobs: 130 } }, {
-      inputs, revision: 1, previous: null, input: variants === undefined ? {} : { variants }, by: { kind: 'service', name: 'test' }, signal: new AbortController().signal, seed: 1, evals: 1_500,
+      inputs, revision: 1, previous: null, input: variants === undefined ? {} : { variants }, by: { kind: 'service', name: 'test' }, signal: new AbortController().signal, seed, evals,
     })
     const option = result.optionSet.options.find(candidate => candidate.key === result.optionSet.recommended)!
     expect(option.status.word).toBe('validated feasible')
-    return option
+    return { optionSet: result.optionSet, option }
   }
+  const optionOf = async (inputs: PlanInputs, variants?: GenerateInput['variants']) => (await generated(inputs, variants)).option
 
   test('with no edit the preview is the option exactly: the flagship and S60, S100, S130', async () => {
     const plans: Array<{ inputs: PlanInputs; variants?: GenerateInput['variants'] }> = [{ inputs: trainAInputs({ read: true }) }]
@@ -46,27 +48,34 @@ describe('preview re-timing repairs the option, never re-solves it', () => {
     }
   }, 600_000)
 
-  test('a seal estimate +6 h moves only the CCW chain and what it forces; the checker finds only what the edit breaks', async () => {
+  // Two options of the flagship, two kinds of seal: on day shifts (seed 1, 1,500 evaluations; the longer seal
+  // breaks the 72 h span R2, 82 h) and in bought time (lane K's case, the adversary's item 22: seed 2,
+  // 15,000 evaluations, span 49 h; the repair moves the seal's start later and R2 holds, 65.5 h). Only what
+  // must hold for any option is asserted: only forced jobs move, nothing earlier; each moved job carries the
+  // edit as its cause; the checker's verdict on the previewed rows is the preview's.
+  for (const { name, seed, evals, bought } of [
+    { name: 'the seal on day shifts', seed: 1, evals: 1_500, bought: false },
+    { name: 'the seal in bought time (lane K\'s case)', seed: 2, evals: 15_000, bought: true },
+  ]) test(`a seal estimate +6 h, ${name}: only what it forces moves, each moved job carries the edit, the checker's verdict is the preview's`, async () => {
     const inputs = trainAInputs({ read: true })
-    const option = await optionOf(inputs)
+    const { optionSet, option } = await generated(inputs, undefined, seed, evals)
+    const before = new Map(option.rows.map(row => [row.job, row]))
+    expect(before.get('CCWA-SEAL')!.uses.some(use => use.purchase !== undefined)).toBe(bought)
     const seal = inputs.jobs.find(job => job.key === 'CCWA-SEAL')!
     if (seal.duration.value === null) throw new Error('the flagship seal has an estimate')
-    const sealed = planInputsSchema.parse({ ...inputs, jobs: inputs.jobs.map(job => (job === seal ? { ...job, duration: { ...job.duration, value: seal.duration.value! + 6 } } : job)) })
+    const longer = seal.duration.value + 6
+    const sealed = planInputsSchema.parse({ ...inputs, jobs: inputs.jobs.map(job => (job === seal ? { ...job, duration: { ...job.duration, value: longer } } : job)) })
     const preview = await solver.preview({ inputs: sealed, option })
-    // The preview's findings are lane K's on its rows. The repair breaks no link, crew, calendar or
-    // keep-in-service rule; what the longer seal itself breaks (here the 72 h span R2: the seal works day
-    // shifts in this option) is shown, not hidden by moving other jobs back.
+    // Truthful: the preview's findings are lane K's on its rows. The repair breaks no link, crew, calendar or
+    // keep-in-service rule; what the longer seal itself breaks is shown, not hidden by moving other jobs back.
     const check = checkPlan(sealed, option.variant, preview.rows)
     expect(preview.violations).toEqual(check.violations.map(violation => ({ code: violation.code, about: violation.about, words: violation.words })))
     for (const violation of check.violations) expect(['span-limit', 'beyond-window', 'due']).toContain(violation.code)
-    const before = new Map(option.rows.map(row => [row.job, row]))
     const moved = preview.rows.filter(row => row.start !== before.get(row.job)!.start || row.finish !== before.get(row.job)!.finish)
     const movedKeys = new Set(moved.map(row => row.job))
     expect(movedKeys.has('CCWA-SEAL')).toBe(true)
-    // The seal keeps its start (still feasible) and finishes later; nothing moves earlier.
-    expect(preview.rows.find(row => row.job === 'CCWA-SEAL')!.start).toBe(before.get('CCWA-SEAL')!.start)
     for (const row of moved) expect(Date.parse(row.start)).toBeGreaterThanOrEqual(Date.parse(before.get(row.job)!.start))
-    // Every other moved job is forced: a predecessor that moved (a link), or a crew or tool that a job
+    // Every other moved job is forced: a predecessor that moved (a link), or a crew or tool that a moved job
     // starting before it now holds over its old start.
     const compiled = compile(sealed, { methods: option.variant.methods, buy: option.variant.purchases })
     if (!compiled.ok) throw new Error('the sealed plan compiles')
@@ -84,6 +93,21 @@ describe('preview re-timing repairs the option, never re-solves it', () => {
     // Everything done before the seal starts keeps its place and resources exactly (its float may change).
     const placed = ({ float: _float, ...row }: (typeof option.rows)[number]) => row
     for (const row of option.rows) if (row.finish <= before.get('CCWA-SEAL')!.start) expect(placed(preview.rows.find(entry => entry.job === row.job)!)).toEqual(placed(row))
-    expect(movedKeys.size).toBeLessThan(option.rows.length / 2)
+    // Through the operations (planning.plan.edit with preview): what moved, each with the edit as its cause.
+    const harness = await createHarness({ solver, checker: realChecker })
+    try {
+      const at = new Date().toISOString()
+      const plan = planSchema.parse({
+        id: crypto.randomUUID(), workspaceId: harness.workspaceId, revision: 1, createdAt: at, updatedAt: at, inputs, options: optionSet, baselines: [],
+        changes: [{ seq: 1, at, by: { kind: 'human' }, revision: 1, summary: `Created '${inputs.settings.title}'`, kinds: [] }], droppedChanges: 0,
+      })
+      const id = (await harness.store.create(harness.workspaceId, plan)).id
+      const answer = await harness.call('planning.plan.edit', { resource: id, input: { edits: [{ edit: 'job', key: 'CCWA-SEAL', duration: { value: longer } }], preview: true } })
+      expect(answer.status).toBe(200)
+      const shown: Array<{ job: string; because: number[] }> = answer.body.result.preview.moved
+      expect(shown.length).toBe(Math.min(6, moved.length))
+      for (const entry of shown) expect({ job: entry.job, moved: movedKeys.has(entry.job), because: entry.because }).toEqual({ job: entry.job, moved: true, because: [0] })
+      expect(answer.body.result.preview.violations.length).toBe(check.violations.length)
+    } finally { await harness.close() }
   }, 300_000)
 })
