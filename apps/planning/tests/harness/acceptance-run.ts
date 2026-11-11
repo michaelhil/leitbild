@@ -5,6 +5,8 @@
 // random goal policies; 2 bounds soundness with the solver's real certificates; daylight saving solved
 // across the October change, checked against hand-written instants. Prints each row's result.
 import { planInputsSchema, type PlanInputs } from '../../src/plan/schema.ts'
+import type { z } from 'zod'
+import type { datedRowSchema } from '../../src/plan/schema.ts'
 import { checkPlan } from '../../src/check/check.ts'
 import { verifyOptimality } from '../../src/check/optimal.ts'
 import { createRealSolver } from '../../src/api/wiring.ts'
@@ -19,11 +21,13 @@ import { boundsSoundness } from './bounds-soundness.ts'
 import type { GeneratePort, HarnessOption } from './ports.ts'
 import { twinPlan, twinV3Options } from './twin-plan.ts'
 
+type DatedRow = z.infer<typeof datedRowSchema>
 const seconds = Number(process.argv[2] ?? 10)
 /** Rows to run, e.g. "counterfactual,dst"; all by default. */
 const rows = new Set((process.argv[3] ?? 'counterfactual,goals,bounds,dst,preview,optimal').split(','))
-/** or's frozen size subsets (R/or/inc1/size/, read-only), for the preview row. */
+/** or's frozen size subsets (R/or/inc1/size/) and its MILP schedule for S60 (R/or/gate/runs/), read-only. */
 const sizeDirectory = process.env.LANE_K_SIZE_DIR ?? '/Users/hilde/Documents/ChatGPT/leitbild-planning-review-2026-11-10/or/inc1/size'
+const s60ScheduleFile = process.env.LANE_K_S60_SCHEDULE ?? '/Users/hilde/Documents/ChatGPT/leitbild-planning-review-2026-11-10/or/gate/runs/best-milp-S60-540.json'
 const pool = createSolverPool()
 const solver = createRealSolver(pool)
 const by = { kind: 'agent' as const, name: 'lane K acceptance run' }
@@ -170,32 +174,37 @@ try {
 
   // Preview with no edit: re-timing the option with its own order and modes must give the option back.
   if (rows.has('preview')) {
+    const sameRows = (left: readonly DatedRow[], right: readonly DatedRow[]) => {
+      const key = (row: DatedRow) => `${row.job} ${Date.parse(row.start)} ${Date.parse(row.finish)} ${row.uses.map(use => `${use.resource}:${Date.parse(use.from)}-${Date.parse(use.to)}:${use.purchase ?? ''}`).sort().join(',')}`
+      const before = new Set(left.map(key))
+      return right.filter(row => !before.has(key(row))).map(row => {
+        const was = left.find(entry => entry.job === row.job)
+        const shift = was === undefined ? NaN : (Date.parse(row.start) - Date.parse(was.start)) / 3_600_000
+        return `${row.job} ${shift === 0 ? 'same start, other uses or finish' : `${shift > 0 ? '+' : ''}${shift} h`}`
+      })
+    }
+    // the flagship's options, from Generate
+    const flagshipSet = await generateOptions(flagship)
+    for (const option of flagshipSet.options.filter(candidate => candidate.status.word === 'validated feasible')) {
+      const preview = await solver.preview({ inputs: flagship, option })
+      const changed = sameRows(option.rows, preview.rows)
+      print('preview', `flagship ${option.key}: ${changed.length === 0 && preview.violations.length === 0 ? 'identical' : `differs (${changed.slice(0, 4).join(', ')}; ${preview.violations.length} violations)`}`)
+    }
+    // S60, above the size Generate solves: or's frozen MILP schedule decoded to rows, checked, then previewed
+    // through the solver port directly (no operation, no Generate)
     const s60Text = await Bun.file(`${sizeDirectory}/S60.json`).text()
     const s60Bench = JSON.parse(s60Text)
-    const s60 = twinPlan(s60Bench, { ...twinV3Options(s60Bench), title: 'Size subset S60' }).inputs
-    for (const [name, inputs] of [['flagship', flagship], [`S60 (sha256 ${new Bun.CryptoHasher('sha256').update(s60Text).digest('hex').slice(0, 8)})`, s60]] as const) {
-      const set = await generateOptions(inputs)
-      let same = 0, differ = 0
-      const notes: string[] = []
-      for (const option of set.options.filter(candidate => candidate.status.word === 'validated feasible')) {
-        const preview = await solver.preview({ inputs, option })
-        const key = (row: { job: string; start: string; finish: string; uses: ReadonlyArray<{ resource: string; from: string; to: string; purchase?: string | undefined }> }) =>
-          `${row.job} ${Date.parse(row.start)} ${Date.parse(row.finish)} ${row.uses.map(use => `${use.resource}:${Date.parse(use.from)}-${Date.parse(use.to)}:${use.purchase ?? ''}`).sort().join(',')}`
-        const before = new Set(option.rows.map(key)), after = preview.rows.map(key)
-        const changed = after.filter(entry => !before.has(entry))
-        if (changed.length === 0 && after.length === before.size && preview.violations.length === 0) same++
-        else {
-          differ++
-          const moved = preview.rows.filter(row => key(row) !== undefined && !before.has(key(row))).map(row => {
-            const was = option.rows.find(entry => entry.job === row.job)
-            const shift = was === undefined ? NaN : (Date.parse(row.start) - Date.parse(was.start)) / 3_600_000
-            return `${row.job} ${shift === 0 ? 'same start, other uses or finish' : `${shift > 0 ? '+' : ''}${shift} h`}`
-          })
-          notes.push(`${option.key}: ${changed.length} rows differ, ${preview.violations.length} violations (${moved.slice(0, 4).join(', ')})`)
-        }
-      }
-      print('preview', `${name}: ${same} options identical, ${differ} differ${notes.length === 0 ? '' : `; ${notes.join('; ')}`}`)
-    }
+    const s60Plan = twinPlan(s60Bench, { ...twinV3Options(s60Bench), title: 'Size subset S60' })
+    const frozen = JSON.parse(await Bun.file(s60ScheduleFile).text())
+    const float = { workingHours: 0, limitedBy: { kind: 'window-end' as const } }
+    const decoded: DatedRow[] = s60Plan.rowsOf(frozen.solution).map(row => ({ ...row, uses: [...row.uses], float }))
+    const decodedCheck = checkPlan(s60Plan.inputs, s60Plan.variant, decoded)
+    const run = { grid: '30min' as const, engine: 'or MILP (frozen)', formulation: solver.formulation('30min'), seed: 0, budget: { evals: 0, cpuMs: 0, wallMs: 0 }, stoppedBy: 'done' as const, evals: 0, cpuMs: 0 }
+    const s60Option = { key: 's60', label: 'S60 frozen schedule', variant: { methods: s60Plan.variant.methods.map(entry => ({ ...entry })), purchases: [...s60Plan.variant.purchases] }, status: { word: 'validated feasible' as const, goals: [], run }, rows: decoded, metrics: [], inputsRevision: 1 }
+    const s60Preview = await solver.preview({ inputs: s60Plan.inputs, option: s60Option })
+    const s60Changed = sameRows(decoded, s60Preview.rows)
+    const metric = (id: string) => decodedCheck.metrics.find(entry => entry.id === id)?.value
+    print('preview', `S60 (sha256 ${new Bun.CryptoHasher('sha256').update(s60Text).digest('hex').slice(0, 8)}), or's frozen schedule: checker ${decodedCheck.violations.length} violations, finish ${metric('finish')} h and cost ${metric('extra-cost')} (or ${frozen.finishH} h, ${frozen.costNok}); preview ${s60Changed.length === 0 && s60Preview.violations.length === 0 ? 'identical' : `differs (${s60Changed.slice(0, 4).join(', ')}; ${s60Preview.violations.length} violations)`}`)
     // The seal +6 h preview on the baseline: only the CCW chain and what it forces may move, and the
     // checker reports only what the edit breaks. "Forced" = reachable from the seal through links, the
     // bracket of its item and the support order (the precedence the edit can push).
