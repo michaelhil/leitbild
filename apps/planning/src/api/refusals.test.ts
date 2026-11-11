@@ -195,6 +195,19 @@ describe('refusals name their cause and stay within 4 KB', () => {
     } finally { await small.close() }
   })
 
+  test('one Generate at a time across Planning: solver_busy is a retryable refusal in planner words (lane S, 69d554e05)', async () => {
+    const { planningError } = await import('../errors.ts')
+    const busy = await createHarness({ solver: { ...createSolverDouble(), generate: async () => { throw planningError(409, 'solver_busy', 'Planning is generating another plan; try again in about 20 seconds.') } } })
+    try {
+      const plan = await busy.create('train-a-work-week')
+      const refused = await busy.call('planning.plan.generate', { resource: plan.id, input: {}, expectedRevision: 1 })
+      expect([...error(refused), refused.body.error.message, refused.body.error.retryable]).toEqual([409, 'solver_busy', 'Planning is generating another plan; try again in about 20 seconds.', true])
+      // Nothing was saved, and the plan's own Generate lock is free again.
+      expect((await busy.store.read(busy.workspaceId, plan.id)).options).toBeNull()
+      expect(error(await busy.call('planning.plan.generate', { resource: plan.id, input: {}, expectedRevision: 1 }))).toEqual([409, 'solver_busy'])
+    } finally { await busy.close() }
+  })
+
   test('baseline refuses an option that is not validated feasible or no longer matches the plan', async () => {
     const plan = await harness.create('supply-run')
     const generated = await harness.call('planning.plan.generate', { resource: plan.id, input: {}, expectedRevision: 1 })

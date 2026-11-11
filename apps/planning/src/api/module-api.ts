@@ -36,7 +36,8 @@ export const planningModuleManifest = workspaceModuleManifestSchema.parse({
 const moduleId = moduleIdSchema.parse('planning')
 const planType = 'planning.plan'
 /** Codes a caller may retry as they are. */
-const retryable = new Set(['world_unavailable', 'planning_busy'])
+// solver_busy: Planning runs one Generate at a time across the service, and nothing is queued (lane S).
+const retryable = new Set(['world_unavailable', 'planning_busy', 'solver_busy'])
 const deletedSchema = z.object({ deleted: z.literal(true) }).strict()
 
 export interface PlanningCallContext {
@@ -89,7 +90,7 @@ export const planningOperations: ReadonlyArray<Operation<any>> = [
   {
     id: 'planning.plan.generate', kind: 'command', scope: 'plan', risk: 'write',
     title: 'Generate schedule options',
-    description: 'Work out schedules that keep every hard rule: links, shift calendars, crew and tool limits, outage limits, protected equipment and locks. Ranks them by the plan\'s goals and says for each whether it is validated feasible, proven infeasible with its cause, or unresolved. Try what-ifs without changing the plan: fix a method, allow or forbid purchases, or days only with no extra crew hours. Saves the options; the plan\'s inputs stay as they are. Needs the plan\'s current revision.',
+    description: 'Work out schedules that keep every hard rule: links, shift calendars, crew and tool limits, outage limits, protected equipment and locks. Ranks them by the plan\'s goals and says for each whether it is validated feasible, proven infeasible with its cause, or unresolved. Try what-ifs without changing the plan: fix a method, allow or forbid purchases, or days only with no extra crew hours. Saves the options; the plan\'s inputs stay as they are. Planning generates one plan at a time: while another is generating, it answers solver_busy; try again in about 20 seconds. Needs the plan\'s current revision.',
     searchTerms: ['optimise', 'alternatives', 'what-if', 'replan', 'reschedule', 'level', 'levelling', 'fit', 'window', 'variants', 'compress', 'overtime'],
     input: generateInputSchema, output: generateResultSchema,
     invoke: async ({ operations, signal }, invocation, input: z.infer<typeof generateInputSchema>) => ({ result: await operations.generate(invocation.workspaceId, planIdOf(invocation), input, invocation.expectedRevision, invocation.access, signal) }),
