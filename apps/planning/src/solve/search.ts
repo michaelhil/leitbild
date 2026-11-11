@@ -8,7 +8,7 @@
 import { SOLVER_VERSIONS } from './compile.ts'
 import { makeDecoder, precedenceOrder, prepare, type Decoded, type Evaluation, type Prepared } from './decode.ts'
 import type { Engine, EngineResult, EngineStop, NormalizedProblem, Schedule } from './problem.ts'
-import { compareStaged, goalExcess } from './rank.ts'
+import { compareKeys, compareStaged, goalExcess, goalKeys } from './rank.ts'
 
 export const mulberry32 = (seed: number) => () => {
   seed |= 0; seed = (seed + 0x6d2b79f5) | 0
@@ -21,7 +21,7 @@ export const mulberry32 = (seed: number) => () => {
 export const threadCpuMs = (): number => { const usage = process.threadCpuUsage(); return (usage.user + usage.system) / 1_000 }
 
 interface Point { readonly list: number[]; readonly modes: number[] }
-interface Scored extends Point { readonly decoded: Decoded; readonly evaluation: Evaluation; readonly excess: number[] }
+interface Scored extends Point { readonly decoded: Decoded; readonly evaluation: Evaluation; readonly excess: number[]; readonly keys: number[] }
 
 const elapsedEstimate = (prep: Prepared, a: number, m: number): number => {
   const mode = prep.problem.activities[a]!.modes[m]!
@@ -68,6 +68,12 @@ const priorityLists = (prep: Prepared, rng: () => number, randomCount: number): 
   return lists
 }
 
+/**
+ * Share of the budget for phase A (all goals on the ranking keys); the rest goes to one band stage per
+ * later goal and the polish. 0.7 measured on twin v3 (11 Nov): 0.5 lost the finish in the cost stage.
+ */
+export const PHASE_A_SHARE = 0.7
+
 export interface SearchOptions {
   /** CPU clock in milliseconds; thread CPU by default. Tests may pass a wall clock. */
   readonly clock?: () => number
@@ -90,18 +96,32 @@ export const searchEngine = (searchOptions: SearchOptions = {}): Engine => ({
     let stoppedBy: EngineStop = 'done'
     let lastYield = performance.now()
 
+    // The band reference: the least excess seen per goal, each among plans inside the earlier goals'
+    // bands (the gate's "within 1 h of the best finish seen"). It only improves, so the band cannot drift.
+    const reference = goals.map(() => Infinity)
+    const noteReference = (excess: readonly number[]): void => {
+      for (let k = 0; k < goals.length; k++) {
+        const x = excess[k]!
+        if (x < reference[k]! - 1e-9) { for (let j = k; j < goals.length; j++) reference[j] = excess[j]!; return }
+        if (x > reference[k]! + goals[k]!.step + 1e-9) return
+      }
+    }
     const evaluate = (point: Point): Scored => {
       evals++
       const decoded = decoder.decode(point.list, point.modes)
       decoder.justify(decoded)
       const evaluation = decoder.evaluate(decoded)
       const excess = goals.map((goal, k) => goalExcess(evaluation.raw[k] ?? 0, goal.threshold))
-      return { ...point, decoded, evaluation, excess }
+      if (decoded.penalty === 0) noteReference(excess)
+      return { ...point, decoded, evaluation, excess, keys: goalKeys(evaluation.raw, goals) }
     }
-    /** Staged comparison against the incumbent's band (rank.ts), penalty first. */
-    const better = (a: Scored, b: Scored, reference: Scored): number => {
+    // Phase A climbs on the ranking keys (rank.ts); the later phases and the polish compare inside the
+    // band around the best seen (staged), so cost is weighed only among plans near the best finish.
+    let staged = false
+    const better = (a: Scored, b: Scored, _incumbent?: Scored): number => {
       if (a.decoded.penalty !== b.decoded.penalty) return a.decoded.penalty < b.decoded.penalty ? -1 : 1
-      return compareStaged(a.excess, b.excess, reference.excess, goals)
+      if (!staged) return compareKeys(a.keys, b.keys)
+      return compareStaged(a.excess, b.excess, reference, goals)
     }
     const shouldStop = async (): Promise<boolean> => {
       if (stoppedBy !== 'done') return true
@@ -170,7 +190,8 @@ export const searchEngine = (searchOptions: SearchOptions = {}): Engine => ({
 
     const position = new Int32Array(n)
     const openersByGroup = problem.coverage.filter(rule => rule.items.length > 1).map(rule => [...new Set(rule.items.flatMap(i => prep.itemOpeners[i]!))])
-    const spanOpenerGroups = [...openersByGroup, ...prep.spanOpeners.filter(list => list.length > 1).map(list => [...list])].filter(list => list.length > 1)
+    // As or's search: reorder the outages of one keep-in-service group (k-of-G), never tags inside one span.
+    const spanOpenerGroups = openersByGroup.filter(list => list.length > 1)
     const promote = (point: Point): Point | null => {
       if (late.length === 0) return null
       let a = late[Math.floor(rng() * late.length)]!
@@ -242,7 +263,7 @@ export const searchEngine = (searchOptions: SearchOptions = {}): Engine => ({
     // reproducible; with a CPU budget each phase still gets its own share of time.
     const progress = (): number => Math.max((cpu() - cpu0) / budget.cpuMs, (performance.now() - wall0) / budget.wallMs, evals / budget.evals)
     const laterGoals = goals.length > 1 ? goals.length - 1 : 0
-    const endA = laterGoals > 0 ? 0.5 : 1
+    const endA = laterGoals > 0 ? PHASE_A_SHARE : 1
     // Phase A: late acceptance on the full staged comparison.
     let history = Array.from({ length: L }, () => current!)
     for (let it = 0; ; it++) {
@@ -255,11 +276,12 @@ export const searchEngine = (searchOptions: SearchOptions = {}): Engine => ({
       history[h] = current!
       if (better(current!, best, best) < 0) { accept(current!); await tryFbi() }
     }
+    staged = true
     // Phase B, one stage per later goal, each with its own CPU share: late acceptance on that goal plus
     // a growing penalty for leaving the earlier goals' band around the best found.
     for (let stage = 1; stage <= laterGoals && stoppedBy === 'done'; stage++) {
       const stageStart = progress()
-      const stageEnd = 0.5 + 0.5 * stage / laterGoals - (stage === laterGoals ? 0.05 : 0)
+      const stageEnd = PHASE_A_SHARE + (1 - PHASE_A_SHARE) * stage / laterGoals - (stage === laterGoals ? 0.05 : 0)
       const caps = goals.slice(0, stage).map((goal, k) => best.excess[k]! + goal.step)
       const scale = Math.max(1, Math.abs(best.excess[stage]!))
       const score = (s: Scored, mu: number): number => {
