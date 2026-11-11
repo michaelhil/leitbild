@@ -6,7 +6,8 @@
 // keep-in-service group pulls that group's outage packages together, so each outage closes before the next
 // opens. Every phase boundary is counted in work units (evaluations weighted by whether justification ran),
 // and the work target is a fixed function of the problem's size and the CPU budget, so one seed and one set
-// of inputs give one plan. CPU, wall and evaluation budgets and an abort still stop it (within one yield,
+// of inputs give one plan. A small problem (SMALL_PROBLEM) is not searched: the decoder's whole space is
+// enumerated instead. CPU, wall and evaluation budgets and an abort still stop it (within one yield,
 // about 50 ms); a run that stops on CPU or wall time is valid but not repeatable, and says so in `stoppedBy`.
 import { makeDecoder, precedenceOrder, prepare, type Decoded, type Evaluation, type Prepared } from './decode.ts'
 import type { Engine, EngineResult, EngineStop, NormalizedProblem, Schedule } from './problem.ts'
@@ -16,7 +17,7 @@ import { compareKeys, compareStaged, goalExcess, goalKeys } from './rank.ts'
  * Bumped whenever compile, bounds or the engine change meaning; part of every formulation. It lives here so
  * the Worker loads only the engine and decoder, not the plan schema.
  */
-export const SOLVER_VERSIONS = { compile: 1, bounds: 1, engine: 'lahc-3' } as const
+export const SOLVER_VERSIONS = { compile: 1, bounds: 1, engine: 'lahc-4' } as const
 
 export const mulberry32 = (seed: number) => () => {
   seed |= 0; seed = (seed + 0x6d2b79f5) | 0
@@ -51,6 +52,15 @@ export const workTarget = (problem: NormalizedProblem, cpuMs: number): number =>
 }
 
 /**
+ * A problem this small is enumerated, not searched: every precedence-feasible list x every mode vector,
+ * each decoded and scored twice, left-justified as usual and right-justified within its own forward finish
+ * (a cheaper or shorter plan can wait for a later slot). The best by the staged comparison is exact over
+ * the decoder's space, not over all schedules, so it claims no bound. `points` is capped further at half
+ * the work target, since each point costs two evaluations.
+ */
+export const SMALL_PROBLEM = { maxJobs: 16, points: 20_000 } as const
+
+/**
  * Where each phase ends, as a share of the work target: a race of independent climbs from the best
  * distinct starts (each its own random stream; the best goes on), the winner's climb, a race of short
  * climbs that restart from the best plan, the cost repair sweeps, the band stages, the polish.
@@ -71,6 +81,36 @@ export interface SearchOptions {
 
 interface Point { readonly list: number[]; readonly modes: number[] }
 interface Scored extends Point { readonly decoded: Decoded; readonly evaluation: Evaluation; readonly excess: number[]; readonly keys: number[] }
+
+/** Every list and mode vector of a problem whose space has at most `cap` points; undefined when larger. */
+const smallSpace = (prep: Prepared, nModes: readonly number[], fixedMode: ReadonlyArray<number | undefined>, cap: number): { lists: number[][]; vectors: number[][] } | undefined => {
+  if (prep.n > SMALL_PROBLEM.maxJobs) return undefined
+  let count = 1
+  for (let a = 0; a < prep.n; a++) if (fixedMode[a] === undefined) count *= nModes[a]!
+  const maxLists = Math.floor(cap / count)
+  if (maxLists < 1) return undefined
+  const lists: number[][] = [], current: number[] = [], done = new Uint8Array(prep.n)
+  const extend = (): boolean => {
+    if (current.length === prep.n) { lists.push([...current]); return lists.length <= maxLists }
+    for (let a = 0; a < prep.n; a++) {
+      if (done[a] || !prep.preds[a]!.every(l => done[l.from])) continue
+      done[a] = 1; current.push(a)
+      const fits = extend()
+      current.pop(); done[a] = 0
+      if (!fits) return false
+    }
+    return true
+  }
+  if (!extend()) return undefined
+  const vectors: number[][] = [], modes = fixedMode.map(m => m ?? 0)
+  const vary = (a: number): void => {
+    if (a === prep.n) { vectors.push([...modes]); return }
+    if (fixedMode[a] !== undefined) { vary(a + 1); return }
+    for (let m = 0; m < nModes[a]!; m++) { modes[a] = m; vary(a + 1) }
+  }
+  vary(0)
+  return { lists, vectors }
+}
 
 const elapsedEstimate = (prep: Prepared, a: number, m: number): number => {
   const mode = prep.problem.activities[a]!.modes[m]!
@@ -143,11 +183,13 @@ export const searchEngine = (searchOptions: SearchOptions = {}): Engine => ({
         if (x > reference[k]! + goals[k]!.step + 1e-9) return
       }
     }
-    const evaluate = (point: Point): Scored => {
+    /** `right`: every job right-justified within the forward finish (the small-problem path only). */
+    const evaluate = (point: Point, right = false): Scored => {
       evals++
       const decoded = decoder.decode(point.list, point.modes)
       spent += decoded.penalty === 0 ? 1 : INFEASIBLE_UNITS
-      decoder.justify(decoded)
+      if (right) { let finish = 0; for (let a = 0; a < n; a++) finish = Math.max(finish, decoded.finish[a]!); decoder.justify(decoded, true, finish) }
+      else decoder.justify(decoded)
       const evaluation = decoder.evaluate(decoded)
       const excess = goals.map((goal, k) => goalExcess(evaluation.raw[k] ?? 0, goal.threshold))
       if (decoded.penalty === 0) noteReference(excess)
@@ -203,6 +245,21 @@ export const searchEngine = (searchOptions: SearchOptions = {}): Engine => ({
       }
       return found
     }))
+
+    // ── a small problem: score the decoder's whole space, then pick by the settled band reference ──
+    const space = smallSpace(prep, nModes, fixedMode, Math.min(SMALL_PROBLEM.points, Math.floor(target / 2)))
+    if (space !== undefined) {
+      const seen: Array<{ readonly penalty: number; readonly excess: number[]; readonly point: Point; readonly right: boolean }> = []
+      enumeration: for (const modes of space.vectors) for (const list of space.lists) for (const right of [false, true]) {
+        const scored = evaluate({ list, modes }, right)
+        seen.push({ penalty: scored.decoded.penalty, excess: scored.excess, point: { list, modes }, right })
+        if ((evals & 63) === 0 && await shouldStop(Number.POSITIVE_INFINITY)) break enumeration
+      }
+      let pick = seen[0]!
+      for (const x of seen) if (x.penalty < pick.penalty || (x.penalty === pick.penalty && compareStaged(x.excess, pick.excess, reference, goals) < 0)) pick = x
+      const chosen = evaluate(pick.point, pick.right)
+      return { candidates: [{ mode: Int32Array.from(chosen.decoded.mode), start: Int32Array.from(chosen.decoded.start) }], stoppedBy, evals, cpuMs: Math.round(cpu() - cpu0), wallMs: Math.round(performance.now() - wall0), bounds: [] }
+    }
 
     // ── construction: priority lists x mode sets, every start evaluated ──
     const startRng = mulberry32(options.seed)
