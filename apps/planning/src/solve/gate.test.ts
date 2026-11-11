@@ -65,7 +65,7 @@ describe.skipIf(!enabled)('solver gate on the frozen twins (on demand)', () => {
     const prep = prepare(problem)
     const best = result.candidates[0]!
     const late = problem.activities.filter((activity, a) => { const f = finishOf(prep, a, best.mode[a]!, best.start[a]!); return f < 0 || f > activity.deadline }).length
-    const index = { origin: problem.origin, slotMs: problem.slotMs, resources: problem.resources.map(resource => resource.id), resourceCalendars: problem.resources.map(() => []), spans: problem.spans.map(span => ({ id: span.id, group: span.id })), jobs: problem.activities.map(activity => activity.id), dueRules: problem.activities.map(() => undefined) }
+    const index = { origin: problem.origin, slotMs: problem.slotMs, resources: problem.resources.map(resource => resource.id), resourceCalendars: problem.resources.map(() => []), spans: problem.spans.map(span => ({ id: span.id, group: span.id })), jobs: problem.activities.map(activity => activity.id), dueRules: problem.activities.map(() => undefined), needs: problem.activities.map(() => []) }
     const found = bounds(problem, index as never, prep)
     console.log(JSON.stringify({ v1: { lateJobs: late, cpuMs: result.cpuMs, busiest: found.busiest, certificate: found.certificate?.kind ?? null } }))
     expect(late).toBeGreaterThan(0)

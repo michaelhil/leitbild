@@ -31,7 +31,13 @@ export interface SpanWindow {
 }
 
 /** One stretch of a refusal's chain: a job at its earliest, as logic and calendars place it. */
-export interface ChainStep { readonly job: string; readonly start: string; readonly finish: string }
+export interface ChainStep {
+  readonly job: string
+  readonly start: string
+  readonly finish: string
+  /** What ties this job to the one before it in the chain (the first job: the span limit). */
+  readonly via: 'span-limit' | 'link' | 'bracket' | 'support-order'
+}
 export interface SpanRefusal {
   readonly rule: string
   readonly limitHours: number
@@ -40,7 +46,7 @@ export interface SpanRefusal {
   readonly firstOut: string
   readonly lastBack: string
   readonly path: readonly ChainStep[]
-  /** Tagging one slot later instead: the span then, and the chain that sets its end (why later does not help). */
+  /** The least span over every later first-out slot, and the chain that sets its end (why later does not help). */
   readonly later?: { readonly firstOut: string; readonly lastBack: string; readonly hours: number; readonly path: readonly ChainStep[] }
   readonly alsoProven?: Certificate
 }
@@ -372,7 +378,11 @@ export const chainCertificate = (prep: Prepared, windows: Windows, index: Compil
 }
 
 /** Candidate resource pools: each resource alone, and with every resource that can stand in for it. */
-const pools = (prep: Prepared): number[][] => {
+/**
+ * Candidate resource pools: each resource alone, and with every resource that can stand in for it in some
+ * need (anyOf), including one with no hours in this sub-solve (it counts with zero capacity).
+ */
+const pools = (prep: Prepared, index: CompileIndex): number[][] => {
   const { problem } = prep
   const seen = new Set<string>()
   const out: number[][] = []
@@ -380,12 +390,7 @@ const pools = (prep: Prepared): number[][] => {
   problem.resources.forEach((_, r) => {
     add([r])
     const closure = new Set([r])
-    for (const activity of problem.activities) {
-      const touches = activity.modes.some(mode => mode.demands.some(d => d.resource === r))
-      if (!touches) continue
-      // Resources that serve the same need in another mode stand in for r.
-      for (const mode of activity.modes) for (const d of mode.demands) if (problem.resources[d.resource]!.id !== undefined && d.resource !== r && activity.modes.some(other => other !== mode && other.demands.some(e => e.resource === r) && !mode.demands.some(e => e.resource === r))) closure.add(d.resource)
-    }
+    for (const needs of index.needs) for (const anyOf of needs) if (anyOf.includes(r)) for (const other of anyOf) closure.add(other)
     add([...closure])
   })
   return out
@@ -455,7 +460,8 @@ const scanSpan = (prep: Prepared, global: Windows, s: number, index: CompileInde
   if (openers.length === 0 || closers.length === 0) return empty
   let first = H, last = H
   for (const o of openers) { first = Math.min(first, global.est[o]!); last = Math.min(last, global.lst[o]!) }
-  const candidatePools = span.limit === undefined ? [] : pools(prep)
+  // Widest pools first: a proof must count every resource that could stand in for the work (lane K checks).
+  const candidatePools = span.limit === undefined ? [] : pools(prep, index).sort((x, y) => y.length - x.length)
   const lengths: Array<{ start: number; length: number }> = []
   const perPool = candidatePools.map(pool => ({ pool, set: new Set(pool), minRequired: Infinity, maxAvailable: -Infinity, failsEverywhere: true, jobs: new Set<number>() }))
   let temporalOnly = true
@@ -537,16 +543,19 @@ const leastSpan = (prep: Prepared, base: Windows, s: number, units: ReturnType<t
   }
   const chain = (windows: Windows): ChainStep[] => {
     let a = closers.reduce((x, y) => (windows.eft[y]! > windows.eft[x]! ? y : x), closers[0]!)
-    const path = [a]
+    const path: Array<{ a: number; via: ChainStep['via'] }> = []
     const openerSet = new Set(openers)
+    const implied = (l: NormalizedProblem['links'][number]) => (l.type === 'FS' ? windows.eft[l.from]! + l.min : l.type === 'SS' ? ssReady(prep, l.from, windows.est[l.from]!, l.min, windows.modeOk[l.from]!) : -1)
     for (let hop = 0; hop < 40 && !openerSet.has(a); hop++) {
-      const implied = (l: NormalizedProblem['links'][number]) => (l.type === 'FS' ? windows.eft[l.from]! + l.min : l.type === 'SS' ? windows.est[l.from]! + l.min : -1)
       const binding = prep.preds[a]!.filter(l => l.type !== 'FF').sort((x, y) => implied(y) - implied(x))[0]
       if (binding === undefined) break
+      // Each step says what ties it to the job before it: a planner link, bracketing or support order
+      // (tag-before-test is bracketing's own rule and reads as a link, as in temporalSteps).
+      path.push({ a, via: binding.origin === 'bracket' || binding.origin === 'support-order' ? binding.origin : 'link' })
       a = binding.from
-      path.push(a)
     }
-    return path.reverse().map(b => ({ job: jobKey(problem, index, b), start: slotIso(index, windows.est[b]!), finish: slotIso(index, windows.eft[b]!) }))
+    path.push({ a, via: 'span-limit' })
+    return path.reverse().map(({ a: b, via }) => ({ job: jobKey(problem, index, b), start: slotIso(index, windows.est[b]!), finish: slotIso(index, windows.eft[b]!), via }))
   }
   let best: { start: number; length: number; windows: Windows } | undefined
   let first = H, last = H
@@ -556,10 +565,15 @@ const leastSpan = (prep: Prepared, base: Windows, s: number, units: ReturnType<t
     if (found !== undefined && (best === undefined || found.length < best.length)) best = { start, ...found }
   }
   if (best === undefined) return undefined
-  const after = at(best.start + 1)
+  // Why tagging out later does not help: the least span over every later first-out slot.
+  let after: { start: number; length: number; windows: Windows } | undefined
+  for (let start = best.start + 1; start <= last; start++) {
+    const found = at(start)
+    if (found !== undefined && (after === undefined || found.length < after.length)) after = { start, ...found }
+  }
   return {
     first: best.start, leastHours: hours(index, best.length), firstOut: slotIso(index, best.start), lastBack: slotIso(index, best.start + best.length), path: chain(best.windows),
-    ...(after === undefined ? {} : { later: { firstOut: slotIso(index, best.start + 1), lastBack: slotIso(index, best.start + 1 + after.length), hours: hours(index, after.length), path: chain(after.windows) } }),
+    ...(after === undefined ? {} : { later: { firstOut: slotIso(index, after.start), lastBack: slotIso(index, after.start + after.length), hours: hours(index, after.length), path: chain(after.windows) } }),
   }
 }
 
@@ -611,7 +625,7 @@ export const bounds = (problem: NormalizedProblem, index: CompileIndex, prep: Pr
     const least = leastSpan(prep, unlimited, s, units, help, index)
     const rule = index.spans[s]!.rule ?? index.spans[s]!.id
     const steps = least === undefined ? [{ job: jobKey(problem, index, prep.spanOpeners[s]![0]!), via: 'span-limit' as const }]
-      : [{ job: least.path[0]!.job, via: 'span-limit' as const }, ...least.path.slice(1).map(step => ({ job: step.job, via: 'link' as const }))]
+      : least.path.map(step => ({ job: step.job, via: step.via }))
     const { first: _first, ...refusal } = least ?? { first: 0 }
     return {
       certificate: { kind: 'temporal', steps: steps.slice(0, 32) }, goals: zeroGoals, spanWindows: [byTime.window],

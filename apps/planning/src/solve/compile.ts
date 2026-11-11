@@ -45,6 +45,8 @@ export interface CompileIndex {
   /** Activity -> the due rule that sets its deadline before the window end, if any. */
   readonly dueRules: ReadonlyArray<string | undefined>
   readonly modes: ReadonlyArray<ReadonlyArray<ModeInfo>>
+  /** Activity -> its needs, each the resource indexes that may serve it (anyOf), with or without hours here. */
+  readonly needs: ReadonlyArray<ReadonlyArray<readonly number[]>>
   readonly resources: readonly string[]
   readonly resourceKinds: ReadonlyArray<'crew' | 'tool'>
   /** Plan calendar keys behind each resource's time, base first, then allowed purchases'. */
@@ -278,6 +280,7 @@ export const compile = (inputs: PlanInputs, sub: SubSolve): Compiled => {
   const activities: Array<NormalizedProblem['activities'][number]> = []
   const activityJobs: Array<string | null> = []
   const activityDue: Array<string | undefined> = []
+  const activityNeeds: number[][][] = []
   const modeInfos: ModeInfo[][] = []
   for (const job of jobs) {
     for (const key of job.equipment) {
@@ -394,6 +397,7 @@ export const compile = (inputs: PlanInputs, sub: SubSolve): Compiled => {
     }
     activities.push({ id: job.key, modes, release, deadline, ...(target === undefined ? {} : { target }), ...(fixed === undefined ? {} : { fixed }) })
     activityJobs.push(job.key)
+    activityNeeds.push(job.needs.map(need => need.anyOf.flatMap(key => { const r = resourceByKey.get(key); return r === undefined ? [] : [r] })))
     activityDue.push(deadline < windowSlots ? due!.key : undefined)
     modeInfos.push(infos)
   }
@@ -404,6 +408,7 @@ export const compile = (inputs: PlanInputs, sub: SubSolve): Compiled => {
     if (option.fixedCost <= 0) continue
     activities.push({ id: `method:${choice.key}`, modes: [{ work: 0, calendar: 0, continuous: true, demands: [], fixedCost: option.fixedCost, release: 0 }], release: 0, deadline: windowSlots })
     activityJobs.push(null)
+    activityNeeds.push([])
     activityDue.push(undefined)
     modeInfos.push([{ needs: [] }])
   }
@@ -532,7 +537,7 @@ export const compile = (inputs: PlanInputs, sub: SubSolve): Compiled => {
     activities, links, items, spans, coverage, goals,
   }
   const index: CompileIndex = {
-    zone, grid: settings.grid, origin, slotMs, windowSlots, jobs: activityJobs, dueRules: activityDue, modes: modeInfos,
+    zone, grid: settings.grid, origin, slotMs, windowSlots, jobs: activityJobs, dueRules: activityDue, modes: modeInfos, needs: activityNeeds,
     resources: inputs.resources.map(resource => resource.key), resourceKinds: inputs.resources.map(resource => resource.kind),
     resourceCalendars, purchases: purchaseList, slotPurchase, items: inputs.equipment.map(item => item.key),
     spans: spanInfo, coverage: coverage.map(rule => rule.id), goals: goalInfo, rounded, dropped,
