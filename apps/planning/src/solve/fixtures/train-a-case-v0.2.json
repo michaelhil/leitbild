@@ -1,0 +1,1673 @@
+{
+  "id": "train-a-work-week",
+  "version": "0.2",
+  "status": "v0.2 proposal: v0.1 plus the 6 changes C3-C8 in maint/case-changes.md. case.json (v0.1) stays untouched. The coordinator freezes this version.",
+  "author": "maint reviewer (agent perspective, not a real planner)",
+  "conventions": {
+    "time": "Civil time Europe/Oslo. The window lies wholly in CET (UTC+01:00), so no DST change falls inside it. ISO timestamps carry the offset.",
+    "hours": "All durations are decimal hours of elapsed working time of the assigned resource. For a crew this equals crew-hours, and person-hours = hours x crewSize.",
+    "money": "NOK, illustrative planner assumptions, not market data.",
+    "interruptible": "true: the work may pause when the assigned resource's calendar is off and resume later, possibly with another eligible crew (shift handover). The equipment stays unavailable while paused. false: once started, the job must run to completion inside one continuous available interval of every resource it uses.",
+    "source": "world = read today through world.process-plant.planning-basis (existing read-only capability); planner = planner-supplied assumption; reference = value modelled on a public standard and declared as this fictional plant's rule; owner-decision = would need new or changed process-plant behaviour, and process-plant work has been paused by the owner since 13 Oct 2026."
+  },
+  "story": {
+    "role": "Work-week planner / outage coordinator for the on-line maintenance week of a fictional PWR (the paused Leitbild reference plant, 4 loops, at full power).",
+    "now": "2026-11-12T10:00:00+01:00",
+    "scheduleFreeze": "2026-11-13T12:00:00+01:00",
+    "objective": "Build the schedule for the Train A system window. Keep Train B and the turbine-driven AFW pump protected. Return every Train A item, tested, inside its allowed outage time and before the window ends. Spend as little extra money as the rules allow, and leave margin for found work.",
+    "decisionsAtFreeze": [
+      "SW A method: rebuild in place or swap in the refurbished spare",
+      "Station overtime: yes or no",
+      "Contractor night crew: how many nights",
+      "Accept a cooling-chain plan longer than the 54 h station guideline (needs the operations manager's agreement)"
+    ]
+  },
+  "world": {
+    "scenarioSuggestion": "A new paused Scenario like apps/world/src/scenarios/planning-component-work.scenario.json: process-plant.pwr.reference, loopCount 4, operatingPoint process-plant.pwr.full-power, startsAt 2026-11-12T09:00:00Z.",
+    "read": "world.process-plant.planning-basis (existing; projects centrifugal pumps only: label, model digest, nominal flow, runningState/speedRpm/flowKgPerS when published and good)",
+    "usedFacts": [
+      {
+        "use": "identity and label of every pump listed under equipment",
+        "source": "world"
+      },
+      {
+        "use": "precondition: SW B and CCW B running before SW A / CCW A are removed from service",
+        "fact": "runningState of serviceWaterPumpB, componentCoolingWaterPumpB",
+        "expectedAtFullPower": true,
+        "source": "world"
+      },
+      {
+        "use": "show current state of each Train A and protected pump on the job and equipment views",
+        "source": "world"
+      }
+    ],
+    "notInWorld": "Train membership, support dependencies, all durations, crews, calendars, crane, eddy-current team, costs, allowed outage times, test definitions and spare delivery are planner-supplied. World holds no out-of-service or tagged state; a planned isolation does not change the plant."
+  },
+  "window": {
+    "id": "train-a-window",
+    "label": "Train A system window, week 47",
+    "start": "2026-11-16T07:00:00+01:00",
+    "end": "2026-11-21T07:00:00+01:00",
+    "kind": "commitment",
+    "words": "No Train A tag may be hung before the window opens. Every Train A item must have passed its return-to-service test by the time it closes. Agreed in the 12-week rolling schedule; moving it needs the operations manager.",
+    "source": "planner"
+  },
+  "equipment": [
+    {
+      "id": "SWA",
+      "label": "Service Water Pump A",
+      "worldComponentId": "serviceWaterPumpA",
+      "train": "A",
+      "group": "COOL-A",
+      "source": "world"
+    },
+    {
+      "id": "CCWA",
+      "label": "Component Cooling Water Pump A",
+      "worldComponentId": "componentCoolingWaterPumpA",
+      "train": "A",
+      "group": "COOL-A",
+      "source": "world"
+    },
+    {
+      "id": "CCWHXA",
+      "label": "Component Cooling Heat Exchanger A",
+      "worldComponentId": "componentCoolingHeatExchangerA",
+      "train": "A",
+      "group": "COOL-A",
+      "source": "planner",
+      "note": "Exists in the plant graph but is not in the planning basis (pumps only). Linking it needs an extended read: owner-decision."
+    },
+    {
+      "id": "RHRA",
+      "label": "Residual Heat Removal Pump A",
+      "worldComponentId": "rhrPumpA",
+      "train": "A",
+      "group": "COOL-A",
+      "source": "world"
+    },
+    {
+      "id": "HHSIA",
+      "label": "High-Head Safety Injection Pump A",
+      "worldComponentId": "safetyInjectionPumpA",
+      "train": "A",
+      "group": "COOL-A",
+      "source": "world"
+    },
+    {
+      "id": "CSA",
+      "label": "Containment Spray Pump A",
+      "worldComponentId": "containmentSprayPumpA",
+      "train": "A",
+      "group": "CS-A",
+      "source": "world"
+    },
+    {
+      "id": "AFWA",
+      "label": "Motor-Driven Auxiliary Feedwater Pump A",
+      "worldComponentId": "auxFeedwaterPumpMotor",
+      "train": "A",
+      "group": "AFW-A",
+      "source": "world"
+    }
+  ],
+  "protectedEquipment": {
+    "words": "Train B and the turbine-driven AFW pump are protected all week: no job may tag, work or test them. A user who adds such a job is refused with this reason.",
+    "kind": "hard",
+    "items": [
+      "serviceWaterPumpB",
+      "componentCoolingWaterPumpB",
+      "rhrPumpB",
+      "safetyInjectionPumpB",
+      "containmentSprayPumpB",
+      "auxFeedwaterPumpMotorB",
+      "auxFeedwaterPumpTurbine"
+    ],
+    "alsoProtectedNotInPlanningBasis": [
+      "dieselGeneratorB",
+      "safetyBusB"
+    ],
+    "basis": "Protected-train practice in on-line maintenance risk management (NUMARC 93-01 section 11 as endorsed by NRC RG 1.160; examples in NRC IMC 0308 Att 3 App K). Declared as this fictional plant's rule.",
+    "source": "reference"
+  },
+  "supportDependencies": [
+    {
+      "supporter": "SWA",
+      "supported": [
+        "CCWHXA",
+        "CCWA"
+      ],
+      "words": "SW A cools CCW heat exchanger A. With SW A out, CCW train A cannot remove heat and counts as unavailable."
+    },
+    {
+      "supporter": "CCWA",
+      "supported": [
+        "RHRA",
+        "HHSIA"
+      ],
+      "words": "CCW A cools the RHR A heat exchanger and the RHR A and HHSI A pump coolers. With CCW A out, both count as unavailable."
+    },
+    {
+      "note": "CS A and AFW A are treated as not cooled by CCW A in this fictional design. This is a declared simplification, and a real plant may differ.",
+      "source": "planner"
+    }
+  ],
+  "functionGroups": [
+    {
+      "id": "COOL-A",
+      "label": "Train A cooling chain (SW A, CCW A and HX A, RHR A, HHSI A)",
+      "members": [
+        "SWA",
+        "CCWA",
+        "CCWHXA",
+        "RHRA",
+        "HHSIA"
+      ],
+      "spanStarts": "start of the first tag-out job of any member",
+      "spanEnds": "end of the last passed return-to-service test of any member",
+      "allowedOutageHours": 72,
+      "kind": "hard",
+      "singleEntry": true,
+      "words": "Once the first Train A cooling item is tagged out, every item in the chain must be back and tested within 72 h, in one continuous span. Station policy allows one entry per window.",
+      "basis": "Modelled on NUREG-1431 Standard Technical Specifications: one ECCS train inoperable for 72 h (LCO 3.5.2, recollection), and similar 72 h Completion Times for CCW (3.7.7) and service water (3.7.8), also recollection. The Completion Time runs from entry into the Condition and applies to deliberate removal from service (LCO 3.0.2, STS Bases Rev 3.1). Declared fictional plant rule, not a licence.",
+      "guideline": {
+        "maxPlannedHours": 54,
+        "kind": "preference",
+        "words": "Station guideline: plan to use at most 75 % of the allowed outage time, leaving 18 h for found work. Exceeding it needs the operations manager's written agreement.",
+        "source": "planner"
+      },
+      "source": "reference"
+    },
+    {
+      "id": "CS-A",
+      "label": "Containment spray train A",
+      "members": [
+        "CSA"
+      ],
+      "allowedOutageHours": 72,
+      "kind": "hard",
+      "singleEntry": true,
+      "guideline": {
+        "maxPlannedHours": 54,
+        "kind": "preference"
+      },
+      "basis": "Modelled on NUREG-1431 LCO 3.6.6 (recollection; 72 h at many plants).",
+      "source": "reference"
+    },
+    {
+      "id": "AFW-A",
+      "label": "Auxiliary feedwater train A (motor-driven)",
+      "members": [
+        "AFWA"
+      ],
+      "allowedOutageHours": 72,
+      "kind": "hard",
+      "singleEntry": true,
+      "guideline": {
+        "maxPlannedHours": 54,
+        "kind": "preference"
+      },
+      "basis": "NUREG-1431 LCO 3.7.5 Condition B: one AFW train inoperable, 72 h (STS Bases Rev 3.1, fetched).",
+      "source": "reference"
+    }
+  ],
+  "calendars": {
+    "day": {
+      "words": "Mon-Fri 07:00-15:00 (meal break ignored)",
+      "weekly": [
+        {
+          "days": [
+            "Mon",
+            "Tue",
+            "Wed",
+            "Thu",
+            "Fri"
+          ],
+          "from": "07:00",
+          "to": "15:00"
+        }
+      ],
+      "source": "planner"
+    },
+    "overtime": {
+      "words": "Mon-Fri 15:00-19:00, used only if overtime is chosen. EU Working Time Directive: 11 h daily rest is kept (19:00 to 07:00 is 12 h).",
+      "weekly": [
+        {
+          "days": [
+            "Mon",
+            "Tue",
+            "Wed",
+            "Thu",
+            "Fri"
+          ],
+          "from": "15:00",
+          "to": "19:00"
+        }
+      ],
+      "source": "planner"
+    },
+    "night": {
+      "words": "19:00-07:00 the following morning, nights starting Mon to Thu, used only for nights booked",
+      "nights": [
+        "2026-11-16",
+        "2026-11-17",
+        "2026-11-18",
+        "2026-11-19"
+      ],
+      "from": "19:00",
+      "to": "07:00",
+      "source": "planner"
+    },
+    "always": {
+      "words": "24/7 shift operation",
+      "source": "planner"
+    },
+    "crane": {
+      "words": "Booked Tue 17 Nov 07:00 to Thu 19 Nov 19:00. Lifts only 07:00-19:00 (daylight and rigging staff).",
+      "intervals": [
+        [
+          "2026-11-17T07:00:00+01:00",
+          "2026-11-17T19:00:00+01:00"
+        ],
+        [
+          "2026-11-18T07:00:00+01:00",
+          "2026-11-18T19:00:00+01:00"
+        ],
+        [
+          "2026-11-19T07:00:00+01:00",
+          "2026-11-19T19:00:00+01:00"
+        ]
+      ],
+      "optionalExtension": [
+        "2026-11-20T07:00:00+01:00",
+        "2026-11-20T19:00:00+01:00"
+      ],
+      "source": "planner"
+    },
+    "ect": {
+      "words": "Eddy-current contractor booked Wed 18 Nov 07:00-19:00 only",
+      "intervals": [
+        [
+          "2026-11-18T07:00:00+01:00",
+          "2026-11-18T19:00:00+01:00"
+        ]
+      ],
+      "rebookOption": {
+        "interval": [
+          "2026-11-20T07:00:00+01:00",
+          "2026-11-20T19:00:00+01:00"
+        ],
+        "costNok": 60000
+      },
+      "source": "planner"
+    }
+  },
+  "resources": [
+    {
+      "id": "mech-station",
+      "label": "Station mechanical crew",
+      "kind": "crew",
+      "count": 2,
+      "crewSize": 3,
+      "calendars": [
+        "day",
+        "overtime?"
+      ],
+      "source": "planner",
+      "members": [
+        "Mech crew 1",
+        "Mech crew 2"
+      ],
+      "change": "C5: crews named so actual hours and a crew change can be recorded; capacity unchanged (2)."
+    },
+    {
+      "id": "elec-station",
+      "label": "Station electrical crew",
+      "kind": "crew",
+      "count": 1,
+      "crewSize": 2,
+      "calendars": [
+        "day",
+        "overtime?"
+      ],
+      "source": "planner"
+    },
+    {
+      "id": "mech-contractor",
+      "label": "Contractor mechanical night crew",
+      "kind": "crew",
+      "count": 1,
+      "crewSize": 3,
+      "calendars": [
+        "night (booked nights only)"
+      ],
+      "orderBy": "2026-11-13T12:00:00+01:00",
+      "words": "May do workshop rebuild and tube cleaning only: no lifts, no seal work.",
+      "source": "planner"
+    },
+    {
+      "id": "work-control",
+      "label": "Shift work-control operator (tag-outs and restorations)",
+      "kind": "operator",
+      "count": 1,
+      "calendars": [
+        "always"
+      ],
+      "source": "planner"
+    },
+    {
+      "id": "test-team",
+      "label": "Test team (shift operator and test engineer)",
+      "kind": "team",
+      "count": 1,
+      "calendars": [
+        "always"
+      ],
+      "words": "The control room supervises one return-to-service test at a time.",
+      "source": "planner"
+    },
+    {
+      "id": "crane",
+      "label": "60 t mobile crane with operator and rigger",
+      "kind": "equipment",
+      "count": 1,
+      "calendars": [
+        "crane"
+      ],
+      "words": "A lift also needs a station mechanical crew.",
+      "source": "planner"
+    },
+    {
+      "id": "ect-team",
+      "label": "Eddy-current test contractor",
+      "kind": "team",
+      "count": 1,
+      "calendars": [
+        "ect"
+      ],
+      "source": "planner"
+    }
+  ],
+  "methods": {
+    "SWA": [
+      {
+        "id": "M1-rebuild",
+        "label": "Rebuild in place",
+        "jobs": [
+          "SWA-REBUILD"
+        ],
+        "partsCostNok": 120000,
+        "words": "Pull the pump, rebuild the bowl assembly in the workshop, reinstall the same pump.",
+        "spareExposureWeeks": 0
+      },
+      {
+        "id": "M2-swap",
+        "label": "Swap in refurbished spare",
+        "jobs": [
+          "SWA-SPARE-PREP"
+        ],
+        "partsCostNok": 340000,
+        "spareArrives": "2026-11-16T12:00:00+01:00",
+        "spareArrivalBasis": "vendor promise (estimate)",
+        "words": "Pull the pump and install the site's only refurbished spare. The removed pump goes to the vendor for refurbishment.",
+        "unmodelled": "Work quality: whether a rebuilt or a vendor-refurbished pump runs longer is not modelled (no failure data, and no wear in the reference plant).",
+        "spareExposureWeeks": 10,
+        "spareExposureBasis": "Vendor refurbishment turnaround, planner estimate 10 weeks (range 8-14). During it neither SW pump has a ready spare."
+      }
+    ]
+  },
+  "jobs": [
+    {
+      "id": "SWA-TAG",
+      "title": "Remove SW A from service and hang tags",
+      "equipment": "SWA",
+      "kind": "isolate",
+      "hours": 3,
+      "demands": [
+        {
+          "resource": "work-control",
+          "amount": 1
+        }
+      ],
+      "interruptible": false,
+      "precondition": "World shows SW B running",
+      "basis": "planner estimate"
+    },
+    {
+      "id": "CCWA-TAG",
+      "title": "Remove CCW A pump and HX A from service and hang tags",
+      "equipment": "CCWA",
+      "kind": "isolate",
+      "hours": 2,
+      "demands": [
+        {
+          "resource": "work-control",
+          "amount": 1
+        }
+      ],
+      "interruptible": false,
+      "precondition": "World shows CCW B running",
+      "basis": "planner estimate"
+    },
+    {
+      "id": "RHRA-TAG",
+      "title": "Tag out RHR A",
+      "equipment": "RHRA",
+      "kind": "isolate",
+      "hours": 1,
+      "demands": [
+        {
+          "resource": "work-control",
+          "amount": 1
+        }
+      ],
+      "interruptible": false,
+      "basis": "planner estimate"
+    },
+    {
+      "id": "HHSIA-TAG",
+      "title": "Rack out HHSI A breaker and hang tags",
+      "equipment": "HHSIA",
+      "kind": "isolate",
+      "hours": 1,
+      "demands": [
+        {
+          "resource": "work-control",
+          "amount": 1
+        }
+      ],
+      "interruptible": false,
+      "basis": "planner estimate"
+    },
+    {
+      "id": "CSA-TAG",
+      "title": "Tag out CS A",
+      "equipment": "CSA",
+      "kind": "isolate",
+      "hours": 1,
+      "demands": [
+        {
+          "resource": "work-control",
+          "amount": 1
+        }
+      ],
+      "interruptible": false,
+      "basis": "planner estimate"
+    },
+    {
+      "id": "AFWA-TAG",
+      "title": "Tag out MD AFW A",
+      "equipment": "AFWA",
+      "kind": "isolate",
+      "hours": 1,
+      "demands": [
+        {
+          "resource": "work-control",
+          "amount": 1
+        }
+      ],
+      "interruptible": false,
+      "basis": "planner estimate"
+    },
+    {
+      "id": "SWA-MOTOR-DISC",
+      "title": "Disconnect SW A motor leads",
+      "equipment": "SWA",
+      "kind": "work",
+      "hours": 1,
+      "demands": [
+        {
+          "resource": "elec-station",
+          "amount": 1
+        }
+      ],
+      "interruptible": false,
+      "basis": "planner estimate"
+    },
+    {
+      "id": "SWA-MOTOR-OUT",
+      "title": "Lift out SW A motor",
+      "equipment": "SWA",
+      "kind": "work",
+      "hours": 3,
+      "demands": [
+        {
+          "resource": "mech-station",
+          "amount": 1
+        },
+        {
+          "resource": "crane",
+          "amount": 1
+        }
+      ],
+      "interruptible": false,
+      "basis": "planner estimate"
+    },
+    {
+      "id": "SWA-PUMP-OUT",
+      "title": "Pull SW A pump column and bowl assembly",
+      "equipment": "SWA",
+      "kind": "work",
+      "hours": 5,
+      "range": [
+        4,
+        5,
+        7
+      ],
+      "demands": [
+        {
+          "resource": "mech-station",
+          "amount": 1
+        },
+        {
+          "resource": "crane",
+          "amount": 1
+        }
+      ],
+      "interruptible": false,
+      "basis": "planner estimate; a suspended load may not be left over a shift change"
+    },
+    {
+      "id": "SWA-REBUILD",
+      "title": "Rebuild SW A bowl assembly in workshop",
+      "equipment": "SWA",
+      "kind": "work",
+      "method": "M1-rebuild",
+      "hours": 20,
+      "range": [
+        16,
+        20,
+        30
+      ],
+      "demands": [
+        {
+          "anyOf": [
+            "mech-station",
+            "mech-contractor"
+          ],
+          "amount": 1
+        }
+      ],
+      "interruptible": true,
+      "crewHandover": true,
+      "basis": "planner estimate from previous rebuilds (illustrative)"
+    },
+    {
+      "id": "SWA-SPARE-PREP",
+      "title": "Receive and inspect refurbished spare pump assembly",
+      "equipment": "SWA",
+      "kind": "work",
+      "method": "M2-swap",
+      "hours": 4,
+      "release": "2026-11-16T12:00:00+01:00",
+      "demands": [
+        {
+          "resource": "mech-station",
+          "amount": 1
+        }
+      ],
+      "interruptible": true,
+      "makesUnavailable": false,
+      "basis": "planner estimate; release = vendor's promised arrival"
+    },
+    {
+      "id": "SWA-MOTOR-SHOP",
+      "title": "SW A motor inspection, bearings and insulation test in workshop",
+      "equipment": "SWA",
+      "kind": "work",
+      "hours": 6,
+      "demands": [
+        {
+          "resource": "elec-station",
+          "amount": 1
+        }
+      ],
+      "interruptible": true,
+      "basis": "planner estimate"
+    },
+    {
+      "id": "SWA-PUMP-IN",
+      "title": "Install SW A pump assembly",
+      "equipment": "SWA",
+      "kind": "work",
+      "hours": 4,
+      "range": [
+        3.5,
+        4,
+        6
+      ],
+      "demands": [
+        {
+          "resource": "mech-station",
+          "amount": 1
+        },
+        {
+          "resource": "crane",
+          "amount": 1
+        }
+      ],
+      "interruptible": false,
+      "basis": "planner estimate"
+    },
+    {
+      "id": "SWA-MOTOR-IN",
+      "title": "Install SW A motor, couple and align",
+      "equipment": "SWA",
+      "kind": "work",
+      "hours": 3,
+      "demands": [
+        {
+          "resource": "mech-station",
+          "amount": 1
+        },
+        {
+          "resource": "crane",
+          "amount": 1
+        }
+      ],
+      "interruptible": false,
+      "basis": "planner estimate"
+    },
+    {
+      "id": "SWA-MOTOR-CONN",
+      "title": "Reconnect and test SW A motor leads",
+      "equipment": "SWA",
+      "kind": "work",
+      "hours": 2,
+      "demands": [
+        {
+          "resource": "elec-station",
+          "amount": 1
+        }
+      ],
+      "interruptible": false,
+      "basis": "planner estimate"
+    },
+    {
+      "id": "SWA-STRAINER",
+      "title": "Inspect and clean SW A discharge strainer",
+      "equipment": "SWA",
+      "kind": "work",
+      "hours": 4,
+      "demands": [
+        {
+          "resource": "mech-station",
+          "amount": 1
+        }
+      ],
+      "interruptible": true,
+      "basis": "planner estimate"
+    },
+    {
+      "id": "CCWHXA-OPEN",
+      "title": "Open SW-side channel heads of CCW HX A",
+      "equipment": "CCWHXA",
+      "kind": "work",
+      "hours": 4,
+      "demands": [
+        {
+          "resource": "mech-station",
+          "amount": 1
+        }
+      ],
+      "interruptible": true,
+      "basis": "planner estimate"
+    },
+    {
+      "id": "CCWHXA-CLEAN",
+      "title": "Hydrolance CCW HX A tubes",
+      "equipment": "CCWHXA",
+      "kind": "work",
+      "hours": 8,
+      "range": [
+        6,
+        8,
+        12
+      ],
+      "demands": [
+        {
+          "anyOf": [
+            "mech-station",
+            "mech-contractor"
+          ],
+          "amount": 1
+        }
+      ],
+      "interruptible": true,
+      "crewHandover": true,
+      "basis": "planner estimate"
+    },
+    {
+      "id": "CCWHXA-ECT",
+      "title": "Eddy-current test of CCW HX A tubes",
+      "equipment": "CCWHXA",
+      "kind": "work",
+      "hours": 8,
+      "demands": [
+        {
+          "resource": "ect-team",
+          "amount": 1
+        }
+      ],
+      "interruptible": false,
+      "basis": "contractor quotation (illustrative)"
+    },
+    {
+      "id": "CCWHXA-CLOSE",
+      "title": "Close CCW HX A channel heads with new gaskets",
+      "equipment": "CCWHXA",
+      "kind": "work",
+      "hours": 4,
+      "demands": [
+        {
+          "resource": "mech-station",
+          "amount": 1
+        }
+      ],
+      "interruptible": true,
+      "basis": "planner estimate"
+    },
+    {
+      "id": "CCWA-SEAL",
+      "title": "Replace CCW A mechanical seal",
+      "equipment": "CCWA",
+      "kind": "work",
+      "hours": 10,
+      "range": [
+        8,
+        10,
+        14
+      ],
+      "demands": [
+        {
+          "resource": "mech-station",
+          "amount": 1
+        }
+      ],
+      "interruptible": true,
+      "basis": "planner estimate"
+    },
+    {
+      "id": "CCWA-MOTOR",
+      "title": "CCW A motor preventive maintenance",
+      "equipment": "CCWA",
+      "kind": "work",
+      "hours": 3,
+      "demands": [
+        {
+          "resource": "elec-station",
+          "amount": 1
+        }
+      ],
+      "interruptible": true,
+      "basis": "planner estimate"
+    },
+    {
+      "id": "RHRA-COUPLING",
+      "title": "Inspect RHR A pump coupling",
+      "equipment": "RHRA",
+      "kind": "work",
+      "hours": 3,
+      "demands": [
+        {
+          "resource": "mech-station",
+          "amount": 1
+        }
+      ],
+      "interruptible": true,
+      "basis": "planner estimate"
+    },
+    {
+      "id": "RHRA-MOTOR",
+      "title": "RHR A motor inspection and insulation test",
+      "equipment": "RHRA",
+      "kind": "work",
+      "hours": 4,
+      "demands": [
+        {
+          "resource": "elec-station",
+          "amount": 1
+        }
+      ],
+      "interruptible": true,
+      "basis": "planner estimate"
+    },
+    {
+      "id": "HHSIA-BREAKER",
+      "title": "Overhaul HHSI A 6.6 kV breaker",
+      "equipment": "HHSIA",
+      "kind": "work",
+      "hours": 6,
+      "demands": [
+        {
+          "resource": "elec-station",
+          "amount": 1
+        }
+      ],
+      "interruptible": true,
+      "basis": "planner estimate"
+    },
+    {
+      "id": "CSA-PM",
+      "title": "CS A lubrication and coupling PM",
+      "equipment": "CSA",
+      "kind": "work",
+      "hours": 4,
+      "demands": [
+        {
+          "resource": "mech-station",
+          "amount": 1
+        }
+      ],
+      "interruptible": true,
+      "basis": "planner estimate"
+    },
+    {
+      "id": "AFWA-COUPLING",
+      "title": "MD AFW A coupling alignment check",
+      "equipment": "AFWA",
+      "kind": "work",
+      "hours": 4,
+      "demands": [
+        {
+          "resource": "mech-station",
+          "amount": 1
+        }
+      ],
+      "interruptible": true,
+      "basis": "planner estimate"
+    },
+    {
+      "id": "AFWA-MOTOR",
+      "title": "MD AFW A motor preventive maintenance",
+      "equipment": "AFWA",
+      "kind": "work",
+      "hours": 3,
+      "demands": [
+        {
+          "resource": "elec-station",
+          "amount": 1
+        }
+      ],
+      "interruptible": true,
+      "basis": "planner estimate"
+    },
+    {
+      "id": "SWA-RTS",
+      "title": "Restore SW A, fill and vent, pump test (flow, differential pressure, vibration)",
+      "equipment": "SWA",
+      "kind": "restore-test",
+      "hours": 3.5,
+      "demands": [
+        {
+          "resource": "work-control",
+          "amount": 1
+        },
+        {
+          "resource": "test-team",
+          "amount": 1
+        }
+      ],
+      "interruptible": false,
+      "passMakesAvailable": [
+        "SWA"
+      ],
+      "basis": "planner estimate; test content per plant test procedure (not modelled)"
+    },
+    {
+      "id": "CCWA-RTS",
+      "title": "Restore CCW A and HX A, run pump, leak and heat-exchanger check",
+      "equipment": "CCWA",
+      "kind": "restore-test",
+      "hours": 2.5,
+      "demands": [
+        {
+          "resource": "work-control",
+          "amount": 1
+        },
+        {
+          "resource": "test-team",
+          "amount": 1
+        }
+      ],
+      "interruptible": false,
+      "passMakesAvailable": [
+        "CCWA",
+        "CCWHXA"
+      ],
+      "basis": "planner estimate"
+    },
+    {
+      "id": "RHRA-RTS",
+      "title": "Restore RHR A, pump test on recirculation",
+      "equipment": "RHRA",
+      "kind": "restore-test",
+      "hours": 2.5,
+      "demands": [
+        {
+          "resource": "work-control",
+          "amount": 1
+        },
+        {
+          "resource": "test-team",
+          "amount": 1
+        }
+      ],
+      "interruptible": false,
+      "passMakesAvailable": [
+        "RHRA"
+      ],
+      "basis": "planner estimate"
+    },
+    {
+      "id": "HHSIA-RTS",
+      "title": "Rack in HHSI A breaker, timing test and pump start",
+      "equipment": "HHSIA",
+      "kind": "restore-test",
+      "hours": 1.5,
+      "demands": [
+        {
+          "resource": "work-control",
+          "amount": 1
+        },
+        {
+          "resource": "test-team",
+          "amount": 1
+        }
+      ],
+      "interruptible": false,
+      "passMakesAvailable": [
+        "HHSIA"
+      ],
+      "basis": "planner estimate"
+    },
+    {
+      "id": "CSA-RTS",
+      "title": "Restore CS A, pump test",
+      "equipment": "CSA",
+      "kind": "restore-test",
+      "hours": 2,
+      "demands": [
+        {
+          "resource": "work-control",
+          "amount": 1
+        },
+        {
+          "resource": "test-team",
+          "amount": 1
+        }
+      ],
+      "interruptible": false,
+      "passMakesAvailable": [
+        "CSA"
+      ],
+      "basis": "planner estimate"
+    },
+    {
+      "id": "AFWA-RTS",
+      "title": "Restore MD AFW A, pump test to recirculation",
+      "equipment": "AFWA",
+      "kind": "restore-test",
+      "hours": 2.5,
+      "demands": [
+        {
+          "resource": "work-control",
+          "amount": 1
+        },
+        {
+          "resource": "test-team",
+          "amount": 1
+        }
+      ],
+      "interruptible": false,
+      "passMakesAvailable": [
+        "AFWA"
+      ],
+      "basis": "planner estimate"
+    }
+  ],
+  "links": [
+    {
+      "from": "SWA-TAG",
+      "to": "SWA-MOTOR-DISC",
+      "type": "FS",
+      "lagHours": 0
+    },
+    {
+      "from": "SWA-TAG",
+      "to": "SWA-STRAINER",
+      "type": "FS",
+      "lagHours": 0
+    },
+    {
+      "from": "SWA-TAG",
+      "to": "CCWHXA-OPEN",
+      "type": "FS",
+      "lagHours": 0
+    },
+    {
+      "from": "CCWA-TAG",
+      "to": "CCWHXA-OPEN",
+      "type": "FS",
+      "lagHours": 0
+    },
+    {
+      "from": "CCWA-TAG",
+      "to": "CCWA-SEAL",
+      "type": "FS",
+      "lagHours": 0
+    },
+    {
+      "from": "CCWA-TAG",
+      "to": "CCWA-MOTOR",
+      "type": "FS",
+      "lagHours": 0
+    },
+    {
+      "from": "RHRA-TAG",
+      "to": "RHRA-COUPLING",
+      "type": "FS",
+      "lagHours": 0
+    },
+    {
+      "from": "RHRA-TAG",
+      "to": "RHRA-MOTOR",
+      "type": "FS",
+      "lagHours": 0
+    },
+    {
+      "from": "HHSIA-TAG",
+      "to": "HHSIA-BREAKER",
+      "type": "FS",
+      "lagHours": 0
+    },
+    {
+      "from": "CSA-TAG",
+      "to": "CSA-PM",
+      "type": "FS",
+      "lagHours": 0
+    },
+    {
+      "from": "AFWA-TAG",
+      "to": "AFWA-COUPLING",
+      "type": "FS",
+      "lagHours": 0
+    },
+    {
+      "from": "AFWA-TAG",
+      "to": "AFWA-MOTOR",
+      "type": "FS",
+      "lagHours": 0
+    },
+    {
+      "from": "SWA-MOTOR-DISC",
+      "to": "SWA-MOTOR-OUT",
+      "type": "FS",
+      "lagHours": 0
+    },
+    {
+      "from": "SWA-MOTOR-OUT",
+      "to": "SWA-PUMP-OUT",
+      "type": "FS",
+      "lagHours": 0
+    },
+    {
+      "from": "SWA-MOTOR-OUT",
+      "to": "SWA-MOTOR-SHOP",
+      "type": "FS",
+      "lagHours": 0
+    },
+    {
+      "from": "SWA-PUMP-OUT",
+      "to": "SWA-REBUILD",
+      "type": "FS",
+      "lagHours": 0,
+      "method": "M1-rebuild"
+    },
+    {
+      "from": "SWA-REBUILD",
+      "to": "SWA-PUMP-IN",
+      "type": "FS",
+      "lagHours": 0,
+      "method": "M1-rebuild"
+    },
+    {
+      "from": "SWA-PUMP-OUT",
+      "to": "SWA-PUMP-IN",
+      "type": "FS",
+      "lagHours": 0,
+      "method": "M2-swap"
+    },
+    {
+      "from": "SWA-SPARE-PREP",
+      "to": "SWA-PUMP-IN",
+      "type": "FS",
+      "lagHours": 0,
+      "method": "M2-swap"
+    },
+    {
+      "from": "SWA-PUMP-IN",
+      "to": "SWA-MOTOR-IN",
+      "type": "FS",
+      "lagHours": 0
+    },
+    {
+      "from": "SWA-MOTOR-SHOP",
+      "to": "SWA-MOTOR-IN",
+      "type": "FS",
+      "lagHours": 0
+    },
+    {
+      "from": "SWA-MOTOR-IN",
+      "to": "SWA-MOTOR-CONN",
+      "type": "FS",
+      "lagHours": 0
+    },
+    {
+      "from": "SWA-MOTOR-CONN",
+      "to": "SWA-RTS",
+      "type": "FS",
+      "lagHours": 0
+    },
+    {
+      "from": "SWA-STRAINER",
+      "to": "SWA-RTS",
+      "type": "FS",
+      "lagHours": 0
+    },
+    {
+      "from": "CCWHXA-OPEN",
+      "to": "CCWHXA-CLEAN",
+      "type": "SS",
+      "lagHours": 2,
+      "words": "Lancing can start once the inlet channel head is off, 2 h into the opening.",
+      "change": "C3"
+    },
+    {
+      "from": "CCWHXA-OPEN",
+      "to": "CCWHXA-CLEAN",
+      "type": "FF",
+      "lagHours": 1,
+      "words": "Lancing cannot finish until 1 h after the outlet head is off; the tubes behind it are lanced last.",
+      "change": "C4"
+    },
+    {
+      "from": "CCWHXA-CLEAN",
+      "to": "CCWHXA-ECT",
+      "type": "FS",
+      "lagHours": 0
+    },
+    {
+      "from": "CCWHXA-ECT",
+      "to": "CCWHXA-CLOSE",
+      "type": "FS",
+      "lagHours": 0
+    },
+    {
+      "from": "CCWHXA-CLOSE",
+      "to": "SWA-RTS",
+      "type": "FS",
+      "lagHours": 0,
+      "words": "The heat exchanger's SW side lies on SW A's flow path, so it must be closed before SW A is filled."
+    },
+    {
+      "from": "CCWHXA-CLOSE",
+      "to": "CCWA-RTS",
+      "type": "FS",
+      "lagHours": 0
+    },
+    {
+      "from": "CCWA-SEAL",
+      "to": "CCWA-RTS",
+      "type": "FS",
+      "lagHours": 0
+    },
+    {
+      "from": "CCWA-MOTOR",
+      "to": "CCWA-RTS",
+      "type": "FS",
+      "lagHours": 0
+    },
+    {
+      "from": "SWA-RTS",
+      "to": "CCWA-RTS",
+      "type": "FS",
+      "lagHours": 0,
+      "words": "Support order: CCW A cannot be tested without SW A cooling."
+    },
+    {
+      "from": "CCWA-RTS",
+      "to": "RHRA-RTS",
+      "type": "FS",
+      "lagHours": 0,
+      "words": "Support order: RHR A needs CCW A cooling for its test."
+    },
+    {
+      "from": "CCWA-RTS",
+      "to": "HHSIA-RTS",
+      "type": "FS",
+      "lagHours": 0,
+      "words": "Support order: the HHSI A pump cooler needs CCW A."
+    },
+    {
+      "from": "RHRA-COUPLING",
+      "to": "RHRA-RTS",
+      "type": "FS",
+      "lagHours": 0
+    },
+    {
+      "from": "RHRA-MOTOR",
+      "to": "RHRA-RTS",
+      "type": "FS",
+      "lagHours": 0
+    },
+    {
+      "from": "HHSIA-BREAKER",
+      "to": "HHSIA-RTS",
+      "type": "FS",
+      "lagHours": 0
+    },
+    {
+      "from": "CSA-PM",
+      "to": "CSA-RTS",
+      "type": "FS",
+      "lagHours": 0
+    },
+    {
+      "from": "AFWA-COUPLING",
+      "to": "AFWA-RTS",
+      "type": "FS",
+      "lagHours": 0
+    },
+    {
+      "from": "AFWA-MOTOR",
+      "to": "AFWA-RTS",
+      "type": "FS",
+      "lagHours": 0
+    }
+  ],
+  "rules": [
+    {
+      "id": "R1",
+      "kind": "hard",
+      "words": "Protected equipment (Train B, TD AFW) is never tagged, worked or tested.",
+      "see": "protectedEquipment"
+    },
+    {
+      "id": "R2",
+      "kind": "hard",
+      "words": "Allowed outage time: each function group's span, from its first tag-out start to its last passed return-to-service test, is one continuous span of at most 72 h.",
+      "see": "functionGroups"
+    },
+    {
+      "id": "R3",
+      "kind": "hard",
+      "words": "Tag-out before work, restore and test after work. Equipment is available again only when its return-to-service test passes.",
+      "see": "links, passMakesAvailable"
+    },
+    {
+      "id": "R4",
+      "kind": "hard",
+      "words": "Return in support order: SW A, then CCW A, then RHR A and HHSI A.",
+      "see": "links"
+    },
+    {
+      "id": "R5",
+      "kind": "hard",
+      "words": "Lifts use the crane and a station mechanical crew, only in crane hours, and are never left half done over a break.",
+      "see": "jobs interruptible:false"
+    },
+    {
+      "id": "R6",
+      "kind": "hard",
+      "words": "Crews work only in their calendars. Overtime and night hours exist only if chosen and are paid. Daily rest of at least 11 h is built into the calendars.",
+      "basis": "Directive 2003/88/EC Art. 3 (11 consecutive hours' rest per 24 h)"
+    },
+    {
+      "id": "R7",
+      "kind": "hard",
+      "words": "One crew per job, the whole crew. The contractor crew does only workshop rebuild and tube cleaning. A job paused at a shift change may resume with another eligible crew."
+    },
+    {
+      "id": "R8",
+      "kind": "hard",
+      "words": "One tag-out or restoration at a time (work-control operator). One return-to-service test at a time (test team)."
+    },
+    {
+      "id": "R9",
+      "kind": "commitment",
+      "words": "Eddy-current team only Wednesday 07:00-19:00, unless rebooked for Friday (NOK 60,000)."
+    },
+    {
+      "id": "R10",
+      "kind": "commitment",
+      "words": "Window: no Train A tag before Mon 07:00, all Train A tested back by Sat 07:00.",
+      "see": "window"
+    },
+    {
+      "id": "R11",
+      "kind": "preference",
+      "words": "Station guideline: planned span of each function group at most 54 h (75 % of 72 h). Exceeding it needs the operations manager's agreement and is shown as a guideline breach, never hidden.",
+      "see": "functionGroups.guideline"
+    },
+    {
+      "id": "R12",
+      "kind": "hard",
+      "words": "Spare-dependent work cannot start before the spare is on site and inspected.",
+      "see": "SWA-SPARE-PREP release"
+    }
+  ],
+  "costs": {
+    "currency": "NOK",
+    "stationNormalHours": {
+      "nokPerPersonHour": 0,
+      "words": "Already budgeted; not an incremental cost."
+    },
+    "stationOvertime": {
+      "nokPerPersonHour": 1050,
+      "words": "Loaded rate 700 x 1.5. Charged per person-hour actually scheduled in overtime."
+    },
+    "contractorNight": {
+      "nokPerPersonHour": 1400,
+      "minimumHoursPerNight": 12,
+      "mobilisationNok": 35000,
+      "words": "Each booked night is paid in full: 12 h x 3 persons x 1,400 = NOK 50,400."
+    },
+    "craneExtensionDayNok": 48000,
+    "ectRebookNok": 60000,
+    "methodParts": {
+      "M1-rebuild": 120000,
+      "M2-swap": 340000
+    },
+    "committedSunk": {
+      "crane3DaysNok": 144000,
+      "ectWednesdayNok": 85000,
+      "words": "Already contracted; shown but not part of the comparison."
+    },
+    "source": "planner (illustrative)"
+  },
+  "measures": [
+    {
+      "id": "span-COOL-A",
+      "label": "Cooling-chain unavailable span",
+      "unit": "h",
+      "definition": "From the start of the first COOL-A tag-out to the end of the last COOL-A passed return-to-service test.",
+      "direction": "minimize",
+      "limit": 72,
+      "guideline": 54
+    },
+    {
+      "id": "margin-COOL-A",
+      "label": "Margin to allowed outage time",
+      "unit": "h",
+      "definition": "72 minus span-COOL-A. Also shown as a % of 72 h.",
+      "direction": "maximize"
+    },
+    {
+      "id": "unavailable-equipment-hours",
+      "label": "Train A equipment-unavailable hours",
+      "unit": "h",
+      "definition": "Sum over the seven Train A items of the hours from the item becoming unavailable (its own tag-out, or its supporter's) until its passed test. The quantity the Maintenance Rule monitors as unavailability; source 10 CFR 50.65(a)(1)-(a)(3).",
+      "direction": "minimize"
+    },
+    {
+      "id": "incremental-cost",
+      "label": "Extra cost",
+      "unit": "NOK",
+      "definition": "Overtime person-hours x 1,050 + booked contractor nights + mobilisation + crane extension + ECT rebooking + method parts.",
+      "direction": "minimize"
+    },
+    {
+      "id": "window-finish",
+      "label": "Last Train A test passed",
+      "unit": "local time",
+      "definition": "Must be at or before window end.",
+      "direction": "minimize"
+    },
+    {
+      "id": "moved-jobs",
+      "label": "Jobs moved from baseline",
+      "unit": "count, and h of start shift",
+      "definition": "For replans: jobs whose planned start differs from the baseline by more than 1 h.",
+      "direction": "minimize"
+    },
+    {
+      "id": "spare-exposure",
+      "label": "Weeks without a ready SW spare",
+      "unit": "weeks",
+      "definition": "Rebuild in place: 0 (the spare stays on the shelf). Swap: the vendor's refurbishment turnaround of the removed pump (planner estimate 10 weeks, range 8-14), during which a failure of either SW pump would have no ready spare.",
+      "direction": "minimize",
+      "change": "C8"
+    },
+    {
+      "notModelled": "Plant risk (no PRA or incremental core damage probability in Leitbild; the 10 CFR 50.65(a)(4) assessment stays outside this tool), quality or reliability differences between methods, radiation dose, weather limits on lifts, fatigue beyond the calendars. Work quality is not modelled: Leitbild has no failure-rate data for these pumps and the reference plant does not simulate wear, so any quality score would be invented. The tool shows test pass or fail (observed) and spare exposure (computed)."
+    }
+  ],
+  "policy": {
+    "default": "Lexicographic: 1) all hard rules and commitments; 2) cooling-chain span within the 54 h guideline (minimize the excess); 3) extra cost; 4) Train A equipment-unavailable hours.",
+    "userChanges": [
+      "Swap 2 and 3 (cheapest legal plan, guideline breach shown)",
+      "Fix the method or the crew options and compare",
+      "Ask for every plan that is not worse on all of span, cost and unavailable hours (nondominated set)"
+    ]
+  },
+  "uncertainty": {
+    "threePointJobs": [
+      "SWA-PUMP-OUT",
+      "SWA-REBUILD",
+      "SWA-PUMP-IN",
+      "CCWHXA-CLEAN",
+      "CCWA-SEAL"
+    ],
+    "words": "Ranges are optimistic / most likely / pessimistic planner judgement. The plan uses most likely values. The tool shows whether the plan still meets 72 h if every range job takes its pessimistic value, and which job then breaks it. No probability is claimed."
+  },
+  "disruptions": [
+    {
+      "id": "X1-late-spare",
+      "type": "late spare",
+      "notice": "2026-11-16T10:00:00+01:00",
+      "words": "The vendor says the spare arrives Wed 18 Nov 08:00, not Mon 12:00 (range Wed 08:00 to Thu 12:00). Applies to plans using M2-swap.",
+      "change": {
+        "job": "SWA-SPARE-PREP",
+        "release": "2026-11-18T08:00:00+01:00"
+      },
+      "decision": "Wait for the spare (longer span), shift the whole cooling chain later (ECT Wednesday then missed: rebook Friday), or switch to M1-rebuild with contractor nights. The contractor must still be orderable: assume short-notice ordering at +30 %."
+    },
+    {
+      "id": "X2-overrun",
+      "type": "overrun",
+      "notice": "2026-11-17T15:00:00+01:00",
+      "words": "CCW A seal: shaft sleeve scored. Actual start Tue 07:00 by Mech crew 2, 6 h worked, remaining revised from 4 h to 10 h; the sleeve is in stores. At the same time the shift manager takes Mech crew 2 for break-in work elsewhere on site, Tue 15:00-19:00, which is outside this plan. The started seal job continues with whichever station crew is free. The 6 actual hours stay recorded against Mech crew 2.",
+      "change": {
+        "job": "CCWA-SEAL",
+        "actualStart": "2026-11-17T07:00:00+01:00",
+        "workedHours": 6,
+        "remainingHours": 10,
+        "crewSoFar": "Mech crew 2",
+        "crewNext": "any station mechanical crew (crew change on a started job)",
+        "capacityLoss": {
+          "resource": "mech-station",
+          "member": "Mech crew 2",
+          "from": "2026-11-17T15:00:00+01:00",
+          "to": "2026-11-17T19:00:00+01:00",
+          "reason": "break-in work outside this plan"
+        }
+      },
+      "condition": "Times assume the baseline started CCWA-SEAL Tue 07:00; otherwise apply at 6 h worked.",
+      "changeLog": "C6"
+    },
+    {
+      "id": "X3-found-work",
+      "type": "emergent work",
+      "notice": "at end of CCWHXA-ECT",
+      "words": "Out of sequence first: 2 h before the eddy-current test ends, the ECT team has finished the outlet-side tubes, and the fitters start refitting the outlet head. CCWHXA-CLOSE gets an actual start, with 2 of its 4 h done, while its predecessor is still running. Then, at the end of the test: 9 tubes are beyond the plugging limit. Add 'Plug 9 tubes' before the inlet head is closed. The replan must keep CLOSE's actual start and finish the remaining 2 h after the plugging.",
+      "change": {
+        "addJob": {
+          "id": "CCWHXA-PLUG",
+          "title": "Plug 9 CCW HX A tubes",
+          "equipment": "CCWHXA",
+          "kind": "work",
+          "hours": 5,
+          "range": [
+            4,
+            5,
+            8
+          ],
+          "demands": [
+            {
+              "resource": "mech-station",
+              "amount": 1
+            }
+          ],
+          "interruptible": true
+        },
+        "addLinks": [
+          {
+            "from": "CCWHXA-ECT",
+            "to": "CCWHXA-PLUG",
+            "type": "FS",
+            "lagHours": 0
+          },
+          {
+            "from": "CCWHXA-PLUG",
+            "to": "CCWHXA-CLOSE",
+            "type": "FS",
+            "lagHours": 0
+          }
+        ],
+        "outOfSequenceProgress": {
+          "job": "CCWHXA-CLOSE",
+          "actualStart": "2 h before CCWHXA-ECT finishes",
+          "workedHours": 2,
+          "remainingHours": 2,
+          "remainingAfter": [
+            "CCWHXA-ECT",
+            "CCWHXA-PLUG"
+          ],
+          "note": "Exercises progress against logic: the actual start stays, and the remaining work still follows the links."
+        }
+      },
+      "changeLog": "C7"
+    },
+    {
+      "id": "X4-failed-test",
+      "type": "failed post-maintenance test",
+      "notice": "at end of SWA-RTS",
+      "words": "SW A vibration is in the alert range. Realign the motor coupling (3 h, mechanical, no crane) and retest (1.5 h). SW A stays unavailable, and CCW A cannot be tested, until the retest passes. The span clock keeps running.",
+      "change": {
+        "job": "SWA-RTS",
+        "result": "failed",
+        "addJobs": [
+          {
+            "id": "SWA-REALIGN",
+            "title": "Realign SW A motor coupling",
+            "equipment": "SWA",
+            "kind": "work",
+            "hours": 3,
+            "demands": [
+              {
+                "resource": "mech-station",
+                "amount": 1
+              }
+            ],
+            "interruptible": false
+          },
+          {
+            "id": "SWA-RETEST",
+            "title": "Retest SW A (vibration, flow)",
+            "equipment": "SWA",
+            "kind": "restore-test",
+            "hours": 1.5,
+            "demands": [
+              {
+                "resource": "test-team",
+                "amount": 1
+              }
+            ],
+            "interruptible": false,
+            "passMakesAvailable": [
+              "SWA"
+            ]
+          }
+        ],
+        "addLinks": [
+          {
+            "from": "SWA-RTS",
+            "to": "SWA-REALIGN",
+            "type": "FS",
+            "lagHours": 0
+          },
+          {
+            "from": "SWA-REALIGN",
+            "to": "SWA-RETEST",
+            "type": "FS",
+            "lagHours": 0
+          },
+          {
+            "from": "SWA-RETEST",
+            "to": "CCWA-RTS",
+            "type": "FS",
+            "lagHours": 0
+          }
+        ]
+      }
+    },
+    {
+      "id": "X5-protected-train-failure",
+      "type": "emergent failure on protected equipment (stretch)",
+      "notice": "2026-11-19T08:00:00+01:00",
+      "words": "MD AFW B is found with an oil leak and is inoperable. If AFW A is still out, two AFW trains are out. The reference rule is NUREG-1431 3.7.5: two trains inoperable means MODE 3 within 6 h. The planner needs AFW A's earliest return now, and the repair of AFW B becomes break-in work on protected equipment.",
+      "decision": "Show earliest possible return of AFW A from the current state. Plans that finished AFW A on Monday are unaffected."
+    }
+  ],
+  "variants": [
+    {
+      "id": "V1-days-only-rebuild",
+      "words": "Station crews on day hours only, no overtime, no contractor, rebuild in place.",
+      "expected": "infeasible",
+      "reason": "The SW A chain needs 38 h of work, one job after another: disconnect 1, motor out 3, pump out 5, rebuild 20, pump in 4, motor in 3, reconnect 2. From the crane's arrival (Tue 07:00) to the end of Friday's day shift there are only 32 day hours, so even the window is missed, before the 72 h limit is applied. The proof is a simple bound; or to confirm."
+    },
+    {
+      "id": "V2-days-only-swap",
+      "words": "Day hours only, swap in spare.",
+      "expected": "infeasible (to be proved or refuted by or)",
+      "reason": "Total work fits, but the non-interruptible lifts (5 h and 4 h) after their predecessors cannot be packed into 8 h day shifts within crane days fast enough to keep COOL-A within 72 h. This needs a search proof, not a simple bound."
+    },
+    {
+      "id": "V3-twin",
+      "words": "or builds a 5-10x twin with the same rules (e.g. a two-unit site with Train A and Train B weeks over a 12-week rolling schedule) for latency."
+    }
+  ],
+  "designIntentHandEstimates": {
+    "warning": "Hand estimates by maint to check that the case has genuine choices. They are not solver results and must not be shown as such. or replaces them with checked solver output.",
+    "rows": [
+      {
+        "options": "M1 rebuild + overtime",
+        "coolSpanH": "about 85",
+        "verdict": "breaks 72 h"
+      },
+      {
+        "options": "M1 rebuild + overtime + contractor nights",
+        "coolSpanH": "about 60-64",
+        "verdict": "legal, breaks 54 h guideline"
+      },
+      {
+        "options": "M2 swap + overtime",
+        "coolSpanH": "about 46-60, depending on how the ECT Wednesday slot and the 2 mechanical crews interleave",
+        "verdict": "legal; guideline met only if the heat-exchanger chain is not critical"
+      },
+      {
+        "options": "M2 swap + overtime + 1 contractor night on tube cleaning",
+        "coolSpanH": "about 46",
+        "verdict": "expected best margin; the night pays only on the HX chain, never on lifts (the crane is daylight only)"
+      }
+    ]
+  },
+  "gaps": [
+    "No PRA or risk number: the risk assessment required by 10 CFR 50.65(a)(4) is outside the tool.",
+    "No World out-of-service state: a planned tag-out does not change the plant (owner-decision to add).",
+    "Return-to-service tests are planned activities with a recorded pass or fail; they are not executed in World (owner-decision: an explicitly authorised World test run).",
+    "CCW HX A, EDG A and the safety buses are not in the pump-only planning basis (owner-decision to extend the read).",
+    "Isolation boundaries and permits are named jobs, not modelled tag-out boundaries."
+  ]
+}
