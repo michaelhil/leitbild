@@ -137,6 +137,8 @@ export const refusalText = (error: unknown, name: KeyNames = () => 'an item in t
     switch (error.code) {
       case 'plan_revision_conflict': return 'Someone else changed this plan a moment ago. It has been read again; check it and try once more.'
       case 'planning_busy': return 'Planning is busy with other plans. Try again in a moment.'
+      // One solver runs at a time: another plan's Generate holds it (the person's own run holds previews back).
+      case 'solver_busy': return 'Planning is generating another plan; try again in about 20 seconds.'
       case 'world_unavailable': return 'World did not answer in time; nothing was saved. Try again in a moment.'
       case 'generate_running': return 'Generate is already working on this plan. Wait for it to finish; its options then appear here.'
       case 'baseline_limit': return 'This plan already keeps as many baselines as a plan may keep, so no more can be saved.'

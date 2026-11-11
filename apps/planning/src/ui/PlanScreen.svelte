@@ -23,6 +23,7 @@
   import RulesPanel from './RulesPanel.svelte'
   import { alignWindowEdit, simulationNow } from './edit-forms.ts'
   import { createPlanActions, type Shown } from './plan-actions.ts'
+  import { createPreviewGate } from './preview-gate.ts'
   import { revealPanel } from './reveal.ts'
   import { shiftList } from './shift-list.ts'
   import ShiftList from './ShiftList.svelte'
@@ -139,7 +140,15 @@
     })
   })
 
-  const previewEdits = (edits: readonly Edit[], label: string): void => withModel(async current => {
+  const gate = createPreviewGate()
+  const previewEdits = (edits: readonly Edit[], label: string): void => {
+    if (!gate.request({ edits, label })) {
+      notice = `Generating… “${label}” is previewed when Generate ends.`
+      return
+    }
+    runPreview(edits, label)
+  }
+  const runPreview = (edits: readonly Edit[], label: string): void => withModel(async current => {
     pending = edits
     preview = await actions.preview(current, edits, label)
     reveal()
@@ -161,6 +170,7 @@
     if (current === null || generating !== null) return
     const controller = new AbortController()
     generating = controller
+    gate.start()
     error = null
     void (async () => {
       try {
@@ -168,7 +178,12 @@
         show(shown)
         error = shown.error
         onChanged()
-      } catch (cause) { error = refusalText(cause, context?.names.any) } finally { generating = null }
+      } catch (cause) { error = refusalText(cause, context?.names.any) } finally {
+        generating = null
+        // A preview asked for during the run goes now, against the plan as Generate left it.
+        const held = gate.end()
+        if (held !== null) runPreview(held.edits, held.label)
+      }
     })()
   }
   const showOption = (option: string): void => withModel(async current => {
@@ -245,13 +260,13 @@
           {#if layout}<div class="desktop-only"><Timeline {layout} selected={selectedJob} onSelect={selectJob} /></div>{/if}
           <WorkList {context} {rows} selected={selectedJob} onSelect={selectJob} />
         {:else if view === 'add'}
-          <JobForm {context} {busy} onPreview={previewEdits} />
+          <JobForm {context} busy={busy || generating !== null} onPreview={previewEdits} />
         {:else if view === 'equipment'}
-          <EquipmentPicker {context} {runs} {linkedRun} {busy} onLink={link} onRefresh={refresh} {onOpenWorkspace} onFindRuns={findRuns} onSearch={search} onDetail={detail} onPreview={previewEdits} />
+          <EquipmentPicker {context} {runs} {linkedRun} busy={busy || generating !== null} onLink={link} onRefresh={refresh} {onOpenWorkspace} onFindRuns={findRuns} onSearch={search} onDetail={detail} onPreview={previewEdits} />
         {:else if view === 'crews'}
-          <CrewForm {context} {busy} onPreview={previewEdits} />
+          <CrewForm {context} busy={busy || generating !== null} onPreview={previewEdits} />
         {:else if view === 'rules'}
-          <RulesPanel {context} {busy} onPreview={previewEdits} />
+          <RulesPanel {context} busy={busy || generating !== null} onPreview={previewEdits} />
         {:else}
           <OptionsTable options={model.options?.items ?? []} recommended={model.options?.recommended ?? null} {context} selected={selectedOption} {busy} onSelect={showOption} onBaseline={baseline} />
         {/if}
@@ -260,7 +275,7 @@
         {#if preview}
           <EditPreview {preview} {pending} {context} {busy} onApply={apply} onDiscard={() => { preview = null }} onUseTime={useTime} onAddEdits={extra => previewEdits([...pending, ...extra], preview?.label ?? 'the change')} />
         {:else if selectedJob}
-          <JobPanel jobKey={selectedJob} {context} row={rows.find(row => row.job === selectedJob)} scheduled={rows.length === 0 ? null : new Set(rows.map(row => row.job))} {why} {busy} onWhy={explainStart} onPick={pick} onPreview={previewEdits} onClose={() => { selectedJob = null; why = null }} />
+          <JobPanel jobKey={selectedJob} {context} row={rows.find(row => row.job === selectedJob)} scheduled={rows.length === 0 ? null : new Set(rows.map(row => row.job))} {why} busy={busy || generating !== null} onWhy={explainStart} onPick={pick} onPreview={previewEdits} onClose={() => { selectedJob = null; why = null }} />
         {/if}
       </div>
     </div>
