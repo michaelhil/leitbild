@@ -51,6 +51,13 @@ export interface Prepared {
   /** Per resource and slot: the purchase whose period holds the slot, and the purchase whose use forbids it. */
   readonly periodPurchase: readonly Int16Array[]
   readonly forbiddenBy: readonly Int16Array[]
+  /**
+   * finish[a][m][t]: the finish of activity a in mode m started at slot t (t in 0..H), or -1. next[a][m][t]:
+   * the first t' >= t with a finish, or H + 1. Built per prepare() call from this problem only, so nothing
+   * is shared between problems or solves.
+   */
+  readonly finish: ReadonlyArray<readonly Int32Array[]>
+  readonly next: ReadonlyArray<readonly Int32Array[]>
 }
 
 const indexCalendar = (work: Uint8Array, H: number): CalendarIndex => {
@@ -106,24 +113,29 @@ export const prepare = (problem: NormalizedProblem): Prepared => {
     for (const period of resource.forbiddenWhenUsed) slots.fill(purchaseOf.get(period.purchase)!, period.from, period.to)
     return slots
   })
+  const finish = problem.activities.map(activity => activity.modes.map(mode => {
+    const table = new Int32Array(H + 1).fill(-1)
+    if (mode.work === 0) { for (let t = 0; t <= H; t++) table[t] = t; return table }
+    const k = cal[mode.calendar]!
+    if (mode.continuous) { for (let t = 0; t < H; t++) if (k.run[t]! >= mode.work) table[t] = t + mode.work; return table }
+    for (let p = 0; p + mode.work - 1 < k.list.length; p++) table[k.list[p]!] = k.list[p + mode.work - 1]! + 1
+    return table
+  }))
+  const next = finish.map(modes => modes.map(table => {
+    const out = new Int32Array(H + 2).fill(H + 1)
+    for (let t = H; t >= 0; t--) out[t] = table[t]! >= 0 ? t : out[t + 1]!
+    return out
+  }))
   return {
     problem, n, H, cal, preds, succs, topo: Int32Array.from(topo), itemOpeners, itemClosers, opensItems, closesItems: invert(itemClosers),
     spanOpeners, spanClosers, opensSpans: invert(spanOpeners), closesSpans: invert(spanClosers), opensCoverage, resourceCoverage,
-    purchases, periodPurchase, forbiddenBy,
+    purchases, periodPurchase, forbiddenBy, finish, next,
   }
 }
 
 /** Finish slot of activity a in mode m started at t, or -1 when the mode cannot start there. */
-export const finishOf = (prep: Prepared, a: number, m: number, t: number): number => {
-  const mode = prep.problem.activities[a]!.modes[m]!
-  if (mode.work === 0) return t >= 0 && t <= prep.H ? t : -1
-  if (t < 0 || t >= prep.H) return -1
-  const k = prep.cal[mode.calendar]!
-  if (mode.continuous) return k.run[t]! >= mode.work ? t + mode.work : -1
-  const p = k.pos[t]!
-  if (p < 0 || p + mode.work - 1 >= k.list.length) return -1
-  return k.list[p + mode.work - 1]! + 1
-}
+export const finishOf = (prep: Prepared, a: number, m: number, t: number): number =>
+  t >= 0 && t <= prep.H ? prep.finish[a]![m]![t]! : -1
 
 /** The slots activity a works in mode m from t; finishOf must be >= 0. */
 export const workedSlots = (prep: Prepared, a: number, m: number, t: number): Int32Array => {
@@ -262,36 +274,48 @@ export const makeDecoder = (prep: Prepared) => {
     }
     return { kind: 'none' }
   }
-  /** The allocation-free test behind every placement; `refusal` says why when it is false. */
-  const fits = (a: number, m: number, t: number): boolean => {
+  /**
+   * The allocation-free test behind every placement: -1 when a fits at t in mode m; else the slot to try
+   * after. A full slot x refuses every start that would also work x, so the scan resumes after x (the
+   * latest full slot, found first, skips furthest); any other refusal (replaced time, maxJobs,
+   * keep-in-service) resumes at t + 1. `refusal` says why.
+   */
+  const blockedAt = (a: number, m: number, t: number): number => {
     const mode = problem.activities[a]!.modes[m]!
-    if (mode.demands.length === 0 || mode.work === 0) return true
-    const k = prep.cal[mode.calendar]!
-    const p0 = mode.continuous ? 0 : k.pos[t]!
+    const work = mode.work, demands = mode.demands
+    if (demands.length === 0 || work === 0) return -1
+    const continuous = mode.continuous
+    const list = prep.cal[mode.calendar]!.list
+    const p0 = continuous ? 0 : prep.cal[mode.calendar]!.pos[t]!
     if (anyForbidden) { localUse.fill(0); localForbidden.fill(0) }
-    for (const d of mode.demands) {
-      const resource = problem.resources[d.resource]!
-      const u = usage[d.resource]!, capacity = resource.capacity, own = prep.periodPurchase[d.resource]!, banned = prep.forbiddenBy[d.resource]!
+    for (let i = 0; i < demands.length; i++) {
+      const d = demands[i]!
+      const r = d.resource, amount = d.amount
+      const u = usage[r]!, capacity = problem.resources[r]!.capacity
       const when = d.when < 0 ? undefined : prep.cal[d.when]!.pos
       let any = false
-      for (let q = 0; q < mode.work; q++) {
-        const x = mode.continuous ? t + q : k.list[p0 + q]!
+      // Latest slot first: the last full slot found gives the longest exact skip.
+      for (let q = work - 1; q >= 0; q--) {
+        const x = continuous ? t + q : list[p0 + q]!
         if (when !== undefined && when[x]! < 0) continue
         any = true
-        if (u[x]! + d.amount > capacity[x]!) return false
+        if (u[x]! + amount > capacity[x]!) return x + 1
         if (anyForbidden) {
+          const own = prep.periodPurchase[r]!, banned = prep.forbiddenBy[r]!
           const p = own[x]!, f = banned[x]!
-          if (f >= 0 && (purchaseUse[f]! > 0 || localUse[f]! > 0)) return false
-          if (p >= 0 && (forbiddenUse[p]! > 0 || localForbidden[p]! > 0)) return false
+          if (f >= 0 && (purchaseUse[f]! > 0 || localUse[f]! > 0)) return t + 1
+          if (p >= 0 && (forbiddenUse[p]! > 0 || localForbidden[p]! > 0)) return t + 1
           if (p >= 0) localUse[p]!++
           if (f >= 0) localForbidden[f]!++
         }
       }
-      if (any && resource.maxJobs !== undefined && jobCount[d.resource]! >= resource.maxJobs) return false
+      const maxJobs = problem.resources[r]!.maxJobs
+      if (any && maxJobs !== undefined && jobCount[r]! >= maxJobs) return t + 1
     }
-    for (const d of mode.demands) if (prep.resourceCoverage[d.resource]!.length > 0) return refusal(a, m, t).kind === 'none'
-    return true
+    for (let i = 0; i < demands.length; i++) if (prep.resourceCoverage[demands[i]!.resource]!.length > 0) return refusal(a, m, t).kind === 'none' ? -1 : t + 1
+    return -1
   }
+  const fits = (a: number, m: number, t: number): boolean => blockedAt(a, m, t) < 0
 
   const book = (a: number, m: number, t: number, sign: 1 | -1): void => {
     const mode = problem.activities[a]!.modes[m]!
@@ -361,22 +385,30 @@ export const makeDecoder = (prep: Prepared) => {
         if (activity.fixed === undefined) return
         place(a, activity.fixed.mode, activity.fixed.start, finishOf(prep, a, activity.fixed.mode, activity.fixed.start))
       })
-      const remaining: number[] = []
-      for (let i = 0; i < list.length; i++) if (problem.activities[list[i]!]!.fixed === undefined) remaining.push(list[i]!)
-      while (remaining.length > 0 && !restart) {
+      // The list in order, with taken entries flagged instead of spliced out: a precedence-feasible list
+      // takes its head almost every time, so a pick is O(1) and a pass O(n).
+      const order: number[] = []
+      for (let i = 0; i < list.length; i++) if (problem.activities[list[i]!]!.fixed === undefined) order.push(list[i]!)
+      const taken = new Uint8Array(order.length)
+      let head = 0, left = order.length
+      while (left > 0 && !restart) {
         let pick = -1, fallback = -1
-        for (let p = 0; p < remaining.length; p++) {
-          const a = remaining[p]!
+        for (let p = head; p < order.length; p++) {
+          if (taken[p]) continue
+          const a = order[p]!
           let ready = true
           for (const l of prep.preds[a]!) if (!placed[l.from]) { ready = false; break }
           if (!ready) continue
           if (fallback < 0) fallback = p
-          if (!coverageOk(a, Number.MAX_SAFE_INTEGER - 1)) continue
+          if (prep.opensCoverage[a]!.length > 0 && !coverageOk(a, Number.MAX_SAFE_INTEGER - 1)) continue
           pick = p; break
         }
         if (pick < 0) pick = fallback
-        if (pick < 0) { penalty += 1e6 * remaining.length; note = 'no activity is ready'; break }
-        const a = remaining.splice(pick, 1)[0]!
+        if (pick < 0) { penalty += 1e6 * left; note = 'no activity is ready'; break }
+        taken[pick] = 1
+        left--
+        while (head < order.length && taken[head]) head++
+        const a = order[pick]!
         const m = M[a]!
         const activity = problem.activities[a]!
         const mode = activity.modes[m]!
@@ -394,12 +426,14 @@ export const makeDecoder = (prep: Prepared) => {
         }
         let tStar = -1, fStar = -1
         const last = mode.work === 0 ? H : H - 1
-        for (let t = Math.max(0, lo); t <= last; t++) {
-          const f = finishOf(prep, a, m, t)
-          if (f < 0 || f < ffLo) continue
-          if (ffLinks.length > 0 && !ffLinks.every(link => workedFrom(prep, a, m, t, link.finish) >= link.lag)) continue
-          if (!coverageOk(a, t)) continue
-          if (!fits(a, m, t)) continue
+        const finishes = prep.finish[a]![m]!, starts = prep.next[a]![m]!
+        // Only slots where the mode can start at all are tried (the next-start table skips the rest).
+        const guarded = prep.opensCoverage[a]!.length > 0
+        for (let t = starts[Math.min(H + 1, Math.max(0, lo))]!; t <= last;) {
+          const f = finishes[t]!
+          if (f < ffLo || (ffLinks.length > 0 && !ffLinks.every(link => workedFrom(prep, a, m, t, link.finish) >= link.lag)) || (guarded && !coverageOk(a, t))) { t = starts[t + 1]!; continue }
+          const resume = blockedAt(a, m, t)
+          if (resume >= 0) { t = starts[Math.min(H + 1, Math.max(t + 1, resume))]!; continue }
           tStar = t; fStar = f; break
         }
         if (tStar < 0) {
