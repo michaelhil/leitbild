@@ -2,8 +2,8 @@
 // writes its dated row. The harnesses use it to try alternatives (a job moved earlier, every schedule of
 // a small instance); the product checker still judges every row it writes, so a mistake here shows up as
 // a refused row, never as a passed one.
-import type { PlanInputs } from '../plan/schema.ts'
-import { jobDuration, type CheckRow, type Context } from '../check/check.ts'
+import type { PlanInputs } from '../../src/plan/schema.ts'
+import { jobDuration, type CheckRow, type Context } from '../../src/check/check.ts'
 
 type Job = PlanInputs['jobs'][number]
 

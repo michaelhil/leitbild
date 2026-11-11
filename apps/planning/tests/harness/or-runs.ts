@@ -3,9 +3,9 @@
 // demands), never from the product checker, so the two derivations meet only at the check.
 //
 // Regenerate the fixture (reads the review folder, verifies nothing is edited by hashing each run):
-//   bun apps/planning/src/harness/or-runs.ts <R>/or/runs apps/planning/src/harness/fixtures/or-v02-runs.json
+//   bun apps/planning/tests/harness/or-runs.ts <R>/or/runs apps/planning/tests/harness/fixtures/or-v02-runs.json
 import type { CaseActual, CaseChoices, CaseProgress } from './train-a-case.ts'
-import type { CheckRow } from '../check/check.ts'
+import type { CheckRow } from '../../src/check/check.ts'
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 export interface OrRunExtract {

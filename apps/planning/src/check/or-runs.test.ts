@@ -1,14 +1,14 @@
 import { describe, expect, test } from 'bun:test'
 import { checkPlan, type CheckRow } from './check.ts'
-import { trainAInputs } from '../harness/train-a-case.ts'
-import { progressOf, type OrRunExtract } from '../harness/or-runs.ts'
-import caseJson from '../harness/fixtures/train-a-case-v0.2.json'
-import extracted from '../harness/fixtures/or-v02-runs.json'
+import { trainAInputs } from '../../tests/harness/train-a-case.ts'
+import { progressOf, type OrRunExtract } from '../../tests/harness/or-runs.ts'
+import caseJson from '../../tests/harness/fixtures/train-a-case-v0.2.json'
+import extracted from '../../tests/harness/fixtures/or-v02-runs.json'
 
 // or's ten v0.2 schedules (three base options, seven replans), each judged by the product checker on plan
 // inputs converted from the frozen case. Every expected value comes from or's own run file.
 const runs = extracted.runs as unknown as OrRunExtract[]
-const caseText = await Bun.file(new URL('../harness/fixtures/train-a-case-v0.2.json', import.meta.url)).text()
+const caseText = await Bun.file(new URL('../../tests/harness/fixtures/train-a-case-v0.2.json', import.meta.url)).text()
 const inputsOf = (run: OrRunExtract) => trainAInputs(caseJson, run.choices, progressOf(caseJson, run))
 const metric = (result: ReturnType<typeof checkPlan>, id: string) => result.metrics.find(item => item.id === id)?.value
 

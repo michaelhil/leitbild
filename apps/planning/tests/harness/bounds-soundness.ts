@@ -3,9 +3,9 @@
 // goal (lexicographically, given the earlier goals at their optimum), and no certificate may be issued
 // where a checker-validated schedule exists. A certificate on a truly infeasible instance must still pass
 // the checker's own re-verification.
-import { planInputsSchema, type PlanInputs } from '../plan/schema.ts'
-import { checkPlan, prepare, type CheckRow, type CheckVariant } from '../check/check.ts'
-import { verifyCertificate } from '../check/certificate.ts'
+import { planInputsSchema, type PlanInputs } from '../../src/plan/schema.ts'
+import { checkPlan, prepare, type CheckRow, type CheckVariant } from '../../src/check/check.ts'
+import { verifyCertificate } from '../../src/check/certificate.ts'
 import { random } from './goals-property.ts'
 import { choicesFor, placeJob } from './place.ts'
 import type { BoundsPort } from './ports.ts'

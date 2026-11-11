@@ -1,8 +1,8 @@
 // Test harness, the goals property (acceptance row 3): no goal order, threshold or tolerance produces a plan
 // that breaks a hard rule. Every option an engine calls "validated feasible" under any goal setting must
 // pass the product checker, and no option may carry proof words it cannot back.
-import type { PlanInputs } from '../plan/schema.ts'
-import { checkPlan } from '../check/check.ts'
+import type { PlanInputs } from '../../src/plan/schema.ts'
+import { checkPlan } from '../../src/check/check.ts'
 import type { GeneratePort } from './ports.ts'
 
 type Goal = PlanInputs['goals'][number]

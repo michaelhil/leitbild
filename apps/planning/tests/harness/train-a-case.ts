@@ -1,8 +1,8 @@
 // Test harness, not shipped logic: the frozen flagship case (maint/case-v0.2.json, sha256 a552c921…)
 // converted to plan inputs, with or's run choices and replan progress, so the product checker can judge
 // or's schedules. It changes no case value. Written independently of the Definition builder (lane P).
-import { planInputsSchema, type PlanInputs } from '../plan/schema.ts'
-import type { CheckVariant } from '../check/check.ts'
+import { planInputsSchema, type PlanInputs } from '../../src/plan/schema.ts'
+import type { CheckVariant } from '../../src/check/check.ts'
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 type CaseJson = any

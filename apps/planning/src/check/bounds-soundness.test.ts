@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test'
-import { boundsSoundness, enumerate, lexicographicOptimum, smallInstance } from '../harness/bounds-soundness.ts'
-import type { BoundsPort } from '../harness/ports.ts'
+import { boundsSoundness, enumerate, lexicographicOptimum, smallInstance } from '../../tests/harness/bounds-soundness.ts'
+import type { BoundsPort } from '../../tests/harness/ports.ts'
 
 // The harness re-verifies lane S's bounds at integration. Here bound doubles show what it accepts and
 // refuses. Every optimum is found by enumerating every schedule the checker accepts.

@@ -1,11 +1,11 @@
 import { describe, expect, test } from 'bun:test'
 import { checkPlan } from './check.ts'
-import { twinPlan, twinV3Options } from '../harness/twin-plan.ts'
-import solutions from '../harness/fixtures/twin-v3-solutions.json'
+import { twinPlan, twinV3Options } from '../../tests/harness/twin-plan.ts'
+import solutions from '../../tests/harness/fixtures/twin-v3-solutions.json'
 
 // The frozen gate twin v3 as a plan, and or's best-known plans of it judged by the product checker. The
 // counts come from maint/twin-v3-spec.md §6; the measures from or's run files.
-const text = await Bun.file(new URL('../harness/fixtures/twin-v3.json', import.meta.url)).text()
+const text = await Bun.file(new URL('../../tests/harness/fixtures/twin-v3.json', import.meta.url)).text()
 const bench = JSON.parse(text)
 const plan = twinPlan(bench, twinV3Options(bench))
 

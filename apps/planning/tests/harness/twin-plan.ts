@@ -5,9 +5,9 @@
 // closers, per-night contractor resources, a Friday tool day, a rebooking mode with a fixed cost). It makes
 // no judgement: what the plan schema cannot say is listed in `notes`.
 //
-//   bun apps/planning/src/harness/twin-plan.ts <twin.json> [<solution run.json> ...]
-import { planInputsSchema, type PlanInputs } from '../plan/schema.ts'
-import { checkPlan, type CheckRow, type CheckVariant } from '../check/check.ts'
+//   bun apps/planning/tests/harness/twin-plan.ts <twin.json> [<solution run.json> ...]
+import { planInputsSchema, type PlanInputs } from '../../src/plan/schema.ts'
+import { checkPlan, type CheckRow, type CheckVariant } from '../../src/check/check.ts'
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 type Bench = any

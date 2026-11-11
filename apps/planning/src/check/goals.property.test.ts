@@ -1,9 +1,9 @@
 import { describe, expect, test } from 'bun:test'
 import type { PlanInputs } from '../plan/schema.ts'
 import { checkPlan, type CheckRow } from './check.ts'
-import { goalsProperty } from '../harness/goals-property.ts'
-import { enumerate, smallInstance } from '../harness/bounds-soundness.ts'
-import type { GeneratePort, HarnessOption } from '../harness/ports.ts'
+import { goalsProperty } from '../../tests/harness/goals-property.ts'
+import { enumerate, smallInstance } from '../../tests/harness/bounds-soundness.ts'
+import type { GeneratePort, HarnessOption } from '../../tests/harness/ports.ts'
 
 // The property runs on lane S's generate at integration. Here two engine doubles show the harness: one
 // that only offers checker-validated schedules, and one that cuts a corner when the first goal rewards it.

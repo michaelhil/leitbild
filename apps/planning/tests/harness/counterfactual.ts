@@ -1,8 +1,8 @@
 // Test harness, the counterfactual check (acceptance row 7): an explanation "it starts then because of C"
 // holds only if relaxing C lets the job start earlier, everything else fixed, as judged by the product
 // checker. Each named cause alone must do it, or the named set together when the causes are joint.
-import type { PlanInputs } from '../plan/schema.ts'
-import { checkPlan, prepare, type CheckRow, type CheckVariant } from '../check/check.ts'
+import type { PlanInputs } from '../../src/plan/schema.ts'
+import { checkPlan, prepare, type CheckRow, type CheckVariant } from '../../src/check/check.ts'
 import { choicesFor, placeJob } from './place.ts'
 import type { ExplainItem } from './ports.ts'
 

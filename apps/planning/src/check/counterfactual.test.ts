@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'bun:test'
 import { planInputsSchema } from '../plan/schema.ts'
-import { counterfactualCheck } from '../harness/counterfactual.ts'
-import type { ExplainItem } from '../harness/ports.ts'
+import { counterfactualCheck } from '../../tests/harness/counterfactual.ts'
+import type { ExplainItem } from '../../tests/harness/ports.ts'
 import type { CheckRow } from './check.ts'
 
 // The harness runs on lane S's explanations at integration (flagship baseline and two edit-replans, zero

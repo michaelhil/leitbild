@@ -2,9 +2,9 @@
 // test doubles in the test files; at integration an adapter over solve/generate, solve/explain and
 // solve/bounds implements them. Nothing here is a solver.
 import type { z } from 'zod'
-import type { Certificate, PlanInputs, Status } from '../plan/schema.ts'
-import type { explainResultSchema } from '../api/contract.ts'
-import type { CheckRow, CheckVariant } from '../check/check.ts'
+import type { Certificate, PlanInputs, Status } from '../../src/plan/schema.ts'
+import type { explainResultSchema } from '../../src/api/contract.ts'
+import type { CheckRow, CheckVariant } from '../../src/check/check.ts'
 
 export type ExplainItem = z.infer<typeof explainResultSchema>['items'][number]
 
