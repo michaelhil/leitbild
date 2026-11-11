@@ -16,7 +16,7 @@ import { compareKeys, compareStaged, goalExcess, goalKeys } from './rank.ts'
  * Bumped whenever compile, bounds or the engine change meaning; part of every formulation. It lives here so
  * the Worker loads only the engine and decoder, not the plan schema.
  */
-export const SOLVER_VERSIONS = { compile: 1, bounds: 1, engine: 'lahc-2' } as const
+export const SOLVER_VERSIONS = { compile: 1, bounds: 1, engine: 'lahc-3' } as const
 
 export const mulberry32 = (seed: number) => () => {
   seed |= 0; seed = (seed + 0x6d2b79f5) | 0
