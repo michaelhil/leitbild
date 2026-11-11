@@ -117,6 +117,10 @@ const runKind = (status: string): ContinueKind =>
   status === 'Paused' ? 'paused' : status === 'Unavailable' ? 'unavailable' : 'running'
 const order: Readonly<Record<ContinueKind, number>> = { running: 0, paused: 1, unavailable: 2, plan: 3, conversation: 4 }
 
+/** What a Continue card is, said on the card, so a Run and a plan of the same name read apart. */
+export const continueKindLabel = (kind: ContinueKind): string =>
+  kind === 'plan' ? 'Plan' : kind === 'conversation' ? 'Conversation' : 'Simulation'
+
 /**
  * Runs and conversations a visitor can open from this page: live Runs first,
  * then paused ones, then conversations, each newest first.

@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'bun:test'
 import { featuredDefinitionCatalogSchema, moduleResourceDescriptorSchema } from '@leitbild/contracts'
 import {
-  CONTINUE_LIMIT, continueItems, featuredStartRevision,
+  CONTINUE_LIMIT, continueItems, continueKindLabel, featuredStartRevision,
   openedFromGuide, previewSrc, previewSrcset, PUBLIC_NOTE, sameDefinition, scenarioRowSummary, summaryHasMore, summaryLead, workspaceDemos,
 } from './workspace-page.ts'
 import { featured, listed, revision, room, run, scenario, WS } from './workspace-page.test-support.ts'
@@ -74,6 +74,8 @@ describe('Continue', () => {
     const [item, ...rest] = continueItems([plan, study, room('r', '2026-11-08T11:00:00.000Z')])
     expect(item?.kind).toBe('plan')
     expect(item?.status).toBe('Plan')
+    // A Run and a plan of the same name read apart: each card says what it is (maint's walk 2, D10-02).
+    expect([continueKindLabel(item!.kind), continueKindLabel('running'), continueKindLabel('paused'), continueKindLabel('conversation')]).toEqual(['Plan', 'Simulation', 'Simulation', 'Conversation'])
     expect(item?.resource.ref).toEqual(plan.ref)
     expect(item?.facts.map(fact => fact.key)).toEqual(['option-count', 'updated-at'])
     expect(rest.map(entry => entry.kind)).toEqual(['conversation'])
