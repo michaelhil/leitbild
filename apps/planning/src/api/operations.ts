@@ -20,7 +20,7 @@ import {
 import type { Edit } from '../plan/edit-schema.ts'
 import { assertRevision, type PlanStore, type RevisionGuard } from '../plan/store.ts'
 import {
-  attentionKind, basisWords, buildSection, clip, datedWords, jobsPerSolve, sizeRefusalWords, weakeningWords, withinCertifiedSize, byteLength, changeLines, changeSummary, nameOf, optionWarning, readinessText,
+  attentionKind, basisWords, buildSection, clip, datedWords, names, jobsPerSolve, sizeRefusalWords, weakeningWords, withinCertifiedSize, byteLength, changeLines, changeSummary, nameOf, optionWarning, readinessText,
   statusSentence, timeWords, valueWords, type OptionState, type Section, type SectionContext,
 } from '../plan/summary.ts'
 import type { Grid } from '../time/units.ts'
@@ -185,6 +185,19 @@ export const unconfirmedAsBestFound = (status: Status, goals: readonly number[])
   if (status.word !== 'validated feasible' || goals.length === 0) return status
   const from = Math.min(...goals)
   return { ...status, goals: status.goals.map(goal => goal.goal >= from && goal.word === 'proven optimal' ? { word: 'best found under budget' as const, goal: goal.goal, value: goal.value, unit: goal.unit } : goal) }
+}
+
+/** Preview findings given whole (at most 600 characters each, 1,600 in all, 6 findings); later ones are left out first. */
+const wholeFindings = (texts: readonly string[]): string[] => {
+  const kept: string[] = []
+  let total = 0
+  for (const text of texts.slice(0, 6)) {
+    const whole = clip(text, 600)
+    if (total + whole.length > 1_600) break
+    kept.push(whole)
+    total += whole.length
+  }
+  return kept
 }
 
 /** The plan's drafted brackets for applyEdits. */
@@ -379,10 +392,11 @@ export const createPlanningOperations = (ports: PlanningOperationsPorts) => {
     const named = violations.map(violation => {
       const key = violation.code === 'protected-equipment' ? violation.about[1] : violation.about[0]
       const rule = inputs.rules.find(entry => entry.key === key)
-      if (rule?.kind === 'span-limit') return `${rule.key} (${valueWords(rule.limit.value, rule.limit.unit)})`
-      if (rule?.kind === 'due') return `${rule.key} (due ${timeWords(rule.finishBy, zone)})`
-      if (rule?.kind === 'keep-in-service') return `${rule.key} (at least ${rule.atLeast} in service)`
-      if (rule?.kind === 'protected') return `${rule.key} (protected)`
+      // A rule is named by what it says, never by its key (walk 3, R3-6): "the 72 h limit on Train A cooling chain".
+      if (rule?.kind === 'span-limit') return `the ${valueWords(rule.limit.value, rule.limit.unit)} limit on ${nameOf(inputs, rule.group)}`
+      if (rule?.kind === 'due') return `the due time of '${nameOf(inputs, rule.job)}' (${timeWords(rule.finishBy, zone)})`
+      if (rule?.kind === 'keep-in-service') return `keeping at least ${rule.atLeast} of ${names(inputs, rule.members.map(member => 'equipment' in member ? member.equipment : member.resource), 2)} in service`
+      if (rule?.kind === 'protected') return `the protection of ${names(inputs, rule.equipment, 2)}`
       const name = (at: number) => `'${nameOf(inputs, violation.about[at] ?? '')}'`
       switch (violation.code) {
         case 'beyond-window': case 'outside-window': return 'the window'
@@ -512,7 +526,8 @@ export const createPlanningOperations = (ports: PlanningOperationsPorts) => {
           : `Not saved yet. ${moved.length === 0 ? 'No job moves' : `${moved.length} job${moved.length === 1 ? ' moves' : 's move'}`}; the last finish ${finish(timed.rows) === finish(recommended.rows) ? 'stays' : `moves from ${timeWords(finish(recommended.rows), zone)} to ${timeWords(finish(timed.rows), zone)}`}.${authority}`
         return writeResult(previewed, changeLines(outcome.changes, outcome.inputs), { preview: {
           saved: false, consequence: clip(consequence, 300),
-          violations: findings.slice(0, 6).map(violation => clip(violation.words ?? `${violation.code.replaceAll('_', ' ').replaceAll('-', ' ')}: ${violation.about.map(key => nameOf(outcome.inputs, key)).join(', ')}`, 200)),
+          // Whole, so a rule's words are never cut (walk 3, R3-6); within the 4 KB result, later findings go first.
+          violations: wholeFindings(findings.map(violation => violation.words ?? `${violation.code.replaceAll('_', ' ').replaceAll('-', ' ')}: ${violation.about.map(key => nameOf(outcome.inputs, key)).join(', ')}`)),
           weakens,
           ...(timed.nearestAllowed === undefined ? {} : { nearestAllowed: timed.nearestAllowed.at }),
           moved: moved.slice(0, 6).map(row => ({ job: row.job, start: row.start, finish: row.finish, because: input.edits.map((_, edit) => edit) })),

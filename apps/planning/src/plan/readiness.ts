@@ -51,6 +51,21 @@ export const worldRefs = (inputs: Inputs): ReadonlyArray<{ readonly owner: strin
   ...inputs.resources.flatMap(resource => resource.attributes.flatMap(attribute => attribute.origin.by === 'world' ? attribute.origin.refs : []).map(ref => ({ owner: resource.key, ref }))),
 ]
 
+/**
+ * The World references the plan uses (walk 3, R3-2): job durations, and a crew's or tool's attribute only
+ * where a job's need asks for it (`where`), as the solver and the checker read them. A value nothing uses
+ * is never a readiness problem.
+ */
+export const usedWorldRefs = (inputs: Inputs): ReadonlyArray<{ readonly owner: string; readonly ref: WorldRef }> => {
+  const asked = new Set(inputs.jobs.flatMap(job => job.needs.flatMap(need => need.where === undefined ? [] : need.anyOf.map(resource => `${resource}\u0000${need.where!.attribute}`))))
+  return [
+    ...worldRefs(inputs).filter(entry => inputs.jobs.some(job => job.key === entry.owner)),
+    ...inputs.resources.flatMap(resource => resource.attributes
+      .filter(attribute => attribute.origin.by === 'world' && asked.has(`${resource.key}\u0000${attribute.key}`))
+      .flatMap(attribute => attribute.origin.by === 'world' ? attribute.origin.refs : []).map(ref => ({ owner: resource.key, ref }))),
+  ]
+}
+
 /** The World items a refresh reads: every locator the plan stores, and every locator its references name. */
 export const worldSubjects = (inputs: Inputs): readonly string[] => [...new Set([
   ...inputs.equipment.flatMap(item => item.locator === undefined ? [] : [item.locator]),
@@ -148,20 +163,24 @@ const groupProxies = (assumed: readonly ReadinessItem[], proxies: readonly Readi
 export const readiness = (plan: Plan, context: { readonly staleOptions: readonly string[]; readonly now: string }): readonly ReadinessItem[] => {
   const inputs = plan.inputs
   const items: ReadinessItem[] = []
-  const refs = worldRefs(inputs)
+  const refs = usedWorldRefs(inputs)
   const located = inputs.equipment.some(item => item.locator !== undefined) || inputs.resources.some(resource => resource.locator !== undefined)
   if (inputs.settings.run === null && (refs.length > 0 || located || inputs.settings.scenario !== undefined)) {
     items.push({ kind: 'world', code: 'link-run', about: [], blocks: false, ...(inputs.settings.scenario === undefined ? {} : { label: inputs.settings.scenario.title }) })
   }
   const unread = new Map<string, string[]>()
   const proxies: ReadinessItem[] = []
-  const unusable = new Map<string, { unit?: string }>()
+  const unusable = new Map<string, { unit?: string; label?: string; words?: string }>()
   for (const { owner, ref } of refs) {
     const unit = inputs.jobs.find(job => job.key === owner)?.duration.unit ?? inputs.resources.find(resource => resource.key === owner)?.attributes.find(attribute => attribute.origin.by === 'world' && attribute.origin.refs.includes(ref))?.unit
     const combined = unit === undefined ? undefined : combineWorldFacts([ref], inputs.world.facts, unit)
     if (combined === undefined || combined.ok) continue
     if (combined.code === 'world_value_unread') unread.set(owner, [...(unread.get(owner) ?? []), ref.fact])
-    else unusable.set(owner, combined.unit === undefined ? {} : { unit: combined.unit })
+    else {
+      // Which value, in what unit, and what it was needed as: the card says what to do (walk 3, R3-2).
+      const label = inputs.world.facts.find(fact => fact.locator === ref.locator && fact.id === ref.fact)?.label
+      unusable.set(owner, { ...(combined.unit === undefined ? {} : { unit: combined.unit }), ...(label === undefined ? {} : { label }), ...(unit === undefined ? {} : { words: unit }) })
+    }
   }
   for (const [owner, facts] of unread) items.push({ kind: 'not-ready', code: 'world-unread', about: [owner], blocks: true, count: facts.length })
   for (const [owner, detail] of unusable) items.push({ kind: 'not-ready', code: 'world-unusable', about: [owner], blocks: true, ...detail })

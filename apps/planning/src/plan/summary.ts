@@ -80,7 +80,7 @@ export const nameOf = (inputs: Inputs, key: string): string =>
   ?? inputs.rules.find(rule => rule.key === key)?.words
   ?? key
 
-const names = (inputs: Inputs, keys: readonly string[], limit = 4): string => {
+export const names = (inputs: Inputs, keys: readonly string[], limit = 4): string => {
   const shown = keys.slice(0, limit).map(key => nameOf(inputs, key))
   return keys.length > limit ? `${shown.join(', ')} and ${keys.length - limit} more` : shown.join(', ')
 }
@@ -100,10 +100,18 @@ const whatWords: Readonly<Record<ChangeRecord['what'], string>> = {
   method: 'method', job: 'job', link: 'link', rule: 'rule', goals: 'goals',
 }
 
+/** A changed field in planner words: never a schema name such as "dataDate" (walk 3, G2). */
+const fieldOverrides: Readonly<Record<string, string>> = {
+  dataDate: 'the plan\'s now', timeZone: 'time zone', run: 'linked simulation', needs: 'who does it', durationWith: 'duration per crew or tool',
+  supportedBy: 'supported by', groupLabel: 'group name', notBefore: 'earliest start', finishBy: 'latest finish', atLeast: 'how many stay in service',
+  maxJobs: 'most jobs ahead', crewSize: 'people per crew', orderBy: 'order by',
+}
+const fieldWords = (field: string): string => fieldOverrides[field] ?? field.replace(/([a-z])([A-Z])/g, '$1 $2').toLowerCase()
+
 /** One line per change, at most 12, the last saying how many more. */
 export const changeLines = (changes: readonly ChangeRecord[], inputs: Inputs, limit = 12): readonly string[] => {
   const line = (change: ChangeRecord): string => {
-    if (change.what === 'plan') return clip(`Changed the plan: ${change.fields.join(', ')}`, 200)
+    if (change.what === 'plan') return clip(`Changed the plan: ${change.fields.map(fieldWords).join(', ')}`, 200)
     if (change.what === 'goals') return 'Changed the goal order'
     // A link is named by its jobs, never by keys: "from 'Open the heads' to 'Clean the tubes' (start-start)".
     const linkName = (): string => {
@@ -117,7 +125,7 @@ export const changeLines = (changes: readonly ChangeRecord[], inputs: Inputs, li
       return clip(`Drafted ${job?.kind === 'test' ? 'return-to-service test' : 'tag-out'} '${nameOf(inputs, change.key)}' (${job?.duration.value ?? 1} h, an assumption)`, 200)
     }
     const verb = change.verb === 'added' ? 'Added' : change.verb === 'removed' ? 'Removed' : 'Changed'
-    const fields = change.verb === 'changed' && change.fields.length > 0 ? `: ${change.fields.join(', ')}` : ''
+    const fields = change.verb === 'changed' && change.fields.length > 0 ? `: ${change.fields.map(fieldWords).join(', ')}` : ''
     return clip(`${verb} ${whatWords[change.what]} ${name}${fields}`, 200)
   }
   if (changes.length <= limit) return changes.map(line)
@@ -175,7 +183,13 @@ export const readinessText = (item: ReadinessItem, inputs: Inputs): string => {
       case 'world-unread': return inputs.settings.run === null
         ? `${name}: ${item.count === 1 ? 'a World value is' : `${item.count} World values are`} not read yet; link the simulation and refresh.`
         : `${name}: ${item.count === 1 ? 'a World value is' : `${item.count} World values are`} not read yet; refresh.`
-      case 'world-unusable': return `${name}: a World value is in ${item.unit ?? 'a unit'} Planning cannot use here.`
+      case 'world-unusable': {
+        const value = item.label === undefined ? 'a World value' : `'${item.label}' from World`
+        const given = item.unit === undefined ? 'has no unit' : item.unit === '1' ? 'is a plain count with no unit' : `is in ${item.unit}`
+        return inputs.jobs.some(job => job.key === item.about[0])
+          ? `${name}: ${value} ${given}, not a time; take the duration from another value or give your own estimate.`
+          : `${name}: ${value} ${given}, which does not convert to ${item.words ?? 'the unit a job asks for'}; change that job's need, or stop using this value.`
+      }
       case 'world-duration': return `${name}: taken from '${item.label ?? ''}' (${basisWords[item.basis ?? ''] ?? item.basis}, read ${item.at === undefined ? '' : datedWords(item.at, zone)}, simulation time); check it describes the work.`
       case 'no-crew': {
         const job = inputs.jobs.find(entry => entry.key === item.about[0])
@@ -235,16 +249,22 @@ const certificateWords = (cause: Certificate, inputs: Inputs): string => {
     case 'chain': return `the chain ${names(inputs, cause.jobs, 3)} needs ${decimal(cause.workHours)} h of work, but only ${decimal(cause.availableHours)} h are available from ${timeWords(cause.from, zone)} to ${timeWords(cause.by, zone)}`
     case 'energy': return `${names(inputs, cause.resources, 3)} would need ${decimal(cause.requiredHours)} h between ${timeWords(cause.from, zone)} and ${timeWords(cause.to, zone)}, but at most ${decimal(cause.availableHours)} h exist`
     case 'availability': return `${nameOf(inputs, cause.rule)} cannot be kept from ${timeWords(cause.from, zone)} to ${timeWords(cause.to, zone)}`
-    case 'temporal': return `links and limits leave no time (${names(inputs, cause.steps.map(step => step.job), 3)})`
+    case 'temporal': return cause.steps.length === 0 ? 'links and limits leave no time' : `links and limits leave no time (${names(inputs, cause.steps.map(step => step.job), 3)})`
   }
 }
+
+/** Why a search ended before its budget: memory and processor limits, or a stop. The budget's own end is not early. */
+const earlyStopWords: Readonly<Partial<Record<string, string>>> = { memory: 'memory limit', cpu: 'processor time limit', cancelled: 'cancelled' }
 
 /** The status in words, generated from the structured status. */
 export const statusSentence = (status: Status, inputs: Inputs): string => {
   switch (status.word) {
     case 'validated feasible': {
       const goals = status.goals.map(goal => `${goalWords[inputs.goals[goal.goal]?.metric ?? 'finish']} ${valueWords(goal.value, goal.unit)} (${goal.word})`)
-      return clip(`Validated feasible${goals.length === 0 ? '' : `: ${goals.join('; ')}`}.`, 300)
+      // A search stopped early says so with its status, never as an unqualified recommendation (walk 3, R3-3).
+      const early = earlyStopWords[status.run.stoppedBy]
+      const stopped = early === undefined ? '' : ` The search stopped early (${early}); this option may not be the best.`
+      return `${clip(`Validated feasible${goals.length === 0 ? '' : `: ${goals.join('; ')}`}.`, 300 - stopped.length)}${stopped}`
     }
     case 'proven infeasible': return clip(`Proven infeasible: ${certificateWords(status.cause, inputs)}.`, 300)
     case 'invalid input': return clip(`Invalid input: ${status.problems.map(problem => problem.code === 'working_time_without_resource'

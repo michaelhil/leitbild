@@ -149,13 +149,31 @@ const needField = <T>(value: T | undefined | null, index: number, kind: Kind, fi
   return value
 }
 
+/**
+ * Availability for the whole window follows the window (walk 3, R3-1): a calendar that is exactly the old
+ * window (one period, no weekly hours, no exceptions) becomes the new window in the same edit. Shifts and
+ * partial periods stay where they are.
+ */
+const moveWholeWindowCalendars = (state: Working, before: Inputs['settings']['window'], after: Inputs['settings']['window']): void => {
+  if (before === null || after === null || (before.start === after.start && before.end === after.end)) return
+  const same = (left: { readonly start: string; readonly end: string }, right: { readonly start: string; readonly end: string }) =>
+    Date.parse(left.start) === Date.parse(right.start) && Date.parse(left.end) === Date.parse(right.end)
+  for (const calendar of state.next.calendars) {
+    if (calendar.weekly.length > 0 || calendar.except.length > 0 || calendar.periods.length !== 1 || !same(calendar.periods[0]!, before)) continue
+    calendar.periods = [{ start: after.start, end: after.end }]
+    record(state, 'changed', 'calendar', calendar.key, ['moved with the plan window'])
+  }
+}
+
 const editPlan = (state: Working, edit: EditOf<'plan'>, context: EditContext): void => {
   const settings = state.next.settings
   const fields: string[] = []
   assign(settings, 'title', edit.title, fields)
   assign(settings, 'purpose', edit.purpose, fields)
   assign(settings, 'timeZone', edit.timeZone, fields)
+  const before = settings.window
   assign(settings, 'window', edit.window === undefined ? undefined : period(edit.window), fields)
+  moveWholeWindowCalendars(state, before, settings.window)
   assign(settings, 'dataDate', edit.dataDate === undefined ? undefined : utc(edit.dataDate), fields)
   if (edit.run !== undefined && edit.run !== (settings.run?.id ?? null)) {
     settings.run = edit.run === null ? null : { id: edit.run, linkedAt: utc(context.now) }

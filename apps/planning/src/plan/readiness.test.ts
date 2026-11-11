@@ -95,6 +95,33 @@ describe('readiness: warnings only, never a score (T2)', () => {
     expect(items.filter(item => !item.blocks).length).toBeLessThanOrEqual(4)
   })
 
+  test('only World values the plan uses are required; an unusable one is named with what to do (walk 3, R3-2, N-B-01)', () => {
+    const locator = 'einsatz/unit/unit%3Atruck-1'
+    const at = '2026-09-03T08:00:00Z'
+    const fact = (id: string, label: string, value: number, unit: string) => ({ id, label, quantity: id, unit, value, basis: 'observed' as const, at, locator })
+    const inputs = (needs: PlanInputs['jobs'][number]['needs']): PlanInputs => planInputsSchema.parse({
+      settings: { title: 'Trucks', timeZone: 'Europe/Oslo', window: { start: at, end: '2026-09-03T10:00:00Z' }, dataDate: at, grid: '30s', currency: 'NOK', run: { id: 'run-1', linkedAt: at } },
+      equipment: [], groups: [], purchases: [], methods: [], links: [], rules: [], goals: [{ metric: 'finish', tolerance: { value: 0, unit: 'h' } }],
+      calendars: [{ key: 'whole', label: 'Available for the whole window', weekly: [], periods: [{ start: at, end: '2026-09-03T10:00:00Z' }], except: [], source: { by: 'planner' } }],
+      resources: [{ key: 'truck-1', label: 'Truck 1', kind: 'tool', count: 1, calendar: 'whole', locator, source: { by: 'planner' }, attributes: [
+        { key: 'payload', label: 'Payload', value: null, unit: 'kg', changes: [], origin: { by: 'world', refs: [{ locator, fact: 'payloadKg' }] } },
+        { key: 'steps', label: 'Committed job steps', value: null, unit: 'kg', changes: [], origin: { by: 'world', refs: [{ locator, fact: 'committedSteps' }] } },
+      ] }],
+      jobs: [{ key: 'haul', title: 'Haul water', kind: 'work', equipment: [], isolation: 'none', duration: { value: 10, unit: 'min', calendar: 'working', origin: { by: 'planner' } }, durationWith: [], needs, continuous: true, checks: [], tags: [] }],
+      world: { refreshedAt: at, facts: [fact('payloadKg', 'Payload', 900, 'kg'), fact('committedSteps', 'Committed job steps', 2, '1')] },
+    })
+    const world = (plan: PlanInputs) => readiness(planOf(plan), { staleOptions: [], now: at }).filter(item => item.code.startsWith('world-'))
+    // No job asks for either value: nothing about them is a readiness problem.
+    expect(world(inputs([{ anyOf: ['truck-1'], amount: 1, handover: false }]))).toEqual([])
+    // A job asks for the payload: it is read and converts, so still nothing.
+    expect(world(inputs([{ anyOf: ['truck-1'], amount: 1, handover: false, where: { attribute: 'payload', atLeast: 500, unit: 'kg' } }]))).toEqual([])
+    // A job asks for the count as if it were kilograms: one card, naming the value, why, and what to do.
+    const asked = inputs([{ anyOf: ['truck-1'], amount: 1, handover: false, where: { attribute: 'steps', atLeast: 1, unit: 'kg' } }])
+    const items = world(asked)
+    expect(items.map(item => [item.code, item.about[0], item.blocks])).toEqual([['world-unusable', 'truck-1', true]])
+    expect(readinessText(items[0]!, asked)).toBe("Truck 1: 'Committed job steps' from World is a plain count with no unit, which does not convert to kg; change that job's need, or stop using this value.")
+  })
+
   test('durations that do not fit the time step are listed once, as rounded up (design D9)', () => {
     expect(codes(trainA)).not.toContain('rounded')
     // The Supply run's World times for one request: arrival 3 min 29.8 s plus service 0 s, on the 30 s step.

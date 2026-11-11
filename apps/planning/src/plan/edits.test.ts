@@ -3,7 +3,7 @@ import { applyEdits, requireAuthority, type EditContext } from './edits.ts'
 import { editSchema, type Edit } from './edit-schema.ts'
 import { planInputsSchema, type Plan, type PlanInputs } from './schema.ts'
 import { readiness } from './readiness.ts'
-import { readinessText, statusSentence } from './summary.ts'
+import { changeLines, readinessText, statusSentence } from './summary.ts'
 
 const fixture = async (name: string): Promise<PlanInputs> => planInputsSchema.parse(await Bun.file(new URL(`./fixtures/${name}`, import.meta.url)).json())
 const trainA = await fixture('train-a.fragment.json')
@@ -149,6 +149,28 @@ describe('automatic bracketing (walk fix 9, T0p)', () => {
     // Writing the draft note on a real test claims nothing (the adversary's relabel chain).
     const relabel = edits({ edit: 'job', key: `${item.key}-RTS`, duration: { source: { by: 'assumption', note: `Drafted with the work on ${item.label}; set its real duration` } } }, { edit: 'remove', what: 'job', key: `${item.key}-RTS` })
     expect(applyEdits(outcome.inputs, relabel, context).weakens.map(weakening => weakening.what)).toEqual(['covering-job'])
+  })
+})
+
+describe('the plan window and whole-window availability (walk 3, R3-1, N-C-05)', () => {
+  test('aligning the window moves every calendar that is exactly the old window; shifts and partial periods stay', () => {
+    const old = { start: '2026-11-12T06:00:00Z', end: '2026-11-17T06:00:00Z' }
+    const base = planInputsSchema.parse({
+      settings: { title: 'Supply', timeZone: 'Europe/Oslo', window: old, dataDate: null, grid: '30s', currency: 'NOK', run: null },
+      equipment: [], groups: [], purchases: [], methods: [], jobs: [], links: [], rules: [], goals: [{ metric: 'finish', tolerance: { value: 0, unit: 'h' } }], world: { refreshedAt: null, facts: [] },
+      calendars: [
+        { key: 'whole', label: 'Available for the whole window', weekly: [], periods: [old], except: [], source: { by: 'planner' } },
+        { key: 'shift', label: 'Day shift', weekly: [{ days: ['thu'], from: '07:00', to: '19:00' }], periods: [], except: [], source: { by: 'planner' } },
+        { key: 'part', label: 'First day', weekly: [], periods: [{ start: old.start, end: '2026-11-13T06:00:00Z' }], except: [], source: { by: 'planner' } },
+      ],
+      resources: [], 
+    })
+    const aligned = { start: '2026-09-03T08:00:00Z', end: '2026-09-08T08:00:00Z' }
+    const outcome = apply(base, { edit: 'plan', window: aligned, dataDate: aligned.start })
+    expect(outcome.inputs.calendars.map(calendar => [calendar.key, calendar.periods])).toEqual([['whole', [aligned]], ['shift', []], ['part', [{ start: old.start, end: '2026-11-13T06:00:00Z' }]]])
+    expect(changeLines(outcome.changes, outcome.inputs)).toEqual(['Changed calendar Available for the whole window: moved with the plan window', "Changed the plan: window, the plan's now"])
+    // The same window again moves nothing.
+    expect(apply(outcome.inputs, { edit: 'plan', window: aligned }).changes).toEqual([])
   })
 })
 

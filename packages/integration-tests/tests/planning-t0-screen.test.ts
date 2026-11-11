@@ -8,7 +8,7 @@ import type { Component } from 'svelte'
 import type { ModuleDefinitionDescriptor, PlanningSubject } from '@leitbild/contracts'
 import { createPlanningClient } from '../../../apps/planning/src/ui/api.ts'
 import { createPlanActions, type Shown } from '../../../apps/planning/src/ui/plan-actions.ts'
-import { crewEdit, crewEdits, equipmentFromWorld, goalsEdit, jobEdits, linkEdit, localInputValue, planEdits, resourceFromWorld, ruleEdit, type GoalChoice } from '../../../apps/planning/src/ui/edit-forms.ts'
+import { alignWindowEdit, crewEdit, crewEdits, equipmentFromWorld, simulationNow, goalsEdit, jobEdits, linkEdit, localInputValue, planEdits, resourceFromWorld, ruleEdit, type GoalChoice } from '../../../apps/planning/src/ui/edit-forms.ts'
 import { readableText, registerSvelte, renderHtml } from '../../../apps/planning/src/ui/fixtures/svelte-ssr.ts'
 import { createTimeFormat } from '../../../apps/planning/src/ui/format.ts'
 import { createNames } from '../../../apps/planning/src/ui/model.ts'
@@ -77,10 +77,14 @@ const step = async (actions: ReturnType<typeof createPlanActions>, shown: Shown,
 
 const unread = (shown: Shown) => shown.model.attention.filter(item => /not read yet/.test(item.text))
 
-test('T0 Supply run from empty, through the screen: three World trucks, a crew, jobs, a link and a rule, generated validated feasible', async () => {
+/**
+ * T0 on the Supply run through the screen. With `align`, the plan keeps the Library form's own default week
+ * (12-17 Nov, nowhere near the simulation's Thu 3 Sep) and the planner uses the screen's "Align the window"
+ * after adding the trucks: their whole-window availability moves with it (walk 3, R3-1, N-C-01..05).
+ */
+const supplyRunFromEmpty = async (window: { start: string; end: string }, align: boolean) => {
   const runId = await stack.start('world.scenario', 'supply-run', 'world.scenario.start')
-  // The simulation's day, Thu 3 Sep, on the 30 s step.
-  const planId = await createFromEmpty({ title: 'Supply run from empty', windowStart: '2026-09-03T10:00', windowEnd: '2026-09-03T12:00', goals: ['finish'], grid: '30s' })
+  const planId = await createFromEmpty({ title: 'Supply run from empty', windowStart: window.start, windowEnd: window.end, goals: ['finish'], grid: '30s' })
   const actions = createPlanActions(client, planId)
   let shown = await actions.load(null)
   shown = await actions.link(shown.model, runId, null)
@@ -93,9 +97,20 @@ test('T0 Supply run from empty, through the screen: three World trucks, a crew, 
     const calendar = shown.model.inputs.calendars[0]?.key ?? ''
     shown = await step(actions, shown, built(resourceFromWorld(truck, { kind: 'tool', calendar }, shown.model.inputs)), `Add ${truck.label} as a tool`)
     expect(unread(shown)).toEqual([])
+    // A value no job uses is never a readiness problem (walk 3, R3-2, N-B-01).
+    expect(shown.model.attention.filter(item => /cannot use|not read yet/.test(item.text))).toEqual([])
   }
   const truckKeys = shown.model.inputs.resources.filter(resource => resource.locator !== undefined).map(resource => resource.key)
   expect(truckKeys).toHaveLength(3)
+
+  if (align) {
+    const simulated = simulationNow(shown.model.inputs)!
+    shown = await step(actions, shown, built(alignWindowEdit(shown.model.inputs, simulated)), 'Align the window to the simulation')
+    const aligned = shown.model.inputs.settings.window!
+    expect(Date.parse(aligned.start) <= Date.parse(simulated) && Date.parse(simulated) < Date.parse(aligned.end)).toBe(true)
+    const availability = shown.model.inputs.resources.filter(resource => truckKeys.includes(resource.key)).map(resource => shown.model.inputs.calendars.find(calendar => calendar.key === resource.calendar)!.periods)
+    expect(availability).toEqual(truckKeys.map(() => [aligned]))
+  }
 
   // One crew with its own shift; three jobs with the planner's own estimates; one link; one rule in words.
   shown = await step(actions, shown, built(crewEdits({ label: 'Dispatcher', kind: 'crew', count: '1', crewSize: '', calendar: '', days: ['thu'] as Weekday[], from: '10:00', to: '12:00', sourceBy: 'planner', sourceNote: '' }, shown.model.inputs)), 'Add the dispatcher')
@@ -109,10 +124,19 @@ test('T0 Supply run from empty, through the screen: three World trucks, a crew, 
   shown = await step(actions, shown, built(ruleEdit({ kind: 'keep-in-service', words: 'Keep at least one truck free at all times.', sourceBy: 'planner', sourceNote: '', equipment: [], members: [truckKeys[0]!, truckKeys[2]!], atLeast: '1', group: '', limit: '', limitUnit: 'h', job: '', finishBy: '' }, shown.model.inputs)), 'Add a rule')
 
   const generated = await actions.generate(shown.model, {}, new AbortController().signal, null)
-  console.log('T0 Supply run:', generated.error, JSON.stringify(generated.model.options?.items.map(item => item.status)))
+  console.log(`T0 Supply run${align ? ', aligned' : ''}:`, generated.error, JSON.stringify(generated.model.options?.items.map(item => item.status.word)))
   expect(generated.error).toBeNull()
   const recommended = generated.model.options!.items.find(item => item.key === generated.model.options!.recommended)!
   expect([recommended.status.word, recommended.fresh]).toEqual(['validated feasible', true])
+}
+
+test('T0 Supply run from empty, through the screen: three World trucks, a crew, jobs, a link and a rule, generated validated feasible', async () => {
+  // The simulation's day, Thu 3 Sep, on the 30 s step.
+  await supplyRunFromEmpty({ start: '2026-09-03T10:00', end: '2026-09-03T12:00' }, false)
+}, 240_000)
+
+test('T0 Supply run from the default week, aligned to the simulation through the screen: the trucks go with the window (walk 3, R3-1)', async () => {
+  await supplyRunFromEmpty({ start: '2026-11-12T07:00', end: '2026-11-17T07:00' }, true)
 }, 240_000)
 
 test('T0 plant from empty, through the screen: two World pumps, a crew, jobs with drafted brackets crewed in the preview, a link and a rule', async () => {

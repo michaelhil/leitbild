@@ -6,6 +6,7 @@
 import type { z } from 'zod'
 import type { explainResultSchema } from '../api/contract.ts'
 import type { Certificate, PlanInputs } from '../plan/schema.ts'
+import { clip as clipWords } from '../plan/summary.ts'
 import { expandCalendar } from '../time/calendar.ts'
 import { gridSlotMs } from '../time/units.ts'
 import { localParts } from '../time/zone.ts'
@@ -288,7 +289,8 @@ export const localTime = (instant: string, zone: string | null): string => {
 }
 const hoursText = (value: number): string => `${Number.isInteger(value) ? value : value.toFixed(1)} h`
 const list = (items: readonly string[]): string => (items.length <= 1 ? items.join('') : `${items.slice(0, -1).join(', ')} and ${items.at(-1)}`)
-const clip = (line: string): string => (line.length <= 240 ? line : `${line.slice(0, 237)}...`)
+/** One line within 240 characters, cut at a word boundary with "…", never mid-word (walk 2 N-02, walk 3). */
+const clip = (line: string): string => clipWords(line, 240)
 
 /**
  * A proven-infeasible refusal in planner words and hours, generated from the certificate (and, for a
@@ -340,11 +342,15 @@ const refusalBody = (cause: Certificate, inputs: PlanInputs, span?: SpanRefusal)
     const resources = list(cause.resources.map(crew))
     return [
       clip(`Not possible: ${cause.span === undefined ? '' : `${ruleWords(cause.span)} `}In any such span starting between ${localTime(cause.from, zone)} and ${lastStart(cause.to)}, ${hoursText(cause.requiredHours)} of ${resources} work must fall inside it, but ${resources} can give at most ${hoursText(cause.availableHours)} there.`),
-      clip(`The work: ${list(cause.jobs.map(title))}.`),
+      ...(cause.jobs.length === 0 ? [] : [clip(`The work: ${list(cause.jobs.map(title))}.`)]),
     ]
   }
   if (cause.kind === 'availability') {
-    return [clip(`Not possible: ${ruleWords(cause.rule)} ${list(cause.items)} must be out together between ${localTime(cause.from, zone)} and ${localTime(cause.to, zone)}.`)]
+    // The times first: a long rule is cut, never the hours that make the proof (walk 3, R3-1).
+    return [
+      clip(`Not possible: ${cause.items.length === 0 ? 'the items of this rule' : list(cause.items)} must be out together between ${localTime(cause.from, zone)} and ${localTime(cause.to, zone)}.`),
+      clip(`The rule: ${ruleWords(cause.rule)}`),
+    ]
   }
   if (span !== undefined) {
     const lines = [
@@ -364,7 +370,9 @@ const refusalBody = (cause: Certificate, inputs: PlanInputs, span?: SpanRefusal)
     return lines.length <= 19 ? lines : [...lines.slice(0, 18), lines.at(-1)!]
   }
   const first = cause.steps.at(0)
-  return [clip(`Not possible: ${first === undefined ? 'the plan' : title(first.job)} cannot fit ${first?.via === 'due' ? 'before its due time' : first?.via === 'release' ? 'after its release' : first?.via === 'lock' ? 'at its locked start' : 'inside the plan window'}, after ${list(cause.steps.slice(1).map(entry => title(entry.job)))}.`)]
+  // Each slot is filled or left out: never "after ." (walk 3, R3-1).
+  const before = cause.steps.slice(1).map(entry => title(entry.job))
+  return [clip(`Not possible: ${first === undefined ? 'the plan' : title(first.job)} cannot fit ${first?.via === 'due' ? 'before its due time' : first?.via === 'release' ? 'after its release' : first?.via === 'lock' ? 'at its locked start' : 'inside the plan window'}${before.length === 0 ? '' : `, after ${list(before)}`}.`)]
 }
 
 type ChainStepText = { readonly job: string; readonly start: string; readonly finish: string }

@@ -57,7 +57,8 @@ test('the Supply run from empty: World trucks and requests are usable once the r
   })
   const added = await one({ operationId: 'planning.plan.edit', target: plan, input: { edits: truckEdits }, expectedRevision: revision })
   revision = added.plan.revision
-  expect(unread(added.problems)).toBe(true)
+  // No job asks for the payload yet, so nothing about it is required (walk 3, R3-2); the refresh still reads it.
+  expect(added.problems).toEqual([])
   const read = await refresh()
   expect(read.changed[0]).toMatch(/^Read \d+ World values describing Thu 3 Sep \d\d:\d\d \(simulation time\): \d+ new or changed/)
 

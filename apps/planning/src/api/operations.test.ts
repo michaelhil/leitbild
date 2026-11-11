@@ -271,6 +271,8 @@ describe('a plan-scoped edit never reads World; preview names what the re-timing
       const added = await local.call('planning.plan.edit', { resource: plan.id, expectedRevision: 1, input: { edits: [
         { edit: 'plan', run: 'run-any' },
         { edit: 'resource', key: 'truck-9', label: 'Truck 9', kind: 'tool', count: 1, calendar: 'duty', locator: 'einsatz/unit/unit%3Atruck-9', attributes: [{ key: 'payloadKg', label: 'Payload', unit: 'kg', fromWorld: { locator: 'einsatz/unit/unit%3Atruck-9', fact: 'unit:truck-9/property/payloadKg' } }] },
+        // The payload is used: a job asks for at least 500 kg (walk 3, R3-2: only a used value is required).
+        { edit: 'job', key: 'haul', title: 'Haul water', kind: 'work', isolation: 'none', duration: { value: 10, unit: 'min', calendar: 'working' }, needs: [{ anyOf: ['truck-9'], amount: 1, where: { attribute: 'payloadKg', atLeast: 500, unit: 'kg' } }] },
       ] } })
       expect([added.status, local.journal.length]).toEqual([200, 0])
       expect(added.body.result.problems.map((problem: { code: string }) => problem.code)).toEqual(['world-unread'])
@@ -291,7 +293,10 @@ describe('a plan-scoped edit never reads World; preview names what the re-timing
       const preview = await local.call('planning.plan.edit', { resource: created.id, input: { edits: [{ edit: 'job', key: job.key, duration: { value: job.duration.value! + 6 } }], preview: true } })
       const limit = rule.kind === 'span-limit' ? `${rule.limit.value} ${rule.limit.unit}` : ''
       // A valid change saves even so: the preview says what this option would break and asks for new options (walk 2, R2-4).
-      expect(preview.body.result.preview.consequence).toBe(`Not saved yet. This option would break ${rule.key} (${limit}); generate new options after saving.`)
+      // The rule by what it says, never by its key (walk 3, R3-6, R2-4-01).
+      const group = rule.kind === 'span-limit' ? trainA.groups.find(entry => entry.key === rule.group)!.label : ''
+      expect(preview.body.result.preview.consequence).toBe(`Not saved yet. This option would break the ${limit} limit on ${group}; generate new options after saving.`)
+      expect(preview.body.result.preview.consequence).not.toContain(rule.key)
       expect(preview.body.result.preview.violations).toEqual([rule.words])
       const saved = await local.call('planning.plan.edit', { resource: created.id, expectedRevision: 1, input: { edits: [{ edit: 'job', key: job.key, duration: { value: job.duration.value! + 6 } }] } })
       expect(saved.status).toBe(200)
