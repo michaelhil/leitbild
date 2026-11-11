@@ -37,12 +37,12 @@ const catalogHost = (definitions = [scenario('supply-run', { currentRevisionId: 
     .on('GET', definitionsPath, json({ workspaceId: WS, modules: ready, definitions }))
     .on('GET', capabilitiesPath, json({ workspaceId: WS, modules: ready, capabilities }))
 
-const agentsStart = (type: string, result: Response) => {
-  const definition = { moduleId: 'agents', type, id: 'definition-1' }
-  const capability = { ...startCapability, id: `${type}.start`, moduleId: 'agents', scope: { kind: 'definition', definitionType: type } }
-  const modules = [{ moduleId: 'agents', status: 'ready' }]
+const moduleStart = (moduleId: string, type: string, result: Response) => {
+  const definition = { moduleId, type, id: 'definition-1' }
+  const capability = { ...startCapability, id: `${type}.start`, moduleId, scope: { kind: 'definition', definitionType: type } }
+  const modules = [{ moduleId, status: 'ready' }]
   const host = fakeFetch()
-    .on('GET', `/api/workspaces/${WS}/definitions?moduleId=agents`, json({
+    .on('GET', `/api/workspaces/${WS}/definitions?moduleId=${moduleId}`, json({
       workspaceId: WS, modules, definitions: [{
         ...scenario('supply-run'),
         ref: { ...definition, workspaceId: WS },
@@ -50,10 +50,11 @@ const agentsStart = (type: string, result: Response) => {
         primaryCapabilityId: capability.id,
       }],
     }))
-    .on('GET', `/api/workspaces/${WS}/capabilities?moduleId=agents`, json({ workspaceId: WS, modules, capabilities: [capability] }))
+    .on('GET', `/api/workspaces/${WS}/capabilities?moduleId=${moduleId}`, json({ workspaceId: WS, modules, capabilities: [capability] }))
     .on('POST', `/api/workspaces/${WS}/capabilities/${capability.id}/invoke`, result)
   return createStartRunner({ fetch: host.fetch }).start({ ...target, definition })
 }
+const agentsStart = (type: string, result: Response) => moduleStart('agents', type, result)
 
 const quietConsole = () => {
   const error = console.error
@@ -108,6 +109,13 @@ describe('starting a scenario from the Workspace page', () => {
       result: {}, createdResources: [{ workspaceId: WS, moduleId: 'agents', type: 'agents.room', id: 'room-1' }],
     }, 201)
     expect(await agentsStart('agents.room-definition', receipt)).toEqual({ destination: `/workspaces/${WS}?agents=room-1` })
+  })
+
+  test('a plan Definition opens the created plan in Planning, and must identify exactly one plan', async () => {
+    const plan = { workspaceId: WS, moduleId: 'planning', type: 'planning.plan', id: 'plan-1' }
+    expect(await moduleStart('planning', 'planning.plan-definition', json({ result: {}, createdResources: [plan] }, 201))).toEqual({ destination: `/workspaces/${WS}?planning=plan-1` })
+    expect(startSteps('planning').map(step => step.label)).toEqual(['Checking the definition', 'Creating the plan', 'Opening'])
+    expect(await moduleStart('planning', 'planning.plan-definition', json({ result: {} }, 201))).toBeNull()
   })
 
   test('a generic Definition may succeed without creating something to open', async () => {

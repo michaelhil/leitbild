@@ -23,10 +23,12 @@ describe('launch destination', () => {
     expect(new URL(workspaceUrl('ws', { agents: 'room/id & test' }), 'https://leitbild.app').searchParams.get('agents')).toBe('room/id & test')
   })
 
-  test('a created Study opens Planning even when its use case also creates a World Run', () => {
-    const study = { moduleId: 'planning', type: 'planning.study', id: 'study-1' }
-    expect(launchDestination('ws', [run, study], { world: 'old-run', agents: 'old-room' })).toBe('/workspaces/ws?planning=study-1')
-    expect(launchDestination('ws', [room], { planning: 'study-1' })).toBe('/workspaces/ws?agents=room-1&planning=study-1')
-    expect(launchDestination('ws', [run], { planning: 'study-1' })).toBe('/workspaces/ws?world=run-1')
+  test('a created plan opens Planning even when its use case also creates a World Run', () => {
+    const plan = { moduleId: 'planning', type: 'planning.plan', id: 'plan-1' }
+    expect(launchDestination('ws', [plan])).toBe('/workspaces/ws?planning=plan-1')
+    expect(launchDestination('ws', [run, plan], { world: 'old-run', agents: 'old-room' })).toBe('/workspaces/ws?planning=plan-1')
+    expect(launchDestination('ws', [room], { planning: 'plan-1' })).toBe('/workspaces/ws?agents=room-1&planning=plan-1')
+    expect(launchDestination('ws', [run], { planning: 'plan-1' })).toBe('/workspaces/ws?world=run-1')
+    expect(launchDestination('ws', [{ moduleId: 'planning', type: 'planning.study', id: 'old' }])).toBe('/workspaces/ws')
   })
 })

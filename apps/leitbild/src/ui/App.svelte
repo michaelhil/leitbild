@@ -72,7 +72,7 @@
   const currentPage = page()
   const initialSelection = new URLSearchParams(location.search)
   const initialAgentsVisible = initialSelection.get('agents') !== null
-  let selectedPlanningStudyId = $state(initialSelection.get('planning'))
+  let selectedPlanningId = $state(initialSelection.get('planning'))
   let selectedWorldRunId = $state(initialSelection.has('planning') ? null : initialSelection.get('world'))
   let selectedAgentsRoomId = $state(initialSelection.get('agents'))
   let agentsVisible = $state(initialAgentsVisible)
@@ -108,7 +108,7 @@
   let editorSession: EditorSession | null = null
   let editorStart: { readonly controller: AbortController; dispatched: boolean } | null = null
   const workspaceTitle = $derived(workspace ? workspaceLabel(workspace, 'header') : 'Workspace')
-  const showingComposer = $derived(selectedWorldRunId !== null || selectedAgentsRoomId !== null || selectedPlanningStudyId !== null)
+  const showingComposer = $derived(selectedWorldRunId !== null || selectedAgentsRoomId !== null || selectedPlanningId !== null)
   const planningAvailable = $derived(capabilities.some(capability => capability.moduleId === 'planning'))
   const continuing = $derived(continueItems(resources))
   const memory = browserWorkspaceMemory()
@@ -126,10 +126,10 @@
     resource.ref.moduleId === 'agents' && resource.ref.id === selectedAgentsRoomId,
   ))
   const selectedPlanningResource = $derived(resources.find(resource =>
-    resource.ref.type === 'planning.study' && resource.ref.id === selectedPlanningStudyId,
+    resource.ref.type === 'planning.plan' && resource.ref.id === selectedPlanningId,
   ))
-  const planningPath = $derived(workspace && selectedPlanningStudyId !== null
-    ? `/workspaces/${encodeURIComponent(workspace.id)}/planning${selectedPlanningStudyId === 'library' ? '' : `?study=${encodeURIComponent(selectedPlanningStudyId)}`}`
+  const planningPath = $derived(workspace && selectedPlanningId !== null
+    ? `/workspaces/${encodeURIComponent(workspace.id)}/planning${selectedPlanningId === 'library' ? '' : `?plan=${encodeURIComponent(selectedPlanningId)}`}`
     : null)
   const selectedRunFamily = $derived(selectedWorldResource?.links.find(link =>
     link.rel === 'member-of' && link.ref.type === 'world.run-family',
@@ -147,7 +147,7 @@
   ].slice(0, 4))
   const pageTitle = $derived(workspacePageTitle({
     workspace: workspace ? workspaceTitle : null,
-    run: selectedPlanningResource?.title ?? (selectedPlanningStudyId === 'library' ? 'Planning laboratory' : selectedWorldResource?.title ?? null),
+    run: selectedPlanningResource?.title ?? (selectedPlanningId === 'library' ? 'Planning' : selectedWorldResource?.title ?? null),
     room: selectedAgentsResource?.title ?? null,
   }))
 
@@ -155,15 +155,15 @@
   let resourceOutcomes: ReadonlyArray<ModuleQueryOutcome> = []
   const normalizeOpenSelection = (catalog: ReadonlyArray<ModuleResourceDescriptor>, modules: ReadonlyArray<ModuleQueryOutcome>): void => {
     resourceOutcomes = modules
-    const kept = keptSelection({ world: selectedWorldRunId, planning: selectedPlanningStudyId, agents: selectedAgentsRoomId, agentsVisible }, catalog, modules)
+    const kept = keptSelection({ world: selectedWorldRunId, planning: selectedPlanningId, agents: selectedAgentsRoomId, agentsVisible }, catalog, modules)
     selectedWorldRunId = kept.world
     selectedAgentsRoomId = kept.agents
     agentsVisible = kept.agentsVisible
-    selectedPlanningStudyId = kept.planning ?? null
+    selectedPlanningId = kept.planning ?? null
     const url = new URL(location.href)
     if (selectedWorldRunId) url.searchParams.set('world', selectedWorldRunId)
     else url.searchParams.delete('world')
-    if (selectedPlanningStudyId) url.searchParams.set('planning', selectedPlanningStudyId)
+    if (selectedPlanningId) url.searchParams.set('planning', selectedPlanningId)
     else url.searchParams.delete('planning')
     if (selectedAgentsRoomId && agentsVisible) url.searchParams.set('agents', selectedAgentsRoomId)
     else url.searchParams.delete('agents')
@@ -552,7 +552,7 @@
   }
 
   const switchWorldRun = (runId: string, replace = false): void => {
-    selectedPlanningStudyId = null
+    selectedPlanningId = null
     selectedWorldRunId = runId
     const nextRun = resources.find(candidate => candidate.ref.type === 'world.simulation-run' && candidate.ref.id === runId)
     if (selectedAgentsResource && nextRun && !roomServesRun(selectedAgentsResource, nextRun)) {
@@ -594,7 +594,7 @@
 
   const restoreUrlSelection = (): void => {
     const selection = new URLSearchParams(location.search)
-    selectedPlanningStudyId = selection.get('planning')
+    selectedPlanningId = selection.get('planning')
     selectedWorldRunId = selection.has('planning') ? null : selection.get('world')
     selectedAgentsRoomId = selection.get('agents')
     agentsVisible = selectedAgentsRoomId !== null

@@ -56,7 +56,7 @@
   const remove = $derived(createCatalogRemover(workspaceId))
   const hrefOf = (resource: ModuleResourceDescriptor): string => resource.ref.type === 'agents.room'
     ? workspaceUrl(workspaceId, { agents: resource.ref.id })
-    : resource.ref.type === 'planning.study'
+    : resource.ref.type === 'planning.plan'
       ? workspaceUrl(workspaceId, { planning: resource.ref.id })
       : workspaceUrl(workspaceId, { world: resource.ref.id })
 
@@ -219,7 +219,7 @@
   .paused .dot { background: #b5822a; }
   .unavailable .dot { background: var(--lb-danger); }
   .conversation .dot { background: var(--lb-focus); }
-  .study .dot { background: var(--lb-accent); }
+  .plan .dot { background: var(--lb-accent); }
   .title { min-width: 0; color: var(--lb-ink); font-size: .9375rem; font-weight: 700; line-height: 1.35; text-decoration: none; overflow-wrap: anywhere; }
   a.title::after, label.pick::after { content: ''; position: absolute; inset: 0; border-radius: inherit; }
   a.title:focus { outline: none; }

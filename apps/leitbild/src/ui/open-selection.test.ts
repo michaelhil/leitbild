@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'bun:test'
-import { moduleQueryOutcomeSchema, type ModuleQueryOutcome } from '@leitbild/contracts'
+import { moduleQueryOutcomeSchema, moduleResourceDescriptorSchema, type ModuleQueryOutcome } from '@leitbild/contracts'
 import { keptSelection } from './open-selection.ts'
-import { room, run } from './workspace-page.test-support.ts'
+import { room, run, WS } from './workspace-page.test-support.ts'
 
 const outcomes = (...values: unknown[]): ModuleQueryOutcome[] => values.map(value => moduleQueryOutcomeSchema.parse(value))
 const ready = outcomes({ moduleId: 'world', status: 'ready' }, { moduleId: 'agents', status: 'ready' })
@@ -35,12 +35,18 @@ describe('what stays open after the Resources are read again', () => {
     expect(keptSelection(none, [], ready)).toEqual(none)
   })
 
-  test('Planning closes a deleted Study only after its Module answered; its library stays available', () => {
-    const planning = { world: null, agents: null, agentsVisible: false, planning: 'study-1' }
+  test('Planning closes a deleted plan only after its Module answered; its library stays available', () => {
+    const planning = { world: null, agents: null, agentsVisible: false, planning: 'plan-1' }
     const available = outcomes(...ready, { moduleId: 'planning', status: 'ready' })
     const failed = outcomes(...ready, { moduleId: 'planning', status: 'failed', failure: { code: 'module_unavailable', message: 'Planning did not answer', retryable: true } })
     expect(keptSelection(planning, [], available).planning).toBeNull()
-    expect(keptSelection(planning, [], failed).planning).toBe('study-1')
+    expect(keptSelection(planning, [], failed).planning).toBe('plan-1')
+    const listed = (type: string) => moduleResourceDescriptorSchema.parse({
+      ref: { workspaceId: WS, moduleId: 'planning', type, id: 'plan-1' }, title: 'Week 47', capabilityIds: [], observedAt: '2026-11-11T10:00:00.000Z',
+    })
+    expect(keptSelection(planning, [listed('planning.plan')], available).planning).toBe('plan-1')
+    // A retired Study of the same id is not a plan.
+    expect(keptSelection(planning, [listed('planning.study')], available).planning).toBeNull()
     expect(keptSelection({ ...planning, planning: 'library' }, [], available).planning).toBe('library')
     expect(keptSelection({ ...planning, planning: 'library' }, [], ready).planning).toBeNull()
   })

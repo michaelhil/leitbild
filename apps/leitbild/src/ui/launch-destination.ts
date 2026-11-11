@@ -25,7 +25,8 @@ export const workspaceUrl = (workspaceId: string, selection: WorkspaceSelection 
 
 /**
  * Where to go after a Capability created Resources: a created Run opens in the
- * World pane, a created conversation in the Agents pane. Without a created Run
+ * World pane, a created conversation in the Agents pane, a created plan in
+ * Planning. Without a created Run
  * the current Run stays; the current conversation stays only when no Run was
  * created (a new Run must not inherit another Run's conversation).
  */
@@ -36,10 +37,10 @@ export const launchDestination = (
 ): string => {
   const world = created.find(resource => resource.moduleId === 'world' && resource.type === 'world.simulation-run')
   const agents = created.find(resource => resource.moduleId === 'agents' && resource.type === 'agents.room')
-  const study = created.find(resource => resource.moduleId === 'planning' && resource.type === 'planning.study')
+  const plan = created.find(resource => resource.moduleId === 'planning' && resource.type === 'planning.plan')
   return workspaceUrl(workspaceId, {
-    world: study ? null : world?.id ?? current.world ?? null,
-    agents: agents?.id ?? (world || study ? null : current.agents ?? null),
-    planning: study?.id ?? (world ? null : current.planning ?? null),
+    world: plan ? null : world?.id ?? current.world ?? null,
+    agents: agents?.id ?? (world || plan ? null : current.agents ?? null),
+    planning: plan?.id ?? (world ? null : current.planning ?? null),
   })
 }

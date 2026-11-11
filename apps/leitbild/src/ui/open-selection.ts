@@ -28,7 +28,7 @@ export const keptSelection = (
   const planning = selection.planning === 'library'
     ? modules.some(module => module.moduleId === 'planning') ? 'library' : null
     : selection.planning !== undefined && selection.planning !== null
-      && !resources.some(resource => resource.ref.type === 'planning.study' && resource.ref.id === selection.planning)
+      && !resources.some(resource => resource.ref.type === 'planning.plan' && resource.ref.id === selection.planning)
       && answered('planning') ? null : selection.planning
   const planningSelection = 'planning' in selection ? { planning: planning ?? null } : {}
   return roomGone || roomOutsideRun

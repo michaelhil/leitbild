@@ -5,7 +5,7 @@ import { isCurrentResourceCatalogChange } from './resource-catalog-message.ts'
 const origin = 'https://leitbild.test'
 const source = {} as Window
 const resource = workspaceResourceReferenceSchema.parse({
-  workspaceId: '0b4b9a52-2f7e-4c1a-9d3e-00000000000a', moduleId: 'planning', type: 'planning.study', id: 'study-a',
+  workspaceId: '0b4b9a52-2f7e-4c1a-9d3e-00000000000a', moduleId: 'planning', type: 'planning.plan', id: 'plan-a',
 })
 const current = { origin, source, resource }
 const data = { type: 'leitbild:resource-catalog-changed', resource }
@@ -19,7 +19,7 @@ test('only the active same-origin resource frame may invalidate its catalogue', 
 })
 
 test('stale selections and untrusted metadata cannot change the displayed resource', () => {
-  for (const change of [{ workspaceId: crypto.randomUUID() }, { moduleId: 'world', type: 'world.simulation-run' }, { type: 'planning.other' }, { id: 'study-b' }]) {
+  for (const change of [{ workspaceId: crypto.randomUUID() }, { moduleId: 'world', type: 'world.simulation-run' }, { type: 'planning.other' }, { id: 'plan-b' }]) {
     expect(isCurrentResourceCatalogChange({ origin, source, data }, {
       ...current, resource: workspaceResourceReferenceSchema.parse({ ...resource, ...change }),
     })).toBe(false)

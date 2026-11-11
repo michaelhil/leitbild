@@ -64,16 +64,19 @@ describe('featured demos on the Workspace page', () => {
 })
 
 describe('Continue', () => {
-  test('saved Planning Studies continue through their owned Resource and candidate summary', () => {
-    const study = moduleResourceDescriptorSchema.parse({
-      ref: { workspaceId: WS, moduleId: 'planning', type: 'planning.study', id: 'study' }, title: 'Response Study',
-      uiPath: `/workspaces/${WS}/planning?study=study`, capabilityIds: [], observedAt: '2026-11-08T10:00:00.000Z',
-      summary: [{ key: 'candidate-count', label: 'Candidates', kind: 'count', value: 2 }, { key: 'updated-at', label: 'Updated', kind: 'timestamp', value: '2026-11-08T10:00:00.000Z' }],
+  test('saved plans continue through their owned Resource and option summary; retired Studies do not', () => {
+    const plan = moduleResourceDescriptorSchema.parse({
+      ref: { workspaceId: WS, moduleId: 'planning', type: 'planning.plan', id: 'plan' }, title: 'Week 47',
+      uiPath: `/workspaces/${WS}/planning?plan=plan`, capabilityIds: [], observedAt: '2026-11-08T10:00:00.000Z',
+      summary: [{ key: 'option-count', label: 'Options', kind: 'count', value: 2 }, { key: 'updated-at', label: 'Updated', kind: 'timestamp', value: '2026-11-08T10:00:00.000Z' }],
     })
-    const [item] = continueItems([study, room('r', '2026-11-08T11:00:00.000Z')])
-    expect(item?.kind).toBe('study')
-    expect(item?.resource.ref).toEqual(study.ref)
-    expect(item?.facts.map(fact => fact.key)).toEqual(['candidate-count', 'updated-at'])
+    const study = moduleResourceDescriptorSchema.parse({ ...plan, ref: { ...plan.ref, type: 'planning.study', id: 'study' } })
+    const [item, ...rest] = continueItems([plan, study, room('r', '2026-11-08T11:00:00.000Z')])
+    expect(item?.kind).toBe('plan')
+    expect(item?.status).toBe('Plan')
+    expect(item?.resource.ref).toEqual(plan.ref)
+    expect(item?.facts.map(fact => fact.key)).toEqual(['option-count', 'updated-at'])
+    expect(rest.map(entry => entry.kind)).toEqual(['conversation'])
   })
 
   test('live Runs first, then paused Runs, then conversations, newest first; nothing without a page', () => {
