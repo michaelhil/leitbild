@@ -459,3 +459,20 @@ describe('shown text in the fixtures is in planner words (walk item 16)', () => 
     for (const fine of ['Backup pair: the planner\'s knowledge of the plant\'s trains.', 'Protected-train practice for work at power (NUMARC 93-01 section 11)', 'NUREG-1431 LCO 3.7.5 Condition B']) expect(reviewTrace.test(fine)).toBe(false)
   })
 })
+
+describe('whole-window calendars follow the plan window (walk 3, R3-1)', () => {
+  // Lane P's edit moves a calendar with the plan window when its periods are exactly the window, with no
+  // weekly entries and no exceptions. That form has no schema field; this pins which fixture calendars use it.
+  const isWholeWindow = (inputs: any, calendar: any) => inputs.settings.window !== null && calendar.weekly.length === 0 && calendar.except.length === 0
+    && calendar.periods.length === 1 && Date.parse(calendar.periods[0].start) === Date.parse(inputs.settings.window.start) && Date.parse(calendar.periods[0].end) === Date.parse(inputs.settings.window.end)
+
+  test('the Supply run trucks on duty from the start are whole-window; the announced joins stay absolute', () => {
+    expect(supplyRun.calendars.filter((calendar: any) => isWholeWindow(supplyRun, calendar)).map((calendar: any) => calendar.key)).toEqual(['exercise'])
+    expect(supplyRun.resources.filter((resource: any) => resource.calendar === 'exercise').map((resource: any) => resource.key)).toEqual(['truck-1', 'truck-3', 'truck-4'])
+  })
+
+  test('Train A has no whole-window calendar: its shifts are weekly and its bookings are fixed dates', async () => {
+    const full = await fixture('train-a.case.json')
+    for (const inputs of [trainA, full]) expect(inputs.calendars.filter((calendar: any) => isWholeWindow(inputs, calendar))).toEqual([])
+  })
+})
