@@ -1,6 +1,7 @@
 import { describe, expect, test } from 'bun:test'
 import { planInputsSchema, planSchema, type PlanInputs } from '../plan/schema.ts'
 import { verifyCertificate } from './certificate.ts'
+import type { CheckVariant } from './check.ts'
 import { recheckOption } from './recheck.ts'
 import { trainAInputs } from '../../tests/harness/train-a-case.ts'
 import caseJson from '../../tests/harness/fixtures/train-a-case-v0.2.json'
@@ -116,4 +117,30 @@ describe('energy and availability are re-derived, not taken on trust', () => {
     expect(verifyCertificate(forced(true), none, certificate)).toMatchObject({ proves: true, unverified: [] })
     expect(verifyCertificate(forced(false), none, certificate).proves).toBe(false)
   })
+})
+
+describe("lane S's real generate", () => {
+  // The flagship as lane S's fixture converts it; V1 = rebuild, days only. The checker is the real one.
+  test('V1 comes back proven infeasible, and its chain certificate re-verifies with nothing unverified', async () => {
+    const { generate } = await import('../solve/generate.ts')
+    const { searchEngine } = await import('../solve/search.ts')
+    const { trainAInputs: laneSTrainA } = await import('../solve/fixtures/train-a-case.ts')
+    const { checkPlan } = await import('./check.ts')
+    const inputs = laneSTrainA()
+    const check = ({ inputs: planned, variant, rows }: { readonly inputs: PlanInputs; readonly variant: CheckVariant; readonly rows: Parameters<typeof checkPlan>[2] }) => {
+      const result = checkPlan(planned, variant, rows)
+      return { violations: result.violations, goals: result.goals.map(goal => 'value' in goal ? goal.value : goal.spans.map(span => span.value)) }
+    }
+    const result = await generate({ engine: searchEngine(), check }, {
+      inputs, revision: 1, previous: null, by: { kind: 'agent' }, signal: new AbortController().signal,
+      input: { variants: [{ label: 'V1', methods: [{ choice: 'SWA-method', option: 'rebuild' }], buy: 'no-extra-crew-hours' }], seconds: 2 },
+    })
+    const option = result.optionSet.options[0]!
+    if (option.status.word !== 'proven infeasible') throw new Error(`V1 came back ${option.status.word}`)
+    expect(option.status.cause.kind).toBe('chain')
+    const verified = verifyCertificate(inputs, option.variant, option.status.cause)
+    expect(verified).toMatchObject({ proves: true, ok: true, problems: [], unverified: [] })
+    // its chain ends Fri 15:00, before the window end: the checker's own time logic rules out every case
+    expect(verified.refutedByTime.length).toBeGreaterThan(0)
+  }, 30_000)
 })

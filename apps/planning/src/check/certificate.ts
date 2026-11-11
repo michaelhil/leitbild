@@ -128,17 +128,16 @@ export const verifyCertificate = (inputs: PlanInputs, variant: CheckVariant, cer
         const available = countIn(union, Math.ceil(from), Math.floor(by))
         figures.availableHours = Math.max(figures.availableHours ?? 0, hours(available))
         if (certificate.availableHours + 1e-9 < hours(available)) problems.push(`The chain claims ${certificate.availableHours} h available; its jobs can work ${hours(available)} h in that interval (${name}).`)
+        // a case the checker's own time logic rules out needs none of the chain's premises, as for every kind
+        const timed = propagate(context, world)
+        if (!timed.ok) { refutedByTime.push(`With ${name}: ${timed.words}`); continue }
         if (!(work > available)) { unverified.push(`the chain with ${name}: its ${hours(work)} h of work fit in the ${hours(available)} h available`); continue }
         // the interval must hold every placement: the first job cannot start before it, the last cannot end after
-        const timed = propagate(context, world)
         const first = jobs[0]!, last = jobs[jobs.length - 1]!
-        const firstSlots = jobSlots(context, first, world)
-        const release = first.notBefore === undefined ? 0 : Math.ceil(slotOf(Date.parse(first.notBefore.at)))
-        const earliest = timed.ok ? timed.windows.get(first.key)!.es : firstSlots.findIndex((slot, index) => slot === 1 && index >= release)
+        const earliest = timed.windows.get(first.key)!.es
         if (earliest < from) unverified.push(`the chain with ${name}: '${first.title}' could start at ${iso(earliest)}, before the interval`)
-        const lastWindow = timed.ok ? timed.windows.get(last.key)! : undefined
-        const latestFinish = lastWindow !== undefined ? lastWindow.finishOf(lastWindow.ls)
-          : Math.min(grid.slots, ...inputs.rules.flatMap(rule => rule.kind === 'due' && rule.job === last.key ? [Math.floor(slotOf(Date.parse(rule.finishBy)))] : []))
+        const lastWindow = timed.windows.get(last.key)!
+        const latestFinish = lastWindow.finishOf(lastWindow.ls)
         if (latestFinish > by) unverified.push(`the chain with ${name}: '${last.title}' could finish at ${iso(latestFinish)}, after the interval`)
       }
       break
