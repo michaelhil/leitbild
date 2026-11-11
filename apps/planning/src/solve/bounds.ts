@@ -35,6 +35,8 @@ export interface BoundsResult {
   /** Per goal: a lower bound on the raw metric in internal units (no threshold applied), and its source. */
   readonly goals: ReadonlyArray<{ readonly value: number | readonly number[]; readonly source: BoundSource }>
   readonly spanWindows: readonly SpanWindow[]
+  /** The resource whose work binds the finish most (crew energy), for "no plan found" answers. */
+  readonly busiest?: { readonly resource: string; readonly finishBy: string; readonly loadShare: number }
 }
 
 interface Helpers { readonly next: Int32Array[] }
@@ -521,7 +523,8 @@ export const bounds = (problem: NormalizedProblem, index: CompileIndex, prep: Pr
     if (goal.metric === 'finish') {
       let finish = 0
       for (let a = 0; a < prep.n; a++) finish = Math.max(finish, global.eft[a]!)
-      return { value: finish * scale, source: 'logic+calendars' }
+      const energy = energyFinish(prep)
+      return energy !== undefined && energy.slot > finish ? { value: energy.slot * scale, source: 'crew-energy' } : { value: finish * scale, source: 'logic+calendars' }
     }
     if (goal.metric === 'extra-cost') {
       let fixed = 0
@@ -553,5 +556,33 @@ export const bounds = (problem: NormalizedProblem, index: CompileIndex, prep: Pr
     for (const a of goal.tagged ?? []) { const target = problem.activities[a]!.target; if (target !== undefined) late += Math.max(0, global.eft[a]! - target) }
     return { value: late * scale, source: 'logic+calendars' }
   })
-  return { goals, spanWindows: scans.map(scan => scan.window) }
+  const energy = energyFinish(prep)
+  return { goals, spanWindows: scans.map(scan => scan.window), ...(energy === undefined ? {} : { busiest: { resource: index.resources[energy.resource]!, finishBy: slotIso(index, energy.slot), loadShare: energy.load } }) }
+}
+
+/**
+ * Crew-energy finish bound (or's bench bounds): the work that needs resource r in every mode, against r's
+ * capacity counted from the start; the last finish is at least the slot where that capacity suffices.
+ * Returns the resource that binds most, and its load share of the window's capacity.
+ */
+export const energyFinish = (prep: Prepared): { readonly resource: number; readonly slot: number; readonly load: number } | undefined => {
+  const { problem, H } = prep
+  let best: { resource: number; slot: number; load: number } | undefined
+  problem.resources.forEach((resource, r) => {
+    let need = 0
+    for (const activity of problem.activities) {
+      if (!activity.modes.every(mode => mode.work === 0 || mode.demands.some(d => d.resource === r && d.when < 0))) continue
+      need += Math.min(...activity.modes.map(mode => mode.work * (mode.demands.find(d => d.resource === r)?.amount ?? 0)))
+    }
+    if (need === 0) return
+    let sum = 0, slot = 0
+    while (slot < H && sum < need) sum += resource.capacity[slot++]!
+    const window = problem.activities.reduce((latest, activity) => Math.max(latest, activity.deadline), 0)
+    let capacity = 0
+    for (let t = 0; t < window; t++) capacity += resource.capacity[t]!
+    const load = capacity > 0 ? need / capacity : Infinity
+    if (sum < need) slot = H
+    if (best === undefined || slot > best.slot || (slot === best.slot && load > best.load)) best = { resource: r, slot, load }
+  })
+  return best
 }
