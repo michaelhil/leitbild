@@ -7,6 +7,14 @@ import { localParts } from '../time/zone.ts'
 import { expand, periodSlots, type Grid } from './calendar.ts'
 import { computeMetrics, type GoalValue, type Metric } from './metrics.ts'
 
+/**
+ * The version of lane K's rules: the checker, the certificate re-verification and the optimality bounds.
+ * A stored status is only as good as the rules it was checked by, so this belongs in the solver's
+ * formulation: a stored option checked by older rules is then out of date. Raise it whenever any rule,
+ * verifier or bound in check/ changes what it accepts.
+ */
+export const CHECKER_VERSION = 'lane-k rules 1'
+
 type Inputs = PlanInputs
 type Job = Inputs['jobs'][number]
 type Resource = Inputs['resources'][number]
