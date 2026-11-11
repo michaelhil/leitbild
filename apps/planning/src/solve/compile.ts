@@ -446,7 +446,8 @@ export const compile = (inputs: PlanInputs, sub: SubSolve): Compiled => {
     for (const test of tests) addLink(a, test, 'FS', 0, 'bracket')
   }
   for (const item of inputs.equipment) for (const tag of coveringOf('tag-out', item.key)) for (const test of coveringOf('test', item.key)) addLink(tag, test, 'FS', 0, 'tag-before-test')
-  // Support cycles are refused; a supporter's tests precede the supported item's tests.
+  // Support cycles are refused; every supporter's tests, direct or through another supporter, precede the
+  // supported item's tests (the order the checker reads, so lifting one link never hides another).
   const supportersOf = (key: string, path: readonly string[] = []): string[] => {
     if (path.includes(key)) { invalid.push({ about: [...path.slice(-3), key], code: 'support_cycle' }); return [] }
     const item = inputs.equipment[equipmentIndex.get(key) ?? -1]
@@ -454,8 +455,7 @@ export const compile = (inputs: PlanInputs, sub: SubSolve): Compiled => {
   }
   for (const item of inputs.equipment) {
     for (const supporter of item.supportedBy) if (!equipmentIndex.has(supporter)) invalid.push({ about: [item.key, supporter], code: 'unknown_key' })
-    supportersOf(item.key)
-    for (const supporter of item.supportedBy) for (const before of coveringOf('test', supporter)) for (const after of coveringOf('test', item.key)) addLink(before, after, 'FS', 0, 'support-order')
+    for (const supporter of new Set(supportersOf(item.key))) for (const before of coveringOf('test', supporter)) for (const after of coveringOf('test', item.key)) addLink(before, after, 'FS', 0, 'support-order')
   }
   if (invalid.length > 0) return fail('invalid input', invalid)
   const links = [...linkMap.values()]

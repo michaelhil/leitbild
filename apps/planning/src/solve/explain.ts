@@ -6,6 +6,7 @@
 import type { z } from 'zod'
 import type { explainResultSchema } from '../api/contract.ts'
 import type { Certificate, PlanInputs } from '../plan/schema.ts'
+import { expandCalendar } from '../time/calendar.ts'
 import { gridSlotMs } from '../time/units.ts'
 import { localParts } from '../time/zone.ts'
 import { bounds, type SpanRefusal } from './bounds.ts'
@@ -27,6 +28,8 @@ export interface ExplainContext {
   readonly dataDateSlot?: number
   /** The option's purchases: time bought from any other purchase is "a purchase not allowed". */
   readonly purchases?: readonly string[]
+  /** The plan's inputs, to read what holds a job at the window's first slot (the time just before the grid). */
+  readonly inputs?: PlanInputs
 }
 
 const iso = (index: CompileIndex, slot: number) => new Date(index.origin + slot * index.slotMs).toISOString()
@@ -77,6 +80,52 @@ export const makeExplainer = (ctx: ExplainContext) => {
   }
   const name = (r: number) => index.resources[r]!
   const ruleKey = (c: number) => problem.coverage[c]!.id
+
+  /**
+   * What holds a job at the window's first slot: the window itself, and of what lies just before it, the data
+   * date, the job's release, the resources of a mode that are off duty then (base time and the option's
+   * purchases; the smallest set over the job's modes) and keep-in-service rules over resources that too few
+   * members on duty would break then. Relaxing all of it lets the job start earlier.
+   */
+  const atWindowStart = (a: number): Cause[] => {
+    const inputs = ctx.inputs
+    if (inputs === undefined) return [{ kind: 'window', about: [] }]
+    const before = index.origin - index.slotMs
+    const held: Cause[] = [{ kind: 'window', about: [] }]
+    if (inputs.settings.dataDate !== null && Date.parse(inputs.settings.dataDate) > before) held.push({ kind: 'data-date', about: [] })
+    const job = inputs.jobs.find(entry => entry.key === index.jobs[a])
+    if (job?.notBefore !== undefined && Date.parse(job.notBefore.at) > before) held.push({ kind: 'release', about: [job.key] })
+    const worksBefore = (calendarKey: string): boolean => {
+      const calendar = inputs.calendars.find(entry => entry.key === calendarKey)
+      if (calendar === undefined) return false
+      const expanded = expandCalendar(calendar, { zone: inputs.settings.timeZone, slotMs: index.slotMs, origin: before, slots: 1 })
+      return !expanded.ok || expanded.work[0] === 1
+    }
+    const onDuty = (key: string): boolean => {
+      const resource = inputs.resources.find(entry => entry.key === key)
+      if (resource === undefined || worksBefore(resource.calendar)) return true
+      return inputs.purchases.some(purchase => purchase.resource === key && (ctx.purchases ?? []).includes(purchase.key)
+        && ('calendar' in purchase.adds ? worksBefore(purchase.adds.calendar) : purchase.adds.periods.some(period => Date.parse(period.start) <= before && Date.parse(period.end) > before)))
+    }
+    // The scheduled mode first, so a tie names the resources the job uses.
+    const modes = problem.activities[a]!.modes, scheduled = modes[schedule.mode[a]!]!
+    let off: string[] | undefined, used: string[] = []
+    for (const mode of [scheduled, ...modes.filter(entry => entry !== scheduled)]) {
+      const keys = [...new Set(mode.demands.map(d => name(d.resource)))]
+      const missing = keys.filter(key => !onDuty(key))
+      if (off === undefined || missing.length < off.length) { off = missing; used = keys }
+    }
+    if (off !== undefined && off.length > 0) held.push({ kind: 'shift', about: off.slice(0, 6) })
+    // A keep-in-service rule over resources that holds just before the window too, with too few of them on duty then.
+    for (const rule of inputs.rules) {
+      if (rule.kind !== 'keep-in-service' || (rule.during !== undefined && !(Date.parse(rule.during.start) <= before && before < Date.parse(rule.during.end)))) continue
+      const members = rule.members.flatMap(member => ('resource' in member ? [member.resource] : []))
+      if (members.length === 0) continue
+      const free = members.filter(key => onDuty(key) && !(used.includes(key) && (inputs.resources.find(entry => entry.key === key)?.count ?? 1) <= 1)).length
+      if (free + rule.members.length - members.length < rule.atLeast) held.push({ kind: 'availability', about: [rule.key] })
+    }
+    return held
+  }
 
   /**
    * Everything that stops activity a starting at slot t in mode k with every other job where it is, as
@@ -178,9 +227,8 @@ export const makeExplainer = (ctx: ExplainContext) => {
     const finish = finishOf(prep, a, m, start)
     const base = { job: keyOf(ctx, a), start: iso(index, start), finish: iso(index, finish), floatHours: ctx.floats[a]?.workingHours ?? 0 }
     if (activity.fixed !== undefined) return { ...base, because: [{ kind: 'lock', about: [keyOf(ctx, a)] }], joint: false }
-    // At the very start: the plan's data date when it is the window's first slot (no forecast starts
-    // before it), else the window's opening.
-    if (start === 0) return { ...base, because: [{ kind: ctx.dataDateSlot === 0 ? 'data-date' : 'window', about: [] }], joint: false }
+    // At the window's first slot: everything that holds it there, together.
+    if (start === 0) { const held = atWindowStart(a).slice(0, 4); return { ...base, because: held.map(cause => ({ ...cause, until: iso(index, start) })), joint: held.length > 1 } }
     const usage = usageWithout(a)
     let best: { causes: Cause[]; t: number } | undefined
     // Single causes that alone let it start earlier at the best slot, in any mode (alternatives, not joint).

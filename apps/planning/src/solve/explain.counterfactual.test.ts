@@ -34,7 +34,7 @@ describe('why-start names the causes that hold each job', () => {
     await pool.shutdown()
   }, 300_000)
 
-  test('Supply run (case2 v1.1): U-1 names Truck 2 off shift and the coverage rule, never the window', async () => {
+  test('Supply run (case2 v1.1): U-1 names Truck 2 off shift and the coverage rule, never the window; R-1 names its whole binding set', async () => {
     const pool = createSolverPool({ rssLimitMb: 4_000 })
     const solver = createRealSolver(pool)
     for (const inputs of [supplyRun, lateTruck]) {
@@ -53,9 +53,15 @@ describe('why-start names the causes that hold each job', () => {
           expect(item.because.map(cause => cause.kind)).not.toContain('window')
           expect(counterfactualCheck(inputs, option.variant, option.rows, [item])).toEqual([])
         } else {
-          // R-1 starts at the plan's first slot, which is its data date (10:00): nothing earlier is planned.
-          expect(row.start).toBe(inputs.settings.dataDate === null ? '' : new Date(inputs.settings.dataDate).toISOString())
-          expect(item.because).toEqual([{ kind: 'data-date', about: [] }])
+          // R-1 starts at the window's first slot, 10:00, which is also the data date: the window, the data date,
+          // its truck coming on duty then and the heavy-truck rule (no heavy truck on duty before) hold it together.
+          expect(row.start).toBe(new Date(inputs.settings.dataDate!).toISOString())
+          expect(item.joint).toBe(true)
+          expect(item.because.map(cause => cause.kind)).toEqual(['window', 'data-date', 'shift', 'availability'])
+          expect(item.because[2]!.about).toEqual(row.uses.map(use => use.resource))
+          // Lane K's harness does not relax a data date; moved a day earlier here, the rest of the set is relaxed by it.
+          const earlier = { ...inputs, settings: { ...inputs.settings, dataDate: new Date(Date.parse(inputs.settings.dataDate!) - 86_400_000).toISOString() } }
+          expect(counterfactualCheck(earlier, option.variant, option.rows, [{ ...item, because: item.because.filter(cause => cause.kind !== 'data-date') }])).toEqual([])
         }
       }
     }
