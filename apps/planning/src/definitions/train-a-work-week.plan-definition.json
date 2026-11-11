@@ -82,6 +82,69 @@
         "label": "Service Water Pump B",
         "supportedBy": [],
         "locator": "process-plant/plant%3Atrain-a/serviceWaterPumpB"
+      },
+      {
+        "key": "CCWB",
+        "label": "Component Cooling Water Pump B",
+        "supportedBy": [],
+        "locator": "process-plant/plant%3Atrain-a/componentCoolingWaterPumpB"
+      },
+      {
+        "key": "RHRB",
+        "label": "Residual Heat Removal Pump B",
+        "supportedBy": [],
+        "locator": "process-plant/plant%3Atrain-a/rhrPumpB"
+      },
+      {
+        "key": "HHSIB",
+        "label": "High-Head Safety Injection Pump B",
+        "supportedBy": [],
+        "locator": "process-plant/plant%3Atrain-a/safetyInjectionPumpB"
+      },
+      {
+        "key": "CSB",
+        "label": "Containment Spray Pump B",
+        "supportedBy": [],
+        "locator": "process-plant/plant%3Atrain-a/containmentSprayPumpB"
+      },
+      {
+        "key": "AFWB",
+        "label": "Motor-Driven Auxiliary Feedwater Pump B",
+        "supportedBy": [],
+        "locator": "process-plant/plant%3Atrain-a/auxFeedwaterPumpMotorB"
+      },
+      {
+        "key": "AFWTD",
+        "label": "Turbine-Driven Auxiliary Feedwater Pump",
+        "supportedBy": [],
+        "locator": "process-plant/plant%3Atrain-a/auxFeedwaterPumpTurbine"
+      },
+      {
+        "key": "EDGB",
+        "label": "Emergency Diesel Generator B",
+        "supportedBy": [],
+        "source": {
+          "by": "reference",
+          "note": "Protected all week; not in the pump-only planning read (case v0.2). Protected-train practice in on-line maintenance risk management (NUMARC 93-01 section 11 as endorsed by NRC RG 1.160; examples in NRC IMC 0308 Att 3 App K). Declared as this fictional plant's rule."
+        }
+      },
+      {
+        "key": "BUSB",
+        "label": "Safety Bus B",
+        "supportedBy": [],
+        "source": {
+          "by": "reference",
+          "note": "Protected all week; not in the pump-only planning read (case v0.2). Protected-train practice in on-line maintenance risk management (NUMARC 93-01 section 11 as endorsed by NRC RG 1.160; examples in NRC IMC 0308 Att 3 App K). Declared as this fictional plant's rule."
+        }
+      },
+      {
+        "key": "SWYD",
+        "label": "Switchyard and offsite supply",
+        "supportedBy": [],
+        "source": {
+          "by": "reference",
+          "note": "maint case change C10: EDG B, the safety bus B and the switchyard/offsite supply are protected for the whole week. Declared: no job may touch the switchyard (NUMARC-style risk-management action, NRC IMC 0308 Att 3 App K examples)."
+        }
       }
     ],
     "groups": [
@@ -913,12 +976,21 @@
         "kind": "protected",
         "key": "R1",
         "equipment": [
-          "SWB"
+          "SWB",
+          "CCWB",
+          "RHRB",
+          "HHSIB",
+          "CSB",
+          "AFWB",
+          "AFWTD",
+          "EDGB",
+          "BUSB",
+          "SWYD"
         ],
-        "words": "Train B and the TD AFW pump are never tagged, worked or tested.",
+        "words": "Every Train B item (SW B, CCW B, RHR B, HHSI B, CS B, MD AFW B, EDG B, safety bus B), the turbine-driven AFW pump and the switchyard/offsite supply are never tagged, worked or tested.",
         "source": {
           "by": "reference",
-          "note": "Protected-train practice in on-line maintenance risk management (NUMARC 93-01 section 11 as endorsed by NRC RG 1.160; examples in NRC IMC 0308 Att 3 App K). Declared as this fictional plant's rule."
+          "note": "Protected-train practice in on-line maintenance risk management (NUMARC 93-01 section 11 as endorsed by NRC RG 1.160; examples in NRC IMC 0308 Att 3 App K). Declared as this fictional plant's rule. Switchyard and offsite supply: maint case change C10."
         }
       },
       {
