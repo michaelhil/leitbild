@@ -27,13 +27,16 @@ describe('bundled scenario discovery', () => {
       'planning-response',
       'rogaland-black-start',
       'supply-run',
+      'train-a-work-week',
     ])
     for (const id of ['halden-normal-operation', 'halden-power-complex']) {
       expect(builtinScenarioDefinitions.find(source => source.id === id)?.packs.map(pack => pack.id)).toEqual(['process-plant', 'electric-grid', 'weather', 'physical-layout'])
     }
     expect(builtinScenarioDefinitions.find(source => source.id === 'halden-offsite-power-restoration')?.packs.map(pack => pack.id)).toEqual(['process-plant', 'electric-grid', 'physical-layout'])
     expect(builtinScenarioDefinitions.find(source => source.id === 'halden-station-blackout')?.packs.map(pack => pack.id)).toEqual(['process-plant', 'physical-layout'])
-    expect(builtinScenarioDefinitions.find(source => source.id === 'engineering-thermal')?.packs.map(pack => pack.id)).toEqual(['process-plant'])
+    for (const id of ['engineering-thermal', 'train-a-work-week']) {
+      expect(builtinScenarioDefinitions.find(source => source.id === id)?.packs.map(pack => pack.id)).toEqual(['process-plant'])
+    }
     expect(builtinScenarioDefinitions.find(source => source.id === 'engineering-grid')?.packs.map(pack => pack.id)).toEqual(['electric-grid'])
     for (const id of ['nordic-frequency-event', 'nordland-corridor-security', 'rogaland-black-start']) {
       expect(builtinScenarioDefinitions.find(source => source.id === id)?.packs.map(pack => pack.id)).toEqual(['electric-grid'])
