@@ -287,9 +287,9 @@
   class:window-maximised={windowMaximised}
   style={`grid-template-columns: ${gridColumns}`}
 >
-  {#if primaryOpen}<section bind:this={worldPane} class="module-pane world-pane" class:collapsed={collapsedPane === 'world'} aria-label={planningPath !== null ? 'Planning Study' : 'World simulations'}>
+  {#if primaryOpen}<section bind:this={worldPane} class="module-pane world-pane" class:collapsed={collapsedPane === 'world'} aria-label={planningPath !== null ? 'Planning' : 'World simulations'}>
     {#if planningPath !== null}
-    <iframe bind:this={planningFrame} class="module-frame active" src={planningPath} title="Planning laboratory"></iframe>
+    <iframe bind:this={planningFrame} class="module-frame active" src={planningPath} title="Planning"></iframe>
     {:else if worldRunId !== null}
     <iframe
       bind:this={worldFrame}
