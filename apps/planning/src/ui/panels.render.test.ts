@@ -3,6 +3,7 @@
 // the status, stale options claiming nothing), rendered on the server.
 import { describe, expect, test } from 'bun:test'
 import type { Component } from 'svelte'
+import { workspaceResourceReferenceSchema } from '@leitbild/contracts'
 import { whyStart } from './explain-text.ts'
 import { optionOf, runBasis, status, supplyRunPlanned, trainAPlanned } from './fixtures/plans.ts'
 import { readableText, registerSvelte, renderHtml } from './fixtures/svelte-ssr.ts'
@@ -21,7 +22,11 @@ const { default: NewPlanForm } = await import('./NewPlanForm.svelte') as { defau
 const model = trainAPlanned()
 const context: Context = { inputs: model.inputs, names: createNames(model.inputs), format: createTimeFormat(model.inputs.settings.timeZone) }
 const rows = model.rows['opt-1']!
-const write = { plan: { id: model.id, title: model.title, revision: 3 }, changed: [], attention: [], problems: [] }
+const write = {
+  plan: { id: model.id, title: model.title, revision: 3 },
+  target: { kind: 'resource' as const, ref: workspaceResourceReferenceSchema.parse({ workspaceId: '0b4b9a52-2f7e-4c1a-9d3e-00000000000a', moduleId: 'planning', type: 'planning.plan', id: model.id }) },
+  changed: [], attention: [], problems: [],
+}
 const none = () => {}
 
 describe('panels', () => {

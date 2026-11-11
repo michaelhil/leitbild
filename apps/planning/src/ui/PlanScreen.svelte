@@ -98,7 +98,7 @@
     busy = true
     error = null
     try { await work() } catch (cause) {
-      error = refusalText(cause)
+      error = refusalText(cause, context?.names.any)
       if (isRequestError(cause) && cause.code === 'plan_revision_conflict') await actions.load(selectedOption).then(show, () => undefined)
     } finally { busy = false }
   }
@@ -130,8 +130,8 @@
     const lock = pending.find(edit => edit.edit === 'job' && 'lock' in edit)
     if (lock !== undefined && lock.edit === 'job') previewEdits([{ edit: 'job', key: lock.key, lock: instant }], preview?.label ?? 'Fix the start')
   }
-  const link = (run: string): void => withModel(async current => { show(await actions.link(current, run, selectedOption)); onChanged() })
-  const refresh = (): void => withModel(async current => { show(await actions.refresh(current, selectedOption)); onChanged() })
+  const link = (run: string): void => withModel(async current => { notice = 'Linking and reading the World values (this can take up to 20 s)…'; show(await actions.link(current, run, selectedOption)); onChanged() })
+  const refresh = (): void => withModel(async current => { notice = 'Reading the World values (this can take up to 20 s)…'; show(await actions.refresh(current, selectedOption)); onChanged() })
   const generate = (input: GenerateInput): void => {
     const current = model
     if (current === null || generating !== null) return
@@ -144,7 +144,7 @@
         show(shown)
         error = shown.error
         onChanged()
-      } catch (cause) { error = refusalText(cause) } finally { generating = null }
+      } catch (cause) { error = refusalText(cause, context?.names.any) } finally { generating = null }
     })()
   }
   const showOption = (option: string): void => withModel(async current => {

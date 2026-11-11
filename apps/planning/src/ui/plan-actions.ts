@@ -5,7 +5,7 @@ import type { PlanningSubject } from '@leitbild/contracts'
 import type { Edit } from '../plan/edit-schema.ts'
 import { isRequestError, refusalText, RUN, type GenerateInput, type PlanningClient } from './api.ts'
 import { finishChain, whyStart, type FinishStep, type WhyStart } from './explain-text.ts'
-import type { DatedRow, PlanModel, RunChoice } from './model.ts'
+import { createNames, type DatedRow, type PlanModel, type RunChoice } from './model.ts'
 import type { Preview } from './preview.ts'
 import { loadPlan, loadRows } from './read-plan.ts'
 import type { Context } from './status-text.ts'
@@ -66,7 +66,8 @@ export const createPlanActions = (client: PlanningClient, planId: string) => {
         return { label, result: await client.edit(planId, model.revision, { edits: [...edits], preview: true }), refusal: null, asks }
       } catch (cause) {
         if (!isRequestError(cause) || cause.status >= 500) throw cause
-        return { label, result: null, refusal: { text: refusalText(cause), needsAuthority: cause.code === 'needs_authority' }, asks }
+        const names = createNames(model.inputs)
+        return { label, result: null, refusal: { text: refusalText(cause, names.any), needsAuthority: cause.code === 'needs_authority' || cause.code === 'below_minimum' }, asks }
       }
     },
     apply: async (model: PlanModel, edits: readonly Edit[], authority: { name: string; reason: string } | null, keep: string | null): Promise<Shown> => {
@@ -94,7 +95,7 @@ export const createPlanActions = (client: PlanningClient, planId: string) => {
         option = result.recommended ?? keep
       } catch (cause) {
         if (signal.aborted) notice = 'Cancelled. The best plan found before the stop is kept only if it is better than the one you had.'
-        else error = refusalText(cause)
+        else error = refusalText(cause, createNames(model.inputs).any)
       }
       return { ...await load(option, notice), error }
     },

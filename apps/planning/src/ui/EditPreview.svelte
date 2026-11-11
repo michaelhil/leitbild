@@ -40,7 +40,7 @@
   {/if}
   {#if needsAuthority && !refused}
     <div class="authority">
-      <p><MarkTag mark={{ shape: '■', word: 'Rule' }} tone="rule" /> {preview.asks ?? 'This weakens'} {shown && shown.weakens.length > 0 ? context.names.list(shown.weakens) : preview.asks === null ? 'a hard rule' : ''}{preview.refusal ? `: ${preview.refusal.text}` : ''}. It is saved only with the name of who agreed and why, and the change log keeps both.</p>
+      <p><MarkTag mark={{ shape: '■', word: 'Rule' }} tone="rule" /> {preview.asks ?? 'This weakens'} {shown && shown.weakens.length > 0 ? context.names.list(shown.weakens) : preview.asks === null ? 'a hard rule' : ''}{preview.refusal ? `: ${preview.refusal.text}` : ''}. It is saved only with the name of who agreed and their reason, and the change log keeps both. Ask them; never fill this in yourself.</p>
       <label>Who agreed<input bind:value={name} autocomplete="name" /></label>
       <label>Why<input bind:value={reason} /></label>
     </div>

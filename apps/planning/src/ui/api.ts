@@ -94,13 +94,56 @@ export const createPlanningClient = (workspaceId: string, transport: Transport =
 }
 export type PlanningClient = ReturnType<typeof createPlanningClient>
 
-/** A refusal in words for the screen; the Module's message is already in planner words. */
-export const refusalText = (error: unknown): string => {
+/** The words that ask for a named person's agreement, as the Module asks them. */
+export const authorityWords = 'Name the person who agreed and their reason. Ask them; never fill this in yourself.'
+
+/** Where a refusal's details name plan keys, the screen says their names. */
+export type KeyNames = (key: string) => string
+
+const keysIn = (details: Readonly<Record<string, unknown>> | null, field: string): readonly string[] => {
+  const value = details?.[field]
+  return Array.isArray(value) ? value.filter((entry): entry is string => typeof entry === 'string') : []
+}
+const listOf = (keys: readonly string[], name: KeyNames): string =>
+  keys.length <= 1 ? keys.map(name).join('') : `${keys.slice(0, -1).map(name).join(', ')} and ${name(keys[keys.length - 1]!)}`
+
+/**
+ * A refusal in planner words for the screen, generated from its code and details. The Module's own
+ * message is written for the Assistant and may name keys, so the screen uses it only for refusals whose
+ * words carry no keys (the certified size, a damaged plan).
+ */
+export const refusalText = (error: unknown, name: KeyNames = () => 'an item in this plan'): string => {
   if (isRequestError(error)) {
-    if (error.code === 'plan_revision_conflict') return 'Someone else changed this plan a moment ago. It has been read again; check it and try once more.'
-    if (error.code === 'planning_busy') return 'Planning is busy with other plans. Try again in a moment.'
-    if (error.code === 'world_unavailable') return 'World did not answer. Try again in a moment.'
-    return error.message
+    const about = keysIn(error.details, 'about')
+    switch (error.code) {
+      case 'plan_revision_conflict': return 'Someone else changed this plan a moment ago. It has been read again; check it and try once more.'
+      case 'planning_busy': return 'Planning is busy with other plans. Try again in a moment.'
+      case 'world_unavailable': return 'World did not answer in time; nothing was saved. Try again in a moment.'
+      case 'generate_running': return 'Generate is already working on this plan. Wait for it to finish; its options then appear here.'
+      case 'baseline_limit': return 'This plan already keeps as many baselines as a plan may keep, so no more can be saved.'
+      case 'plan_too_large': return 'This change would make the plan larger than a plan may hold. Nothing was saved; remove what the plan does not need.'
+      case 'world_read_limit': return 'This plan names more World items than can be read together (at most 32). Remove the items the plan does not need; nothing was read.'
+      case 'below_minimum': return `${about.length === 0 ? 'A test' : listOf(about.slice(0, 1), name)} would run shorter than its declared minimum. ${authorityWords}`
+      case 'needs_authority': {
+        const weakens = keysIn(error.details, 'weakens')
+        return `This weakens a hard rule's coverage${weakens.length > 0 ? ` (${listOf(weakens, name)})` : about.length > 0 ? ` (${listOf(about, name)})` : ''}. ${authorityWords}`
+      }
+      case 'protected_equipment': {
+        const [job, item, rule] = about
+        return job !== undefined && item !== undefined && rule !== undefined
+          ? `${name(job)} would touch ${name(item)}, which “${name(rule)}” protects. No job may touch it.`
+          : 'This change would touch protected equipment. No job may touch it.'
+      }
+      case 'option_stale': return 'This option no longer matches the plan. Generate again.'
+      case 'option_not_feasible': return 'Only a validated feasible option on the current plan can become the baseline.'
+      case 'unknown_reference': return 'Something this change names is no longer in the plan. Read the plan again and retry.'
+      case 'invalid_request': {
+        const issues = Array.isArray(error.details?.issues) ? (error.details.issues as Array<{ message?: unknown }>).flatMap(issue => typeof issue.message === 'string' ? [issue.message] : []) : []
+        return issues.length > 0 ? `This change is not valid: ${issues.join('; ')}.` : 'This change is not valid for this plan.'
+      }
+      case 'plan_not_found': return 'This plan is no longer in this Workspace.'
+      default: return error.message
+    }
   }
   if (error instanceof DOMException && error.name === 'AbortError') return 'Cancelled.'
   return error instanceof Error ? error.message : 'Something went wrong.'
