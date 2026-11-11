@@ -5,6 +5,7 @@ import {
 } from './schema.ts'
 import { editSchema } from './edit-schema.ts'
 import { editInputSchema, generateResultSchema } from '../api/contract.ts'
+import { checkPlan, inputCodes } from '../check/check.ts'
 
 const fixture = async (name: string): Promise<any> => Bun.file(new URL(`./fixtures/${name}`, import.meta.url)).json()
 const trainA = await fixture('train-a.fragment.json')
@@ -19,7 +20,7 @@ const accepted = (value: unknown) => statusSchema.safeParse(value).success
 describe('the two cases', () => {
   test('both fixtures parse as plan inputs', () => {
     const train = planInputsSchema.parse(trainA)
-    expect(train.jobs).toHaveLength(12)
+    expect(train.jobs).toHaveLength(13)
     expect(train.jobs.filter(job => job.kind === 'test').map(job => [job.key, job.minimum?.value])).toEqual([
       ['SWA-RTS', 2.5], ['CCWA-RTS', 1.5], ['RHRA-RTS', 1.5], ['HHSIA-RTS', 1], ['CSA-RTS', 1.5], ['AFWA-RTS', 1.5]])
     expect(train.rules.map(rule => rule.source.by)).toEqual(['reference', 'reference'])
@@ -378,5 +379,17 @@ describe('R1 protects exactly what it names (ai review)', () => {
     }
     expect(equipmentSchema.safeParse({ ...item('EDGB'), source: { by: 'reference' } }).success).toBe(false)
     expect(editSchema.safeParse({ edit: 'equipment', key: 'SWYD', label: 'Switchyard and offsite supply', supportedBy: [], source: { by: 'reference', note: 'maint case change C10' } }).success).toBe(true)
+  })
+})
+
+describe('Train A is valid input for the checker', () => {
+  test('one tag-out covers the CCW A pump and HX A, so every work job inside an item is bracketed', () => {
+    const tag = trainA.jobs.find((job: any) => job.key === 'CCWA-TAG')
+    expect([tag.kind, tag.equipment]).toEqual(['tag-out', ['CCWA', 'CCWHXA']])
+    const inputs = planInputsSchema.parse(trainA)
+    for (const option of inputs.methods[0]!.options) {
+      const result = checkPlan(inputs, { methods: [{ choice: inputs.methods[0]!.key, option: option.key }], purchases: inputs.purchases.map(purchase => purchase.key) }, [])
+      expect({ option: option.key, problems: result.violations.filter(violation => inputCodes.has(violation.code)).map(violation => violation.words) }).toEqual({ option: option.key, problems: [] })
+    }
   })
 })
