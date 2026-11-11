@@ -1,14 +1,17 @@
 import { normalize, resolve } from 'node:path'
-import { createPlanningModuleApi, type PlanningDemoPort } from './module-api.ts'
-import type { PlanningService } from './service.ts'
+import { createPlanningModuleApi } from './api/module-api.ts'
+import type { PlanningOperations } from './api/operations.ts'
+import type { PlanDefinitionsPort } from './definitions/index.ts'
+import type { PlanStore } from './plan/store.ts'
 
 const contentType = (path: string): string => path.endsWith('.js') ? 'application/javascript; charset=utf-8'
   : path.endsWith('.css') ? 'text/css; charset=utf-8'
     : path.endsWith('.svg') ? 'image/svg+xml' : path.endsWith('.woff2') ? 'font/woff2' : 'application/octet-stream'
 
 export const createPlanningServer = (config: {
-  readonly service: PlanningService
-  readonly demos?: PlanningDemoPort
+  readonly operations: PlanningOperations
+  readonly definitions: PlanDefinitionsPort
+  readonly store: Pick<PlanStore, 'hasWorkspace' | 'provision' | 'removeWorkspace'>
   readonly port?: number
   readonly host?: string
   readonly uiDistPath?: string
@@ -17,6 +20,8 @@ export const createPlanningServer = (config: {
   const uiRoot = resolve(config.uiDistPath ?? `${import.meta.dir}/ui/dist`)
   return Bun.serve({
     hostname: config.host ?? '127.0.0.1', port: config.port ?? 3102,
+    // Generate runs up to 20 s inside Host's 30 s call; Bun's idle timeout must not close it first.
+    idleTimeout: 40,
     async fetch(request) {
       const url = new URL(request.url)
       try {
