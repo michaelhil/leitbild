@@ -74,20 +74,30 @@ describe('panels', () => {
     expect(text).toContain('Who agreed')
   })
 
-  test('an edit that breaks a hard rule is refused in words, with the nearest allowed start (T20)', () => {
-    const preview: Preview = {
-      label: 'Fix the start of Restore SW A, fill and vent, pump test',
-      result: { ...write, preview: { saved: false, consequence: 'The test would start before the pump is back in place.', violations: ['The return-to-service test must follow the work on SW A.'], weakens: [], nearestAllowed: rows[2]!.start } },
-      refusal: null, asks: null,
+  test('an invalid edit is refused in words, with the nearest allowed start (T20); a valid change the option cannot keep is saved and asks for Generate', () => {
+    const refused: Preview = {
+      label: 'Fix the start of Restore SW A, fill and vent, pump test', result: null, asks: null,
+      refusal: { text: 'The return-to-service test must follow the work on SW A.', needsAuthority: false, nearestAllowed: rows[2]!.start },
     }
-    const text = readableText(renderHtml(EditPreview, { preview, context, onApply: none, onDiscard: none, onUseTime: none }))
+    const text = readableText(renderHtml(EditPreview, { preview: refused, context, onApply: none, onDiscard: none, onUseTime: none }))
     expect(text).toContain('✕ Refused')
     expect(text).toContain('The return-to-service test must follow the work on SW A.')
-    expect(text).toContain('Nearest allowed start: Tue 12:00')
+    expect(text).toContain('Nearest allowed start: Tue 17 Nov 12:00')
     expect(text).toContain('Use this time')
     expect(text).not.toContain('Apply')
-    expect(renderHtml(EditPreview, { preview, context, onApply: none, onDiscard: none, onUseTime: none })).toContain('<h2 id="preview-title" tabindex="-1">')
+    expect(renderHtml(EditPreview, { preview: refused, context, onApply: none, onDiscard: none, onUseTime: none })).toContain('<h2 id="preview-title" tabindex="-1">')
+    // R2-4 (N-01): a real new link the current option breaks is saved; the screen then asks for Generate.
+    const saveable: Preview = {
+      label: 'CCW A motor work before the seal', asks: null, refusal: null,
+      result: { ...write, preview: { saved: false, consequence: 'Saving marks the options out of date.', violations: ['The cooling chain would be out longer than 72 h.'], weakens: [] } },
+    }
+    const kept = readableText(renderHtml(EditPreview, { preview: saveable, context, onApply: none, onDiscard: none, onUseTime: none }))
+    expect(kept).not.toContain('Refused')
+    expect(kept).toContain('The change can be saved, but the current option would then break: The cooling chain would be out longer than 72 h.')
+    expect(kept).toContain('After saving, generate new options.')
+    expect(kept).toContain('Apply')
   })
+
 
   test('the site time zone is chosen from a list of zones, the default selected', () => {
     const html = renderHtml(NewPlanForm, { defaultZone: 'Europe/Oslo', defaultStart: '2026-11-16T07:00', defaultEnd: '2026-11-21T07:00', onCreate: none, onCancel: none })

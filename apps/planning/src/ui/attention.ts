@@ -1,12 +1,13 @@
 // "Needs your attention": the cards the plan screen leads with, in the order a planner acts on them.
 // The link card comes first until a Run is linked; the Module's own attention items follow; then the
 // one-sentence answer about the recommended option.
+import { simulationNow } from './edit-forms.ts'
 import { sizeRefusalWords, sourceMark, type Mark } from './format.ts'
 import type { AttentionKind, PlanModel } from './model.ts'
 import { outcomes } from './outcome.ts'
 import { statusView, type Context } from './status-text.ts'
 
-export type CardAction = 'open-workspace' | 'link-run' | 'refresh' | 'add-work' | 'generate' | 'why-finish'
+export type CardAction = 'open-workspace' | 'link-run' | 'refresh' | 'add-work' | 'generate' | 'why-finish' | 'align-window'
 
 export interface Card {
   readonly mark: Mark
@@ -52,6 +53,17 @@ export const attentionCards = (model: PlanModel, context: Context): readonly Car
       title: 'Read the World values for this plan.',
       text: 'The simulation is linked. Reading copies its current values into the plan, each with its basis and read time.',
       steps: [], actions: ['refresh'],
+    })
+  }
+  // The linked simulation's time against the plan window: times on the plan and in World must match.
+  const now = inputs.settings.run === null ? null : simulationNow(inputs)
+  const window = inputs.settings.window
+  if (now !== null && window !== null && (Date.parse(now) < Date.parse(window.start) || Date.parse(now) > Date.parse(window.end))) {
+    cards.push({
+      mark: { shape: '◉', word: 'World' },
+      title: `The linked simulation is at ${context.format.when(now)} (simulation time), outside this plan's window, ${context.format.when(window.start)} to ${context.format.when(window.end)}.`,
+      text: 'Align the window to the simulation, keeping its length, so the plan and World speak of the same days.',
+      steps: [], actions: ['align-window'],
     })
   }
   if (inputs.jobs.length === 0) {

@@ -83,7 +83,7 @@ describe('plan screen actions', () => {
     expect(shown.model.inputs.settings.run?.id).toBe('run-1')
     expect(shown.model.revision).toBe(start.revision + 2)
     // Not the Module's change lines (maint's walk S-03: raw locators and "Committed job steps 0 1").
-    expect(shown.notice).toBe('Linked. World values read: 1 value, describing simulation time Thu 10:00.')
+    expect(shown.notice).toBe('Linked. World values read: 1 value, describing simulation time Thu 3 Sep 10:00.')
     expect(double.progress).toEqual(['Reading World values…'])
   })
 
@@ -117,7 +117,7 @@ describe('plan screen actions', () => {
     const [saved, read] = double.calls.filter(call => call.capability === 'planning.plan.edit' || call.capability === 'planning.sources.refresh')
     expect([saved!.expectedRevision, read!.expectedRevision, read!.input]).toEqual([start.revision, start.revision + 1, { plan: start.id }])
     expect(double.progress).toEqual(['Reading World values…'])
-    expect(shown.notice).toBe('Saved: Add Truck 9 as a tool. World values read: 1 value, describing simulation time Thu 10:00.')
+    expect(shown.notice).toBe('Saved: Add Truck 9 as a tool. World values read: 1 value, describing simulation time Thu 3 Sep 10:00.')
     // An edit that names no World item never reads World.
     const plain = host(start)
     await plain.actions.apply(start, [{ edit: 'plan', title: 'Supply run, second wave' }], null, null, 'Rename the plan')

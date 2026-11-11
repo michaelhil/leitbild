@@ -14,22 +14,39 @@ const until = (because: Because, context: Context): string => because.until === 
 const at = (because: Because, context: Context): string => because.until === undefined ? 'then' : `at ${context.format.clock(because.until)}`
 
 /** One cause in words. Keys are shown by their names only. */
+/**
+ * One cause in words. An explanation's `about` may mix kinds (a busy crew with the jobs holding it; the
+ * crews whose shift is off), so each key is named by what it is in this plan, never assumed to be one kind.
+ */
 export const causeText = (because: Because, context: Context): string => {
   const { names } = context
   const about = because.about
+  const of = (...kinds: ReadonlyArray<ReturnType<typeof names.kindOf>>) => about.filter(key => kinds.includes(names.kindOf(key)))
+  const busy = (word: string): string => {
+    const holders = of('resource')
+    const jobs = of('job')
+    const who = holders.length > 0 ? names.list(holders) : 'the crew or tool it needs'
+    return `${who} ${holders.length > 1 ? 'are' : 'is'} ${word}${jobs.length > 0 ? ` with ${names.list(jobs)}` : ''}${until(because, context)}`
+  }
   switch (because.kind) {
-    case 'link': return `it follows ${names.list(about, names.job)}${until(because, context)}`
-    case 'crew': return `${names.list(about, names.resource)} ${about.length === 1 ? 'is' : 'are'} busy${until(because, context)}`
-    case 'tool': return `${names.list(about, names.resource)} ${about.length === 1 ? 'is' : 'are'} in use${until(because, context)}`
-    case 'shift': return `no working time on ${names.list(about, names.calendar)}${until(because, context)}`
-    case 'availability': return `starting earlier would break “${names.list(about, names.rule)}”`
-    case 'span-limit': return `starting earlier would stretch the outage past “${names.list(about, names.rule)}”`
+    case 'link': return `it follows ${names.list(of('job').length > 0 ? of('job') : about)}${until(because, context)}`
+    case 'crew': return busy('busy')
+    case 'tool': return busy('in use')
+    case 'shift': {
+      const calendars = of('calendar')
+      const crews = of('resource')
+      return calendars.length > 0
+        ? `no working time on ${names.list(calendars)}${crews.length > 0 ? ` for ${names.list(crews)}` : ''}${until(because, context)}`
+        : `no working time for ${crews.length > 0 ? names.list(crews) : 'its crew or tool'}${until(because, context)}`
+    }
+    case 'availability': return of('rule').length > 0 ? `starting earlier would break “${names.list(of('rule'))}”` : 'starting earlier would take too much equipment out together'
+    case 'span-limit': return of('rule').length > 0 ? `starting earlier would stretch the outage past “${names.list(of('rule'))}”` : 'starting earlier would stretch an outage past its limit'
     case 'window': return `the window opens ${at(because, context)}`
     case 'release': return `it cannot start before ${at(because, context)}`
     case 'lock': return 'you fixed its start'
     case 'data-date': return `nothing starts before the plan's "now", ${at(because, context)}`
     case 'late-as-possible': return 'it is placed as late as its successors allow, to keep equipment in service'
-    case 'purchase-not-allowed': return `${names.list(about, names.purchase)} ${about.length === 1 ? 'is' : 'are'} not allowed`
+    case 'purchase-not-allowed': return `${names.list(of('purchase'))} ${of('purchase').length === 1 ? 'is' : 'are'} not allowed`
   }
 }
 

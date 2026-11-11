@@ -20,6 +20,7 @@
   import PlanHeader from './PlanHeader.svelte'
   import type { Preview } from './preview.ts'
   import RulesPanel from './RulesPanel.svelte'
+  import { alignWindowEdit, simulationNow } from './edit-forms.ts'
   import { createPlanActions, type Shown } from './plan-actions.ts'
   import { revealPanel } from './reveal.ts'
   import { shiftList } from './shift-list.ts'
@@ -63,9 +64,10 @@
 
   /** After a preview or a selected job appears, bring the panel into view and focus its heading. */
   const reveal = (): void => {
-    void tick().then(() => {
+    // After the panel has rendered and laid out, so its heading has its final place on the page.
+    void tick().then(() => requestAnimationFrame(() => {
       if (panel !== undefined) revealPanel(panel, window.matchMedia('(prefers-reduced-motion: reduce)').matches)
-    })
+    }))
   }
   const selectJob = (job: string): void => {
     selectedJob = job
@@ -175,6 +177,11 @@
     else if (action === 'link-run' || action === 'add-work') view = 'equipment'
     else if (action === 'refresh') refresh()
     else if (action === 'generate') generate({})
+    else if (action === 'align-window') {
+      const now = model === null ? null : simulationNow(model.inputs)
+      const built = model === null || now === null ? null : alignWindowEdit(model.inputs, now)
+      if (built?.ok) previewEdits(built.edits, 'Align the window to the simulation')
+    }
     else explainFinish()
   }
   const findRuns = (): void => { void attempt(async () => { runs = await actions.runs(model?.inputs.settings.scenario?.id) }) }
@@ -192,7 +199,7 @@
     {#if error}<p class="error" role="alert">{error}</p>{/if}
     {#if notice}<p class="notice" aria-live="polite">{notice}</p>{/if}
     {#if banner}
-      <section class="outcome" aria-labelledby="outcome-title">
+      <section class="outcome" class:refused={!banner.recommended} aria-labelledby="outcome-title">
         <p id="outcome-title" class="outcome-title">{banner.title}</p>
         {#if banner.lines.length > 0}<ul>{#each banner.lines as line, index (index)}<li>{line}</li>{/each}</ul>{/if}
       </section>
@@ -231,9 +238,9 @@
       </div>
       <div class="col-panel" bind:this={panel}>
         {#if preview}
-          <EditPreview {preview} {context} {busy} onApply={apply} onDiscard={() => { preview = null }} onUseTime={useTime} />
+          <EditPreview {preview} {pending} {context} {busy} onApply={apply} onDiscard={() => { preview = null }} onUseTime={useTime} onAddEdits={extra => previewEdits([...pending, ...extra], preview?.label ?? 'the change')} />
         {:else if selectedJob}
-          <JobPanel jobKey={selectedJob} {context} row={rows.find(row => row.job === selectedJob)} {why} {busy} onWhy={explainStart} onPreview={previewEdits} onClose={() => { selectedJob = null; why = null }} />
+          <JobPanel jobKey={selectedJob} {context} row={rows.find(row => row.job === selectedJob)} scheduled={rows.length === 0 ? null : new Set(rows.map(row => row.job))} {why} {busy} onWhy={explainStart} onPreview={previewEdits} onClose={() => { selectedJob = null; why = null }} />
         {/if}
       </div>
     </div>

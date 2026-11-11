@@ -2,7 +2,7 @@
   import Choice from './Choice.svelte'
   import type { Edit } from '../plan/edit-schema.ts'
   import type { TimeUnit } from '../time/units.ts'
-  import { estimateEdit, localInputValue, lockEdit, unlockEdit, type Built } from './edit-forms.ts'
+  import { crewEdit, estimateEdit, localInputValue, lockEdit, unlockEdit, type Built } from './edit-forms.ts'
   import { floatText, type WhyStart } from './explain-text.ts'
   import { durationText, quantityText, sourceMark, sourceText } from './format.ts'
   import MarkTag from './MarkTag.svelte'
@@ -11,10 +11,12 @@
   import type { Context } from './status-text.ts'
   import { jobMark } from './timeline-layout.ts'
 
-  let { jobKey, context, row = undefined, why = null, busy = false, onWhy, onPreview, onClose }: {
+  let { jobKey, context, row = undefined, scheduled = null, why = null, busy = false, onWhy, onPreview, onClose }: {
     jobKey: string
     context: Context
     row?: DatedRow | undefined
+    /** The jobs of the option shown; links to jobs of a method it did not choose are left out. */
+    scheduled?: ReadonlySet<string> | null
     why?: WhyStart | null
     busy?: boolean
     onWhy: (job: string) => void
@@ -26,8 +28,19 @@
   const names = $derived(context.names)
   const linkWords = { FS: 'finishes before this starts', SS: 'starts before this starts', FF: 'finishes before this finishes' } as const
   const nextWords = { FS: 'starts after this finishes', SS: 'starts after this starts', FF: 'finishes after this finishes' } as const
-  const before = $derived(context.inputs.links.filter(link => link.to === jobKey))
-  const after = $derived(context.inputs.links.filter(link => link.from === jobKey))
+  // With an option shown, only links to jobs it schedules count: the other method's jobs do not exist in it.
+  const inOption = (other: string) => scheduled === null || scheduled.has(other)
+  const before = $derived(context.inputs.links.filter(link => link.to === jobKey && inOption(link.from)))
+  const after = $derived(context.inputs.links.filter(link => link.from === jobKey && inOption(link.to)))
+  const onlyWith = (other: string): string => {
+    const method = context.inputs.jobs.find(item => item.key === other)?.method
+    if (scheduled !== null || method === undefined) return ''
+    const option = context.inputs.methods.find(item => item.key === method.choice)?.options.find(item => item.key === method.option)
+    return option === undefined ? '' : ` (only with “${option.label}”)`
+  }
+  let crew = $state('')
+  let alsoCrew = $state('')
+  const crews = $derived(context.inputs.resources.map(item => ({ value: item.key, label: item.label })))
   const lag = (link: { lag: { value: number; unit: TimeUnit } }) => link.lag.value === 0 ? '' : `, with ${durationText(link.lag.value, link.lag.unit)} between`
 
   const attributeLabel = (key: string) => context.inputs.resources.flatMap(resource => resource.attributes).find(attribute => attribute.key === key)?.label ?? 'the needed property'
@@ -71,8 +84,8 @@
       {/if}
       {#if job.target}<div><dt>Wanted finish</dt><dd><MarkTag mark={targetMark} tone="estimate" /> {context.format.clock(job.target.finishBy)}: {job.target.words}<small>A goal, not a rule: it may slip, and lateness is counted.</small></dd></div>{/if}
       {#each job.checks as check, index (index)}<div><dt>{index === 0 ? 'Ready only if' : 'and'}</dt><dd>{check.words}<small>Checked against World at read time.</small></dd></div>{/each}
-      {#each before as link, index (index)}<div><dt>{index === 0 ? 'After' : ''}</dt><dd>{names.job(link.from)} {linkWords[link.type]}{lag(link)}</dd></div>{/each}
-      {#each after as link, index (index)}<div><dt>{index === 0 ? 'Before' : ''}</dt><dd>{names.job(link.to)} {nextWords[link.type]}{lag(link)}</dd></div>{/each}
+      {#each before as link, index (index)}<div><dt>{index === 0 ? 'After' : ''}</dt><dd>{names.job(link.from)} {linkWords[link.type]}{lag(link)}{onlyWith(link.from)}</dd></div>{/each}
+      {#each after as link, index (index)}<div><dt>{index === 0 ? 'Before' : ''}</dt><dd>{names.job(link.to)} {nextWords[link.type]}{lag(link)}{onlyWith(link.to)}</dd></div>{/each}
       {#if job.lock}<div><dt>Start fixed</dt><dd>{context.format.clock(job.lock.start)}{job.lock.words ? `: ${job.lock.words}` : ''}</dd></div>{/if}
     </dl>
 
@@ -96,6 +109,17 @@
       {#if !job.lock}
         <label>Start at ({context.format.zone})<input type="datetime-local" bind:value={lockAt} placeholder={row ? localInputValue(row.start, context.format.zone) : ''} /></label>
       {/if}
+      <button type="submit" disabled={busy}>Preview</button>
+    </form>
+
+    <form class="mini-form" onsubmit={(event) => {
+      event.preventDefault()
+      send(crewEdit(job.key, crew, alsoCrew), `Change who does ${job.title}`)
+    }}>
+      <h3>Who does it</h3>
+      {#if job.needs.length === 0}<p class="hint">No crew or tool yet: Generate needs one for its working time.</p>{/if}
+      <Choice label="Done by" bind:value={crew} options={[{ value: '', label: 'Choose a crew or tool…' }, ...crews]} disabled={busy} />
+      <Choice label="Also needs (optional)" bind:value={alsoCrew} options={[{ value: '', label: 'Nothing else' }, ...crews]} disabled={busy} />
       <button type="submit" disabled={busy}>Preview</button>
     </form>
 

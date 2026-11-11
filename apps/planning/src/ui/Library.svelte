@@ -3,6 +3,7 @@
   import type { ModuleDefinitionDescriptor, ModuleResourceDescriptor } from '@leitbild/contracts'
   import { PLAN, refusalText, type PlanningClient } from './api.ts'
   import { goalsEdit, localInputValue, planEdits, type PlanForm } from './edit-forms.ts'
+  import { changedText } from './format.ts'
   import NewPlanForm from './NewPlanForm.svelte'
   import { summaryDataSchema } from '../api/contract.ts'
 
@@ -73,7 +74,7 @@
   }
   const updated = (resource: ModuleResourceDescriptor) => {
     const item = resource.summary.find(entry => entry.key === 'updated-at')
-    return item?.kind === 'timestamp' ? new Date(item.value).toLocaleString() : null
+    return item?.kind === 'timestamp' ? changedText(item.value, Date.now(), zone) : null
   }
 </script>
 
@@ -109,7 +110,7 @@
     {#if plans.length === 0}<p class="hint">No plans yet.</p>{/if}
     <ul class="plan-list">
       {#each plans as plan (plan.ref.id)}
-        <li><button type="button" class="link" onclick={() => onOpen(plan.ref.id)}><strong>{plan.title}</strong>{#if updated(plan)}<span class="hint"> · changed {updated(plan)}</span>{/if}</button></li>
+        <li><button type="button" class="link" onclick={() => onOpen(plan.ref.id)}><strong>{plan.title}</strong>{#if updated(plan)}<span class="hint"> · {updated(plan)}</span>{/if}</button></li>
       {/each}
     </ul>
   {/if}

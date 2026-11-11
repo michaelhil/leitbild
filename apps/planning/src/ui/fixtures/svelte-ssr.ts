@@ -31,6 +31,9 @@ export const readableText = (html: string): string => {
   return [text, ...spoken].join(' \n ').replace(/&[a-z#0-9]+;/g, entity => entities[entity] ?? entity).replace(/[ \t]+/g, ' ')
 }
 
+/** Text the Module wrote that was cut off: it does not end a sentence (maint's walk 2, T20-04). */
+export const cutShort = (texts: readonly string[]): readonly string[] => texts.filter(text => !/[.!?…"”')]\s*$/.test(text.trim()))
+
 /**
  * Routine screens show no ids, JSON or seconds. Returns each breach found: an id-like plan-local key or
  * locator that no label uses, JSON punctuation, an ISO timestamp, a UUID, or a count of seconds of a minute or more.
@@ -56,6 +59,10 @@ export const routineBreaches = (text: string, identifiers: readonly string[], la
   if (/%[0-9A-F]{2}/.test(text) || /\b[a-z][a-z0-9-]*\/[a-z][a-z0-9-]*\/\S+/.test(text)) breaches.push('World locator')
   if (/(^|[^\d.,:–\-])\d \d(\s\d)*($|[^\d])/.test(text)) breaches.push('bare step numbers')
   if (/\S{48,}/.test(text)) breaches.push('unbreakable text')
+  // Raw kinds and codes (maint's walk 2: "world-unread:", "no-tag-out:", "link:"), and a key no name was found for.
+  if (/\b[a-z]+(?:[-_][a-z]+)+:\s/.test(text) || /\b(?:link|bracket|tag-before-test|support-order)\s?:\s/.test(text)) breaches.push('raw kind prefix')
+  if (/\b[a-z]+(?:_[a-z]+)+\b/.test(text)) breaches.push('snake_case code')
+  if (/no longer in this plan/.test(text)) breaches.push('unresolved name')
   // A count of seconds of a minute or more, unless it is the planner's own words quoted from the plan.
   for (const match of text.matchAll(/(\d[\d,]*)\s?s\b/g)) {
     if (Number(match[1]!.replaceAll(',', '')) >= 60 && !words.includes(match[0])) breaches.push(`seconds count ${match[0]}`)

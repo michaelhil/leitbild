@@ -6,7 +6,7 @@ import type { Edit } from '../plan/edit-schema.ts'
 import { isRequestError, refusalAuthority, refusalNearest, refusalText, RUN, type GenerateInput, type PlanningClient } from './api.ts'
 import { finishChain, whyStart, type FinishStep, type WhyStart } from './explain-text.ts'
 import { createTimeFormat } from './format.ts'
-import { createNames, type DatedRow, type PlanModel, type RunChoice } from './model.ts'
+import { createNames, namesInEdits, type DatedRow, type PlanModel, type RunChoice } from './model.ts'
 import type { Preview } from './preview.ts'
 import { loadPlan, loadRows } from './read-plan.ts'
 import type { Context } from './status-text.ts'
@@ -26,7 +26,7 @@ export const worldReadNotice = (model: PlanModel): string => {
   const facts = model.inputs.world.facts
   if (facts.length === 0) return 'World values read; World returned none for this plan.'
   const latest = facts.reduce((last, fact) => Date.parse(fact.at) > Date.parse(last) ? fact.at : last, facts[0]!.at)
-  return `World values read: ${facts.length} ${facts.length === 1 ? 'value' : 'values'}, describing simulation time ${createTimeFormat(model.inputs.settings.timeZone).clock(latest)}.`
+  return `World values read: ${facts.length} ${facts.length === 1 ? 'value' : 'values'}, describing simulation time ${createTimeFormat(model.inputs.settings.timeZone).when(latest)}.`
 }
 
 /** An edit that names a World item or links a Run: World values are read again after it is saved. */
@@ -93,7 +93,7 @@ export const createPlanActions = (client: PlanningClient, planId: string, progre
         return { label, result: await client.edit(planId, model.revision, { edits: [...edits], preview: true }), refusal: null, asks }
       } catch (cause) {
         if (!isRequestError(cause) || cause.status >= 500) throw cause
-        const names = createNames(model.inputs)
+        const names = createNames(model.inputs, namesInEdits(edits))
         return { label, result: null, refusal: { text: refusalText(cause, names.any), needsAuthority: refusalAuthority(cause) !== null, nearestAllowed: refusalNearest(cause) }, asks }
       }
     },

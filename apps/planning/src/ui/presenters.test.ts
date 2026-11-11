@@ -225,7 +225,7 @@ describe('review fixes: hours, deadlines, marks, ticks, reveal', () => {
     const heading = { scrollIntoView: (options?: ScrollIntoViewOptions) => { calls.push(`scroll ${options?.behavior}`) }, focus: (options?: FocusOptions) => { calls.push(`focus ${options?.preventScroll}`) } }
     expect(revealPanel({ querySelector: selector => selector === 'h2' ? heading : null }, false)).toBe(true)
     expect(revealPanel({ querySelector: () => heading }, true)).toBe(true)
-    expect(calls).toEqual(['scroll smooth', 'focus true', 'scroll auto', 'focus true'])
+    expect(calls).toEqual(['focus true', 'scroll smooth', 'focus true', 'scroll auto'])
     expect(revealPanel({ querySelector: () => null }, false)).toBe(false)
   })
 })

@@ -66,14 +66,14 @@ describe('Supply run on the generic screen', () => {
     expect(rules).toContain('Keep in service')
 
     const crews = screen(model, 'crews')
-    expect(crews).toContain('Payload 1,500 kg · configured · read Thu 10:00 (simulation time)')
+    expect(crews).toContain('Payload 1,500 kg · configured · read Thu 3 Sep 10:00 (simulation time)')
     // Truck 2 and Truck 5 are announced, not in World: their payload is an assumption, marked by shape and word.
     expect(crews).toContain('△ Assumption')
-    expect(crews).toContain('Payload 300 kg · configured · read Thu 10:00 (simulation time); 600 kg from Thu 10:03')
+    expect(crews).toContain('Payload 300 kg · configured · read Thu 3 Sep 10:00 (simulation time); 600 kg from Thu 10:03')
 
     const work = screen(model)
     // World-sourced durations show their basis and read time and the check-it warning.
-    expect(work).toContain('5 min 30 s · owner estimate · read Thu 10:00 (simulation time)')
+    expect(work).toContain('5 min 30 s · owner estimate · read Thu 3 Sep 10:00 (simulation time)')
     expect(work).toContain('check it describes the work')
   })
 

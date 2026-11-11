@@ -11,7 +11,8 @@ export interface RevealPanel { readonly querySelector: (selector: string) => Rev
 export const revealPanel = (panel: RevealPanel, reduceMotion: boolean): boolean => {
   const heading = panel.querySelector('h2')
   if (heading === null) return false
-  heading.scrollIntoView({ block: 'start', behavior: reduceMotion ? 'auto' : 'smooth' })
+  // Focus first, then scroll: a focus during a smooth scroll can stop it short of the panel.
   heading.focus({ preventScroll: true })
+  heading.scrollIntoView({ block: 'start', behavior: reduceMotion ? 'auto' : 'smooth' })
   return true
 }

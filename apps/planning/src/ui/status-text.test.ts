@@ -20,8 +20,9 @@ describe('status in words, from structure', () => {
     ]
     for (const view of views) expect(statusWordSchema.options).toContain(view.word)
     expect(views[2]!.sentence).toContain('This is not proof that none exists.')
-    expect(views[3]!.details).toEqual(['a World value is not read yet; link the simulation and read the World values: Service Water Pump A'])
-    expect(views[4]!.details).toEqual(['two trains out mode change'])
+    expect(views[3]!.details).toEqual(['Service Water Pump A: a World value is not read yet; read the World values.'])
+    // A code the screen has no words for is never shown raw (maint's walk 2, R2-7).
+    expect(views[4]!.details).toEqual(['A check did not pass.'])
   })
 
   test('each goal says how far from the best it can be', () => {

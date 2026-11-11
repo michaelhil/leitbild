@@ -57,6 +57,18 @@ const trimmed = (value: number, places: number): string => {
   return String(Math.round(value * factor) / factor)
 }
 
+/**
+ * When something last changed, in the viewer's own time: "changed 5 min ago", or a dated time without
+ * seconds, labelled "your time" so it is never read as plan or simulation time.
+ */
+export const changedText = (instant: string, nowMs: number, viewerZone: string): string => {
+  const ago = nowMs - Date.parse(instant)
+  if (ago < 60_000) return 'changed just now'
+  if (ago < hourMs) return `changed ${Math.floor(ago / 60_000)} min ago`
+  if (ago < 24 * hourMs) return `changed ${Math.floor(ago / hourMs)} h ago`
+  return `changed ${createTimeFormat(viewerZone).when(Math.floor(Date.parse(instant) / 60_000) * 60_000)} (your time)`
+}
+
 /** A length of time in planner words: "38 h", "3.5 h", "45 min", "2 min 10 s". Never "130 s". */
 export const spanText = (milliseconds: number): string => {
   const sign = milliseconds < 0 ? '−' : ''
@@ -92,6 +104,7 @@ export const moneyText = (amount: number, currency: string): string => `${curren
 
 /** A value with its unit in planner words: time as a duration, money with its currency, else "1,500 kg". */
 export const quantityText = (value: number, unit: string): string => {
+  if (unit === '1') return grouped(value)   // a plain count
   if (isTimeUnit(unit)) return durationText(value, unit)
   if (isCurrency(unit)) return moneyText(value, unit)
   return `${grouped(value)} ${unit}`
@@ -127,8 +140,8 @@ export const factValueText = (fact: Pick<PlanningFact, 'label' | 'value' | 'unit
 /** Ends a sentence with one full stop, whatever the words it was built from end with. */
 export const sentence = (text: string): string => /[.!?]$/.test(text.trim()) ? text.trim() : `${text.trim()}.`
 
-/** "read Thu 10:02 (simulation time)": a World value's time is the simulation's, in the plan zone. */
-export const readAt = (at: string, format: TimeFormat): string => `read ${format.clock(at)} (simulation time)`
+/** "read Thu 3 Sep 10:02 (simulation time)": a World value's time is the simulation's, dated, in the plan zone. */
+export const readAt = (at: string, format: TimeFormat): string => `read ${format.when(at)} (simulation time)`
 
 /** "Running: yes · observed · read Thu 10:02 (simulation time)" */
 export const factText = (fact: Pick<PlanningFact, 'label' | 'value' | 'unit' | 'basis' | 'at'>, format: TimeFormat): string =>
@@ -138,7 +151,9 @@ export const factText = (fact: Pick<PlanningFact, 'label' | 'value' | 'unit' | '
  * Whether a World value belongs on a routine screen. Model digests, World locators and bare lists of
  * step numbers are provenance for reviewers, not planner information, and are not shown.
  */
-export const routineFact = (fact: Pick<PlanningFact, 'value'>): boolean => {
+export const routineFact = (fact: Pick<PlanningFact, 'value' | 'unit'>): boolean => {
+  // A plain count (unit "1") is World's own bookkeeping, such as queued job steps, not planner information.
+  if (fact.unit === '1') return false
   if (typeof fact.value !== 'string') return true
   const text = fact.value.trim()
   return !(/^[0-9a-f]{16,}$/i.test(text) || /%[0-9A-F]{2}/.test(text) || /^[a-z][a-z0-9-]*\/\S+$/.test(text) || /^\d+(\s+\d+)+$/.test(text) || text.length > 80)

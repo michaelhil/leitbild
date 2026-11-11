@@ -84,7 +84,7 @@
     {/if}
   {:else}
     <p><MarkTag mark={{ shape: '◉', word: 'Linked' }} tone="world" /> {linkedRun ?? 'A simulation in this Workspace'}.
-      {latestRead === null ? 'Its values are not read yet.' : `Values describe simulation time ${context.format.clock(latestRead)}.`}</p>
+      {latestRead === null ? 'Its values are not read yet.' : `Values describe simulation time ${context.format.when(latestRead)}.`}</p>
     <button type="button" disabled={busy} onclick={onRefresh}>Read the World values again</button>
   {/if}
 

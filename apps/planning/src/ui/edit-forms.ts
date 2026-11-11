@@ -331,5 +331,31 @@ export const dueMoveEdit = (key: string, local: string, inputs: PlanInputs): Bui
   return done({ edit: 'rule', key, finishBy: at })
 }
 
+/** Who does a job: one crew or tool, and optionally a second one needed at the same time (e.g. a test team). */
+export const crewEdit = (job: string, crew: string, also = ''): Built =>
+  crew === '' ? refuse('Choose who does it.') : done({ edit: 'job', key: job, needs: [{ anyOf: [crew], amount: 1 }, ...also === '' || also === crew ? [] : [{ anyOf: [also], amount: 1 }]] })
+
+/** The simulation time the read World values describe: the newest `at` among them, or null before a read. */
+export const simulationNow = (inputs: PlanInputs): string | null =>
+  inputs.world.facts.reduce<string | null>((last, fact) => last === null || Date.parse(fact.at) > Date.parse(last) ? fact.at : last, null)
+
+/**
+ * Moves the window to the linked simulation's time, keeping its length: it starts at the simulation's
+ * hour, and the plan's "now" becomes the simulation time on the plan's time step.
+ */
+export const alignWindowEdit = (inputs: PlanInputs, simulationAt: string): Built => {
+  const window = inputs.settings.window
+  if (window === null) return refuse('Set the window first.')
+  const at = Date.parse(simulationAt)
+  const hour = Math.floor(at / 3_600_000) * 3_600_000
+  const length = Date.parse(window.end) - Date.parse(window.start)
+  const slot = inputs.settings.grid === '30s' ? 30_000 : 1_800_000
+  return done({
+    edit: 'plan',
+    window: { start: new Date(hour).toISOString(), end: new Date(hour + length).toISOString() },
+    dataDate: new Date(Math.floor(at / slot) * slot).toISOString(),
+  })
+}
+
 export const runLinkEdit = (runId: string | null): Built => done({ edit: 'plan', run: runId })
 export const purchaseAllowedEdit = (key: string, allowed: boolean): Built => done({ edit: 'purchase', key, allowed })

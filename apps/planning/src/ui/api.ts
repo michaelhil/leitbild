@@ -131,7 +131,9 @@ export const refusalText = (error: unknown, name: KeyNames = () => 'an item in t
     const about = keysIn(error.details, 'about')
     // The Module states the broken rule in planner words, and what lifts it, as structured fields.
     const rule = typeof error.details?.rule === 'string' ? error.details.rule.replace(/\.?\s*$/, '.') : null
-    if (rule !== null) return refusalAuthority(error) === null ? rule : `${rule} ${refusalAuthority(error)}`
+    // What alone could lift it, e.g. "Only removing R1 lifts this; that needs a named person's agreement".
+    const lift = typeof error.details?.lift === 'string' ? ` ${error.details.lift.replace(/\.?\s*$/, '.')}` : ''
+    if (rule !== null) return refusalAuthority(error) === null ? `${rule}${lift}` : `${rule}${lift} ${refusalAuthority(error)}`
     switch (error.code) {
       case 'plan_revision_conflict': return 'Someone else changed this plan a moment ago. It has been read again; check it and try once more.'
       case 'planning_busy': return 'Planning is busy with other plans. Try again in a moment.'

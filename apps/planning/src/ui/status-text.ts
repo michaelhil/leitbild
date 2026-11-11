@@ -87,23 +87,67 @@ export const certificateText = (cause: Certificate, context: Context): string =>
   }
 }
 
+/**
+ * Every problem code the Module, the solver and the checker give, in planner words. Codes come in
+ * kebab-case and snake_case; both read the same. A code not listed here is said generally, never shown raw.
+ */
 const problemWords: Readonly<Record<string, string>> = {
-  world_value_unread: 'a World value is not read yet; link the simulation and read the World values',
+  world_value_unread: 'a World value is not read yet; read the World values',
+  world_unread: 'a World value is not read yet; read the World values',
   world_value_ambiguous: 'a World value is named twice in the last read',
   world_value_not_number: 'a World value is not a number',
-  unit_unknown: 'a World value has a unit Planning does not convert',
-  unit_mismatch: 'a World value has the wrong kind of unit',
+  world_unusable: 'a World value is in a unit the planner cannot use here',
+  unit_unknown: 'a World value has a unit the planner does not convert',
+  unit_mismatch: 'a value has the wrong kind of unit',
   calendar_needs_zone: 'weekly shifts need the site time zone',
-  calendar_off_grid: 'a shift boundary is not on the plan grid',
-  missing_window: 'the plan has no window yet',
+  calendar_off_grid: 'a shift boundary is not on the plan\'s time step',
+  no_window: 'the plan has no window yet', missing_window: 'the plan has no window yet', window_missing: 'the plan has no window yet',
+  window_off_grid: 'the window does not start and end on the plan\'s time step',
+  zone_off_grid: 'the site time zone is not on the plan\'s time step',
   missing_estimate: 'a job has no estimate',
-  missing_crew: 'a job has no crew or tool',
+  missing_crew: 'a job has no crew or tool', no_crew: 'has no crew or tool yet; choose one in its job panel',
+  working_time_without_resource: 'has working time but no crew or tool to do it; choose one in its job panel',
+  no_working_calendar: 'has no working time on its crew\'s shifts',
+  unknown_key: 'names something that is no longer in the plan', unknown_reference: 'names something that is no longer in the plan',
+  method_choice: 'the method choice is not made', method_not_chosen: 'the method choice is not made',
+  not_in_variant: 'belongs to a method that is not chosen',
+  support_cycle: 'supports go round in a circle',
+  link_cycle: 'links go round in a circle',
+  bracket_missing: 'work inside the item has no tag-out before it or no test after it',
+  inside_work_without_bracket: 'work inside the item has no tag-out before it or no test after it',
+  inside_work_needs_one_item: 'work inside an item is on exactly one item',
+  no_tag_out: 'worked on inside but never tagged out',
+  no_test: 'worked on inside but never tested back into service',
+  not_returned: 'tagged out but never tested back into service',
+  equipment_missing: 'names equipment that is no longer in the plan',
+  below_minimum: 'would run shorter than its declared minimum',
+  duration_ambiguous: 'has two durations for the same crew or tool',
+  duration_rounded_up: 'was rounded up to the plan\'s time step',
+  limit_rounded_down: 'an outage limit was rounded down to the plan\'s time step',
+  where_unit: 'a crew or tool property is in a different unit from what the job needs',
+  attribute_missing: 'needs a property no crew or tool has',
+  eligibility_ends: 'no crew or tool qualifies for the whole job',
+  goal_unit: 'a goal is in a unit that does not fit it',
+  handover_with_resource_duration: 'a job whose duration depends on its crew cannot be handed over',
+  keep_in_service_mixed_members: 'a keep-in-service rule mixes equipment and crews',
+  lock_before_data_date: 'a fixed start lies before the plan\'s "now"',
+  lock_off_grid: 'a fixed start is not on the plan\'s time step',
+  order_deadline_passed: 'an order deadline has passed', order_passed: 'an order deadline has passed',
+  protected_equipment: 'touches protected equipment',
+  purchase_off_grid: 'bought time is not on the plan\'s time step',
+  purchase_overlaps_booked_time: 'bought time overlaps time already booked',
+  replaced_time_overlaps: 'a rebooking gives up time that overlaps another',
+  span_limit_reentry: 'an outage limit allows one continuous outage only',
+  too_many_modes: 'has too many ways to be done (crews times methods)',
+  adds_crew_hours: 'buys crew hours, which "days only" excludes',
+  precondition_unread: 'a precondition is not read from World yet',
+  precondition_unmet: 'a precondition is not met at read time',
 }
 
 /** A problem code in words, e.g. "a World value is not read yet …: Service Water Pump A". */
 export const problemText = (problem: { readonly code: string; readonly about: readonly string[] }, names: Names): string => {
-  const words = problemWords[problem.code] ?? problem.code.replaceAll('_', ' ')
-  return problem.about.length === 0 ? words : `${words}: ${names.list(problem.about)}`
+  const words = problemWords[problem.code.replaceAll('-', '_')] ?? 'a check did not pass'
+  return problem.about.length === 0 ? `${words.charAt(0).toUpperCase()}${words.slice(1)}.` : `${names.list(problem.about)}: ${words}.`
 }
 
 export interface StatusView {

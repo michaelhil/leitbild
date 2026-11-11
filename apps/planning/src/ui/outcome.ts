@@ -37,7 +37,7 @@ export const outcomes = (model: PlanModel, context: Context): readonly Outcome[]
   (model.options?.items ?? []).filter(option => option.fresh).map(option => outcomeOf(option, model, context))
 
 /** The banner under the plan's title: the recommendation, or that there is none, and every refusal's cause. */
-export const outcomeBanner = (model: PlanModel, context: Context): { readonly title: string; readonly lines: readonly string[] } | null => {
+export const outcomeBanner = (model: PlanModel, context: Context): { readonly title: string; readonly lines: readonly string[]; readonly recommended: boolean } | null => {
   const found = outcomes(model, context)
   if (found.length === 0) return null
   const recommended = found.find(outcome => outcome.recommended)
@@ -47,5 +47,5 @@ export const outcomeBanner = (model: PlanModel, context: Context): { readonly ti
       ? `No option can be recommended: ${found.length === 1 ? 'it is' : `all ${found.length} are`} proven infeasible.`
       : 'No option can be recommended: none is validated feasible.'
   const lines = found.filter(outcome => outcome.word !== 'validated feasible').map(outcome => `${outcome.label}: ${outcome.word}. ${outcome.cause}`)
-  return { title, lines }
+  return { title, lines, recommended: recommended !== undefined }
 }

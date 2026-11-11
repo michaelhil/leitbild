@@ -2,6 +2,7 @@
 // Presenters read only this; they never fetch.
 import type { z } from 'zod'
 import type { OptionWarning, writeResultSchema } from '../api/contract.ts'
+import type { Edit } from '../plan/edit-schema.ts'
 import type { CertifiedSize, Plan, PlanInputs, Status, optionSchema } from '../plan/schema.ts'
 
 export type { Status }
@@ -64,6 +65,8 @@ export interface Names {
   readonly rule: (key: string) => string
   readonly purchase: (key: string) => string
   readonly any: (key: string) => string
+  /** What a key names in this plan, or null when it names nothing. */
+  readonly kindOf: (key: string) => 'job' | 'equipment' | 'resource' | 'calendar' | 'group' | 'rule' | 'purchase' | null
   readonly list: (keys: readonly string[], of?: (key: string) => string) => string
 }
 
@@ -72,7 +75,15 @@ const gone = 'an item no longer in this plan'
 export const joinWords = (words: readonly string[]): string =>
   words.length <= 1 ? words.join('') : `${words.slice(0, -1).join(', ')} and ${words[words.length - 1]}`
 
-export const createNames = (inputs: PlanInputs): Names => {
+/** Names an edit list gives to keys it creates, so a preview can name what is not saved yet. */
+export const namesInEdits = (edits: readonly Edit[]): ReadonlyMap<string, string> => new Map(edits.flatMap((edit): Array<[string, string]> => {
+  if (edit.edit === 'job' && edit.title !== undefined) return [[edit.key, edit.title]]
+  if ((edit.edit === 'equipment' || edit.edit === 'resource' || edit.edit === 'calendar' || edit.edit === 'purchase' || edit.edit === 'method') && edit.label !== undefined) return [[edit.key, edit.label]]
+  if (edit.edit === 'rule' && edit.words !== undefined) return [[edit.key, edit.words]]
+  return []
+}))
+
+export const createNames = (inputs: PlanInputs, pending: ReadonlyMap<string, string> = new Map()): Names => {
   const table = <T extends { readonly key: string }>(items: readonly T[], name: (item: T) => string): Map<string, string> =>
     new Map(items.map(item => [item.key, name(item)]))
   const jobs = table(inputs.jobs, job => job.title)
@@ -82,12 +93,14 @@ export const createNames = (inputs: PlanInputs): Names => {
   const groups = table(inputs.groups, item => item.label)
   const rules = table(inputs.rules, rule => rule.words)
   const purchases = table(inputs.purchases, item => item.label)
-  const lookup = (map: Map<string, string>) => (key: string): string => map.get(key) ?? gone
+  const lookup = (map: Map<string, string>) => (key: string): string => map.get(key) ?? pending.get(key) ?? gone
   const any = (key: string): string =>
-    jobs.get(key) ?? equipment.get(key) ?? resources.get(key) ?? groups.get(key) ?? purchases.get(key) ?? calendars.get(key) ?? rules.get(key) ?? gone
+    jobs.get(key) ?? equipment.get(key) ?? resources.get(key) ?? groups.get(key) ?? purchases.get(key) ?? calendars.get(key) ?? rules.get(key) ?? pending.get(key) ?? gone
   return {
     job: lookup(jobs), equipment: lookup(equipment), resource: lookup(resources), calendar: lookup(calendars),
     group: lookup(groups), rule: lookup(rules), purchase: lookup(purchases), any,
+    kindOf: key => jobs.has(key) ? 'job' : equipment.has(key) ? 'equipment' : resources.has(key) ? 'resource' : calendars.has(key) ? 'calendar'
+      : groups.has(key) ? 'group' : rules.has(key) ? 'rule' : purchases.has(key) ? 'purchase' : null,
     list: (keys, of = any) => joinWords(keys.map(of)),
   }
 }

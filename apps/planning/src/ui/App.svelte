@@ -65,7 +65,8 @@
     .error { padding: 10px 12px; border-radius: 6px; border: 1px solid #e5c3b9; background: var(--refusal-bg); color: var(--refusal); }
     .notice { padding: 8px 12px; border-left: 3px solid var(--accent); background: var(--accent-2); font-size: 13px; }
     .loading { margin: 24px; color: var(--ink-3); }
-    .outcome { padding: 8px 12px; border-left: 3px solid var(--refusal); background: var(--card); margin: 8px 0; font-size: 13px; overflow-wrap: anywhere; }
+    .outcome.refused { border-left-color: var(--refusal); }
+    .outcome { padding: 8px 12px; border-left: 3px solid var(--accent); background: var(--card); margin: 8px 0; font-size: 13px; overflow-wrap: anywhere; }
     .outcome-title { font-weight: 600; margin: 0 0 4px; }
     .outcome ul { margin: 0; padding-left: 18px; }
     .sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0; }

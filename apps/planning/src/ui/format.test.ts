@@ -38,9 +38,9 @@ describe('planner words for time, money and sources', () => {
     expect(basisWord('owner-estimate')).toBe('owner estimate')
     const oslo = createTimeFormat('Europe/Oslo')
     // World read times are simulation time, and say so (maint's walk J-03, S-02, J-05).
-    expect(factText({ label: 'Running', value: true, basis: 'observed', at: '2026-11-12T09:02:00Z' }, oslo)).toBe('Running: yes · observed · read Thu 10:02 (simulation time)')
-    expect(factText({ label: 'Payload', value: 1500, unit: 'kg', basis: 'configured', at: '2026-09-03T08:00:00Z' }, oslo)).toBe('Payload: 1,500 kg · configured · read Thu 10:00 (simulation time)')
-    expect(factText({ label: 'Arrival', value: 130, unit: 's', basis: 'owner-estimate', at: '2026-09-03T08:00:00Z' }, oslo)).toBe('Arrival: 2 min 10 s · owner estimate · read Thu 10:00 (simulation time)')
+    expect(factText({ label: 'Running', value: true, basis: 'observed', at: '2026-11-12T09:02:00Z' }, oslo)).toBe('Running: yes · observed · read Thu 12 Nov 10:02 (simulation time)')
+    expect(factText({ label: 'Payload', value: 1500, unit: 'kg', basis: 'configured', at: '2026-09-03T08:00:00Z' }, oslo)).toBe('Payload: 1,500 kg · configured · read Thu 3 Sep 10:00 (simulation time)')
+    expect(factText({ label: 'Arrival', value: 130, unit: 's', basis: 'owner-estimate', at: '2026-09-03T08:00:00Z' }, oslo)).toBe('Arrival: 2 min 10 s · owner estimate · read Thu 3 Sep 10:00 (simulation time)')
   })
 
   test('every source has its own shape and word', () => {

@@ -67,17 +67,15 @@ describe('maint walk defects on the plan screen', () => {
     const context = contextOf(model)
     const nearest = new Date(Date.parse(model.inputs.settings.window!.start) + 30 * hourMs).toISOString()
     const write = { plan: { id: model.id, title: model.title, revision: 3 }, target: { kind: 'resource' as const, ref: workspaceResourceReferenceSchema.parse({ workspaceId: '0b4b9a52-2f7e-4c1a-9d3e-00000000000a', moduleId: 'planning', type: 'planning.plan', id: model.id }) }, changed: [], attention: [], problems: [] }
-    const preview: Preview = {
-      label: 'Fix the start of the CCW A test',
-      result: { ...write, preview: { saved: false, consequence: 'Not saved: this change breaks a rule. 17 jobs move; the last finish moves from Thu 05:00 to Wed 22:30.', violations: ['The CCW A test must wait until the CCW HX A heads are closed.'], weakens: [], nearestAllowed: nearest } },
-      refusal: null, asks: null,
-    }
+    // The Module refuses an edit that is itself invalid with the rule in its words and the nearest allowed time.
+    const preview: Preview = { label: 'Fix the start of the CCW A test', result: null, asks: null, refusal: { text: 'The CCW A test must wait until the CCW HX A heads are closed.', needsAuthority: false, nearestAllowed: nearest } }
     const text = readableText(renderHtml(EditPreview, { preview, context, onApply: none, onDiscard: none, onUseTime: none }))
-    expect(text).toContain('This change breaks a rule and cannot be saved.')
+    expect(text).toContain('This change cannot be saved.')
     expect(text).toContain('The CCW A test must wait until the CCW HX A heads are closed.')
-    expect(text).toContain('Nearest allowed start: Tue 13:00')
+    expect(text).toContain('Nearest allowed start: Tue 17 Nov 13:00')
     expect(text).not.toContain('jobs move')
     expect(text).not.toMatch(/\b(link|bracket):/)
+    void write
     // An error refusal carries the same three things.
     const refused: Preview = { label: 'Shorten the SW A test', result: null, refusal: { text: 'The SW A test may not run shorter than 2.5 h. Name the person who agreed and their reason. Ask them; never fill this in yourself.', needsAuthority: true, nearestAllowed: null }, asks: null }
     const asked = readableText(renderHtml(EditPreview, { preview: refused, context, onApply: none, onDiscard: none, onUseTime: none }))
@@ -101,7 +99,7 @@ describe('maint walk defects on the plan screen', () => {
       const text = screen(model, view)
       expect({ view, breaches: routineBreaches(text, identifiers(model.inputs), [...inputs.equipment.map(item => item.label), ...inputs.jobs.map(job => job.title)]).filter(breach => !breach.startsWith('id ')) }).toEqual({ view, breaches: [] })
     }
-    expect(screen(model, 'equipment')).toContain('Running: yes · observed · read Thu 10:00 (simulation time)')
+    expect(screen(model, 'equipment')).toContain('Running: yes · observed · read Thu 12 Nov 10:00 (simulation time)')
     // The checker itself catches each of them.
     expect(routineBreaches('Plant model revision: b7d6924f768f44bf2b7c965b85aae723386c7e47dff6908b95bb1ae581425cb5', [], [])).toContain('hex digest')
     expect(routineBreaches('Read einsatz/task/task%3Afield-kitchen: Priority', [], [])).toContain('World locator')
@@ -111,9 +109,9 @@ describe('maint walk defects on the plan screen', () => {
   test('J-03, S-02, J-05: World times say simulation time; no wall-clock read time is shown', () => {
     const model = supplyRunPlanned()
     const equipment = screen(model, 'equipment')
-    expect(equipment).toContain('Values describe simulation time Thu 10:00.')
+    expect(equipment).toContain('Values describe simulation time Thu 3 Sep 10:00.')
     expect(equipment).not.toMatch(/Values read [A-Z][a-z]{2} \d\d:\d\d/)
-    expect(screen(model, 'crews')).toContain('read Thu 10:00 (simulation time)')
+    expect(screen(model, 'crews')).toContain('read Thu 3 Sep 10:00 (simulation time)')
     expect(screen(model)).toContain('Times in Europe/Oslo')
   })
 
