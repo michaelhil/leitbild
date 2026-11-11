@@ -227,7 +227,8 @@ export const createSolverPool = (options: PoolOptions = {}): SolverPool => {
     const runOf = (outcome: SubSolveOutcome) => ('run' in outcome.option.status ? outcome.option.status.run : undefined)
     return job<SubSolveOutcome>({
       request: id => ({ type: 'subsolve', id, task: encode({ ...task, budget }), rssLimitMb, sampleMs }),
-      rate, wallMs: budget.wallMs, grantedCpuMs: budget.cpuMs, signal, deadlineMs: budget.wallMs + marginMs, ...(stoppedByWho === undefined ? {} : { stoppedByWho }),
+      // Killed by its own budget plus the margin, or by the Generate's deadline if that comes first.
+      rate, wallMs: budget.wallMs, grantedCpuMs: budget.cpuMs, signal, deadlineMs: Math.max(0, Math.min(budget.wallMs + marginMs, (task.deadlineAt ?? Infinity) - Date.now())), ...(stoppedByWho === undefined ? {} : { stoppedByWho }),
       answer: message => {
         const outcome = message.type === 'outcome' ? outcomeFromWire(message.outcome) : { problem: 'a sub-solve answered with a bare search result' }
         if ('problem' in outcome) return outcome

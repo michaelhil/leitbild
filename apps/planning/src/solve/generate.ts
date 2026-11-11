@@ -37,6 +37,10 @@ export const CERTIFIED_SIZE: CertifiedSize = {
 }
 
 export const MAX_SUB_SOLVES = 8
+/** The design limit for one Generate: one request of at most 20 s, every sub-solve and spawn included. */
+export const GENERATE_DEADLINE_MS = 20_000
+/** Less time than this left: a sub-solve is not started (a child's spawn, compile and check need it). */
+const MIN_SUB_SOLVE_MS = 500
 /** Memory a solve may be estimated to need before it is refused (A7). */
 export const MEMORY_BUDGET_MB = 80
 const DEFAULT_SECONDS = 20
@@ -143,6 +147,8 @@ export interface SubSolveTask {
   readonly combo: readonly MethodPick[]
   readonly budget: { readonly evals: number; readonly cpuMs: number; readonly wallMs: number }
   readonly seed: number
+  /** The Generate's deadline (epoch ms): a solver child still running then is killed. */
+  readonly deadlineAt?: number
 }
 export interface SubSolveOutcome {
   readonly option: Option
@@ -226,6 +232,9 @@ export const generate = async (deps: GenerateDeps, request: GenerateRequest): Pr
   if (subSolves > MAX_SUB_SOLVES) throw planningError(422, 'too_many_sub_solves', `These what-ifs need ${subSolves} method combinations; at most ${MAX_SUB_SOLVES} are solved at once`, { subSolves })
   const formulation = formulationOf(inputs.settings.grid)
   const seconds = request.input.seconds ?? DEFAULT_SECONDS
+  // One deadline for the whole Generate, every sub-solve and its spawn included: the design's one request
+  // of at most 20 s (Host times out at 30 s). Sub-solve budgets share it; past it the rest are not run.
+  const deadlineAt = Date.now() + Math.min(seconds * 1_000, GENERATE_DEADLINE_MS)
   // CPU within the solver cap (80 % of half a core); 10 % of the wall is kept for dating and checking.
   const wallMs = seconds * 1_000 * 0.9
   const share = { wallMs: wallMs / Math.max(1, subSolves), cpuMs: wallMs * SOLVER_CPU_CAP_CORES / Math.max(1, subSolves) }
@@ -235,8 +244,16 @@ export const generate = async (deps: GenerateDeps, request: GenerateRequest): Pr
 
   const runSubSolve = deps.subSolver ?? subSolve(deps)
   const solveOne = async (variant: Variant, combo: MethodPick[]): Promise<Option> => {
-    const budget = { evals: request.evals ?? Number.MAX_SAFE_INTEGER, cpuMs: Math.round(share.cpuMs), wallMs: Math.round(share.wallMs) }
-    const outcome = await runSubSolve({ inputs, revision: request.revision, variant: { key: variant.key, label: variant.label, buy: variant.buy }, combo, budget, seed }, request.signal, request.stoppedByWho)
+    const evals = request.evals ?? Number.MAX_SAFE_INTEGER
+    const remaining = deadlineAt - Date.now()
+    // Past the deadline a sub-solve is not run: it says so, as a search stopped by its time ("wall").
+    if (remaining < MIN_SUB_SOLVE_MS) {
+      const run = { grid: inputs.settings.grid, engine: deps.engine.name, formulation, seed, budget: { evals, cpuMs: 0, wallMs: 0 }, stoppedBy: 'wall' as const, evals: 0, cpuMs: 0 }
+      return { key: variant.key, label: variant.label.slice(0, 160), inputsRevision: request.revision, variant: { methods: combo, purchases: [] }, status: unresolvedStatus(run), rows: [], metrics: [] }
+    }
+    const wall = Math.min(share.wallMs, remaining * 0.9)
+    const budget = { evals, cpuMs: Math.round(Math.min(share.cpuMs, wall * SOLVER_CPU_CAP_CORES)), wallMs: Math.round(wall) }
+    const outcome = await runSubSolve({ inputs, revision: request.revision, variant: { key: variant.key, label: variant.label, buy: variant.buy }, combo, budget, seed, deadlineAt }, request.signal, request.stoppedByWho)
     rounded.push(...outcome.rounded.filter(entry => !rounded.some(known => known.about === entry.about && known.code === entry.code)))
     dropped.push(...outcome.dropped.filter(entry => !dropped.some(known => known.purchase === entry.purchase)))
     return outcome.option

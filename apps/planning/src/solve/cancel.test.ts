@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test'
 import { compile } from './compile.ts'
-import { generate, rawOf } from './generate.ts'
+import { GENERATE_DEADLINE_MS, generate, rawOf } from './generate.ts'
 import { createSolverPool, PREVIEW_TOO_LONG_WORDS, SOLVER_BUSY_WORDS, SOLVER_CPU_CAP_CORES } from './pool.ts'
 import { goalKeys, compareKeys } from './rank.ts'
 import { laneKCheck, laneKVerify, laneKVerifyBound } from './fixtures/lane-k.ts'
@@ -138,6 +138,24 @@ describe('cancel', () => {
       expect(silent.active()).toBe(0)
     } finally { await silent.shutdown() }
   }, 60_000)
+
+  test('a Generate of 8 sub-solves whose children all hang answers within its 20 s deadline and frees the slot', async () => {
+    const { createRealSolver } = await import('../api/wiring.ts')
+    const pool = createSolverPool({ childEntry: new URL('./fixtures/child-silent.ts', import.meta.url).pathname })
+    try {
+      const variants = Array.from({ length: 8 }, (_, k) => ({ label: `What-if ${k + 1}`, methods: [{ choice: 'SWA-method', option: k % 2 === 0 ? 'swap' : 'rebuild' }] }))
+      const at = performance.now()
+      const set = await createRealSolver(pool).generate({ inputs, inputsRevision: 1, variants, seconds: 20, stored: null, at: new Date().toISOString(), by, signal: new AbortController().signal })
+      expect(performance.now() - at).toBeLessThan(GENERATE_DEADLINE_MS + 1_000)
+      expect(pool.active()).toBe(0)
+      // Every option says how it stopped: the hung ones 'ended' (killed), the ones past the deadline 'wall' (not run).
+      expect(set.options).toHaveLength(8)
+      for (const option of set.options) expect(option.status).toMatchObject({ word: 'unresolved' })
+      const stops = set.options.map(option => ('run' in option.status ? option.status.run.stoppedBy : 'none'))
+      expect(stops).toContain('ended')
+      expect(stops).toContain('wall')
+    } finally { await pool.shutdown() }
+  }, 40_000)
 
   test('shutdown cancels running solves within a second and refuses new ones', async () => {
     const compiled = compile(inputs, { methods: [{ choice: 'SWA-method', option: 'swap' }], buy: 'allowed' })
