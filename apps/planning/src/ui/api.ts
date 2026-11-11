@@ -38,7 +38,7 @@ const invocationSchema = <T extends z.ZodType>(result: T) => z.object({
   createdResources: z.array(workspaceResourceReferenceSchema).optional(),
 }).strict()
 
-type Transport = (input: RequestInfo | URL, init?: RequestInit) => Promise<Response>
+type Transport = (input: string, init?: RequestInit) => Promise<Response>
 
 export const createPlanningClient = (workspaceId: string, transport: Transport = (input, init) => fetch(input, init)) => {
   const base = `/api/workspaces/${encodeURIComponent(workspaceId)}`
