@@ -116,7 +116,7 @@ export const createPlanningStack = async (options: { readonly realAgents?: boole
   // Planning reads World through Host as index.ts does; Host's address is known once it listens.
   const operations = createPlanningOperations({
     store, definitions, solver: createSolverDouble(), checker: createCheckerDouble(),
-    world: { read: async (access, run, input) => planningFactsOutputSchema.parse(await createPlanningHostClient({ hostUrl }).call(access, 'world.simulation-run.planning-facts', { resource: run, input })) },
+    world: { read: async (access, run, input, signal) => planningFactsOutputSchema.parse(await createPlanningHostClient({ hostUrl }).call(access, 'world.simulation-run.planning-facts', { resource: run, input }, signal)) },
   })
   const planning = createPlanningServer({ operations, definitions, store, port: 0, uiDistPath: planningHome })
   cleanup.push(() => planning.stop(true))

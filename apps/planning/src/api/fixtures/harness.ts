@@ -19,7 +19,13 @@ export interface Call {
 }
 export interface Answer { readonly status: number; readonly body: any; readonly bytes: number }
 
-export const createHarness = async (options: { readonly solver?: SolverPort; readonly checker?: CheckerPort; readonly subjects?: () => readonly PlanningSubject[] } = {}) => {
+export const createHarness = async (options: {
+  readonly solver?: SolverPort
+  readonly checker?: CheckerPort
+  readonly subjects?: () => readonly PlanningSubject[]
+  readonly worldAnswerAfterMs?: number
+  readonly refreshDeadlineMs?: number
+} = {}) => {
   const root = await mkdtemp(join(tmpdir(), 'planning-api-'))
   const workspaceId: WorkspaceId = workspaceIdSchema.parse(crypto.randomUUID())
   const store = createPlanStore(root)
@@ -27,7 +33,8 @@ export const createHarness = async (options: { readonly solver?: SolverPort; rea
   const definitions = createPlanDefinitions()
   const operations = createPlanningOperations({
     store, definitions,
-    world: createWorldDouble(options.subjects ?? (() => []), journal),
+    world: createWorldDouble(options.subjects ?? (() => []), journal, options.worldAnswerAfterMs === undefined ? {} : { answerAfterMs: options.worldAnswerAfterMs }),
+    ...(options.refreshDeadlineMs === undefined ? {} : { refreshDeadlineMs: options.refreshDeadlineMs }),
     solver: options.solver ?? createSolverDouble(),
     checker: options.checker ?? createCheckerDouble(),
   })
@@ -60,7 +67,7 @@ export const createHarness = async (options: { readonly solver?: SolverPort; rea
     return { id: answer.body.result.plan.id as string, revision: answer.body.result.plan.revision as number, answer }
   }
   return {
-    workspaceId, store, journal, request, call, create,
+    workspaceId, store, journal, request, call, create, operations,
     close: () => rm(root, { recursive: true, force: true }),
   }
 }

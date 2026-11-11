@@ -82,7 +82,8 @@ export interface SolverPort {
 
 /** World's published facts query, called through Host as the caller. A read: Planning never writes World. */
 export interface WorldFactsPort {
-  readonly read: (access: AccessContext, run: WorkspaceResourceReference, input: PlanningFactsInput) => Promise<PlanningFactsOutput>
+  /** `signal` ends the read: the refresh deadline or the caller's abort. */
+  readonly read: (access: AccessContext, run: WorkspaceResourceReference, input: PlanningFactsInput, signal: AbortSignal) => Promise<PlanningFactsOutput>
 }
 
 export interface PlanningOperationsPorts {
@@ -92,7 +93,12 @@ export interface PlanningOperationsPorts {
   readonly checker: CheckerPort
   readonly definitions: PlanDefinitionsPort
   readonly now?: () => Date
+  /** One deadline for a whole refresh, every page included (default 20 s, inside Host's 30 s). */
+  readonly refreshDeadlineMs?: number
 }
+
+/** A plan keeps at most this many baselines (the stored schema allows 32; the 4 MB file bound needs fewer). */
+export const maxBaselines = 8
 
 // ───────────── results ─────────────
 
@@ -176,6 +182,10 @@ export const createPlanningOperations = (ports: PlanningOperationsPorts) => {
   const { store, solver, checker } = ports
   const now = (): string => (ports.now?.() ?? new Date()).toISOString()
   const certifiedSize = certifiedSizeSchema.parse(solver.certifiedSize)
+  const refreshDeadlineMs = ports.refreshDeadlineMs ?? 20_000
+  // One Generate per plan at a time; stopping the Module stops every running Generate through its signal.
+  const generating = new Map<string, Promise<unknown>>()
+  const stopping = new AbortController()
 
   /** Proof words apply only on the current revision and formulation, after the checker re-checks the option. */
   const optionState = (plan: Plan, option: Option): OptionState => {
@@ -222,6 +232,66 @@ export const createPlanningOperations = (ports: PlanningOperationsPorts) => {
     const state = optionState(plan, option)
     if (state.stale) throw planningError(409, 'option_stale', `Option ${option.label} no longer matches the plan (${state.reason === 'formulation' ? 'the solver changed' : state.reason === 'recheck' ? 'it fails the re-check' : 'the plan changed'}); generate again`, { about: [option.key], currentRevision: plan.revision })
     return state
+  }
+
+  /**
+   * Option keys are unique per generated set, so a baseline can only name an option its caller saw: an
+   * option the solver kept unchanged from the stored set keeps its key, every other one gets a new key.
+   */
+  const keyed = (generated: OptionSet, stored: OptionSet | null): OptionSet => {
+    const set = crypto.randomUUID().slice(0, 8)
+    const kept = new Map((stored?.options ?? []).map(option => [option.key, JSON.stringify(option)]))
+    const renamed = new Map<string, string>()
+    const options = generated.options.map((option, index) => {
+      if (kept.get(option.key) === JSON.stringify(option)) return option
+      const key = `O${index + 1}-${set}`
+      renamed.set(option.key, key)
+      return { ...option, key }
+    })
+    const recommended = generated.recommended === undefined ? undefined : renamed.get(generated.recommended) ?? generated.recommended
+    return { ...generated, options, ...(recommended === undefined ? {} : { recommended }) }
+  }
+
+  const generateOnce = async (workspaceId: WorkspaceId, planId: string, input: z.infer<typeof generateInputSchema>, expectedRevision: number | undefined, access: AccessContext, signal: AbortSignal): Promise<GenerateResult> => {
+    const guard = { expectedRevision, required: true }
+    const plan = await readGuarded(workspaceId, planId, guard)
+    if (plan.inputs.jobs.length > certifiedSize.maxJobs) {
+      throw planningError(413, 'above_certified_size', `Too large for the certified size: certified for ${certifiedSize.family} up to ${certifiedSize.maxJobs} jobs; this plan has ${plan.inputs.jobs.length}`, { maxJobs: certifiedSize.maxJobs, jobs: plan.inputs.jobs.length })
+    }
+    const at = now()
+    const by = storedActor(access)
+    const answer = optionSetSchema.safeParse(await solver.generate({
+      inputs: plan.inputs, inputsRevision: plan.revision, variants: input.variants, seconds: input.seconds ?? 20, stored: plan.options, at, by, signal,
+    }))
+    if (!answer.success) throw planningError(500, 'invalid_planning_result', 'Generate returned options that do not match the plan schema')
+    const generated = keyed(answer.data, plan.options)
+    for (const option of generated.options) {
+      if (option.status.word === 'validated feasible' && option.inputsRevision === plan.revision && checker.check(plan.inputs, option).violations.length > 0) {
+        throw planningError(500, 'invalid_planning_result', `Generate called option ${option.label} feasible but the checker refuses it`)
+      }
+    }
+    const saved = await store.update(workspaceId, planId, guard, current => ({
+      ...current, updatedAt: at, options: generated,
+      ...appendChange(current, { at, by, revision: current.revision, summary: `Generated ${generated.options.length} option${generated.options.length === 1 ? '' : 's'}`, kinds: [] }),
+    }))
+    const states = optionStates(saved)
+    const options = generated.options.map(option => ({
+      key: option.key, label: option.label.slice(0, 80), status: statusOut(option.status),
+      ...(option.metrics.find(entry => entry.id === 'span') === undefined ? {} : { span: option.metrics.find(entry => entry.id === 'span')!.value }),
+      ...(option.metrics.find(entry => entry.id === 'extra-cost') === undefined ? {} : { cost: option.metrics.find(entry => entry.id === 'extra-cost')!.value }),
+      // The redundancy warning sits beside the status wherever the status is shown (adversary item 7).
+      warnings: [...(states.get(option.key)?.warnings ?? []).slice(0, 4)],
+    }))
+    const recommended = generated.options.find(option => option.key === generated.recommended)
+    const sentence = recommended === undefined
+      ? 'No option can be recommended: none is validated feasible.'
+      : `${recommended.label}: ${statusSentence(recommended.status, saved.inputs)}`
+    const result: GenerateResult = {
+      plan: { id: saved.id, revision: saved.revision }, options,
+      ...(generated.recommended === undefined ? {} : { recommended: generated.recommended }),
+      text: sentence.length <= 300 ? sentence : `${sentence.slice(0, 299)}…`,
+    }
+    return resultOf(generateResultSchema, fit(result, ['options'], () => undefined))
   }
 
   return {
@@ -287,44 +357,12 @@ export const createPlanningOperations = (ports: PlanningOperationsPorts) => {
     },
 
     generate: async (workspaceId: WorkspaceId, planId: string, input: z.infer<typeof generateInputSchema>, expectedRevision: number | undefined, access: AccessContext, signal: AbortSignal): Promise<GenerateResult> => {
-      const guard = { expectedRevision, required: true }
-      const plan = await readGuarded(workspaceId, planId, guard)
-      if (plan.inputs.jobs.length > certifiedSize.maxJobs) {
-        throw planningError(413, 'above_certified_size', `Too large for the certified size: certified for ${certifiedSize.family} up to ${certifiedSize.maxJobs} jobs; this plan has ${plan.inputs.jobs.length}`, { maxJobs: certifiedSize.maxJobs, jobs: plan.inputs.jobs.length })
-      }
-      const at = now()
-      const by = storedActor(access)
-      const generated = optionSetSchema.safeParse(await solver.generate({
-        inputs: plan.inputs, inputsRevision: plan.revision, variants: input.variants, seconds: input.seconds ?? 20, stored: plan.options, at, by, signal,
-      }))
-      if (!generated.success) throw planningError(500, 'invalid_planning_result', 'Generate returned options that do not match the plan schema')
-      for (const option of generated.data.options) {
-        if (option.status.word === 'validated feasible' && option.inputsRevision === plan.revision && checker.check(plan.inputs, option).violations.length > 0) {
-          throw planningError(500, 'invalid_planning_result', `Generate called option ${option.key} feasible but the checker refuses it`)
-        }
-      }
-      const saved = await store.update(workspaceId, planId, guard, current => ({
-        ...current, updatedAt: at, options: generated.data,
-        ...appendChange(current, { at, by, revision: current.revision, summary: `Generated ${generated.data.options.length} option${generated.data.options.length === 1 ? '' : 's'}`, kinds: [] }),
-      }))
-      const states = optionStates(saved)
-      const options = generated.data.options.map(option => ({
-        key: option.key, label: option.label.slice(0, 80), status: statusOut(option.status),
-        ...(option.metrics.find(entry => entry.id === 'span') === undefined ? {} : { span: option.metrics.find(entry => entry.id === 'span')!.value }),
-        ...(option.metrics.find(entry => entry.id === 'extra-cost') === undefined ? {} : { cost: option.metrics.find(entry => entry.id === 'extra-cost')!.value }),
-        // The redundancy warning sits beside the status wherever the status is shown (adversary item 7).
-        warnings: [...(states.get(option.key)?.warnings ?? []).slice(0, 4)],
-      }))
-      const recommended = generated.data.options.find(option => option.key === generated.data.recommended)
-      const sentence = recommended === undefined
-        ? 'No option can be recommended: none is validated feasible.'
-        : `${recommended.label}: ${statusSentence(recommended.status, saved.inputs)}`
-      const result: GenerateResult = {
-        plan: { id: saved.id, revision: saved.revision }, options,
-        ...(generated.data.recommended === undefined ? {} : { recommended: generated.data.recommended }),
-        text: sentence.length <= 300 ? sentence : `${sentence.slice(0, 299)}…`,
-      }
-      return resultOf(generateResultSchema, fit(result, ['options'], () => undefined))
+      const running = `${workspaceId}/${planId}`
+      if (stopping.signal.aborted) throw planningError(503, 'planning_busy', 'Planning is stopping; try again in a moment')
+      if (generating.has(running)) throw planningError(409, 'generate_running', 'Generate is already working on this plan; wait for it to finish, then read the options')
+      const work = generateOnce(workspaceId, planId, input, expectedRevision, access, AbortSignal.any([signal, stopping.signal]))
+      generating.set(running, work)
+      try { return await work } finally { generating.delete(running) }
     },
 
     explain: async (workspaceId: WorkspaceId, planId: string, input: z.infer<typeof explainInputSchema>): Promise<ExplainResult> => {
@@ -363,7 +401,7 @@ export const createPlanningOperations = (ports: PlanningOperationsPorts) => {
         const option = findOption(plan, input.option)
         if (option.status.word !== 'validated feasible') throw planningError(409, 'option_not_feasible', `Option ${option.label} is ${option.status.word}; only a validated feasible option can become the baseline`, { about: [option.key] })
         requireFresh(plan, option)
-        if (plan.baselines.length >= 32) throw planningError(400, 'invalid_request', 'A plan keeps at most 32 baselines', {})
+        if (plan.baselines.length >= maxBaselines) throw planningError(409, 'baseline_limit', `This plan already keeps ${plan.baselines.length} baselines, the most a plan may keep`, { maxBaselines })
         const number = Math.max(0, ...plan.baselines.map(baseline => Number(baseline.key.replace(/^B/, '')) || 0)) + 1
         return {
           ...plan, updatedAt: at,
@@ -375,8 +413,11 @@ export const createPlanningOperations = (ports: PlanningOperationsPorts) => {
       return writeResult(saved, [`Made ${baseline.option.label} the baseline '${baseline.name}'`])
     },
 
-    refresh: async (workspaceId: WorkspaceId, planId: string, expectedRevision: number | undefined, access: AccessContext): Promise<WriteResult> => {
+    refresh: async (workspaceId: WorkspaceId, planId: string, expectedRevision: number | undefined, access: AccessContext, signal: AbortSignal): Promise<WriteResult> => {
       const guard = { expectedRevision, required: true }
+      // One deadline for the whole refresh, every page included, and the caller's abort: past it nothing is saved.
+      const deadline = AbortSignal.any([signal, AbortSignal.timeout(refreshDeadlineMs)])
+      const late = () => planningError(503, 'world_unavailable', `World did not answer within ${refreshDeadlineMs / 1000} s; nothing was saved. Try again.`)
       const plan = await readGuarded(workspaceId, planId, guard)
       const run = plan.inputs.settings.run
       const zone = plan.inputs.settings.timeZone
@@ -390,7 +431,12 @@ export const createPlanningOperations = (ports: PlanningOperationsPorts) => {
         const reference = runReference(workspaceId, run.id)
         let cursor: string | undefined
         do {
-          const raw = await ports.world.read(access, reference, { subjects: [...subjects], ...(cursor === undefined ? {} : { cursor }) })
+          if (deadline.aborted) throw late()
+          let raw: PlanningFactsOutput
+          try { raw = await ports.world.read(access, reference, { subjects: [...subjects], ...(cursor === undefined ? {} : { cursor }) }, deadline) } catch (error) {
+            if (deadline.aborted) throw late()
+            throw error
+          }
           const answer = planningFactsOutputSchema.safeParse(raw)
           if (!answer.success) throw planningError(502, 'invalid_host_response', 'World answered the facts query outside its contract')
           if (answer.data.run.id !== run.id) throw planningError(502, 'invalid_host_response', 'World answered for another simulation')
@@ -412,6 +458,7 @@ export const createPlanningOperations = (ports: PlanningOperationsPorts) => {
       const at = now()
       const by = storedActor(access)
       const saved = await store.update(workspaceId, planId, guard, current => {
+        if (deadline.aborted) throw late()
         const inputs = planInputsSchema.parse({ ...current.inputs, world: { refreshedAt: observedAt, facts } })
         const revision = raises ? current.revision + 1 : current.revision
         return {
@@ -424,6 +471,12 @@ export const createPlanningOperations = (ports: PlanningOperationsPorts) => {
       const head = `Read ${facts.length} World value${facts.length === 1 ? '' : 's'} at ${timeWords(observedAt, zone)}: ${changedFacts.length === 0 && removed.length === 0 ? 'none changed' : `${changedFacts.length} new or changed${removed.length === 0 ? '' : `, ${removed.length} gone`}`}`
       const lines = [head, ...changedFacts.map(factWords)]
       return writeResult(saved, lines.length <= 12 ? lines : [...lines.slice(0, 11), `…and ${lines.length - 11} more values: read the sources section`])
+    },
+
+    /** Stops every running Generate through its signal (the solver keeps its best option) and waits for them. */
+    shutdown: async (): Promise<void> => {
+      stopping.abort(new Error('Planning is stopping'))
+      await Promise.allSettled([...generating.values()])
     },
 
     delete: async (workspaceId: WorkspaceId, planId: string, expectedRevision: number | undefined): Promise<{ readonly deleted: true }> => {

@@ -107,9 +107,20 @@ const longestCursor = `999.${'f'.repeat(16)}.${'f'.repeat(16)}`
  * listing every unknown locator, 400 for a repeated subject. Every call goes to `journal`; World has no
  * other port here, so a journal of reads only is a World that Planning did not write.
  */
-export const createWorldDouble = (subjects: () => readonly PlanningSubject[], journal: Array<{ readonly capabilityId: string; readonly run: string; readonly input: unknown }> = []): WorldFactsPort => ({
-  read: async (_access, run: WorkspaceResourceReference, raw) => {
+export const createWorldDouble = (
+  subjects: () => readonly PlanningSubject[],
+  journal: Array<{ readonly capabilityId: string; readonly run: string; readonly input: unknown }> = [],
+  options: { readonly answerAfterMs?: number } = {},
+): WorldFactsPort => ({
+  read: async (_access, run: WorkspaceResourceReference, raw, signal) => {
     journal.push({ capabilityId: 'world.simulation-run.planning-facts', run: run.id, input: raw })
+    // A slow World: the answer comes after `answerAfterMs`, unless the caller gives up first.
+    if (options.answerAfterMs !== undefined) {
+      await new Promise<void>((resolve, reject) => {
+        const timer = setTimeout(resolve, options.answerAfterMs)
+        signal.addEventListener('abort', () => { clearTimeout(timer); reject(signal.reason) }, { once: true })
+      })
+    }
     const input = planningFactsInputSchema.parse(raw)
     if (input.subjects === undefined) throw new Error('The double reads exact subjects only')
     const repeated = input.subjects.filter((locator, index) => input.subjects!.indexOf(locator) !== index)

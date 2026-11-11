@@ -140,3 +140,65 @@ describe('Train A: preview, read and status on the generic operations', () => {
     ])
   })
 })
+
+describe('ops fixes: option identity, one Generate at a time, baseline bound, refresh deadline, stopping', () => {
+  test('option keys are unique per generated set, so a baseline names only an option its caller saw', async () => {
+    const created = await harness.create('train-a-work-week')
+    const first = await harness.call('planning.plan.generate', { resource: created.id, input: {}, expectedRevision: 1 })
+    const second = await harness.call('planning.plan.generate', { resource: created.id, input: {}, expectedRevision: 1 })
+    const keys = (answer: typeof first) => answer.body.result.options.map((option: { key: string }) => option.key)
+    expect(keys(first).some((key: string) => keys(second).includes(key))).toBe(false)
+    expect(keys(second)).toContain(second.body.result.recommended)
+    const stale = await harness.call('planning.plan.baseline', { resource: created.id, input: { option: first.body.result.recommended, name: 'Seen before' }, expectedRevision: 1 })
+    expect([stale.status, stale.body.error.code]).toEqual([400, 'unknown_reference'])
+    expect((await harness.call('planning.plan.baseline', { resource: created.id, input: { option: second.body.result.recommended, name: 'Seen now' }, expectedRevision: 1 })).status).toBe(200)
+  })
+
+  test('a second Generate on the same plan while one runs is refused with 409; stopping keeps the running one\'s result', async () => {
+    const { createSolverDouble } = await import('./fixtures/doubles.ts')
+    const inner = createSolverDouble()
+    let entered!: () => void
+    const started = new Promise<void>(resolve => { entered = resolve })
+    // A solve that runs until it is stopped, then returns its best, as lane S's engine does on abort.
+    const local = await createHarness({ solver: { ...inner, generate: async request => {
+      entered()
+      await new Promise<void>(resolve => request.signal.addEventListener('abort', () => resolve(), { once: true }))
+      return inner.generate(request)
+    } } })
+    try {
+      const created = await local.create('train-a-work-week')
+      const running = local.call('planning.plan.generate', { resource: created.id, input: {}, expectedRevision: 1 })
+      await started
+      const second = await local.call('planning.plan.generate', { resource: created.id, input: {}, expectedRevision: 1 })
+      expect([second.status, second.body.error.code, second.body.error.message]).toEqual([409, 'generate_running', 'Generate is already working on this plan; wait for it to finish, then read the options'])
+      await local.operations.shutdown()
+      const finished = await running
+      expect(finished.status).toBe(200)
+      expect((await local.store.read(local.workspaceId, created.id)).options?.options.length).toBe(trainA.methods[0]!.options.length)
+    } finally { await local.close() }
+  })
+
+  test('a plan keeps at most 8 baselines', async () => {
+    const { maxBaselines } = await import('./operations.ts')
+    const created = await harness.create('train-a-work-week')
+    const generated = await harness.call('planning.plan.generate', { resource: created.id, input: {}, expectedRevision: 1 })
+    for (let index = 0; index < maxBaselines; index += 1) {
+      expect((await harness.call('planning.plan.baseline', { resource: created.id, input: { option: generated.body.result.recommended, name: `B${index}` }, expectedRevision: 1 })).status).toBe(200)
+    }
+    const refused = await harness.call('planning.plan.baseline', { resource: created.id, input: { option: generated.body.result.recommended, name: 'One too many' }, expectedRevision: 1 })
+    expect([refused.status, refused.body.error.code, maxBaselines]).toEqual([409, 'baseline_limit', 8])
+  })
+
+  test('a refresh has one deadline for all its pages; past it nothing is saved and it says so', async () => {
+    const slow = await createHarness({ subjects: () => world, worldAnswerAfterMs: 400, refreshDeadlineMs: 100 })
+    try {
+      world = padded(subjectsFor(supplyRun, valuesFor(1), '2026-09-03T08:00:00Z'))
+      const created = await slow.create('supply-run')
+      await slow.call('planning.plan.edit', { resource: created.id, input: { edits: [{ edit: 'plan', run: 'run-slow' }] }, expectedRevision: 1 })
+      const refused = await slow.call('planning.sources.refresh', { input: { plan: created.id }, expectedRevision: 2 })
+      expect([refused.status, refused.body.error.code, refused.body.error.retryable, refused.body.error.message]).toEqual([503, 'world_unavailable', true, 'World did not answer within 0.1 s; nothing was saved. Try again.'])
+      const stored = await slow.store.read(slow.workspaceId, created.id)
+      expect([stored.revision, stored.inputs.world]).toEqual([2, { refreshedAt: null, facts: [] }])
+    } finally { await slow.close() }
+  })
+})

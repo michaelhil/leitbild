@@ -83,12 +83,13 @@ describe('refusals name their cause and stay within 4 KB', () => {
     const plan = await harness.create('supply-run')
     const generated = await harness.call('planning.plan.generate', { resource: plan.id, input: {}, expectedRevision: 1 })
     expect(generated.body.result.options.every((option: { status: { word: string } }) => option.status.word === 'invalid input')).toBe(true)
-    expect(error(await harness.call('planning.plan.baseline', { resource: plan.id, input: { option: 'O1', name: 'Issue' }, expectedRevision: 1 }))).toEqual([409, 'option_not_feasible'])
+    const invalid = generated.body.result.options[0].key
+    expect(error(await harness.call('planning.plan.baseline', { resource: plan.id, input: { option: invalid, name: 'Issue' }, expectedRevision: 1 }))).toEqual([409, 'option_not_feasible'])
     expect(error(await harness.call('planning.plan.baseline', { resource: plan.id, input: { option: 'O9', name: 'Issue' }, expectedRevision: 1 }))).toEqual([400, 'unknown_reference'])
-    const blank = await harness.create('train-a-work-week')
-    await harness.call('planning.plan.generate', { resource: blank.id, input: {}, expectedRevision: 1 })
-    await harness.call('planning.plan.edit', { resource: blank.id, input: { edits: [{ edit: 'plan', title: 'Changed' }] }, expectedRevision: 1 })
-    expect(error(await harness.call('planning.plan.baseline', { resource: blank.id, input: { option: 'O1', name: 'Issue' }, expectedRevision: 2 }))).toEqual([409, 'option_stale'])
+    const other = await harness.create('train-a-work-week')
+    const options = await harness.call('planning.plan.generate', { resource: other.id, input: {}, expectedRevision: 1 })
+    await harness.call('planning.plan.edit', { resource: other.id, input: { edits: [{ edit: 'plan', title: 'Changed' }] }, expectedRevision: 1 })
+    expect(error(await harness.call('planning.plan.baseline', { resource: other.id, input: { option: options.body.result.recommended, name: 'Issue' }, expectedRevision: 2 }))).toEqual([409, 'option_stale'])
   })
 
   test('an unknown plan or Definition revision is 404', async () => {

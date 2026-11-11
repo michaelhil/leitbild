@@ -15,12 +15,13 @@ export const createPlanningHostClient = (config: { readonly hostUrl: string; rea
   const base = origin.href.replace(/\/$/, '')
   const transport = config.fetch ?? fetch
   return {
-    call: async (access: AccessContext, capabilityId: string, input: Omit<WorkspaceCapabilityInvocationRequest, 'actor'>): Promise<unknown> => {
+    /** `signal` ends the call early (a caller's deadline or abort); every call also stops after 30 s, Host's own limit. */
+    call: async (access: AccessContext, capabilityId: string, input: Omit<WorkspaceCapabilityInvocationRequest, 'actor'>, signal?: AbortSignal): Promise<unknown> => {
       const request = workspaceCapabilityInvocationRequestSchema.parse({ ...input, actor: access.actor })
       let response: Response
       try {
         response = await transport(`${base}/api/workspaces/${encodeURIComponent(access.workspaceId)}/capabilities/${encodeURIComponent(capabilityId)}/invoke`, {
-          method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(request), signal: AbortSignal.timeout(30_000), redirect: 'error',
+          method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(request), signal: AbortSignal.any([AbortSignal.timeout(30_000), ...(signal === undefined ? [] : [signal])]), redirect: 'error',
         })
       } catch (error) {
         throw planningError(503, 'world_unavailable', `Could not reach the Workspace Host: ${error instanceof Error ? error.message : String(error)}`)

@@ -11,7 +11,7 @@ if (!hostUrl) throw new Error('WORKSPACE_HOST_URL is required: Planning reads Wo
 const home = resolve(process.env.LEITBILD_PLANNING_HOME ?? './data')
 const host = createPlanningHostClient({ hostUrl })
 const world: WorldFactsPort = {
-  read: async (access, run, input) => planningFactsOutputSchema.parse(await host.call(access, 'world.simulation-run.planning-facts', { resource: run, input })),
+  read: async (access, run, input, signal) => planningFactsOutputSchema.parse(await host.call(access, 'world.simulation-run.planning-facts', { resource: run, input }, signal)),
 }
 
 // The solver (lane S: solve/generate.ts and the Worker pool) and the checker (lane K: check/check.ts) land
@@ -25,7 +25,8 @@ const store = createPlanStore(home)
 const definitions = createPlanDefinitions()
 const operations = createPlanningOperations({ store, world, solver, checker, definitions })
 const server = createPlanningServer({ operations, definitions, store, port: Number(process.env.PORT ?? 3102), host: process.env.BIND_HOST ?? '127.0.0.1' })
-const stop = () => server.stop(true)
+// A deploy stops running Generates through their signal, so each keeps its best option, then the server.
+const stop = () => { void operations.shutdown().finally(() => server.stop(true)) }
 process.once('SIGINT', stop)
 process.once('SIGTERM', stop)
 console.log(`Planning Module listening on http://${server.hostname}:${server.port}`)
