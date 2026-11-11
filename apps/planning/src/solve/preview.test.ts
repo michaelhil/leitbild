@@ -56,7 +56,7 @@ describe('preview re-timing repairs the option, never re-solves it', () => {
     // keep-in-service rule; what the longer seal itself breaks (here the 72 h span R2: the seal works day
     // shifts in this option) is shown, not hidden by moving other jobs back.
     const check = checkPlan(sealed, option.variant, preview.rows)
-    expect(preview.violations).toEqual(check.violations.map(violation => ({ code: violation.code, about: violation.about })))
+    expect(preview.violations).toEqual(check.violations.map(violation => ({ code: violation.code, about: violation.about, words: violation.words })))
     for (const violation of check.violations) expect(['span-limit', 'beyond-window', 'due']).toContain(violation.code)
     const before = new Map(option.rows.map(row => [row.job, row]))
     const moved = preview.rows.filter(row => row.start !== before.get(row.job)!.start || row.finish !== before.get(row.job)!.finish)
