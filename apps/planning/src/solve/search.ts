@@ -2,11 +2,10 @@
 // Priority-rule construction; a race of independent late-acceptance climbs from the best distinct starts,
 // each on its own random stream, whose best climbs on; a second race of short climbs restarting from the
 // best plan; a cost repair inside the earlier goals' band (drop each bought purchase, move paid hours back
-// into booked ones); a band-limited late-acceptance stage per later goal; a mode polish. A late job behind a
-// keep-in-service group pulls that group's outage packages together, so each outage closes before the next
-// opens. Every phase boundary is counted in work units (evaluations weighted by whether justification ran),
-// and the work target is a fixed function of the problem's size and the CPU budget, so one seed and one set
-// of inputs give one plan. A small problem (SMALL_PROBLEM) is not searched: the decoder's whole space is
+// into booked ones); a band-limited late-acceptance stage per later goal; a mode polish. Every phase
+// boundary is counted in work units (evaluations weighted by whether justification ran), and the work
+// target is a fixed function of the problem's size and the CPU budget, so one seed and one set of inputs
+// give one plan. A small problem (SMALL_PROBLEM) is not searched: the decoder's whole space is
 // enumerated instead. CPU, wall and evaluation budgets and an abort still stop it (within one yield,
 // about 50 ms); a run that stops on CPU or wall time is valid but not repeatable, and says so in `stoppedBy`.
 import { makeDecoder, precedenceOrder, prepare, type Decoded, type Evaluation, type Prepared } from './decode.ts'
@@ -17,7 +16,7 @@ import { compareKeys, compareStaged, goalExcess, goalKeys } from './rank.ts'
  * Bumped whenever compile, bounds or the engine change meaning; part of every formulation. It lives here so
  * the Worker loads only the engine and decoder, not the plan schema.
  */
-export const SOLVER_VERSIONS = { compile: 1, bounds: 1, engine: 'lahc-4' } as const
+export const SOLVER_VERSIONS = { compile: 1, bounds: 1, engine: 'lahc-5' } as const
 
 export const mulberry32 = (seed: number) => () => {
   seed |= 0; seed = (seed + 0x6d2b79f5) | 0
@@ -280,28 +279,6 @@ export const searchEngine = (searchOptions: SearchOptions = {}): Engine => ({
     const L = searchOptions.lateAcceptance ?? 60
     const position = new Int32Array(n)
     const openerGroups = problem.coverage.filter(rule => rule.items.length > 1).map(rule => [...new Set(rule.items.flatMap(i => prep.itemOpeners[i]!))]).filter(list => list.length > 1)
-    // Each opener's outage package: the jobs after it that lead to a closer of an item it opens. Pulling a
-    // package together right behind its opener closes that outage sooner, so the group's next member can open.
-    const packageOf = new Map<number, number[]>()
-    for (const group of openerGroups) for (const o of group) {
-      const closers = new Set(prep.opensItems[o]!.flatMap(i => prep.itemClosers[i]!))
-      const down = new Set<number>([o]), stack = [o]
-      while (stack.length > 0) { const x = stack.pop()!; for (const l of prep.succs[x]!) if (!down.has(l.to)) { down.add(l.to); stack.push(l.to) } }
-      const up = new Set<number>(closers), back = [...closers]
-      while (back.length > 0) { const x = back.pop()!; for (const l of prep.preds[x]!) if (!up.has(l.from)) { up.add(l.from); back.push(l.from) } }
-      packageOf.set(o, [...down].filter(x => x !== o && up.has(x)))
-    }
-    const groupOfOpener = new Map<number, number[]>()
-    for (const group of openerGroups) for (const o of group) groupOfOpener.set(o, group)
-    /** Moves the package of every opener in the group to just behind its opener, keeping precedence. */
-    const compress = (list: number[], group: readonly number[]): number[] => {
-      const moving = new Set(group.flatMap(o => packageOf.get(o) ?? []))
-      const order = list.filter(a => !moving.has(a))
-      const out: number[] = []
-      for (const a of order) { out.push(a); if (packageOf.has(a) && group.includes(a)) for (const x of list) if ((packageOf.get(a) ?? []).includes(x)) out.push(x) }
-      for (const x of list) if (moving.has(x) && !out.includes(x)) out.push(x)
-      return precedenceOrder(prep, out)
-    }
 
     /** One climber: its own random stream, current point, late list and late-acceptance history. */
     const climber = (seed: number, from: Scored) => {
@@ -327,12 +304,7 @@ export const searchEngine = (searchOptions: SearchOptions = {}): Engine => ({
         return { list, modes: [...point.modes] }
       }
       const neighbour = (point: Point, costPhase: boolean): Point | null => {
-        if (late.length > 0 && rng() < 0.4) {
-          // A late job behind a keep-in-service group: pull that group's outages together first.
-          const blocked = late.find(a => groupOfOpener.has(a))
-          if (blocked !== undefined && rng() < 0.5) return { list: compress(point.list, groupOfOpener.get(blocked)!), modes: [...point.modes] }
-          return promote(point)
-        }
+        if (late.length > 0 && rng() < 0.4) return promote(point)
         const list = [...point.list], modes = [...point.modes]
         list.forEach((a, p) => { position[a] = p })
         const r = rng()
