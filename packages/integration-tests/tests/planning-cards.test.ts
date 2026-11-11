@@ -6,7 +6,7 @@ import { workspaceCapabilityCatalogSchema, workspaceDefinitionCatalogSchema, wor
 import { cardCapability } from '../../../apps/leitbild/src/ui/card-actions.ts'
 import { createPlanningStack } from './planning-stack.ts'
 
-const stack = await createPlanningStack({ subjects: () => [] })
+const stack = await createPlanningStack()
 afterAll(() => stack.close())
 const read = async (path: string) => (await fetch(`${stack.hostUrl}/api/workspaces/${stack.workspaceId}/${path}`)).json()
 

@@ -1,21 +1,16 @@
 // The scripted Assistant cycle (design 9 row 5): facts, create, link, refresh, edits, generate, explain,
-// baseline, then a read from a new Room, all through Host with the Agents workspace tools. The World
-// journal gains nothing from Planning but facts reads, and every result stays within 4 KB.
+// baseline, then a read from a new Room, all through Host with the Agents workspace tools, against World's
+// real planning facts query on a real Supply run. The Run's journal gains nothing from Planning, and every
+// result stays within 4 KB. The solver and checker are lane S and K doubles until integration.
 import { afterAll, expect, test } from 'bun:test'
 import { planInputsSchema } from '../../../apps/planning/src/plan/schema.ts'
-import { subjectsFor } from '../../../apps/planning/src/api/fixtures/doubles.ts'
 import { createPlanningStack } from './planning-stack.ts'
 
 const supplyRun = planInputsSchema.parse(await Bun.file(new URL('../../../apps/planning/src/plan/fixtures/supply-run.case2.json', import.meta.url)).json())
-const factIds = [...new Set([
-  ...supplyRun.jobs.flatMap(job => [...(job.duration.origin.by === 'world' ? job.duration.origin.refs : []), ...job.durationWith.flatMap(entry => 'refs' in entry ? entry.refs : [])]),
-  ...supplyRun.resources.flatMap(resource => resource.attributes.flatMap(attribute => attribute.origin.by === 'world' ? attribute.origin.refs : [])),
-].map(ref => ref.fact))]
-// World inputs for the double, one per fact id the case names; no schedule is asserted from them.
-const values = Object.fromEntries(factIds.map((id, index) => [id, id.includes('payload') ? { value: (index + 3) * 100, unit: 'kg', basis: 'configured' as const } : { value: (index + 1) * 30, unit: 's', basis: 'owner-estimate' as const }]))
-const subjects = subjectsFor(supplyRun, values, '2026-09-03T08:00:00Z')
-const stack = await createPlanningStack({ subjects: () => subjects })
+const stack = await createPlanningStack()
 afterAll(() => stack.close())
+// A person starts the Definition's World Scenario through Host's normal launch (A1); Planning never does.
+const runId = await stack.start('world.scenario', supplyRun.settings.scenario!.id, 'world.scenario.start')
 
 const bytes = (value: unknown) => new TextEncoder().encode(JSON.stringify(value)).byteLength
 const one = async (room: ReturnType<typeof stack.room>, call: Record<string, unknown>) => {
@@ -28,9 +23,10 @@ const one = async (room: ReturnType<typeof stack.room>, call: Record<string, unk
 }
 
 test('the whole plan cycle through Host, with no World write', async () => {
+  const journal = stack.runEvents(runId)
   const assistant = stack.room('room-1')
   const scope = await assistant.explore({ view: 'scope' }) as { data: { definitions: any[]; resources: any[] } }
-  const run = scope.data.resources.find(resource => resource.target.ref.type === 'world.simulation-run').target
+  const run = scope.data.resources.find(resource => resource.target.ref.type === 'world.simulation-run' && resource.target.ref.id === runId).target
   const supplyDefinition = scope.data.definitions.find(definition => definition.target.ref.id === 'supply-run').target
 
   const found = await one(assistant, { operationId: 'world.simulation-run.planning-facts', target: run, input: { text: 'truck' } })
@@ -40,7 +36,7 @@ test('the whole plan cycle through Host, with no World write', async () => {
   const plan = { kind: 'resource', ref: { workspaceId: stack.workspaceId, moduleId: 'planning', type: 'planning.plan', id: created.plan.id } }
   expect(created.attention[0].kind).toBe('world')
 
-  const linked = await one(assistant, { operationId: 'planning.plan.edit', target: plan, input: { edits: [{ edit: 'plan', run: stack.runId }] }, expectedRevision: 1 })
+  const linked = await one(assistant, { operationId: 'planning.plan.edit', target: plan, input: { edits: [{ edit: 'plan', run: runId }] }, expectedRevision: 1 })
   expect(linked.plan.revision).toBe(2)
   const refreshed = await one(assistant, { operationId: 'planning.sources.refresh', input: { plan: created.plan.id }, expectedRevision: 2 })
   expect([refreshed.plan.revision, refreshed.problems]).toEqual([3, []])
@@ -69,11 +65,9 @@ test('the whole plan cycle through Host, with no World write', async () => {
   expect([stored.revision, stored.baselines.length, stored.options?.options.length]).toEqual([4, 1, 1])
   expect(stored.changes.map(change => change.kinds)).toEqual([[], ['plan'], ['refresh'], ['job'], [], []])
 
-  // World received catalogue reads and facts queries, nothing else: Planning wrote nothing in World.
-  const invoked = stack.worldJournal.filter(entry => entry.capabilityId !== undefined).map(entry => entry.capabilityId)
-  expect(invoked.length).toBeGreaterThan(1)
-  expect(new Set(invoked)).toEqual(new Set(['world.simulation-run.planning-facts']))
-  expect(stack.worldJournal.filter(entry => entry.method !== 'GET' && entry.capabilityId === undefined).map(entry => entry.method)).toEqual(['PUT'])
+  // Every value the case names came from World's real answer, and the Run's journal is as before.
+  expect(stored.inputs.world.facts.length).toBeGreaterThan(0)
+  expect(stack.runEvents(runId)).toBe(journal)
 })
 
 test('refusals through Host carry their cause and the current revision', async () => {
