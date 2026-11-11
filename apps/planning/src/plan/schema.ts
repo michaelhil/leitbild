@@ -280,7 +280,7 @@ export type BoundCertificate = z.infer<typeof boundCertificateSchema>
 const runBasisSchema = z.object({
   grid: gridSchema, engine: z.string(), formulation: z.string(),   // proofs are reused only on an equal inputs revision and formulation
   seed: z.number().int(), budget: z.object({ evals: z.number().int(), cpuMs: z.number().int(), wallMs: z.number().int() }).strict(),
-  stoppedBy: z.enum(['done', 'evals', 'cpu', 'wall', 'memory', 'cancelled']), stoppedByWho: z.enum(['person', 'host']).optional(),
+  stoppedBy: z.enum(['done', 'evals', 'cpu', 'wall', 'memory', 'cancelled', 'ended']), stoppedByWho: z.enum(['person', 'host']).optional(),
   evals: z.number().int(), cpuMs: z.number().int(),
 }).strict()
 

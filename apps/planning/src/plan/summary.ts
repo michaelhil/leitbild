@@ -254,7 +254,7 @@ const certificateWords = (cause: Certificate, inputs: Inputs): string => {
 }
 
 /** Why a search ended before its budget: memory and processor limits, or a stop. The budget's own end is not early. */
-const earlyStopWords: Readonly<Partial<Record<string, string>>> = { memory: 'memory limit', cpu: 'processor time limit', cancelled: 'cancelled' }
+const earlyStopWords: Readonly<Partial<Record<string, string>>> = { memory: 'memory limit', cpu: 'processor time limit', cancelled: 'cancelled', ended: 'the solver process ended' }
 
 /** The status in words, generated from the structured status. */
 export const statusSentence = (status: Status, inputs: Inputs): string => {

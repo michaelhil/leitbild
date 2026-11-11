@@ -1,12 +1,15 @@
-// At most two solves at once, each in its own Bun Worker, behind the Engine seam. Budgets are thread CPU
-// (within SOLVER_CPU_CAP_CORES together), wall and evaluations. Before a solve its memory is estimated and a plan over
-// `budget.memoryMb` is refused; during it the process RSS is sampled every 100 ms and the solve is
-// stopped at the RSS limit with stoppedBy 'memory'. A cancel is answered within a second, with the best
-// plan found so far, or with no plan if the worker does not answer in time (it is then terminated).
+// At most two solves at once, each in its own short-lived Bun child process (child.ts), behind the Engine
+// seam: a solve's memory goes back to the OS when its process ends, so the service does not grow solve by
+// solve (walk 3, R3-3). Budgets are CPU (within SOLVER_CPU_CAP_CORES together, across the children), wall
+// and evaluations. Before a solve its memory is estimated and a plan over `budget.memoryMb` is refused;
+// during it the child watches its own RSS and stops with 'memory' above CHILD_RSS_LIMIT_MB. A cancel is
+// answered within a second, with the best plan found so far, or with no plan if the child does not answer
+// in time (it is then killed). A child that ends without an answer is reported as 'ended', never hidden.
+// Messages are JSON (wire.ts); a result is validated before it is used.
 import { planningError } from '../errors.ts'
 import { SOLVER_VERSIONS } from './search.ts'
 import type { Engine, EngineResult, NormalizedProblem } from './problem.ts'
-import type { WorkerRequest, WorkerResponse } from './worker.ts'
+import { encodeProblem, encodeSchedule, resultFromWire, type ChildRequest, type ChildResponse } from './wire.ts'
 
 /** A rough upper estimate of one solve's working memory in MB: slot arrays, modes and links, copied a few times. */
 export const estimateMemoryMb = (problem: NormalizedProblem): number => {
@@ -24,18 +27,33 @@ export const estimateMemoryMb = (problem: NormalizedProblem): number => {
  */
 export const SOLVER_CPU_CAP_CORES = 0.8 * 0.5
 
+/**
+ * A solver child's own RSS ceiling (MB). Measured on macOS: a child peaks at 84-93 MB on the flagship and
+ * 97 MB on or's S33v3, so 110 MB lets a certified-size solve finish. The service levels off near 200 MB, so
+ * service plus one child (about 300 MB) is still above the unit's 256 MB MemoryMax: an open decision, and the
+ * Linux proof is the Release A ops gate.
+ */
+export const CHILD_RSS_LIMIT_MB = 110
+
 export interface PoolOptions {
   readonly maxSolves?: number
-  /** Process RSS at which a running solve is stopped (MB). */
+  /** A solver child's own RSS at which its solve is stopped (MB). */
   readonly rssLimitMb?: number
   readonly sampleMs?: number
   readonly cancelGraceMs?: number
   readonly cpuCapCores?: number
-  readonly workerUrl?: URL
+  /** The child entry (child.ts) and whether children run with --smol. */
+  readonly childEntry?: string
+  readonly smol?: boolean
 }
 
-/** One finished solve, kept so ops can prove the CPU cap (CPU-ms measured in the worker thread). */
-export interface SolveRecord { readonly id: string; readonly grantedCpuMs: number; readonly wallMs: number; readonly cpuMs: number; readonly evals: number; readonly stoppedBy: EngineResult['stoppedBy'] }
+/** One finished solve, kept so ops can prove the CPU cap (CPU-ms measured in the solver child). */
+export interface SolveRecord {
+  readonly id: string; readonly grantedCpuMs: number; readonly wallMs: number; readonly cpuMs: number; readonly evals: number; readonly stoppedBy: EngineResult['stoppedBy']
+  /** The solver child's own peak RSS (MB), when it answered; and the time from spawn to its answer. */
+  readonly peakRssMb?: number
+  readonly spawnToAnswerMs: number
+}
 
 export interface SolverPool extends Engine {
   readonly active: () => number
@@ -52,11 +70,12 @@ interface Running { readonly rate: number; readonly wallMs: number; readonly sta
 
 export const createSolverPool = (options: PoolOptions = {}): SolverPool => {
   const maxSolves = options.maxSolves ?? 2
-  const rssLimit = (options.rssLimitMb ?? 220) * 1_000_000
+  const rssLimitMb = options.rssLimitMb ?? CHILD_RSS_LIMIT_MB
   const sampleMs = options.sampleMs ?? 100
   const graceMs = options.cancelGraceMs ?? 1_000
   const cap = options.cpuCapCores ?? SOLVER_CPU_CAP_CORES
-  const workerUrl = options.workerUrl ?? new URL('./worker.ts', import.meta.url)
+  const childEntry = options.childEntry ?? new URL('./child.ts', import.meta.url).pathname
+  const smol = options.smol ?? true
   const running = new Map<string, Running>()
   const records: SolveRecord[] = []
   let stopping = false
@@ -73,55 +92,54 @@ export const createSolverPool = (options: PoolOptions = {}): SolverPool => {
     const requested = solveOptions.budget.cpuMs / solveOptions.budget.wallMs
     const rate = Math.min(requested, running.size === 0 ? cap : share)
     const id = `solve-${++next}`
-    // smol: a smaller heap per Worker; the solve is small next to the 256 MB unit.
-    const worker = new Worker(workerUrl, { smol: true } as WorkerOptions)
     const budget = { ...solveOptions.budget, cpuMs: Math.floor(rate * solveOptions.budget.wallMs) }
+    const startedAt = performance.now()
     let resolveSettled: (value: unknown) => void = () => {}
     const settled = new Promise(resolve => { resolveSettled = resolve })
     return new Promise<EngineResult>((resolve, reject) => {
       let done = false
-      let memory = false
       let grace: ReturnType<typeof setTimeout> | undefined
-      const finish = (outcome: () => void, result?: EngineResult): void => {
+      let stopReason: 'cancelled' | undefined
+      const finish = (outcome: () => void, result?: EngineResult, peakRssMb?: number): void => {
         if (done) return
         done = true
-        clearInterval(sampler)
         if (grace !== undefined) clearTimeout(grace)
         solveOptions.signal.removeEventListener('abort', onAbort)
-        worker.terminate()
+        if (child.exitCode === null && child.signalCode === null) child.kill('SIGKILL')
         running.delete(id)
         if (result !== undefined) {
-          records.push({ id, grantedCpuMs: budget.cpuMs, wallMs: result.wallMs, cpuMs: result.cpuMs, evals: result.evals, stoppedBy: result.stoppedBy })
+          records.push({ id, grantedCpuMs: budget.cpuMs, wallMs: result.wallMs, cpuMs: result.cpuMs, evals: result.evals, stoppedBy: result.stoppedBy, spawnToAnswerMs: Math.round(performance.now() - startedAt), ...(peakRssMb === undefined ? {} : { peakRssMb }) })
           if (records.length > 100) records.shift()
         }
         resolveSettled(undefined)
         outcome()
       }
+      /** No answer: the child was killed after a cancel, or ended on its own ('ended', said as such). */
+      const unanswered = (stoppedBy: EngineResult['stoppedBy']): EngineResult => ({ candidates: [], stoppedBy, evals: 0, cpuMs: 0, wallMs: performance.now() - startedAt, bounds: [] })
+      const send = (request: ChildRequest): void => { if (!done) child.send(request) }
+      const child = Bun.spawn([process.execPath, ...(smol ? ['--smol'] : []), childEntry], {
+        stdin: 'ignore', stdout: 'inherit', stderr: 'inherit', serialization: 'json',
+        ipc: (message: ChildResponse) => {
+          if (message.id !== id) return
+          if (message.type === 'error') { finish(() => reject(new Error(`The solver failed: ${message.message}`))); return }
+          const result = resultFromWire(message.result)
+          if ('problem' in result) { finish(() => reject(new Error(`The solver process answered with an unreadable result: ${result.problem}`))); return }
+          finish(() => resolve(result), result, message.peakRssMb)
+        },
+      })
+      void child.exited.then(() => {
+        const result = unanswered(stopReason ?? 'ended')
+        finish(() => resolve(result), result)
+      })
       const stop = (): void => {
-        worker.postMessage({ type: 'cancel', id } satisfies WorkerRequest)
-        grace ??= setTimeout(() => {
-          const empty: EngineResult = { candidates: [], stoppedBy: memory ? 'memory' : 'cancelled', evals: 0, cpuMs: 0, wallMs: 0, bounds: [] }
-          finish(() => resolve(empty), empty)
-        }, graceMs)
+        stopReason = 'cancelled'
+        send({ type: 'cancel', id })
+        grace ??= setTimeout(() => { const result = unanswered('cancelled'); finish(() => resolve(result), result) }, graceMs)
       }
       const onAbort = (): void => stop()
-      const sampler = setInterval(() => { if (!memory && process.memoryUsage.rss() > rssLimit) { memory = true; stop() } }, sampleMs)
-      running.set(id, {
-        rate, wallMs: budget.wallMs, startedAt: performance.now(), stop, settled,
-        rebudget: (lower: number) => worker.postMessage({ type: 'rebudget', id, rate: lower } satisfies WorkerRequest),
-      })
+      running.set(id, { rate, wallMs: budget.wallMs, startedAt, stop, settled, rebudget: (lower: number) => send({ type: 'rebudget', id, rate: lower }) })
       solveOptions.signal.addEventListener('abort', onAbort)
-      worker.onmessage = (event: MessageEvent<WorkerResponse>) => {
-        const response = event.data
-        if (response.id !== id) return
-        if (response.type === 'error') finish(() => reject(new Error(`The solver failed: ${response.message}`)))
-        else {
-          const result = memory ? { ...response.result, stoppedBy: 'memory' as const } : response.result
-          finish(() => resolve(result), result)
-        }
-      }
-      worker.onerror = (event: ErrorEvent) => finish(() => reject(new Error(`The solver worker failed: ${event.message}`)))
-      worker.postMessage({ type: 'solve', id, problem, budget, seed: solveOptions.seed, ...(solveOptions.initial === undefined ? {} : { initial: solveOptions.initial }) } satisfies WorkerRequest)
+      send({ type: 'solve', id, problem: encodeProblem(problem), budget, seed: solveOptions.seed, rssLimitMb, sampleMs, ...(solveOptions.initial === undefined ? {} : { initial: encodeSchedule(solveOptions.initial) }) })
       if (solveOptions.signal.aborted) stop()
     })
   }

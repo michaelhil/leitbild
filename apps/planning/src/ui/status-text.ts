@@ -167,7 +167,7 @@ const runText = (status: Extract<Status, { run: unknown }>): string => {
   const used = `Search used ${Math.max(1, Math.round(run.cpuMs / 1_000))} s of computing time`
   const ended = {
     done: 'it ran to the end', evals: 'it used its whole budget', cpu: 'it used its whole time budget', wall: 'it used its whole time budget',
-    memory: 'it stopped at the memory limit', cancelled: run.stoppedByWho === 'host' ? 'it was stopped by the Host' : 'you cancelled it',
+    memory: 'it stopped at the memory limit', ended: 'it stopped early: the solver process ended', cancelled: run.stoppedByWho === 'host' ? 'it was stopped by the Host' : 'you cancelled it',
   }[run.stoppedBy]
   return `${used}; ${ended}.`
 }

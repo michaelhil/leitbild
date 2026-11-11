@@ -67,7 +67,8 @@ export interface Schedule { readonly mode: Int32Array; readonly start: Int32Arra
 
 export interface EngineBudget { readonly evals: number; readonly cpuMs: number; readonly wallMs: number; readonly memoryMb: number }
 
-export type EngineStop = 'done' | 'evals' | 'cpu' | 'wall' | 'memory' | 'cancelled'
+/** 'ended': the solver process ended without answering (it is reported, never hidden). */
+export type EngineStop = 'done' | 'evals' | 'cpu' | 'wall' | 'memory' | 'cancelled' | 'ended'
 export type BoundSource = 'logic+calendars' | 'crew-energy' | 'availability-rule' | 'fixed-costs'
 
 export interface EngineResult {
