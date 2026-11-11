@@ -313,7 +313,9 @@ const undoubled = (word: string): string =>
 /**
  * A word's light stem, so "plan", "plans", "planned" and "planning" meet: a
  * plural -s, -es or -ies, then -ing or -ed (undoubling "planning" to "plan"),
- * then a final -e. Words of three letters or fewer are their own stem.
+ * then a final -e from five letters or more, so "pause" meets "paused" while
+ * "note", "site" and "time" stay whole ("notes" never meets "not"). Words of
+ * three letters or fewer are their own stem.
  */
 const stem = (word: string): string => {
   if (word.length <= 3) return word
@@ -324,7 +326,7 @@ const stem = (word: string): string => {
   const base = singular.endsWith('ing') && singular.length >= 6 ? undoubled(singular.slice(0, -3))
     : singular.endsWith('ed') && singular.length >= 5 ? undoubled(singular.slice(0, -2))
     : singular
-  return base.endsWith('e') && base.length > 3 ? base.slice(0, -1) : base
+  return base.endsWith('e') && base.length > 4 ? base.slice(0, -1) : base
 }
 
 // What a word found in each field says about an operation: its name (id and
@@ -334,7 +336,7 @@ const stem = (word: string): string => {
 const FIELD_WEIGHTS = { name: 3, searchTerms: 2, description: 1 } as const
 type SearchField = keyof typeof FIELD_WEIGHTS
 const SEARCH_FIELDS = Object.keys(FIELD_WEIGHTS) as ReadonlyArray<SearchField>
-// A word found only through its stem ("plan" for "planning") counts half.
+// A word matched through its stem ("plan" for "planning") counts half.
 const STEM_MATCH_WEIGHT = 0.5
 
 /** The words an operation is found by, and their stems, field by field. */
@@ -391,8 +393,8 @@ interface QueryMatch {
  * nothing, and a match in a large vocabulary (an operation listing every
  * action it invokes) less than one in a short description. Each word the
  * operation holds adds its rarity times the weight of the best field holding
- * it; a word it holds only through its stem adds half, by the stem's rarity.
- * The sum is scaled by the share of the query's words it holds, so an
+ * it, or half that by its stem's rarity and the best field holding its stem
+ * when that is more, so more evidence never lowers a score. The sum is scaled by the share of the query's words it holds, so an
  * operation holding all of them outranks one named for one of them. Ranking
  * only: any matched word still selects an operation.
  */
@@ -410,11 +412,14 @@ const bm25 = (operations: ReadonlyArray<OperationTerms>): ((terms: OperationTerm
   return (terms, words) => {
     const found = words.flatMap(word => {
       const wordStem = stem(word)
-      const inName = terms.stems.name.has(wordStem)
-      const exact = SEARCH_FIELDS.filter(field => terms.words[field].has(word))
-      if (exact.length > 0) return [{ word, inName, weight: idf(wordFrequency.get(word)!) * bestWeight(exact) }]
+      // A field holding the word holds its stem too.
       const stemmed = SEARCH_FIELDS.filter(field => terms.stems[field].has(wordStem))
-      return stemmed.length === 0 ? [] : [{ word, inName, weight: STEM_MATCH_WEIGHT * idf(stemFrequency.get(wordStem)!) * bestWeight(stemmed) }]
+      if (stemmed.length === 0) return []
+      const exact = SEARCH_FIELDS.filter(field => terms.words[field].has(word))
+      const weight = Math.max(
+        exact.length === 0 ? 0 : idf(wordFrequency.get(word)!) * bestWeight(exact),
+        STEM_MATCH_WEIGHT * idf(stemFrequency.get(wordStem)!) * bestWeight(stemmed))
+      return [{ word, inName: terms.stems.name.has(wordStem), weight }]
     })
     if (found.length === 0) return undefined
     const lengthFactor = (BM25_K1 + 1) / (1 + BM25_K1 * (1 - BM25_B + BM25_B * terms.all.size / averageSize))

@@ -145,8 +145,9 @@ describe('workspace_explore ranking', () => {
     expect(idsOf(await search('limit'))).toEqual(['change-limit', 'limits'])
   })
 
-  test('equal scores go to the operation whose name holds the word, then by id, whatever the catalogue order', async () => {
+  test('a name holding the stem outranks a description holding the word; equal scores go by id, whatever the catalogue order', async () => {
     // alpha and zulu are alike; trends also names the word. Each holds 4 words and "trend" in its description.
+    // All 3 hold "trend" and its stem: alpha, zulu 1 × idf(3); trends max(1 × idf(3), 0.5 × 3 × idf(3)) = 1.5 × idf(3).
     const entries: ReadonlyArray<Entry> = [
       { id: 'zulu', title: 'Zulu', description: 'Shows the trend.' },
       { id: 'trends', title: 'Trends', description: 'Shows the trend.' },
@@ -154,5 +155,43 @@ describe('workspace_explore ranking', () => {
     ]
     expect(idsOf(await searchOver(entries)('trend'))).toEqual(['trends', 'alpha', 'zulu'])
     expect(idsOf(await searchOver([...entries].reverse())('trend'))).toEqual(['trends', 'alpha', 'zulu'])
+  })
+
+  test('equal scores go to the operation whose name holds the word, then by id', async () => {
+    // Each holds 4 words and "trend" as a search term: 2 × idf(3). trends' name stem, 0.5 × 3 × idf(3), is less,
+    // so all three score the same and only its name sets trends first.
+    const search = searchOver([
+      { id: 'alpha', title: 'Alpha', description: 'Shows.', searchTerms: ['trend'] },
+      { id: 'trends', title: 'Trends', description: 'Shows.', searchTerms: ['trend'] },
+      { id: 'zulu', title: 'Zulu', description: 'Shows.', searchTerms: ['trend'] },
+    ])
+    expect(idsOf(await search('trend'))).toEqual(['trends', 'alpha', 'zulu'])
+  })
+
+  test('more evidence never lowers a score: an exact word in a lower field adds to a stem in the name', async () => {
+    // 40 operations; alpha and zulu hold 5 words each, so one length factor. "trend" exact in 1, its stem in 2.
+    //   idf(1) = ln((40 - 1 + 0.5) / 1.5 + 1) = ln 27.33 ≈ 3.308
+    //   idf(2) = ln((40 - 2 + 0.5) / 2.5 + 1) = ln 16.4  ≈ 2.797
+    //   zulu, stem in name:                    0.5 × 3 × 2.797                  ≈ 4.196
+    //   alpha, stem in name and word in description: max(1 × 3.308, 0.5 × 3 × 2.797) ≈ 4.196
+    // Equal, so alpha leads by id; scored by its exact word alone (3.308) it would rank below zulu.
+    const search = searchOver([
+      { id: 'zulu', title: 'Zulu trends', description: 'Shows values.' },
+      { id: 'alpha', title: 'Alpha trends', description: 'Shows the trend.' },
+      ...Array.from({ length: 38 }, (_, index) => ({ id: `filler-${index}`, title: `Filler ${index}`, description: 'Shows values.' })),
+    ])
+    expect(idsOf(await search('trend'))).toEqual(['alpha', 'zulu'])
+  })
+
+  test('a short word keeps its final -e, so notes never meets not', async () => {
+    const search = searchOver([
+      { id: 'shift-notes', title: 'Shift notes', description: 'Reads the notes.' },
+      { id: 'explain', title: 'Explain step', description: 'Says why a step did not run.' },
+      { id: 'clock', title: 'Clock', description: 'Holds a paused schedule.' },
+    ])
+    expect(await search('notes')).toEqual([{ id: 'shift-notes', matchedTerms: ['notes'] }])
+    expect(await search('note')).toEqual([{ id: 'shift-notes', matchedTerms: ['note'] }])
+    expect(await search('not')).toEqual([{ id: 'explain', matchedTerms: ['not'] }])
+    expect(await search('pause scheduling')).toEqual([{ id: 'clock', matchedTerms: ['pause', 'scheduling'] }])
   })
 })
