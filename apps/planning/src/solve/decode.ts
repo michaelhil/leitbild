@@ -425,7 +425,7 @@ export const makeDecoder = (prep: Prepared) => {
         const f = finishOf(prep, a, m, t)
         if (f < 0 || f > fUB) continue
         if (slotCost(a, m, t) > own) continue
-        if (activity.due !== undefined && f > Math.max(activity.due, F[a]!)) continue
+        if (activity.target !== undefined && f > Math.max(activity.target, F[a]!)) continue
         if (!fits(a, m, t)) continue
         best = t; break
       }
@@ -498,7 +498,7 @@ export const makeDecoder = (prep: Prepared) => {
         const items = goal.spans === undefined ? problem.items.map((_, i) => i) : [...new Set(goal.spans.flatMap(s => problem.spans[s]!.items))]
         for (const i of items) value += out[i]!
       } else if (goal.metric === 'lateness') {
-        for (const a of goal.tagged ?? []) { const due = problem.activities[a]!.due; if (due !== undefined) value += Math.max(0, d.finish[a]! - due) }
+        for (const a of goal.tagged ?? []) { const target = problem.activities[a]!.target; if (target !== undefined) value += Math.max(0, d.finish[a]! - target) }
       }
       return value * scale
     })

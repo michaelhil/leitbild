@@ -88,6 +88,20 @@ describe('total float to the nearest binding limit', () => {
     expect(row('D').float).toEqual({ workingHours: 8 + 8 + 3, limitedBy: { kind: 'window-end' } })
   })
 
+  test('a hard due rule binds before the window end and is named', () => {
+    const due = planInputsSchema.parse({ ...inputs, rules: [...inputs.rules, { kind: 'due', key: 'E-due', job: 'E', finishBy: local('2026-11-17T15:00:00'), words: 'E done by Tuesday.', source: { by: 'planner' } }] })
+    const withDue = compile(due, { methods: [], buy: 'allowed' })
+    if (!withDue.ok) throw new Error(JSON.stringify(withDue.problems))
+    const duePrep = prepare(withDue.problem)
+    const schedule = makeDecoder(duePrep).decode(precedenceOrder(duePrep, [...duePrep.topo]), withDue.problem.activities.map(() => 0))
+    const floats = totalFloat(duePrep, withDue.index, schedule)
+    const at = (key: string) => floats[withDue.index.jobs.indexOf(key)]!
+    // E must end by Tue 15:00: latest start Tue 13:00; float = Mon 10:00-15:00 (5) + Tue 07:00-13:00 (6) = 11 h.
+    expect(at('E')).toEqual({ workingHours: 5 + 6, limitedBy: { kind: 'due', rule: 'E-due' } })
+    // D must end by E's latest start, Tue 13:00: latest start Tue 10:00; float = Mon 8 + Tue 3 = 11 h.
+    expect(at('D')).toEqual({ workingHours: 8 + 3, limitedBy: { kind: 'due', rule: 'E-due' } })
+  })
+
   test('no float is negative', () => {
     for (const entry of rows) expect(entry.float.workingHours).toBeGreaterThanOrEqual(0)
   })

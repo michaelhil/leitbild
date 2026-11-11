@@ -3,7 +3,8 @@
 // pass from the window end over every link (planner links, bracketing, tag-before-test, support order)
 // and over each span limit as a max-lag: a closer must finish within the limit of the span's scheduled
 // first-out start. That start is held where it is, so a cooling-chain job never shows slack the span
-// rule forbids (an opener's float is therefore never overstated). Crews and outage counts are not in it.
+// rule forbids (an opener's float is therefore never overstated). A due rule ends a job's window early
+// and is named when it binds. Crews and outage counts are not in it.
 import type { CompileIndex } from './compile.ts'
 import type { DatedRow } from './date.ts'
 import type { Prepared } from './decode.ts'
@@ -50,7 +51,8 @@ export const totalFloat = (prep: Prepared, index: CompileIndex, schedule: Schedu
     const a = prep.topo[i]!
     const m = schedule.mode[a]!
     let hiF = problem.activities[a]!.deadline, hiS = prep.H
-    let byF: Limit = windowEnd, byS: Limit = windowEnd
+    const dueRule = index.dueRules[a]
+    let byF: Limit = dueRule === undefined ? windowEnd : { kind: 'due', rule: dueRule }, byS: Limit = windowEnd
     for (const s of prep.closesSpans[a]!) {
       const limit = problem.spans[s]!.limit
       const rule = index.spans[s]!.rule

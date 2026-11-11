@@ -451,7 +451,8 @@ const temporalSteps = (prep: Prepared, windows: Windows, index: CompileIndex): T
   const failure = windows.failure!
   const steps: TemporalStep[] = []
   const viaOf = (via: NonNullable<Windows['failure']>['via']): 'link' | 'span-limit' | 'window' | 'release' | 'lock' => (via === 'overload' ? 'window' : via)
-  steps.push({ job: jobKey(problem, index, failure.activity), via: viaOf(failure.via) })
+  const viaFirst = viaOf(failure.via)
+  steps.push({ job: jobKey(problem, index, failure.activity), via: viaFirst === 'window' && index.dueRules[failure.activity] !== undefined ? 'due' : viaFirst })
   // Walk back the links that set the earliest start, so the reader can follow the chain.
   let a = failure.activity
   for (let hop = 0; hop < 30; hop++) {
@@ -549,7 +550,7 @@ export const bounds = (problem: NormalizedProblem, index: CompileIndex, prep: Pr
       return { value: total * scale, source: 'logic+calendars' }
     }
     let late = 0
-    for (const a of goal.tagged ?? []) { const due = problem.activities[a]!.due; if (due !== undefined) late += Math.max(0, global.eft[a]! - due) }
+    for (const a of goal.tagged ?? []) { const target = problem.activities[a]!.target; if (target !== undefined) late += Math.max(0, global.eft[a]! - target) }
     return { value: late * scale, source: 'logic+calendars' }
   })
   return { goals, spanWindows: scans.map(scan => scan.window) }

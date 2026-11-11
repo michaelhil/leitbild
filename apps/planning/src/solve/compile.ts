@@ -43,6 +43,8 @@ export interface CompileIndex {
   readonly windowSlots: number
   /** Activity -> job key; null for a method's cost carrier. */
   readonly jobs: ReadonlyArray<string | null>
+  /** Activity -> the due rule that sets its deadline before the window end, if any. */
+  readonly dueRules: ReadonlyArray<string | undefined>
   readonly modes: ReadonlyArray<ReadonlyArray<ModeInfo>>
   readonly resources: readonly string[]
   readonly resourceKinds: ReadonlyArray<'crew' | 'tool'>
@@ -275,6 +277,7 @@ export const compile = (inputs: PlanInputs, sub: SubSolve): Compiled => {
   interface NeedOption { mask: Uint8Array; demands: Array<{ resource: number; amount: number; whenMask: Uint8Array | null }>; release: number; resources: string[]; pooled: boolean; purchased: boolean }
   const activities: Array<NormalizedProblem['activities'][number]> = []
   const activityJobs: Array<string | null> = []
+  const activityDue: Array<string | undefined> = []
   const modeInfos: ModeInfo[][] = []
   for (const job of jobs) {
     for (const key of job.equipment) {
@@ -375,7 +378,11 @@ export const compile = (inputs: PlanInputs, sub: SubSolve): Compiled => {
       modes.push({ work: slotsUp(jobValue * unitMs, job.key, 'duration_rounded_up'), calendar: calendarIndex(new Uint8Array(horizon), 'never'), continuous: true, demands: [], fixedCost: 0, release })
       infos.push({ needs: job.needs.map(need => ({ resources: [...need.anyOf], pooled: false, purchased: false })) })
     }
-    const due = job.target === undefined ? undefined : toSlotDown(Date.parse(job.target.finishBy))
+    const target = job.target === undefined ? undefined : toSlotDown(Date.parse(job.target.finishBy))
+    // A hard due rule ends the job's window early; the earliest one binds.
+    const dues = inputs.rules.flatMap(rule => (rule.kind === 'due' && rule.job === job.key ? [{ key: rule.key, slot: toSlotDown(Date.parse(rule.finishBy)) }] : []))
+    const due = dues.reduce<{ key: string; slot: number } | undefined>((earliest, entry) => (entry.slot < (earliest?.slot ?? windowSlots + 1) ? entry : earliest), undefined)
+    const deadline = due !== undefined && due.slot < windowSlots ? due.slot : windowSlots
     let fixed: NormalizedProblem['activities'][number]['fixed']
     if (job.lock !== undefined) {
       const at = Date.parse(job.lock.start)
@@ -384,8 +391,9 @@ export const compile = (inputs: PlanInputs, sub: SubSolve): Compiled => {
       const mode = Math.max(0, modes.findIndex(mode => problemCalendars[mode.calendar]!.work[start] === 1))
       fixed = { mode, start, history: false }
     }
-    activities.push({ id: job.key, modes, release, deadline: windowSlots, ...(due === undefined ? {} : { due }), ...(fixed === undefined ? {} : { fixed }) })
+    activities.push({ id: job.key, modes, release, deadline, ...(target === undefined ? {} : { target }), ...(fixed === undefined ? {} : { fixed }) })
     activityJobs.push(job.key)
+    activityDue.push(deadline < windowSlots ? due!.key : undefined)
     modeInfos.push(infos)
   }
   // A method's own cost is carried by a zero-work activity that exists only in sub-solves choosing it.
@@ -395,6 +403,7 @@ export const compile = (inputs: PlanInputs, sub: SubSolve): Compiled => {
     if (option.fixedCost <= 0) continue
     activities.push({ id: `method:${choice.key}`, modes: [{ work: 0, calendar: 0, continuous: true, demands: [], fixedCost: option.fixedCost, release: 0 }], release: 0, deadline: windowSlots })
     activityJobs.push(null)
+    activityDue.push(undefined)
     modeInfos.push([{ needs: [] }])
   }
   if (invalid.length > 0) return fail('invalid input', invalid)
@@ -481,6 +490,7 @@ export const compile = (inputs: PlanInputs, sub: SubSolve): Compiled => {
     spanInfo.push({ id: `group:${group}`, group })
     return spans.length - 1
   }
+  for (const rule of inputs.rules) if (rule.kind === 'due' && !inputs.jobs.some(job => job.key === rule.job)) invalid.push({ about: [rule.key, rule.job], code: 'unknown_key' })
   const coverage: Array<NormalizedProblem['coverage'][number]> = []
   for (const rule of inputs.rules) {
     if (rule.kind !== 'keep-in-service') continue
@@ -521,7 +531,7 @@ export const compile = (inputs: PlanInputs, sub: SubSolve): Compiled => {
     activities, links, items, spans, coverage, goals,
   }
   const index: CompileIndex = {
-    zone, grid: settings.grid, origin, slotMs, windowSlots, jobs: activityJobs, modes: modeInfos,
+    zone, grid: settings.grid, origin, slotMs, windowSlots, jobs: activityJobs, dueRules: activityDue, modes: modeInfos,
     resources: inputs.resources.map(resource => resource.key), resourceKinds: inputs.resources.map(resource => resource.kind),
     resourceCalendars, purchases: purchaseList, slotPurchase, items: inputs.equipment.map(item => item.key),
     spans: spanInfo, coverage: coverage.map(rule => rule.id), goals: goalInfo, rounded, dropped,
