@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'bun:test'
 import { compile } from './compile.ts'
 import { generate, rawOf } from './generate.ts'
-import { createSolverPool, SOLVER_BUSY_WORDS, SOLVER_CPU_CAP_CORES } from './pool.ts'
+import { createSolverPool, PREVIEW_TOO_LONG_WORDS, SOLVER_BUSY_WORDS, SOLVER_CPU_CAP_CORES } from './pool.ts'
 import { goalKeys, compareKeys } from './rank.ts'
 import { laneKCheck, laneKVerify, laneKVerifyBound } from './fixtures/lane-k.ts'
 import { trainAInputs } from './fixtures/train-a-case.ts'
@@ -101,6 +101,43 @@ describe('cancel', () => {
     const generated = await generate({ engine: ending, check: laneKCheck, verify: laneKVerify, verifyBound: laneKVerifyBound }, { inputs, revision: 1, previous: null, input: { seconds: 2 }, by, signal: new AbortController().signal })
     for (const option of generated.optionSet.options) expect(option.status).toMatchObject({ word: 'unresolved', run: { stoppedBy: 'ended' } })
   }, 30_000)
+
+  test('a child that never answers, or dies, frees the solver slot by its deadline; a Generate right after runs and keeps the stored set', async () => {
+    const { createRealSolver } = await import('../api/wiring.ts')
+    const real = createSolverPool()
+    const request = (stored: Awaited<ReturnType<ReturnType<typeof createRealSolver>['generate']>> | null) => ({ inputs, inputsRevision: 1, variants: undefined, seconds: 2, stored, at: new Date().toISOString(), by, signal: new AbortController().signal })
+    const stored = await createRealSolver(real).generate(request(null))
+    await real.shutdown()
+    const option = stored.options.find(candidate => candidate.key === stored.recommended)!
+    for (const child of ['child-silent', 'child-crash']) {
+      const pool = createSolverPool({ childEntry: new URL(`./fixtures/${child}.ts`, import.meta.url).pathname, previewDeadlineMs: 1_000, deadlineMarginMs: 1_000 })
+      const solver = createRealSolver(pool)
+      try {
+        // The preview: the silent child is killed at the preview deadline, the crashing one at once; 503 either way.
+        const at = performance.now()
+        const refused = await solver.preview({ inputs, option }).catch((error: unknown) => error as { status: number; code: string; message: string })
+        expect(refused).toMatchObject({ status: 503, code: 'preview_unavailable' })
+        if (child === 'child-silent') expect((refused as { message: string }).message).toBe(PREVIEW_TOO_LONG_WORDS)
+        expect(performance.now() - at).toBeLessThan(1_000 + 500)
+        expect(pool.active()).toBe(0)
+        // A Generate right after is admitted (no solver_busy); each sub-solve ends by its deadline, and never-demote keeps the stored set.
+        const again = await solver.generate(request(stored))
+        expect(again.recommended).toBe(stored.recommended)
+        expect(again.options.find(candidate => candidate.key === stored.recommended)).toEqual(option)
+        expect(pool.active()).toBe(0)
+      } finally { await pool.shutdown() }
+    }
+    // The request's own signal cancels a preview whose child never answers.
+    const silent = createSolverPool({ childEntry: new URL('./fixtures/child-silent.ts', import.meta.url).pathname })
+    try {
+      const controller = new AbortController()
+      setTimeout(() => controller.abort(), 200)
+      const at = performance.now()
+      await expect(createRealSolver(silent).preview({ inputs, option, signal: controller.signal })).rejects.toMatchObject({ status: 503, code: 'preview_unavailable' })
+      expect(performance.now() - at).toBeLessThan(200 + 1_000 + 300)
+      expect(silent.active()).toBe(0)
+    } finally { await silent.shutdown() }
+  }, 60_000)
 
   test('shutdown cancels running solves within a second and refuses new ones', async () => {
     const compiled = compile(inputs, { methods: [{ choice: 'SWA-method', option: 'swap' }], buy: 'allowed' })

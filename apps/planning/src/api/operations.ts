@@ -72,7 +72,8 @@ export interface SolverPort {
     readonly cursor: string | undefined
   }) => Promise<ExplainResult>
   /** Repairs `option`'s own schedule on the edited inputs (only what the edit forces moves), then checks it. */
-  readonly preview: (request: { readonly inputs: PlanInputs; readonly option: Option }) => Promise<{
+  /** `signal`: the request's own; a preview it aborts is stopped and its solver child killed. */
+  readonly preview: (request: { readonly inputs: PlanInputs; readonly option: Option; readonly signal?: AbortSignal }) => Promise<{
     readonly rows: readonly DatedRow[]
     readonly violations: readonly CheckViolation[]
     /** Lane S: the slot nearest a lock where the locked job's links, calendar, window and crews hold, against the saved option. */
@@ -440,7 +441,7 @@ export const createPlanningOperations = (ports: PlanningOperationsPorts) => {
       return { result: writeResult(stored, [`Created '${stored.inputs.settings.title}' from '${found.title}'`, ...changeLines(changes, stored.inputs, 11)]), created: planReference(workspaceId, stored.id) }
     },
 
-    edit: async (workspaceId: WorkspaceId, planId: string, input: z.infer<typeof editInputSchema>, expectedRevision: number | undefined, access: AccessContext): Promise<WriteResult> => {
+    edit: async (workspaceId: WorkspaceId, planId: string, input: z.infer<typeof editInputSchema>, expectedRevision: number | undefined, access: AccessContext, signal?: AbortSignal): Promise<WriteResult> => {
       const at = now()
       const by = storedActor(access)
       refuseAgentAuthorityField(input.authority, access)
@@ -459,7 +460,7 @@ export const createPlanningOperations = (ports: PlanningOperationsPorts) => {
         if (recommended === undefined || recommended.rows.length === 0) {
           return writeResult(previewed, changeLines(outcome.changes, outcome.inputs), { preview: { saved: false, consequence: `Not saved.${authority} No schedule to re-time yet.`.trim(), violations: [], weakens } })
         }
-        const timed = await solver.preview({ inputs: outcome.inputs, option: recommended })
+        const timed = await solver.preview({ inputs: outcome.inputs, option: recommended, ...(signal === undefined ? {} : { signal }) })
         const before = new Map(recommended.rows.map(row => [row.job, row]))
         const moved = timed.rows.filter(row => before.get(row.job)?.start !== row.start || before.get(row.job)?.finish !== row.finish)
         const finish = (rows: readonly DatedRow[]) => rows.reduce((latest, row) => row.finish > latest ? row.finish : latest, '')

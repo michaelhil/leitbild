@@ -85,9 +85,9 @@ export const createRealSolver = (pool: SolverPool): SolverPort => {
     },
     // In a solver child, like Generate: one child at a time across the service, so a preview while a Generate
     // runs is refused 'solver_busy'.
-    preview: async ({ inputs, option }) => {
+    preview: async ({ inputs, option, signal }) => {
       if (generating) throw planningError(409, 'solver_busy', SOLVER_BUSY_WORDS)
-      return pool.preview(inputs, option)
+      return pool.preview(inputs, option, signal)
     },
   }
 }

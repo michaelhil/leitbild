@@ -43,6 +43,16 @@ export const SOLVER_CPU_CAP_CORES = 0.8 * 0.5
  */
 export const CHILD_RSS_LIMIT_MB = 140
 
+/**
+ * Every child is killed at a wall deadline, so a hung child never holds the only solver slot (adversary,
+ * child boundary): a solve or sub-solve at its budget's wall time plus this margin (compile, bounds and lane
+ * K's check run outside the engine budget, and take well under a second at the certified size); a preview
+ * at PREVIEW_DEADLINE_MS (its p95 is under 100 ms).
+ */
+export const DEADLINE_MARGIN_MS = 5_000
+export const PREVIEW_DEADLINE_MS = 5_000
+export const PREVIEW_TOO_LONG_WORDS = 'The check took too long; try again.'
+
 /** One solve at a time across the service (walk 3 decision): a second is refused, never queued. */
 export const SOLVER_BUSY_WORDS = 'Planning is generating another plan; try again in about 20 seconds.'
 
@@ -56,6 +66,9 @@ export interface PoolOptions {
   /** The child entry (child.ts) and whether children run with --smol. */
   readonly childEntry?: string
   readonly smol?: boolean
+  /** The deadlines (tests shorten them). */
+  readonly deadlineMarginMs?: number
+  readonly previewDeadlineMs?: number
 }
 
 /** One finished solve, kept so ops can prove the CPU cap (CPU-ms measured in the solver child). */
@@ -69,8 +82,8 @@ export interface SolveRecord {
 export interface SolverPool extends Engine {
   /** Generate's sub-solves, each whole in a child (compile, bounds, search, lane K's check). */
   readonly subSolver: SubSolver
-  /** A preview in a child (preview.ts): one child at a time, like a solve. */
-  readonly preview: (inputs: PlanInputs, option: Option) => Promise<PreviewResult>
+  /** A preview in a child (preview.ts): one child at a time, like a solve; `signal` cancels it. */
+  readonly preview: (inputs: PlanInputs, option: Option, signal?: AbortSignal) => Promise<PreviewResult>
   readonly active: () => number
   /** The last 100 solves. */
   readonly records: () => readonly SolveRecord[]
@@ -91,6 +104,8 @@ export const createSolverPool = (options: PoolOptions = {}): SolverPool => {
   const cap = options.cpuCapCores ?? SOLVER_CPU_CAP_CORES
   const childEntry = options.childEntry ?? new URL('./child.ts', import.meta.url).pathname
   const smol = options.smol ?? true
+  const marginMs = options.deadlineMarginMs ?? DEADLINE_MARGIN_MS
+  const previewDeadlineMs = options.previewDeadlineMs ?? PREVIEW_DEADLINE_MS
   const running = new Map<string, Running>()
   const records: SolveRecord[] = []
   let stopping = false
@@ -105,7 +120,8 @@ export const createSolverPool = (options: PoolOptions = {}): SolverPool => {
   /**
    * One child for one job: spawned, sent `request`, and answered once (its answer, a refusal, an error, or no
    * answer). A cancel is answered within `graceMs` or the child is killed; a child that ends without an
-   * answer gives `unanswered('ended')`. The child is always gone when the job settles.
+   * answer gives `unanswered('ended')`, and so does one still running at `deadlineMs` (it is killed: the slot
+   * frees at once). The child is always gone when the job settles.
    */
   const job = <T>(spec: {
     readonly request: (id: string) => ChildRequest
@@ -113,10 +129,12 @@ export const createSolverPool = (options: PoolOptions = {}): SolverPool => {
     readonly wallMs: number
     readonly grantedCpuMs: number
     readonly signal: AbortSignal
+    /** Wall time from spawn after which the child is killed and the job answers as 'ended'. */
+    readonly deadlineMs: number
     readonly stoppedByWho?: () => 'person' | 'host' | undefined
     readonly answer: (message: Extract<ChildResponse, { type: 'result' | 'outcome' | 'preview' }>) => { readonly value: T; readonly record?: Omit<SolveRecord, 'id' | 'grantedCpuMs' | 'spawnToAnswerMs'> } | { readonly problem: string }
     /** No answer: a value to resolve with, or (preview) a refusal to throw. */
-    readonly unanswered: (stoppedBy: 'cancelled' | 'ended', wallMs: number) => { readonly value: T; readonly record: Omit<SolveRecord, 'id' | 'grantedCpuMs' | 'spawnToAnswerMs'> } | { readonly refuse: Error }
+    readonly unanswered: (stoppedBy: 'cancelled' | 'ended', wallMs: number, deadline: boolean) => { readonly value: T; readonly record: Omit<SolveRecord, 'id' | 'grantedCpuMs' | 'spawnToAnswerMs'> } | { readonly refuse: Error }
   }): Promise<T> => {
     const id = `solve-${++next}`
     const startedAt = performance.now()
@@ -125,11 +143,13 @@ export const createSolverPool = (options: PoolOptions = {}): SolverPool => {
     return new Promise<T>((resolve, reject) => {
       let done = false
       let grace: ReturnType<typeof setTimeout> | undefined
+      let deadline: ReturnType<typeof setTimeout> | undefined
       let stopReason: 'cancelled' | undefined
       const finish = (outcome: () => void, record?: Omit<SolveRecord, 'id' | 'grantedCpuMs' | 'spawnToAnswerMs'>): void => {
         if (done) return
         done = true
         if (grace !== undefined) clearTimeout(grace)
+        if (deadline !== undefined) clearTimeout(deadline)
         spec.signal.removeEventListener('abort', onAbort)
         if (child.exitCode === null && child.signalCode === null) child.kill('SIGKILL')
         running.delete(id)
@@ -154,12 +174,13 @@ export const createSolverPool = (options: PoolOptions = {}): SolverPool => {
           settle(answer)
         },
       })
-      void child.exited.then(() => settle(spec.unanswered(stopReason ?? 'ended', performance.now() - startedAt)))
+      void child.exited.then(() => settle(spec.unanswered(stopReason ?? 'ended', performance.now() - startedAt, false)))
+      deadline = setTimeout(() => settle(spec.unanswered('ended', performance.now() - startedAt, true)), spec.deadlineMs)
       const stop = (): void => {
         stopReason = 'cancelled'
         const who = spec.stoppedByWho?.()
         send({ type: 'cancel', id, ...(who === undefined ? {} : { who }) })
-        grace ??= setTimeout(() => settle(spec.unanswered('cancelled', performance.now() - startedAt)), graceMs)
+        grace ??= setTimeout(() => settle(spec.unanswered('cancelled', performance.now() - startedAt, false)), graceMs)
       }
       const onAbort = (): void => stop()
       running.set(id, { rate: spec.rate, wallMs: spec.wallMs, startedAt, stop, settled, rebudget: (lower: number) => send({ type: 'rebudget', id, rate: lower }) })
@@ -186,7 +207,7 @@ export const createSolverPool = (options: PoolOptions = {}): SolverPool => {
     const recordOf = (result: EngineResult) => ({ wallMs: result.wallMs, cpuMs: result.cpuMs, evals: result.evals, stoppedBy: result.stoppedBy })
     return job<EngineResult>({
       request: id => ({ type: 'solve', id, problem: encodeProblem(problem), budget, seed: solveOptions.seed, rssLimitMb, sampleMs, ...(solveOptions.initial === undefined ? {} : { initial: encodeSchedule(solveOptions.initial) }) }),
-      rate, wallMs: budget.wallMs, grantedCpuMs: budget.cpuMs, signal: solveOptions.signal,
+      rate, wallMs: budget.wallMs, grantedCpuMs: budget.cpuMs, signal: solveOptions.signal, deadlineMs: budget.wallMs + marginMs,
       answer: message => {
         const result = message.type === 'result' ? resultFromWire(message.result) : { problem: 'a search answered with a sub-solve outcome' }
         return 'problem' in result ? result : { value: result, record: { ...recordOf(result), peakRssMb: message.peakRssMb } }
@@ -206,7 +227,7 @@ export const createSolverPool = (options: PoolOptions = {}): SolverPool => {
     const runOf = (outcome: SubSolveOutcome) => ('run' in outcome.option.status ? outcome.option.status.run : undefined)
     return job<SubSolveOutcome>({
       request: id => ({ type: 'subsolve', id, task: encode({ ...task, budget }), rssLimitMb, sampleMs }),
-      rate, wallMs: budget.wallMs, grantedCpuMs: budget.cpuMs, signal, ...(stoppedByWho === undefined ? {} : { stoppedByWho }),
+      rate, wallMs: budget.wallMs, grantedCpuMs: budget.cpuMs, signal, deadlineMs: budget.wallMs + marginMs, ...(stoppedByWho === undefined ? {} : { stoppedByWho }),
       answer: message => {
         const outcome = message.type === 'outcome' ? outcomeFromWire(message.outcome) : { problem: 'a sub-solve answered with a bare search result' }
         if ('problem' in outcome) return outcome
@@ -223,17 +244,20 @@ export const createSolverPool = (options: PoolOptions = {}): SolverPool => {
     })
   }
 
-  /** A preview in a child: no CPU budget (it is a repair, not a search); refused when the pool is busy. */
-  const preview = async (inputs: PlanInputs, option: Option): Promise<PreviewResult> => {
+  /**
+   * A preview in a child: no CPU budget (it is a repair, not a search); refused when the pool is busy;
+   * cancelled by the request's own signal, and killed at the preview deadline (503, said in planner words).
+   */
+  const preview = async (inputs: PlanInputs, option: Option, signal: AbortSignal = new AbortController().signal): Promise<PreviewResult> => {
     admit()
     return job<PreviewResult>({
       request: id => ({ type: 'preview', id, task: encode({ inputs, option }), rssLimitMb, sampleMs }),
-      rate: 0, wallMs: 0, grantedCpuMs: 0, signal: new AbortController().signal,
+      rate: 0, wallMs: 0, grantedCpuMs: 0, signal, deadlineMs: previewDeadlineMs,
       answer: message => {
         const result = message.type === 'preview' ? previewFromWire(message.preview) : { problem: 'a preview answered with a solve result' }
         return 'problem' in result ? result : { value: result }
       },
-      unanswered: stoppedBy => ({ refuse: planningError(503, 'preview_unavailable', stoppedBy === 'ended' ? 'The preview could not be made: the solver process ended. Try again.' : 'The preview was stopped. Try again.') }),
+      unanswered: (stoppedBy, _wallMs, late) => ({ refuse: planningError(503, 'preview_unavailable', late ? PREVIEW_TOO_LONG_WORDS : stoppedBy === 'ended' ? 'The preview could not be made: the solver process ended. Try again.' : 'The preview was stopped. Try again.') }),
     })
   }
 
