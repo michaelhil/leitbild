@@ -71,7 +71,7 @@ export const createSolverDouble = (options: { readonly calls?: Array<{ readonly 
     if (row === undefined) return { lines: ['No schedule to explain.'], items: [] }
     return {
       lines: [`${row.job} starts when the job before it ends.`],
-      items: [{ job: row.job, start: row.start, finish: row.finish, floatHours: row.float.workingHours, because: [{ kind: 'link', about: [row.job] }], joint: false }],
+      items: [{ job: row.job, start: row.start, finish: row.finish, floatHours: row.float.workingHours, because: [{ kind: 'link', about: [{ kind: 'job', key: row.job }] }], joint: false }],
     }
   },
   preview: async request => {

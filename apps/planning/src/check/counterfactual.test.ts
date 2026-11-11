@@ -27,15 +27,15 @@ const item = (key: string, start: string, because: ExplainItem['because'], joint
 
 describe('the counterfactual check', () => {
   test('B waits for both the link and the one operator: named jointly, it holds', () => {
-    const explanation = item('B', '2026-11-16T07:00:00Z', [{ kind: 'link', about: ['A', 'B'] }, { kind: 'crew', about: ['ops'] }], true)
+    const explanation = item('B', '2026-11-16T07:00:00Z', [{ kind: 'link', about: [{ kind: 'job', key: 'A' }, { kind: 'job', key: 'B' }] }, { kind: 'crew', about: [{ kind: 'resource', key: 'ops' }] }], true)
     expect(counterfactualCheck(inputs, variant, rows, [explanation])).toEqual([])
   })
   test('naming only the link fails: with the link gone, the operator still holds B back', () => {
-    const explanation = item('B', '2026-11-16T07:00:00Z', [{ kind: 'link', about: ['A', 'B'] }], false)
+    const explanation = item('B', '2026-11-16T07:00:00Z', [{ kind: 'link', about: [{ kind: 'job', key: 'A' }, { kind: 'job', key: 'B' }] }], false)
     expect(counterfactualCheck(inputs, variant, rows, [explanation]).map(failure => failure.reason)).toEqual(['did-not-move'])
   })
   test('two causes claimed as each sufficient fail when they bind only together', () => {
-    const explanation = item('B', '2026-11-16T07:00:00Z', [{ kind: 'link', about: ['A', 'B'] }, { kind: 'crew', about: ['ops'] }], false)
+    const explanation = item('B', '2026-11-16T07:00:00Z', [{ kind: 'link', about: [{ kind: 'job', key: 'A' }, { kind: 'job', key: 'B' }] }, { kind: 'crew', about: [{ kind: 'resource', key: 'ops' }] }], false)
     expect(counterfactualCheck(inputs, variant, rows, [explanation])).toHaveLength(2)
   })
   test('C is late by choice: nothing holds it after 09:00Z; the release does not bind its 10:00Z start', () => {
@@ -44,10 +44,10 @@ describe('the counterfactual check', () => {
   })
   test('a C at its release is held by the release, and relaxing it moves C', () => {
     const atRelease = [...rows.slice(0, 2), one('C', '2026-11-16T09:00:00Z', '2026-11-16T10:00:00Z')]
-    expect(counterfactualCheck(inputs, variant, atRelease, [item('C', '2026-11-16T09:00:00Z', [{ kind: 'release', about: ['C'] }], false)])).toEqual([])
+    expect(counterfactualCheck(inputs, variant, atRelease, [item('C', '2026-11-16T09:00:00Z', [{ kind: 'release', about: [{ kind: 'job', key: 'C' }] }], false)])).toEqual([])
   })
   test('an explanation that does not describe the dated row, or a schedule that is not feasible, is a failure', () => {
-    expect(counterfactualCheck(inputs, variant, rows, [item('B', '2026-11-16T07:30:00Z', [{ kind: 'crew', about: ['ops'] }], false)]).map(failure => failure.reason)).toEqual(['row-mismatch'])
+    expect(counterfactualCheck(inputs, variant, rows, [item('B', '2026-11-16T07:30:00Z', [{ kind: 'crew', about: [{ kind: 'resource', key: 'ops' }] }], false)]).map(failure => failure.reason)).toEqual(['row-mismatch'])
     expect(counterfactualCheck(inputs, variant, rows.slice(1), []).map(failure => failure.reason)).toEqual(['not-feasible-before'])
   })
 })
@@ -64,12 +64,12 @@ describe('the harness reads the explainer as it means', () => {
   const rowsTwo = [one('A', '2026-11-16T06:00:00Z', '2026-11-16T07:00:00Z'), one('B', '2026-11-16T06:00:00Z', '2026-11-16T07:00:00Z'), one('E', '2026-11-16T07:00:00Z', '2026-11-16T08:00:00Z'),
     one('X-TAG', '2026-11-16T08:00:00Z', '2026-11-16T09:00:00Z'), one('X-TEST', '2026-11-16T09:00:00Z', '2026-11-16T10:00:00Z')]
   test('a link cause naming two keys names two predecessors, both lifted', () => {
-    expect(counterfactualCheck(two, variant, rowsTwo, [item('E', '2026-11-16T07:00:00Z', [{ kind: 'link', about: ['A', 'B'] }], false)])).toEqual([])
+    expect(counterfactualCheck(two, variant, rowsTwo, [item('E', '2026-11-16T07:00:00Z', [{ kind: 'link', about: [{ kind: 'job', key: 'A' }, { kind: 'job', key: 'B' }] }], false)])).toEqual([])
     // naming only one of them is not enough: the other still holds E
-    expect(counterfactualCheck(two, variant, rowsTwo, [item('E', '2026-11-16T07:00:00Z', [{ kind: 'link', about: ['A'] }], false)]).map(failure => failure.reason)).toEqual(['did-not-move'])
+    expect(counterfactualCheck(two, variant, rowsTwo, [item('E', '2026-11-16T07:00:00Z', [{ kind: 'link', about: [{ kind: 'job', key: 'A' }] }], false)]).map(failure => failure.reason)).toEqual(['did-not-move'])
   })
   test('lifting "test after tag-out" lifts only that order: the item still returns, and the test moves', () => {
-    expect(counterfactualCheck(two, variant, rowsTwo, [item('X-TEST', '2026-11-16T09:00:00Z', [{ kind: 'link', about: ['X-TAG'] }], false)])).toEqual([])
+    expect(counterfactualCheck(two, variant, rowsTwo, [item('X-TEST', '2026-11-16T09:00:00Z', [{ kind: 'link', about: [{ kind: 'job', key: 'X-TAG' }] }], false)])).toEqual([])
   })
 })
 
@@ -88,16 +88,16 @@ describe('the data date as a cause', () => {
 describe('padded explanations are refused', () => {
   test('a joint set with a cause that is not needed fails minimality', () => {
     // B is held by the link and the operator; "placed late" adds nothing to that pair
-    const padded = item('B', '2026-11-16T07:00:00Z', [{ kind: 'link', about: ['A'] }, { kind: 'crew', about: ['ops'] }, { kind: 'late-as-possible', about: [] }], true)
+    const padded = item('B', '2026-11-16T07:00:00Z', [{ kind: 'link', about: [{ kind: 'job', key: 'A' }] }, { kind: 'crew', about: [{ kind: 'resource', key: 'ops' }] }, { kind: 'late-as-possible', about: [] }], true)
     const failures = counterfactualCheck(inputs, variant, rows, [padded])
     expect(failures.map(failure => failure.reason)).toEqual(['not-minimal'])
     expect(failures[0]?.detail).toContain('late-as-possible')
   })
   test('the exact pair is minimal', () => {
-    expect(counterfactualCheck(inputs, variant, rows, [item('B', '2026-11-16T07:00:00Z', [{ kind: 'link', about: ['A'] }, { kind: 'crew', about: ['ops'] }], true)])).toEqual([])
+    expect(counterfactualCheck(inputs, variant, rows, [item('B', '2026-11-16T07:00:00Z', [{ kind: 'link', about: [{ kind: 'job', key: 'A' }] }, { kind: 'crew', about: [{ kind: 'resource', key: 'ops' }] }], true)])).toEqual([])
   })
   test('a "waits for" naming a job with no order to it is refused, not waived', () => {
-    const failures = counterfactualCheck(inputs, variant, rows, [item('B', '2026-11-16T07:00:00Z', [{ kind: 'link', about: ['C'] }, { kind: 'crew', about: ['ops'] }], true)])
+    const failures = counterfactualCheck(inputs, variant, rows, [item('B', '2026-11-16T07:00:00Z', [{ kind: 'link', about: [{ kind: 'job', key: 'C' }] }, { kind: 'crew', about: [{ kind: 'resource', key: 'ops' }] }], true)])
     expect(failures.map(failure => [failure.reason, failure.detail])).toEqual([['cannot-relax', 'no link or derived order from C to B']])
   })
 })
@@ -105,13 +105,13 @@ describe('padded explanations are refused', () => {
 describe('every name an explanation gives exists as what its kind says', () => {
   const at = '2026-11-16T07:00:00Z'
   test('names that resolve to the right kind of thing pass', () => {
-    expect(unknownNames(inputs, item('B', at, [{ kind: 'link', about: ['A'] }, { kind: 'crew', about: ['ops'] }, { kind: 'shift', about: ['always'] }], true))).toEqual([])
+    expect(unknownNames(inputs, item('B', at, [{ kind: 'link', about: [{ kind: 'job', key: 'A' }] }, { kind: 'crew', about: [{ kind: 'resource', key: 'ops' }, { kind: 'job', key: 'A' }] }, { kind: 'shift', about: [{ kind: 'resource', key: 'ops' }] }], true))).toEqual([])
   })
-  test('a crew cause naming a job, a shift naming a crew, or a job not in the plan read as "an item no longer in this plan"', () => {
-    expect(unknownNames(inputs, item('B', at, [{ kind: 'crew', about: ['ops', 'A'] }], false))).toEqual(["crew names 'A', which is not a crew or tool of the plan"])
-    expect(unknownNames(inputs, item('B', at, [{ kind: 'shift', about: ['ops'] }], false))).toEqual(["shift names 'ops', which is not a calendar of the plan"])
-    expect(unknownNames(inputs, item('B', at, [{ kind: 'link', about: ['GONE'] }], false))).toEqual(["link names 'GONE', which is not a job of the plan"])
-    const failures = counterfactualCheck(inputs, variant, rows, [item('B', at, [{ kind: 'link', about: ['A'] }, { kind: 'crew', about: ['ops', 'A'] }], true)])
+  test('a name of the wrong kind for its cause, or one the plan lacks as that kind, reads as "an item no longer in this plan"', () => {
+    expect(unknownNames(inputs, item('B', at, [{ kind: 'crew', about: [{ kind: 'resource', key: 'A' }] }], false))).toEqual(["crew names 'A', which is not a resource of the plan"])
+    expect(unknownNames(inputs, item('B', at, [{ kind: 'shift', about: [{ kind: 'job', key: 'A' }] }], false))).toEqual(["shift names the job 'A', which a shift cause does not name"])
+    expect(unknownNames(inputs, item('B', at, [{ kind: 'link', about: [{ kind: 'job', key: 'GONE' }] }], false))).toEqual(["link names 'GONE', which is not a job of the plan"])
+    const failures = counterfactualCheck(inputs, variant, rows, [item('B', at, [{ kind: 'link', about: [{ kind: 'job', key: 'A' }] }, { kind: 'crew', about: [{ kind: 'resource', key: 'ops' }, { kind: 'resource', key: 'A' }] }], true)])
     expect(failures.map(failure => failure.reason)).toEqual(['unknown-name'])
   })
 })

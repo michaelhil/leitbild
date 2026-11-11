@@ -34,7 +34,7 @@ const none = () => {}
 describe('panels', () => {
   test('the job panel says why it starts then, with joint causes and float, and offers a previewed lock', () => {
     const test = rows.find(row => row.job === 'SWA-RTS')!
-    const why = whyStart({ job: 'SWA-RTS', start: test.start, finish: test.finish, floatHours: test.float.workingHours, joint: true, because: [{ kind: 'link', about: ['SWA-PUMP-OUT'] }, { kind: 'crew', about: ['test-team'], until: test.start }] }, context, test)
+    const why = whyStart({ job: 'SWA-RTS', start: test.start, finish: test.finish, floatHours: test.float.workingHours, joint: true, because: [{ kind: 'link', about: [{ kind: 'job', key: 'SWA-PUMP-OUT' }] }, { kind: 'crew', about: [{ kind: 'resource', key: 'test-team' }], until: test.start }] }, context, test)
     const text = readableText(renderHtml(JobPanel, { jobKey: 'SWA-RTS', context, row: test, why, onWhy: none, onPreview: none, onClose: none }))
     expect(text).toContain('Restore SW A, fill and vent, pump test')
     expect(text).toContain('Shortest allowed')

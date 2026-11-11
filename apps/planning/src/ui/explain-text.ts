@@ -2,7 +2,7 @@
 import type { z } from 'zod'
 import type { explainResultSchema } from '../api/contract.ts'
 import { hoursText } from './format.ts'
-import type { DatedRow } from './model.ts'
+import { joinWords, type DatedRow } from './model.ts'
 import type { Context } from './status-text.ts'
 
 export type ExplainResult = z.infer<typeof explainResultSchema>
@@ -13,40 +13,30 @@ const until = (because: Because, context: Context): string => because.until === 
 
 const at = (because: Because, context: Context): string => because.until === undefined ? 'then' : `at ${context.format.clock(because.until)}`
 
-/** One cause in words. Keys are shown by their names only. */
 /**
- * One cause in words. An explanation's `about` may mix kinds (a busy crew with the jobs holding it; the
- * crews whose shift is off), so each key is named by what it is in this plan, never assumed to be one kind.
+ * One cause in words. Every name in `about` says what it names (a job, a crew, a rule…), and is shown by that
+ * thing's name only: a crew or tool cause names the resource and the jobs holding it; a shift cause names
+ * the resources off duty.
  */
 export const causeText = (because: Because, context: Context): string => {
   const { names } = context
-  const about = because.about
-  const of = (...kinds: ReadonlyArray<ReturnType<typeof names.kindOf>>) => about.filter(key => kinds.includes(names.kindOf(key)))
-  const busy = (word: string): string => {
-    const holders = of('resource')
-    const jobs = of('job')
-    const who = holders.length > 0 ? names.list(holders) : 'the crew or tool it needs'
-    return `${who} ${holders.length > 1 ? 'are' : 'is'} ${word}${jobs.length > 0 ? ` with ${names.list(jobs)}` : ''}${until(because, context)}`
-  }
+  const of = (kinds: ReadonlyArray<Because['about'][number]['kind']>) => because.about.filter(entry => kinds.includes(entry.kind))
+  const said = (entries: Because['about']) => joinWords(entries.map(entry => names[entry.kind](entry.key)))
+  const holders = of(['job'])
+  const holding = holders.length === 0 ? '' : ` with ${said(holders)}`
   switch (because.kind) {
-    case 'link': return `it follows ${names.list(of('job').length > 0 ? of('job') : about)}${until(because, context)}`
-    case 'crew': return busy('busy')
-    case 'tool': return busy('in use')
-    case 'shift': {
-      const calendars = of('calendar')
-      const crews = of('resource')
-      return calendars.length > 0
-        ? `no working time on ${names.list(calendars)}${crews.length > 0 ? ` for ${names.list(crews)}` : ''}${until(because, context)}`
-        : `no working time for ${crews.length > 0 ? names.list(crews) : 'its crew or tool'}${until(because, context)}`
-    }
-    case 'availability': return of('rule').length > 0 ? `starting earlier would break “${names.list(of('rule'))}”` : 'starting earlier would take too much equipment out together'
-    case 'span-limit': return of('rule').length > 0 ? `starting earlier would stretch the outage past “${names.list(of('rule'))}”` : 'starting earlier would stretch an outage past its limit'
+    case 'link': return `it follows ${said(because.about)}${until(because, context)}`
+    case 'crew': return `${said(of(['resource']))} ${of(['resource']).length === 1 ? 'is' : 'are'} busy${holding}${until(because, context)}`
+    case 'tool': return `${said(of(['resource']))} ${of(['resource']).length === 1 ? 'is' : 'are'} in use${holding}${until(because, context)}`
+    case 'shift': return `no working time for ${said(because.about)}${until(because, context)}`
+    case 'availability': return `starting earlier would break “${said(because.about)}”`
+    case 'span-limit': return `starting earlier would stretch the outage past “${said(because.about)}”`
     case 'window': return `the window opens ${at(because, context)}`
     case 'release': return `it cannot start before ${at(because, context)}`
     case 'lock': return 'you fixed its start'
     case 'data-date': return `nothing starts before the plan's "now", ${at(because, context)}`
     case 'late-as-possible': return 'it is placed as late as its successors allow, to keep equipment in service'
-    case 'purchase-not-allowed': return `${names.list(of('purchase'))} ${of('purchase').length === 1 ? 'is' : 'are'} not allowed`
+    case 'purchase-not-allowed': return `${said(because.about)} ${because.about.length === 1 ? 'is' : 'are'} not allowed`
   }
 }
 

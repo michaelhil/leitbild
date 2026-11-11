@@ -64,8 +64,8 @@ describe('the Supply run solves on the same core', () => {
     }
     const explainer = makeExplainer({ prep, index: compiled.index, schedule, floats: totalFloat(prep, compiled.index, schedule) })
     const why = explainer.whyStart(compiled.index.jobs.indexOf('U-1'))
-    expect(why.because).toContainEqual({ kind: 'availability', about: ['heavy-free'], until: '2026-09-03T08:05:00.000Z' })
-    expect(why.because).toContainEqual({ kind: 'shift', about: ['truck-2'], until: '2026-09-03T08:05:00.000Z' })
+    expect(why.because).toContainEqual({ kind: 'availability', about: [{ kind: 'rule', key: 'heavy-free' }], until: '2026-09-03T08:05:00.000Z' })
+    expect(why.because).toContainEqual({ kind: 'shift', about: [{ kind: 'resource', key: 'truck-2' }], until: '2026-09-03T08:05:00.000Z' })
     expect(why.because.map(cause => cause.kind)).not.toContain('late-as-possible')
   })
 

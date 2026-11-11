@@ -53,12 +53,13 @@ export const relax = (current: Relaxed, cause: Cause, job: string): Relaxed | st
 
 const relaxOne = (current: Relaxed, cause: Cause, job: string): Relaxed | string => {
   const { inputs, variant } = current
-  const [first, second] = cause.about
+  const keys = cause.about.map(entry => entry.key)
+  const [first, second] = keys
   switch (cause.kind) {
     case 'link': {
       // The explainer names the predecessors (its 'about'); the successor is the job explained. Every key is a
       // predecessor: its link, or its derived order, into the job is lifted.
-      const preds = cause.about.filter(key => key !== job)
+      const preds = keys.filter(key => key !== job)
       if (preds.length === 0) return 'a link cause names no predecessor'
       let next: Relaxed = current
       for (const from of preds) {
@@ -75,8 +76,8 @@ const relaxOne = (current: Relaxed, cause: Cause, job: string): Relaxed | string
     case 'shift': {
       // The named resources work around the clock for this job only: a copy of each, on duty always, is
       // added to the job's needs, so every other job keeps its calendars ("everything else fixed").
-      const named = cause.about.filter(key => inputs.resources.some(resource => resource.key === key))
-      if (named.length === 0) return `no resource among ${cause.about.join(', ')}`
+      const named = keys.filter(key => inputs.resources.some(resource => resource.key === key))
+      if (named.length === 0) return `no resource among ${keys.join(', ')}`
       const calendar = `${job}.around-the-clock`
       const copies = named.map(key => ({ ...inputs.resources.find(resource => resource.key === key)!, key: `${key}.${job}.on-duty`, calendar }))
       return {
@@ -151,22 +152,28 @@ const canStartEarlier = (relaxed: Relaxed, rows: readonly CheckRow[], job: strin
  */
 export const unknownNames = (inputs: PlanInputs, item: ExplainItem): string[] => {
   const has = <T extends { readonly key: string }>(list: readonly T[]) => (key: string) => list.some(entry => entry.key === key)
-  const isJob = has(inputs.jobs), isResource = has(inputs.resources), isCalendar = has(inputs.calendars), isPurchase = has(inputs.purchases)
-  const isEquipment = has(inputs.equipment), isGroup = has(inputs.groups)
+  const exists: Record<ExplainItem['because'][number]['about'][number]['kind'], (key: string) => boolean> = {
+    job: has(inputs.jobs), resource: has(inputs.resources), calendar: has(inputs.calendars), purchase: has(inputs.purchases),
+    equipment: has(inputs.equipment), rule: has(inputs.rules),
+  }
   const isRule = (kind: string) => (key: string) => inputs.rules.some(rule => rule.key === key && rule.kind === kind)
-  const isAnything = (key: string) => isJob(key) || isResource(key) || isCalendar(key) || isPurchase(key) || isEquipment(key) || isGroup(key) || inputs.rules.some(rule => rule.key === key)
   const problems: string[] = []
-  if (!isJob(item.job)) problems.push(`the explained job '${item.job}' is not in the plan`)
+  if (!exists.job(item.job)) problems.push(`the explained job '${item.job}' is not in the plan`)
   for (const cause of item.because) {
-    const expect: { readonly what: string; readonly test: (key: string) => boolean } =
-      cause.kind === 'link' ? { what: 'a job', test: isJob }
-        : cause.kind === 'crew' || cause.kind === 'tool' ? { what: 'a crew or tool', test: isResource }
-          : cause.kind === 'shift' ? { what: 'a calendar', test: isCalendar }
-            : cause.kind === 'availability' ? { what: 'a keep-in-service rule', test: isRule('keep-in-service') }
-              : cause.kind === 'span-limit' ? { what: 'a span-limit rule', test: isRule('span-limit') }
-                : cause.kind === 'purchase-not-allowed' ? { what: 'a purchase', test: isPurchase }
-                  : { what: 'something in the plan', test: isAnything }
-    for (const key of cause.about) if (!expect.test(key)) problems.push(`${cause.kind} names '${key}', which is not ${expect.what} of the plan`)
+    // What each cause kind may name, and a rule cause's rule kind.
+    const allowed: ReadonlyArray<string> | undefined =
+      cause.kind === 'link' || cause.kind === 'release' || cause.kind === 'lock' ? ['job']
+        : cause.kind === 'crew' || cause.kind === 'tool' ? ['resource', 'job']
+          : cause.kind === 'shift' ? ['resource', 'calendar']
+            : cause.kind === 'availability' || cause.kind === 'span-limit' ? ['rule']
+              : cause.kind === 'purchase-not-allowed' ? ['purchase'] : undefined
+    for (const name of cause.about) {
+      if (allowed !== undefined && !allowed.includes(name.kind)) problems.push(`${cause.kind} names the ${name.kind} '${name.key}', which a ${cause.kind} cause does not name`)
+      else if (!exists[name.kind](name.key)) problems.push(`${cause.kind} names '${name.key}', which is not a ${name.kind} of the plan`)
+      else if (cause.kind === 'availability' && !isRule('keep-in-service')(name.key)) problems.push(`availability names '${name.key}', which is not a keep-in-service rule of the plan`)
+      else if (cause.kind === 'span-limit' && !isRule('span-limit')(name.key)) problems.push(`span-limit names '${name.key}', which is not a span-limit rule of the plan`)
+    }
+    if ((cause.kind === 'crew' || cause.kind === 'tool') && !cause.about.some(name => name.kind === 'resource')) problems.push(`${cause.kind} names no crew or tool`)
   }
   return problems
 }
@@ -189,13 +196,13 @@ export const counterfactualCheck = (inputs: PlanInputs, variant: CheckVariant, r
     for (const set of sets) {
       const relaxed = relaxAll(set)
       if (typeof relaxed === 'string') { failures.push({ job: item.job, causes: set, reason: 'cannot-relax', detail: relaxed }); continue }
-      if (!canStartEarlier(relaxed, rows, item.job)) { failures.push({ job: item.job, causes: set, reason: 'did-not-move', detail: `relaxing ${set.map(cause => `${cause.kind} ${cause.about.join('/')}`).join(' and ')} does not let it start earlier` }); continue }
+      if (!canStartEarlier(relaxed, rows, item.job)) { failures.push({ job: item.job, causes: set, reason: 'did-not-move', detail: `relaxing ${set.map(cause => `${cause.kind} ${cause.about.map(entry => entry.key).join('/')}`).join(' and ')} does not let it start earlier` }); continue }
       // a joint set is minimal: with any one cause kept, the job may not move (else that cause is padding)
       if (set.length < 2) continue
       set.forEach((kept, index) => {
         const others = relaxAll(set.filter((_, other) => other !== index))
         if (typeof others !== 'string' && canStartEarlier(others, rows, item.job)) {
-          failures.push({ job: item.job, causes: set, reason: 'not-minimal', detail: `keeping ${kept.kind} ${kept.about.join('/')} and relaxing the rest still lets it start earlier, so ${kept.kind} is not needed in the set` })
+          failures.push({ job: item.job, causes: set, reason: 'not-minimal', detail: `keeping ${kept.kind} ${kept.about.map(entry => entry.key).join('/')} and relaxing the rest still lets it start earlier, so ${kept.kind} is not needed in the set` })
         }
       })
     }

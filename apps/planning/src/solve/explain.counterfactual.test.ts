@@ -53,7 +53,7 @@ describe('why-start names the causes that hold each job', () => {
         const answer = await solver.explain({ inputs, option, ask: 'why-start', job: row.job, cursor: undefined })
         const item = answer.items.find(entry => entry.job === row.job)!
         // Every named item is in this plan (screenshot S-06 named "an item no longer in this plan").
-        for (const cause of item.because) for (const key of cause.about) expect(keys.has(key)).toBe(true)
+        for (const cause of item.because) for (const name of cause.about) expect(keys.has(name.key)).toBe(true)
         // "The window opens then" only for a start at the window's first slot (S-06 said it for 10:02).
         if (row.start !== new Date(inputs.settings.window!.start).toISOString()) expect(item.because.map(cause => cause.kind)).not.toContain('window')
         expect(relaxedCheck(inputs, item, option.variant, option.rows)).toEqual([])
@@ -80,7 +80,7 @@ describe('why-start names the causes that hold each job', () => {
     // duty before the window) hold it there together.
     expect(item.joint).toBe(true)
     expect(item.because.map(cause => cause.kind)).toEqual(['window', 'data-date', 'shift', 'availability'])
-    expect(item.because[2]!.about).toEqual(row.uses.map(use => use.resource))
+    expect(item.because[2]!.about).toEqual(row.uses.map(use => ({ kind: 'resource', key: use.resource })))
     expect(relaxedCheck(inputs, item, option.variant, rows)).toEqual([])
     await pool.shutdown()
   }, 300_000)

@@ -69,7 +69,7 @@ const causeWords: Readonly<Record<ExplainItem['because'][number]['kind'], string
 /** One line per item, generated from its causes, in the plan's names and local time. */
 const lineOf = (inputs: PlanInputs, item: ExplainItem): string => {
   const zone = inputs.settings.timeZone
-  const causes = item.because.map(cause => `${causeWords[cause.kind]}${cause.about.length === 0 ? '' : ` ${cause.about.slice(0, 2).map(key => nameOf(inputs, key)).join(', ')}`}${cause.until === undefined ? '' : ` until ${timeWords(cause.until, zone)}`}`)
+  const causes = item.because.map(cause => `${causeWords[cause.kind]}${cause.about.length === 0 ? '' : ` ${cause.about.slice(0, 2).map(entry => nameOf(inputs, entry.key)).join(', ')}`}${cause.until === undefined ? '' : ` until ${timeWords(cause.until, zone)}`}`)
   const line = `${nameOf(inputs, item.job)} starts ${timeWords(item.start, zone)}: ${causes.join('; ')}${item.joint ? ' (together)' : ''}; float ${item.floatHours} h.`
   return clip(line, 240)
 }

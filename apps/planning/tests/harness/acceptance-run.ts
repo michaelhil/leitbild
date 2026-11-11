@@ -96,7 +96,7 @@ try {
   if (rows.has('counterfactual')) for (const [name, inputs] of [['baseline', flagship], ['replan (a) seal 16 h', replanA], ['replan (b) spare Wed 08:00', replanB], ['Supply run baseline', supplyRun]] as const) {
     const result = await counterfactualRow(name, inputs)
     print('counterfactual', `${name}: ${result.status}; ${result.checked} jobs and ${result.steps} finish-chain steps checked (${result.joint} joint sets checked for minimality; every name checked), ${result.failures.length} failures`)
-    for (const failure of result.failures) print('counterfactual', `  ${failure.job}: ${failure.reason} (${failure.causes.map(cause => `${cause.kind} ${cause.about.join('/')}`).join(' + ')}): ${failure.detail}`)
+    for (const failure of result.failures) print('counterfactual', `  ${failure.job}: ${failure.reason} (${failure.causes.map(cause => `${cause.kind} ${cause.about.map(entry => entry.key).join('/')}`).join(' + ')}): ${failure.detail}`)
   }
 
   // Row 3: goals property, real solver, random goal policies on the flagship

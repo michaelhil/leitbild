@@ -119,7 +119,8 @@ export const explainResultSchema = z.object({
     job: keySchema, start: instantSchema, finish: instantSchema, floatHours: z.number().nonnegative(),
     because: z.array(z.object({
       kind: z.enum(['link', 'crew', 'tool', 'shift', 'availability', 'span-limit', 'window', 'release', 'lock', 'data-date', 'late-as-possible', 'purchase-not-allowed']),
-      about: z.array(keySchema).max(6), until: instantSchema.optional(),
+      // Every name says what it names, so no reader guesses: the screen and the Assistant look it up as that kind.
+      about: z.array(z.object({ kind: z.enum(['job', 'resource', 'calendar', 'rule', 'equipment', 'purchase']), key: keySchema }).strict()).max(6), until: instantSchema.optional(),
     }).strict()).min(1).max(4),
     joint: z.boolean(),
   }).strict()).max(20),

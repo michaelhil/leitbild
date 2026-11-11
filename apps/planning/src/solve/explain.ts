@@ -18,6 +18,9 @@ import type { Schedule } from './problem.ts'
 
 export type ExplainItem = z.infer<typeof explainResultSchema>['items'][number]
 type Cause = ExplainItem['because'][number]
+type Named = Cause['about'][number]
+const named = (kind: Named['kind'], keys: readonly string[]): Named[] => keys.map(key => ({ kind, key }))
+const keysOf = (cause: Cause): string[] => cause.about.map(entry => entry.key)
 
 export interface ExplainContext {
   readonly prep: Prepared
@@ -94,7 +97,7 @@ export const makeExplainer = (ctx: ExplainContext) => {
     const held: Cause[] = [{ kind: 'window', about: [] }]
     if (inputs.settings.dataDate !== null && Date.parse(inputs.settings.dataDate) > before) held.push({ kind: 'data-date', about: [] })
     const job = inputs.jobs.find(entry => entry.key === index.jobs[a])
-    if (job?.notBefore !== undefined && Date.parse(job.notBefore.at) > before) held.push({ kind: 'release', about: [job.key] })
+    if (job?.notBefore !== undefined && Date.parse(job.notBefore.at) > before) held.push({ kind: 'release', about: named('job', [job.key]) })
     const worksBefore = (calendarKey: string): boolean => {
       const calendar = inputs.calendars.find(entry => entry.key === calendarKey)
       if (calendar === undefined) return false
@@ -115,14 +118,14 @@ export const makeExplainer = (ctx: ExplainContext) => {
       const missing = keys.filter(key => !onDuty(key))
       if (off === undefined || missing.length < off.length) { off = missing; used = keys }
     }
-    if (off !== undefined && off.length > 0) held.push({ kind: 'shift', about: off.slice(0, 6) })
+    if (off !== undefined && off.length > 0) held.push({ kind: 'shift', about: named('resource', off.slice(0, 6)) })
     // A keep-in-service rule over resources that holds just before the window too, with too few of them on duty then.
     for (const rule of inputs.rules) {
       if (rule.kind !== 'keep-in-service' || (rule.during !== undefined && !(Date.parse(rule.during.start) <= before && before < Date.parse(rule.during.end)))) continue
       const members = rule.members.flatMap(member => ('resource' in member ? [member.resource] : []))
       if (members.length === 0) continue
       const free = members.filter(key => onDuty(key) && !(used.includes(key) && (inputs.resources.find(entry => entry.key === key)?.count ?? 1) <= 1)).length
-      if (free + rule.members.length - members.length < rule.atLeast) held.push({ kind: 'availability', about: [rule.key] })
+      if (free + rule.members.length - members.length < rule.atLeast) held.push({ kind: 'availability', about: named('rule', [rule.key]) })
     }
     return held
   }
@@ -139,7 +142,7 @@ export const makeExplainer = (ctx: ExplainContext) => {
     const causes: Cause[] = []
     const floor = ctx.dataDateSlot ?? 0
     if (t < floor || t < mode.release && mode.release > activity.release) return 'fixed'
-    if (t < activity.release) causes.push({ kind: 'release', about: [keyOf(ctx, a)] })
+    if (t < activity.release) causes.push({ kind: 'release', about: named('job', [keyOf(ctx, a)]) })
     const contiguous = t + mode.work
     let f = finishOf(prep, a, k, t)
     // Predecessors whose link (with its lag) would be broken.
@@ -154,7 +157,7 @@ export const makeExplainer = (ctx: ExplainContext) => {
       if (broken && !bound.includes(keyOf(ctx, p))) bound.push(keyOf(ctx, p))
     }
     // One cause per predecessor: each link (with its lag) is its own reason, and counts as one.
-    for (const pred of bound) causes.push({ kind: 'link', about: [pred] })
+    for (const pred of bound) causes.push({ kind: 'link', about: named('job', [pred]) })
     // The shift or booking window: who is off duty for a start at t (the job would then run unbroken).
     let slots: ArrayLike<number>
     const offDuty = new Set<number>()
@@ -163,7 +166,7 @@ export const makeExplainer = (ctx: ExplainContext) => {
       slots = Array.from({ length: mode.work }, (_, q) => t + q)
       for (const d of mode.demands) for (let q = 0; q < mode.work; q++) if (problem.resources[d.resource]!.capacity[t + q]! === 0) { offDuty.add(d.resource); break }
       if (offDuty.size === 0) return 'fixed'   // only this mode's own hours exclude it; another mode covers it
-      causes.push({ kind: 'shift', about: [...offDuty].map(name).slice(0, 6) })
+      causes.push({ kind: 'shift', about: named('resource', [...offDuty].map(name).slice(0, 6)) })
       f = contiguous
     } else slots = workedSlots(prep, a, k, t)
     // Full crews and tools at the worked slots, and purchased time the option does not buy.
@@ -183,8 +186,8 @@ export const makeExplainer = (ctx: ExplainContext) => {
         if (owner >= 0 && ctx.purchases !== undefined && !ctx.purchases.includes(index.purchases[owner]!.key)) unbought.add(index.purchases[owner]!.key)
       }
     }
-    for (const [r, users] of full) causes.push({ kind: index.resourceKinds[r] === 'tool' ? 'tool' : 'crew', about: [name(r), ...[...users].map(b => keyOf(ctx, b))].slice(0, 6) })
-    for (const key of unbought) causes.push({ kind: 'purchase-not-allowed', about: [key] })
+    for (const [r, users] of full) causes.push({ kind: index.resourceKinds[r] === 'tool' ? 'tool' : 'crew', about: [...named('resource', [name(r)]), ...named('job', [...users].map(b => keyOf(ctx, b)))].slice(0, 6) })
+    for (const key of unbought) causes.push({ kind: 'purchase-not-allowed', about: named('purchase', [key]) })
     // Keep-in-service: tagging out earlier must not put more items out together than the rule allows.
     const start = schedule.start[a]!
     for (const c of prep.opensCoverage[a]!) {
@@ -192,7 +195,7 @@ export const makeExplainer = (ctx: ExplainContext) => {
       const mine = rule.items.filter(i => prep.opensItems[a]!.includes(i))
       for (let x = t; x < Math.min(start, rule.to); x++) {
         const others = rule.items.filter(i => !mine.includes(i) && out[i] !== undefined && out[i]![0] <= x && x < out[i]![1]).length
-        if (others + mine.length > rule.items.length - rule.atLeast) { causes.push({ kind: 'availability', about: [ruleKey(c)] }); break }
+        if (others + mine.length > rule.items.length - rule.atLeast) { causes.push({ kind: 'availability', about: named('rule', [ruleKey(c)]) }); break }
       }
     }
     for (const d of mode.demands) for (const c of prep.resourceCoverage[d.resource]!) {
@@ -202,7 +205,7 @@ export const makeExplainer = (ctx: ExplainContext) => {
         if (x < rule.from || x >= rule.to) continue
         let free = 0
         for (const r of rule.resources) if (problem.resources[r]!.capacity[x]! - usage[r]![x]! - (mode.demands.some(e => e.resource === r) ? 1 : 0) > 0) free++
-        if (free < rule.atLeast) { if (!causes.some(cause => cause.kind === 'availability' && cause.about[0] === ruleKey(c))) causes.push({ kind: 'availability', about: [ruleKey(c)] }); break }
+        if (free < rule.atLeast) { if (!causes.some(cause => cause.kind === 'availability' && cause.about[0]?.key === ruleKey(c))) causes.push({ kind: 'availability', about: named('rule', [ruleKey(c)]) }); break }
       }
     }
     // A span limit: an earlier first tag-out with the same last test back makes the span longer.
@@ -211,7 +214,7 @@ export const makeExplainer = (ctx: ExplainContext) => {
       if (limit === undefined || rule === undefined) continue
       const first = Math.min(...prep.spanOpeners[s]!.map(o => (o === a ? t : schedule.start[o]!)))
       const back = Math.max(...prep.spanClosers[s]!.map(cl => (cl === a ? f : finishOf(prep, cl, schedule.mode[cl]!, schedule.start[cl]!))))
-      if (back - first > limit) causes.push({ kind: 'span-limit', about: [rule] })
+      if (back - first > limit) causes.push({ kind: 'span-limit', about: named('rule', [rule]) })
     }
     return causes
   }
@@ -226,7 +229,7 @@ export const makeExplainer = (ctx: ExplainContext) => {
     const m = schedule.mode[a]!, start = schedule.start[a]!
     const finish = finishOf(prep, a, m, start)
     const base = { job: keyOf(ctx, a), start: iso(index, start), finish: iso(index, finish), floatHours: ctx.floats[a]?.workingHours ?? 0 }
-    if (activity.fixed !== undefined) return { ...base, because: [{ kind: 'lock', about: [keyOf(ctx, a)] }], joint: false }
+    if (activity.fixed !== undefined) return { ...base, because: [{ kind: 'lock', about: named('job', [keyOf(ctx, a)]) }], joint: false }
     // At the window's first slot: everything that holds it there, together.
     if (start === 0) { const held = atWindowStart(a).slice(0, 4); return { ...base, because: held.map(cause => ({ ...cause, until: iso(index, start) })), joint: held.length > 1 } }
     const usage = usageWithout(a)
@@ -238,7 +241,7 @@ export const makeExplainer = (ctx: ExplainContext) => {
         const found = blockers(a, k, t, usage)
         if (found === 'fixed') continue
         if (best === undefined || found.length < best.causes.length) { best = { causes: found, t }; singles.length = 0 }
-        if (found.length === 1 && best.t === t && !singles.some(cause => cause.kind === found[0]!.kind && cause.about.join() === found[0]!.about.join())) singles.push(found[0]!)
+        if (found.length === 1 && best.t === t && !singles.some(cause => cause.kind === found[0]!.kind && keysOf(cause).join() === keysOf(found[0]!).join())) singles.push(found[0]!)
         if (found.length === 0) break
       }
     }
@@ -252,7 +255,7 @@ export const makeExplainer = (ctx: ExplainContext) => {
     // Follow the chain through what holds it longest: the first named predecessor, else the first job filling a crew.
     const link = best.causes.find(cause => cause.kind === 'link')
     const filler = best.causes.find(cause => (cause.kind === 'crew' || cause.kind === 'tool') && cause.about.length > 1)
-    const nextKey = link?.about[0] ?? filler?.about[1]
+    const nextKey = link?.about[0]?.key ?? filler?.about[1]?.key
     const next = nextKey === undefined ? -1 : index.jobs.indexOf(nextKey)
     return { ...base, because, joint, ...(next >= 0 ? { next } : {}) }
   }
