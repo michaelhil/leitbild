@@ -58,6 +58,25 @@ describe('generate with the real checker', () => {
     expect(option.variant.purchases.toSorted()).toEqual([...used].toSorted())
   }, 30_000)
 
+  test('a Generate stopped early (memory) never replaces a better stored option, and its run says why (walk 3, R3-3)', async () => {
+    const inputs = trainAInputs({ read: true })
+    const deps = { check: laneKCheck, verify: laneKVerify, verifyBound: laneKVerifyBound }
+    const good = await generate({ engine: searchEngine(), ...deps }, { inputs, revision: 1, previous: null, input: {}, by, signal: new AbortController().signal, seed: 1, evals: 1_500 })
+    // The same search cut short at 20 evaluations, reported as stopped by the memory guard.
+    const early = { name: searchEngine().name, solve: async (...[problem, options]: Parameters<ReturnType<typeof searchEngine>['solve']>) =>
+      ({ ...(await searchEngine().solve(problem, { ...options, budget: { ...options.budget, evals: 20 } })), stoppedBy: 'memory' as const }) }
+    const again = await generate({ engine: early, ...deps }, { inputs, revision: 1, previous: good.optionSet, input: {}, by, signal: new AbortController().signal, seed: 2 })
+    expect(again.optionSet.recommended).toBe(good.optionSet.recommended)
+    const stored = good.optionSet.options.find(option => option.key === good.optionSet.recommended)!
+    expect(again.optionSet.options.find(option => option.key === again.optionSet.recommended)).toEqual(stored)
+    expect(again.kept).toContain(stored.key)
+    // Whatever the early run did keep says it stopped early; its unproven goals read best found.
+    for (const option of again.optionSet.options) {
+      if (good.optionSet.options.some(old => JSON.stringify(old) === JSON.stringify(option)) || option.status.word !== 'validated feasible') continue
+      expect(option.status.run.stoppedBy).toBe('memory')
+    }
+  }, 120_000)
+
   test('every "proven optimal" carries its bound certificate and stands only when lane K re-derives the bound', async () => {
     const proven = (result: Awaited<ReturnType<typeof generate>>) => result.optionSet.options.flatMap(option => (option.status.word === 'validated feasible' ? option.status.goals : []))
     const supply = await generate({ engine: searchEngine(), check: laneKCheck, verify: laneKVerify, verifyBound: laneKVerifyBound }, { inputs: supplyRun, revision: 1, previous: null, input: {}, by, signal: new AbortController().signal, evals: 200 })

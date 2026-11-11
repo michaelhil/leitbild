@@ -58,17 +58,19 @@ describe('preview re-timing repairs the option, never re-solves it', () => {
     const lockAt = new Date(Math.max(window, Date.parse(saved.start) - 28 * 3_600_000)).toISOString()
     const locked = planInputsSchema.parse({ ...inputs, jobs: inputs.jobs.map(entry => (entry.key === job ? { ...entry, lock: { start: lockAt } } : entry)) })
     const preview = await solver.preview({ inputs: locked, option }) as Awaited<ReturnType<typeof solver.preview>> & { lockFindings?: ReadonlyArray<{ code: string; about: readonly string[]; words?: string }> }
-    // The findings are lane K's on the SAVED rows with only the locked job at its lock: none names a job's
-    // moved position, because no other job moved.
+    // The findings are lane K's on the SAVED rows with only the locked job at its lock, no other job moved:
+    // every violation the move brings that the saved plan does not have (a finding naming only a crew or a
+    // rule counts when the move causes it).
+    const free = planInputsSchema.parse({ ...inputs })
+    const identity = (violation: { readonly code: string; readonly about: readonly string[] }) => `${violation.code} ${violation.about.join(' ')}`
+    const before = new Set(checkPlan(free, option.variant, option.rows).violations.filter(violation => !violation.about.includes(job)).map(identity))
+    const brought = (violation: { readonly code: string; readonly about: readonly string[] }) => violation.about.includes(job) || !before.has(identity(violation))
     const atLockRows = option.rows.map(row => (row.job === job ? preview.rows.find(entry => entry.job === job)! : row))
     expect(preview.lockFindings!.length).toBeGreaterThan(0)
-    for (const finding of preview.lockFindings!) expect(finding.about).toContain(job)
-    expect(preview.lockFindings).toEqual(checkPlan(locked, option.variant, atLockRows).violations.filter(violation => violation.about.includes(job)).map(violation => ({ code: violation.code, about: violation.about, words: violation.words })))
-    // The nearest allowed time: the job fits there beside the saved plan (lane K finds nothing about it),
-    // and at no slot nearer the lock.
+    expect(preview.lockFindings).toEqual(checkPlan(locked, option.variant, atLockRows).violations.filter(brought).map(violation => ({ code: violation.code, about: violation.about, words: violation.words })))
+    // The nearest allowed time: the job brings nothing new beside the saved plan there (lane K's check).
     const nearest = preview.nearestAllowed!
     expect(nearest.job).toBe(job)
-    const free = planInputsSchema.parse({ ...inputs })
     const compiled = compile(free, { methods: option.variant.methods, buy: option.variant.purchases })
     if (!compiled.ok) throw new Error('the flagship compiles')
     const prep = prepare(compiled.problem)
@@ -80,7 +82,7 @@ describe('preview re-timing repairs the option, never re-solves it', () => {
       start[a] = (Date.parse(iso) - compiled.index.origin) / compiled.index.slotMs
       return option.rows.map(row => (row.job === job ? dateSchedule(prep, compiled.index, { start, mode: found.schedule.mode }).find(entry => entry.job === job)! : row))
     }
-    expect(checkPlan(free, option.variant, rowAt(nearest.at)).violations.filter(violation => violation.about.includes(job))).toEqual([])
+    expect(checkPlan(free, option.variant, rowAt(nearest.at)).violations.filter(brought)).toEqual([])
     expect(Date.parse(nearest.at)).toBeGreaterThan(Date.parse(lockAt))
   }, 300_000)
 
