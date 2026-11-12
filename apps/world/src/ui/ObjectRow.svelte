@@ -61,6 +61,7 @@
   let detailObjectId: string | null = $state(null)
   let detailHovered = $state(false)
   let detailFocused = $state(false)
+  let tooltipDismissed = $state(false)
   // Deleting a live object asks first, inside the row.
   let deleteRequestedFor = $state<string | null>(null)
   let deleteToggle = $state<HTMLElement | null>(null)
@@ -150,17 +151,25 @@
 
 <div
   class:selected={selected}
+  class:dismissed-tooltip={tooltipDismissed}
   class:has-new-info={hasNewInfo}
   class:muted={presentation.muted === true}
   class="object-row"
   role="button"
   tabindex="0"
   onmouseenter={() => { detailHovered = true }}
-  onmouseleave={() => { detailHovered = false }}
+  onmouseleave={() => { detailHovered = false; if (!detailFocused) tooltipDismissed = false }}
   onfocus={() => { detailFocused = true }}
-  onblur={() => { detailFocused = false }}
+  onblur={() => { detailFocused = false; if (!detailHovered) tooltipDismissed = false }}
   onclick={() => selectObject(object)}
   onkeydown={(event) => {
+    if (event.key === 'Escape' && (newInfoTooltipVisible || (event.target === event.currentTarget && !tooltipDismissed))) {
+      newInfoTooltipVisible = false
+      tooltipDismissed = true
+      event.preventDefault()
+      event.stopPropagation()
+      return
+    }
     if (event.target !== event.currentTarget) return
     if (event.key !== 'Enter' && event.key !== ' ') return
     event.preventDefault()

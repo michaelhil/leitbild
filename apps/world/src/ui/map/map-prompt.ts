@@ -11,6 +11,7 @@ import type { MapPrompt } from '../surface-panel-interaction.ts'
 export interface MapPromptController {
   /** Shows the prompt, replacing any other, or clears it with null. */
   readonly show: (prompt: MapPrompt | null) => void
+  readonly dismiss: () => boolean
   readonly destroy: () => void
 }
 
@@ -18,33 +19,47 @@ export const createMapPromptController = (config: { readonly getMap: () => MapLi
   let popup: Popup | null = null
   let shown: MapPrompt | null = null
 
-  const clear = (): void => {
-    popup?.remove()
+  const dismiss = (): boolean => {
+    if (popup === null) return false
+    const map = config.getMap()
+    const restoreFocus = popup.getElement().contains(document.activeElement)
+    popup.remove()
     popup = null
-    shown = null
+    if (restoreFocus) map?.getCanvas().focus({ preventScroll: true })
+    return true
   }
 
   return {
     show: prompt => {
-      if (prompt === shown && popup !== null) return
-      clear()
+      if (prompt === shown) return
+      dismiss()
       const map = config.getMap()
-      if (prompt === null || map === null) return
+      if (prompt === null || map === null) { shown = null; return }
       const button = document.createElement('button')
       button.type = 'button'
       button.className = 'map-prompt-button'
       button.textContent = prompt.label
+      shown = prompt
       button.addEventListener('click', event => {
         event.stopPropagation()
         prompt.onConfirm()
       })
       const [lon, lat] = prompt.point.coordinates
+      const content = document.createElement('div')
+      content.className = 'map-prompt-actions'
+      const close = document.createElement('button')
+      close.type = 'button'
+      close.className = 'map-popup-dismiss'
+      close.setAttribute('aria-label', 'Dismiss map prompt')
+      close.textContent = '×'
+      close.addEventListener('click', event => { event.stopPropagation(); dismiss() })
+      content.append(button, close)
       popup = new Popup({ closeButton: false, closeOnClick: false, anchor: 'bottom', offset: 10, className: 'map-prompt' })
         .setLngLat([lon, lat])
-        .setDOMContent(button)
+        .setDOMContent(content)
         .addTo(map)
-      shown = prompt
     },
-    destroy: clear,
+    dismiss,
+    destroy: () => { dismiss(); shown = null },
   }
 }

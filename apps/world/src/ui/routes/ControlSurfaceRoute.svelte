@@ -1296,6 +1296,24 @@
   )
   const foregroundProcedure = $derived(Boolean(ProcedureSystemModal && simulationRunId && procedureSession && procedureSystemWindowModels.length))
   const mapGuidanceVisible = $derived(guidanceOverlayVisible && !displayWindowOpen && !foregroundProcedure)
+  const visibleGuidanceBottom = $derived(mapGuidanceVisible ? guidanceBottom : 0)
+  const timelineOutcome = $derived(scenarioState?.timeline?.executions?.filter(cue => cue.status !== 'complete')
+    .map(cue => `${cue.cueId}: ${cue.status}; ${cue.actions.filter(action => action === 'accepted').length}/${cue.actions.length} accepted`).join(' · ') ?? '')
+  let dismissedTimelineOutcome = $state('')
+  const dismissGuidance = (): void => {
+    const guidance = scenarioState?.guidance
+    if (!guidance) return
+    guidancePreferences = { ...guidancePreferences, dismissedId: guidance.id }
+    if (document.activeElement?.closest('.scenario-guidance')) document.getElementById('run-guide-trigger')?.focus({ preventScroll: true })
+  }
+  const dismissMapNotice = (event: KeyboardEvent): void => {
+    if (event.key !== 'Escape' || event.defaultPrevented || foregroundProcedure || displayWindowOpen) return
+    if (event.target instanceof Element && event.target.closest('[role="dialog"], dialog, input, textarea, select, [contenteditable="true"]')) return
+    if (mapGuidanceVisible) dismissGuidance()
+    else if (timelineOutcome && dismissedTimelineOutcome !== timelineOutcome) dismissedTimelineOutcome = timelineOutcome
+    else return
+    event.preventDefault()
+  }
 
   $effect(() => {
     const liveObjectIds = new Set(objects.map(object => object.id))
@@ -2113,6 +2131,7 @@
     alarmStripVisible = preferences.alarms
     layoutControlsVisible = preferences.layout
     surfacePanelOpen = { ...preferences.panels }
+    dismissedTimelineOutcome = ''
     viewPreferencesKey = key
     const receiveDisplayWindowMessage = (event: MessageEvent): void => {
       const message = readDisplayWindowHostMessage(event, { origin: location.origin, parent: window.parent, workspaceId })
@@ -2235,6 +2254,8 @@
 
 </script>
 
+<svelte:window onkeydown={dismissMapNotice} />
+
 {#if !startingView}
   <div class="boot-shell"></div>
 {:else}
@@ -2340,7 +2361,7 @@
           liveMapLayers={activeLiveMapLayers}
           physicalLayoutBindings={activePhysicalLayoutBindings}
           bind:physicalLayoutControlsOpen={layoutControlsVisible}
-          layoutClearTop={alarmStripBottom}
+          layoutClearTop={Math.max(alarmStripVisible ? alarmStripBottom : 0, visibleGuidanceBottom)}
           onPhysicalDisplay={listing => requestDisplayWindow({ kind: 'listing', listing }, true)}
           physicalLayoutSuspended={physicalOperationalCapture}
           {queryLiveMapLayer}
@@ -2397,7 +2418,7 @@
         </section>
       {/if}
       {#if activePack && alarmStripVisible && !foregroundProcedure}
-        <AlertStrip onClose={() => { alarmStripVisible = false; document.getElementById('run-alarms-trigger')?.focus({ preventScroll: true }) }} {objects} categoryOf={object => presentationFor(object).categoryId} openDisplay={openStripDisplay} {theme} raised={displayWindowOpen} onBounds={setAlarmStripBounds} belowRoles={Boolean(runRoles && heldRoleIds)} railWidth={railVisible ? railLayout.width : 0} clear={{ left: mapCameraPadding.left, right: mapCameraPadding.right, top: mapGuidanceVisible ? guidanceBottom : 0 }} />
+        <AlertStrip onClose={() => { alarmStripVisible = false; document.getElementById('run-alarms-trigger')?.focus({ preventScroll: true }) }} {objects} categoryOf={object => presentationFor(object).categoryId} openDisplay={openStripDisplay} {theme} raised={displayWindowOpen} onBounds={setAlarmStripBounds} belowRoles={Boolean(runRoles && heldRoleIds)} railWidth={railVisible ? railLayout.width : 0} clear={{ left: mapCameraPadding.left, right: mapCameraPadding.right, top: visibleGuidanceBottom }} />
       {/if}
       <RunViewControls bind:this={viewControls} camera={viewCamera} layers={viewLayers} panels={viewPanels} act={actOnView} toggle={setViewChoice}
         reset={resetLocalView} resetDisabledReason={viewResetDisabledReason} alarms={viewAlarmCount} alarmsVisible={alarmStripVisible} showAlarms={visible => alarmStripVisible = visible}
@@ -2408,8 +2429,11 @@
           <GuidePanel screen={guidanceScreen} session={guidanceSession} explore={() => { guidanceSession?.explore(); viewControls?.dismiss() }} />
         {/snippet}
       </RunViewControls>
-      {#if scenarioState?.timeline?.executions?.some(cue => cue.status !== 'complete')}
-        <div class="timeline-outcome" role="status">Scenario cue actions are incomplete or uncertain. {scenarioState.timeline.executions.filter(cue => cue.status !== 'complete').map(cue => `${cue.cueId}: ${cue.status}; ${cue.actions.filter(action => action === 'accepted').length}/${cue.actions.length} accepted`).join(' · ')}</div>
+      {#if timelineOutcome && dismissedTimelineOutcome !== timelineOutcome && !foregroundProcedure && !displayWindowOpen}
+        <div class="timeline-outcome">
+          <span role="status">Scenario cue actions are incomplete or uncertain. {timelineOutcome}</span>
+          <button type="button" aria-label="Dismiss scenario cue notice" onclick={() => { dismissedTimelineOutcome = timelineOutcome }}>×</button>
+        </div>
       {/if}
       <WorldStatusLine {clock} execution={executionState} feedback={commandFeedback.line} placementHint={placement.placementText()} />
       {#if runRoles && heldRoleIds}
@@ -2438,7 +2462,7 @@
       bind:bottom={guidanceBottom}
       guidance={scenarioState.guidance}
       presented={markGuidancePresented}
-      close={() => { if (scenarioState?.guidance?.dismissible) { guidancePreferences = { ...guidancePreferences, dismissedId: scenarioState.guidance.id }; document.getElementById('run-guide-trigger')?.focus({ preventScroll: true }) } }}
+      close={dismissGuidance}
     />
     {/key}
     {/if}
@@ -2582,7 +2606,8 @@
 {/if}
 
 <style>
-  .timeline-outcome { position: absolute; inset: 8px 12px auto auto; z-index: 27; max-width: min(440px, 80%); padding: 8px; border: 1px solid var(--border); border-radius: 6px; background: var(--panel); font-size: 12px; }
+  .timeline-outcome { position: absolute; inset: 8px 12px auto auto; z-index: 21; display: flex; align-items: start; gap: 8px; max-width: min(440px, 80%); padding: 8px; border: 1px solid var(--border); border-radius: 6px; background: var(--panel); font-size: 12px; pointer-events: none; }
+  .timeline-outcome button { pointer-events: auto; }
   /* Pack panels measure their immediate surface. Keep its real geometry while lending pointer input only to the panel. */
   .presentation-panel-host { position: absolute; inset: 0; pointer-events: none; }
   :global(:where(.presentation-panel-host) > :where(*)) { pointer-events: auto; }

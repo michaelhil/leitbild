@@ -25,8 +25,11 @@ export interface MapStackChooser {
 export const createMapStackChooser = (config: { readonly getMap: () => MapLibreMap | null }): MapStackChooser => {
   let popup: Popup | null = null
   const hide = (): void => {
-    popup?.remove()
+    if (popup === null) return
+    const restoreFocus = popup.getElement().contains(document.activeElement)
+    popup.remove()
     popup = null
+    if (restoreFocus) config.getMap()?.getCanvas().focus({ preventScroll: true })
   }
   return {
     show: (point, choices) => {
@@ -49,6 +52,14 @@ export const createMapStackChooser = (config: { readonly getMap: () => MapLibreM
         })
         list.append(button)
       }
+      const close = document.createElement('button')
+      close.type = 'button'
+      close.className = 'map-popup-dismiss'
+      close.setAttribute('role', 'menuitem')
+      close.setAttribute('aria-label', 'Close object chooser')
+      close.textContent = '×'
+      close.addEventListener('click', event => { event.stopPropagation(); hide() })
+      list.prepend(close)
       const [lon, lat] = point.coordinates
       popup = new Popup({ closeButton: false, closeOnClick: false, anchor: 'bottom', offset: 16, className: 'map-stack' })
         .setLngLat([lon, lat])
