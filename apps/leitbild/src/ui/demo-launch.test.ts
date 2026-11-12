@@ -123,7 +123,7 @@ describe('Start demo: the target Workspace', () => {
     ])
     expect(host.calls.at(-1)?.body).toEqual({
       definition: { workspaceId: OLD, moduleId: 'world', type: 'world.scenario', id: 'halden-offsite-power-restoration', revisionId: FEATURED_REVISION },
-      input: {}, actor: { kind: 'human' },
+      input: { playback: 'playing' }, actor: { kind: 'human' },
     })
     expect(steps.map(step => step.kind)).toEqual(['checking', 'using-workspace', 'starting', 'opening'])
     expect(memory.remembered()).toBe(OLD)
@@ -477,7 +477,7 @@ describe('Start a listed scenario (More scenarios): the same flow', () => {
     ])
     expect(host.calls.at(-1)?.body).toEqual({
       definition: { workspaceId: OLD, moduleId: 'world', type: 'world.scenario', id: 'halden-normal-operation', revisionId: LISTED_REVISION },
-      input: {}, actor: { kind: 'human' },
+      input: { playback: 'playing' }, actor: { kind: 'human' },
     })
     expect(steps.map(step => step.kind)).toEqual(['checking', 'using-workspace', 'starting', 'opening'])
     expect(memory.remembered()).toBe(OLD)

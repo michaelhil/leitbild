@@ -178,6 +178,7 @@ const startFeaturedInWorkspace = async (
     workspaceId: workspace.id,
     definition: { ...descriptor.ref, revisionId: featured.revisionId },
     capabilityId: capability.id,
+    ...(capability.id === 'world.scenario.start' ? { input: { playback: 'playing' } } : {}),
     fetch: ports.fetch,
     signal: ports.signal,
     onDispatch: () => { invoked = true },

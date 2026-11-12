@@ -117,6 +117,12 @@ interface MaximumPaceController {
   readonly done: Promise<void>
 }
 
+interface CreateSimulationRun {
+  readonly scenarioId: string
+  readonly scenarioRevisionId?: ScenarioRevisionId
+  readonly autoPlay?: boolean
+}
+
 export interface SimulationRunRegistry {
   readonly workspaceId: WorkspaceId
   readonly engineering: EngineeringService
@@ -127,7 +133,7 @@ export interface SimulationRunRegistry {
   readonly scenarioAuthoringCatalog: ScenarioAuthoringCatalog
   readonly installedCapabilities: ReadonlyArray<ActiveSimulationCapability>
   readonly workspaceCapabilities: ReadonlyArray<PackWorkspaceCapability>
-  readonly create: (config: { readonly scenarioId: string; readonly scenarioRevisionId?: ScenarioRevisionId }) => Promise<SimulationRunRuntime>
+  readonly create: (config: CreateSimulationRun) => Promise<SimulationRunRuntime>
   readonly copy: (sourceId: SimulationRunId, input: { readonly name?: string }) => Promise<SimulationRunRuntime>
   /** Whether this loaded Run advances, including a running maximum-pace job over its paused realtime clock. */
   readonly isAdvancing: (id: SimulationRunId) => boolean
@@ -570,6 +576,7 @@ export const createSimulationRunRegistry = (config: {
     readonly manifest: SimulationRunManifest
     readonly initialSeq?: number
     readonly scenarioRuntime?: ResolvedScenarioRuntime
+    readonly autoPlay?: boolean
   }): Promise<SimulationRunRuntime> => {
     if (shuttingDown) throw new Error('Workspace runtime is closing')
     await ensureScenarioLibrary()
@@ -680,7 +687,8 @@ export const createSimulationRunRegistry = (config: {
     // A new Run whose players choose roles waits, paused, for the first of them
     // (`screenJoined`). Reloading the Run, after an idle close, keeps the mark;
     // only a choice, a join that started it, or a delete clears it.
-    const awaitsScreen = !restoredSnapshot && scenarioRoles !== null && scenarioRuntime.scenario.guide?.startPaused !== true
+    const guideStartsPaused = !createConfig.autoPlay && scenarioRuntime.scenario.guide?.startPaused === true
+    const awaitsScreen = !restoredSnapshot && scenarioRoles !== null && !guideStartsPaused
     if (awaitsScreen) awaitingFirstScreen.add(id)
     let runtime
     try {
@@ -693,7 +701,7 @@ export const createSimulationRunRegistry = (config: {
         snapshotStore,
         ...(interactionHandlers.length === 0 ? {} : { interactionHandlers }),
         ...(restoredSnapshot ? { restoredSnapshot } : {}),
-        ...(!restoredSnapshot && (awaitsScreen || scenarioRuntime.scenario.guide?.startPaused === true) ? { startPaused: true } : {}),
+        ...(!restoredSnapshot && (awaitsScreen || guideStartsPaused) ? { startPaused: true } : {}),
         ...(restoredEvents.length === 0 ? {} : { restoredEvents }),
         ...(createConfig?.initialSeq === undefined && maxEventSeq === 0 ? {} : { initialSeq: Math.max(createConfig.initialSeq ?? 0, maxEventSeq) }),
         scenario: {
@@ -740,7 +748,7 @@ export const createSimulationRunRegistry = (config: {
     return runtime
   }
 
-  const create = async (createConfig: { readonly scenarioId: string; readonly scenarioRevisionId?: ScenarioRevisionId }): Promise<SimulationRunRuntime> => {
+  const create = async (createConfig: CreateSimulationRun): Promise<SimulationRunRuntime> => {
     if (shuttingDown) throw new Error('Workspace runtime is closing')
     const requestedScenarioId = z.string().min(1).parse(createConfig.scenarioId)
     const id = newSimulationRunId()
@@ -752,7 +760,7 @@ export const createSimulationRunRegistry = (config: {
       await manifestStoreFor(id).create(manifest)
       await createPlanningSourceEpoch(join(simulationRunRoot, id, 'planning-source-epoch.json'))
       await createCompiledScenarioStore(join(simulationRunRoot, id, 'compiled-scenario.json')).create(compiledScenario)
-      return await createRuntime({ manifest })
+      return await createRuntime({ manifest, ...(createConfig.autoPlay ? { autoPlay: true } : {}) })
     }).finally(() => {
       creatingSimulationRuns.delete(id)
       scheduleIdleRuntimeCloseIfUnleased(id)

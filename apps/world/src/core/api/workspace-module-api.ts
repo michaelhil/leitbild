@@ -284,6 +284,8 @@ const scenarioWriteInputJsonSchema = z.toJSONSchema(createScenarioInputSchema, {
 
 import { scenarioPreviewSchema,scenarioWriteResultSchema } from '../scenarios/authoring-preview.ts'
 
+const scenarioStartInputSchema = z.object({ playback: z.literal('playing').optional() }).strict()
+
 const scenarioStartResultSchema = z.object({
   id: simulationRunIdSchema,
   uiPath: z.string().min(1),
@@ -1091,18 +1093,19 @@ const worldCapabilities = createModuleCapabilityRegistry<SimulationRunRegistry, 
       kind: 'command',
       scope: { kind: 'definition', definitionType: SCENARIO_DEFINITION_TYPE },
       title: 'Start Scenario',
-      description: 'Creates a Simulation Run from the requested immutable Scenario Revision. A Run whose Definition declares roles starts paused and plays in realtime when the first screen holding roles joins, unless world.simulation-run.execution.set or world.simulation-run.execution.advance is used first.',
+      description: 'Creates a Simulation Run from the requested immutable Scenario Revision. Request playing to override the guide’s initial pause. For a Run with roles, automatic playback begins when the first screen holding roles joins, unless an execution command is used first.',
       risk: 'write',
       idempotent: false,
-      inputSchema: z.toJSONSchema(emptyInputSchema, { io: 'input' }),
+      inputSchema: z.toJSONSchema(scenarioStartInputSchema, { io: 'input' }),
       outputSchema: capabilityJsonSchema(scenarioStartResultSchema),
     },
     invoke: async (registry, invocation) => {
-      emptyInputSchema.parse(invocation.input)
+      const input = scenarioStartInputSchema.parse(invocation.input)
       if (!invocation.definition) throw new Error('Scenario Capability requires a Definition')
       const runtime = await registry.create({
         scenarioId: requireScenarioDefinitionId(invocation),
         scenarioRevisionId: scenarioRevisionIdSchema.parse(invocation.definition.revisionId),
+        autoPlay: input.playback === 'playing',
       })
       const resource = {
         workspaceId: registry.workspaceId,

@@ -438,7 +438,7 @@
       {
         "id": "readiness",
         "title": "Agree the shared start",
-        "instruction": "Controller: keep time paused while each desk selects its role and checks the Board. Participants tell the controller when ready. The controller explicitly starts the shared clock after agreement; one person advancing this guide never starts everybody. Guide progress remains independent.",
+        "instruction": "Controller: pause shared time if the desks need time to select roles and check the Board. Participants tell the controller when ready. Resume the clock once everyone is ready; one person advancing this guide never starts everybody. Guide progress remains independent.",
         "effects": [],
         "completion": {
           "kind": "acknowledge"

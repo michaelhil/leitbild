@@ -412,7 +412,7 @@
   "guide": {
     "id": "guide:offsite",
     "title": "Restore a grid connection",
-    "description": "Beginner guided observation of four modelled units and their shared switchyard. Shared time starts paused; no model provider is required for the World steps.",
+    "description": "Beginner guided observation of four modelled units and their shared switchyard. Pause shared time if you need time to get oriented. No model provider is required for the World steps.",
     "startPaused": true,
     "entry": {
       "kind": "clock",
@@ -422,7 +422,7 @@
       {
         "id": "orient",
         "title": "Find Unit 1",
-        "instruction": "Find Halden Unit 1. Use View to frame the map or show layers and panels. Continue keeps the Run paused.",
+        "instruction": "Find Halden Unit 1. Use View to frame the map or show layers and panels. The clock is controlled separately from this guide.",
         "effects": [
           {
             "id": "unit-location",
@@ -505,7 +505,7 @@
       {
         "id": "fault-time",
         "title": "Advance to the fault",
-        "instruction": "Use the shared execution control to advance two simulation minutes from the start. This guide does not send those commands for you. Recheck time if this Run is shared.",
+        "instruction": "The fault occurs at two simulation minutes from the start. Let the clock play or use the shared execution control to reach that point. If the clock has already passed it, inspect the recorded response.",
         "effects": [],
         "completion": {
           "kind": "condition",

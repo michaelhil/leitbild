@@ -8,11 +8,12 @@ type StartReceipt =
 
 /** Dispatch once, and distinguish an explicit refusal from a missing or untrustworthy receipt. */
 export const invokeDefinitionStart = async ({
-  workspaceId, definition, capabilityId, fetch, signal, onDispatch, requiredResource,
+  workspaceId, definition, capabilityId, input = {}, fetch, signal, onDispatch, requiredResource,
 }: {
   readonly workspaceId: string
   readonly definition: Omit<WorkspaceDefinitionRevisionReference, 'revisionId'> & { readonly revisionId: string }
   readonly capabilityId: string
+  readonly input?: Readonly<Record<string, unknown>>
   readonly fetch: (input: string, init?: RequestInit) => Promise<Response>
   readonly signal?: AbortSignal | undefined
   readonly onDispatch: () => void
@@ -28,7 +29,7 @@ export const invokeDefinitionStart = async ({
     return { kind: 'failed', cause: new Error('The selected Definition revision is invalid.', { cause: target.error }) }
   }
   const path = `/api/workspaces/${encodeURIComponent(workspaceId)}/capabilities/${encodeURIComponent(capabilityId)}/invoke`
-  const body = JSON.stringify({ definition: target.data, input: {}, actor: { kind: 'human' } })
+  const body = JSON.stringify({ definition: target.data, input, actor: { kind: 'human' } })
   let value: unknown
   onDispatch()
   try {
