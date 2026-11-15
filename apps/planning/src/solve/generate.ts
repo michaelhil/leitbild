@@ -559,10 +559,11 @@ export const generate = async (deps: GenerateDeps, request: GenerateRequest): Pr
   const whatIf = (option: Option): boolean => option.variant.also !== undefined || option.variant.lead !== undefined
   for (const old of [...extra.filter(option => !whatIf(option)), ...extra.filter(whatIf)]) { merged.push(old); kept.push(old.key) }
   const set = merged.slice(0, 8)
-  // A lead what-if is a card, never ranked among the options or recommended (design §0.3): it comes last.
-  const plain = set.filter(option => option.variant.lead === undefined).sort((x, y) => compareOptions(rankableOf(x, inputs), rankableOf(y, inputs)))
-  const led = set.filter(option => option.variant.lead !== undefined).sort((x, y) => (x.key < y.key ? -1 : x.key > y.key ? 1 : 0))
-  const ranked = [...plain, ...led]
+  // A what-if with an extra rule or a leading goal is a card, never ranked among the options or recommended
+  // (design §0.3, fix round G2): they come last, by key.
+  const plain = set.filter(option => !whatIf(option)).sort((x, y) => compareOptions(rankableOf(x, inputs), rankableOf(y, inputs)))
+  const cards = set.filter(whatIf).sort((x, y) => (x.key < y.key ? -1 : x.key > y.key ? 1 : 0))
+  const ranked = [...plain, ...cards]
   const recommended = plain.find(option => option.status.word === 'validated feasible')
   const optionSet = optionSetSchema.parse({
     at: deps.now?.() ?? new Date().toISOString(), by: request.by, options: ranked,
