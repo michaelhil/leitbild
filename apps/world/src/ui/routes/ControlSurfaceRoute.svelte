@@ -576,7 +576,8 @@
 
   const viewPanels = $derived<ReadonlyArray<RunViewChoice>>([
     ...(activePhysicalLayoutBindings.length > 0 ? [{ id: 'layout-controls', label: 'Physical layout controls', visible: layoutControlsVisible }] : []),
-    ...surfacePanels.map(panel => ({ id: `panel:${panel.id}`, label: panel.label, visible: isSurfacePanelOpen(panel), ...(mapTargetPanelContribution?.id === panel.id && (selectedControllerObject?.packId === mapTargetPanel?.packId || panelMapPrompts[panel.id] != null || panelMapTargetings[panel.id] != null) ? { disabledReason: 'Finish or cancel the current map operation before hiding this panel' } : {}) })),
+    // The open map-target panel stays while it arms an order, which it shows by its targeting (plan B.10: only in SA).
+    ...surfacePanels.map(panel => ({ id: `panel:${panel.id}`, label: panel.label, visible: isSurfacePanelOpen(panel), ...(mapTargetPanelContribution?.id === panel.id && panelMapTargetings[panel.id] != null ? { disabledReason: 'Finish or cancel the armed order before hiding this panel' } : {}) })),
   ])
   const viewLayers = $derived<ReadonlyArray<RunViewChoice>>([
     ...activeMapLayerGroups.map(layer => ({ id: `layer:${layer.id}`, label: layer.label, visible: mapLayerGroupVisibility[layer.id] ?? layer.defaultVisible })),
@@ -739,7 +740,7 @@
     if (action.kind === 'highlight') { presentationOwner = request.id; presentationObjectIds = [object.id]; await tick(); current(); return { status: 'applied' } }
     if (action.kind === 'focus' || action.kind === 'reveal') {
       if (!cameraAllowed) return { status: 'superseded', reason: 'Your map gesture took priority; use Show to request another camera move' }
-      if (viewResetDisabledReason) throw new Error('Finish or cancel the current map operation before a guided camera move')
+      if (viewResetDisabledReason) throw new Error('Finish or cancel the armed order before a guided camera move')
       if (action.kind === 'reveal') { presentationOwner = request.id; presentationObjectIds = [object.id] }
       const position = object.spatial.position.point.coordinates
       focusMapTarget({ kind: 'view', center: [position[0], position[1]], zoom: (action.kind === 'focus' ? action.zoom : undefined) ?? Math.max(9, panelMapView?.zoom ?? 9), bearing: panelMapView?.bearing ?? 0 })
