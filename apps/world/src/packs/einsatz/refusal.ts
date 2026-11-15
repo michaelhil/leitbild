@@ -1,3 +1,5 @@
+import { z } from 'zod'
+
 /**
  * Einsatz refusal convention: every refusal reads `<code>: <message>`. The
  * code is stable and machine-readable, so tests and callers assert it; the
@@ -86,6 +88,10 @@ export const engineRefusalCodes = [
   'track_not_deletable',
   'reserved_id',
   'chain_full',
+  'when_required',
+  'drops_mismatch',
+  'newer_order_exists',
+  'nothing_to_undo',
   'step_not_found',
   'step_not_undoable',
   'group_required',
@@ -115,7 +121,11 @@ export type RuntimeRefusalCode = typeof runtimeRefusalCodes[number]
 
 export type EinsatzRefusalCode = ConfigurationRefusalCode | ScenarioConfigRefusalCode | EngineRefusalCode | AuthorityRefusalCode | RuntimeRefusalCode
 
-const knownCodes: ReadonlySet<string> = new Set<string>([...configurationRefusalCodes, ...scenarioConfigRefusalCodes, ...engineRefusalCodes, ...authorityRefusalCodes, ...runtimeRefusalCodes])
+export const einsatzRefusalCodes = [...configurationRefusalCodes, ...scenarioConfigRefusalCodes, ...engineRefusalCodes, ...authorityRefusalCodes, ...runtimeRefusalCodes] as const
+/** Every Einsatz refusal code, for wire answers that name one. */
+export const einsatzRefusalCodeSchema = z.enum(einsatzRefusalCodes)
+
+const knownCodes: ReadonlySet<string> = new Set<string>(einsatzRefusalCodes)
 
 export const refusal = (code: EinsatzRefusalCode, message: string): string => `${code}: ${message}`
 
