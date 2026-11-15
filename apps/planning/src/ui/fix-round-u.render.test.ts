@@ -36,7 +36,7 @@ const days = ['crane-fri', 'ect-friday'], overtime = [...days, 'ot-mech', 'ot-el
 
 describe('U1, G1: the screen sends lane S\'s per-method rung requests', () => {
   test('a lower rung is one variant per method, labelled "<method>: <what it allows>"; the top rung is the default options', () => {
-    const view = ladderView([page([{ rung: { rung: 0, buy: days, bought: [] } }, { rung: { rung: 1, buy: overtime, bought: [] } }, { rung: { rung: 2, buy: all, bought: [] } }])], modelOf(inputs), context, null)
+    const view = ladderView([page([{ rung: { rung: 0, methods: [], buy: days, bought: [] } }, { rung: { rung: 1, methods: [], buy: overtime, bought: [] } }, { rung: { rung: 2, methods: [], buy: all, bought: [] } }])], modelOf(inputs), context, null)
     expect(rungRequest(view.rungs[0]!, context)).toEqual({
       variants: method.options.map(option => ({ label: `${option.label}: days only`, methods: [{ choice: method.key, option: option.key }], buy: days })), keep: true,
     })
@@ -48,16 +48,35 @@ describe('U1, G1: the screen sends lane S\'s per-method rung requests', () => {
 })
 
 describe('U3: the ladder names its method, and the planner can switch', () => {
-  /** One rung option per method and level, as a per-method buys section pages them. */
+  /**
+   * Two methods' ladders as the buys section pages them (lane P's methodLadders): each rung and row names its
+   * method picks. The rows' words are test inputs in the contract's shape: the swap's days-only rung refused
+   * (as on the frozen case, R/or/report.md), the rebuild's a "not solved" step, so the two ladders read differently.
+   */
   const perMethod = (): { model: PlanModel; pages: BuysPage[] } => {
-    const option = (key: string, pick: string) => optionOf(key, key, feasible(), { variant: { methods: [{ choice: method.key, option: pick }], purchases: [] } })
+    const picks = (pick: string) => [{ choice: method.key, option: pick }]
+    const option = (key: string, pick: string) => optionOf(key, key, feasible(), { variant: { methods: picks(pick), purchases: [] } })
     const options = [option('swap-0', 'swap'), option('swap-1', 'swap'), option('rebuild-0', 'rebuild'), option('rebuild-1', 'rebuild')]
     const pages = [page([
-      { rung: { rung: 0, buy: days, option: 'swap-0', bought: [] } }, { rung: { rung: 1, buy: overtime, option: 'swap-1', bought: [] } },
-      { rung: { rung: 0, buy: days, option: 'rebuild-0', bought: [] } }, { rung: { rung: 1, buy: overtime, option: 'rebuild-1', bought: [] } },
+      { rung: { rung: 0, methods: picks('swap'), buy: days, option: 'swap-0', bought: [] } }, { rung: { rung: 1, methods: picks('swap'), buy: overtime, option: 'swap-1', bought: [] } },
+      { rung: { rung: 0, methods: picks('rebuild'), buy: days, option: 'rebuild-0', bought: [] } }, { rung: { rung: 1, methods: picks('rebuild'), buy: overtime, option: 'rebuild-1', bought: [] } },
+      { row: { methods: picks('swap'), from: 0, to: 1, ends: { from: 'refused', to: 'found' }, word: 'makes it possible' } },
+      { row: { methods: picks('rebuild'), from: 0, to: 1, ends: { from: 'found', to: 'unsolved' }, word: 'not solved' } },
     ])]
     return { model: modelOf(inputs, { options: { at: '2026-11-12T09:05:00.000Z', recommended: 'swap-1', items: options } }), pages }
   }
+
+  test('each ladder shows its own method\'s rows, never the other method\'s', () => {
+    const { model, pages } = perMethod()
+    const swapView = ladderView(pages, model, contextOf(model), null)
+    expect(swapView.rows.map(row => row.word)).toEqual(['makes it possible'])
+    const rebuildView = ladderView(pages, model, contextOf(model), swapView.methods[0]!.value)
+    expect(rebuildView.rows.map(row => row.word)).toEqual(['not solved'])
+    const text = readableText(renderHtml(Ladder, { view: rebuildView, state: 'ready', onSolve: none, onFiner: none, onSelect: none, onMethod: none, onClose: none }))
+    expect(text).toMatch(/not solved\s+2 Rung 2/)
+    expect(text).not.toContain('makes it possible 2')
+    expect(text).not.toContain('not available per method')
+  })
 
   test('each method with rungs is offered; the chosen one\'s rungs are shown, and the panel names it', () => {
     const { model, pages } = perMethod()
@@ -110,8 +129,8 @@ describe('G3: every row whose two rungs have a plan says what sets the higher on
     const crane = { kind: 'shift' as const, about: [{ kind: 'resource' as const, key: 'crane' }] }
     const pages = [page([
       // or's frozen-case figures (R/or/report.md): 56.5 h at NOK 398,800 with overtime, 54 h at NOK 464,250 with a night.
-      { rung: { rung: 0, buy: days, bought: [] } }, { rung: { rung: 1, buy: overtime, bought: [] } },
-      { row: { from: 0, to: 1, ends: { from: 'found', to: 'found' }, word: 'found', outage: 54 - 56.5, cost: 464_250 - 398_800, finish: crane } },
+      { rung: { rung: 0, methods: [], buy: days, bought: [] } }, { rung: { rung: 1, methods: [], buy: overtime, bought: [] } },
+      { row: { methods: [], from: 0, to: 1, ends: { from: 'found', to: 'found' }, word: 'found', outage: 54 - 56.5, cost: 464_250 - 398_800, finish: crane } },
     ])]
     const view = ladderView(pages, model, context, null)
     expect(view.rows[0]!.finish).not.toBeNull()
@@ -182,7 +201,7 @@ describe('G6: "finish this group first" says what it does', () => {
 describe('G7: the ladder legend', () => {
   test('one line says what each ladder word claims', () => {
     expect(ladderLegend).toContain('found: a better plan was found, not proven best')
-    const view = ladderView([page([{ rung: { rung: 0, buy: days, bought: [] } }])], modelOf(inputs), context, null)
+    const view = ladderView([page([{ rung: { rung: 0, methods: [], buy: days, bought: [] } }])], modelOf(inputs), context, null)
     expect(readableText(renderHtml(Ladder, { view, state: 'ready', onSolve: none, onFiner: none, onSelect: none, onClose: none }))).toContain(ladderLegend)
   })
 })

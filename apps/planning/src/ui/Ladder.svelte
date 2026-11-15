@@ -70,7 +70,6 @@
         </li>
       {/each}
     </ol>
-    {#if !view.rowsShown}<p class="hint">What each step gains is not available per method yet in this version of Planning.</p>{/if}
     {#if view.toSolve.length > 0}
       <div class="actions">
         <button type="button" class="primary" disabled={busy || solving} onclick={onSolve}>{view.toSolve.length === view.rungs.length ? 'Work out every rung' : `Work out the ${view.toSolve.length === 1 ? 'missing rung' : `${view.toSolve.length} missing rungs`}`}</button>

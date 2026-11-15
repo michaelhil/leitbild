@@ -161,41 +161,29 @@ export interface LadderView {
   readonly rows: readonly LadderRowView[]
   /** The rungs still to work out, lowest first: the order they are solved in, so no rung is solved above an unsolved one. */
   readonly toSolve: readonly RungView[]
-  /** The methods that have rungs, and the one shown. */
+  /** The methods that have a ladder, in plan order, and the one shown. */
   readonly methods: readonly MethodChoice[]
   readonly method: MethodChoice | null
-  /**
-   * Whether the rows can be said for the method shown. The rows name no method, so with rungs of more than one
-   * method they cannot be attributed to one, and none is shown (the buys section needs `methods` on rows).
-   */
-  readonly rowsShown: boolean
 }
 
 /**
- * One ladder per method (U3): the rung entries whose option uses the chosen method, and at a level with none,
- * the entry still to work out. The first method with rungs is shown until the planner switches.
+ * One ladder per method (U3), as the buys section gives them: each rung and row names the method picks it
+ * belongs to, so the ladder shown holds that method's rungs and the rows between them, and never compares two
+ * methods. Until the planner switches, the recommended option's method is shown.
  */
 export const ladderView = (pages: readonly BuysPage[], model: PlanModel, context: Context, method: string | null): LadderView => {
   const items = pages.flatMap(page => page.items)
   const entries = items.flatMap(item => 'rung' in item ? [item.rung] : [])
-  const optionOf = (entry: BuysRung) => entry.option === undefined ? undefined : model.options?.items.find(item => item.key === entry.option)
-  const keys = [...new Set(entries.flatMap(entry => { const option = optionOf(entry); return option === undefined ? [] : [pickKey(option.variant.methods)] }))]
   const order = methodCombinations(context.inputs).map(pickKey)
-  const methods = keys.sort((left, right) => order.indexOf(left) - order.indexOf(right)).map(key => {
-    const option = entries.map(optionOf).find(item => item !== undefined && pickKey(item.variant.methods) === key)!
-    return { value: key, label: pickLabel(option.variant.methods, context.inputs) }
-  })
-  // Until the planner switches, the ladder of the recommended option's method is shown.
+  const rank = (key: string) => { const at = order.indexOf(key); return at < 0 ? order.length : at }
+  const keys = [...new Set(entries.map(entry => pickKey(entry.methods)))].sort((left, right) => rank(left) - rank(right))
+  const methods = keys.map(key => ({ value: key, label: pickLabel(entries.find(entry => pickKey(entry.methods) === key)!.methods, context.inputs) }))
   const recommended = model.options?.items.find(item => item.key === model.options?.recommended)
   const chosen = methods.find(entry => entry.value === method) ?? methods.find(entry => recommended !== undefined && entry.value === pickKey(recommended.variant.methods)) ?? methods[0] ?? null
-  const levels = [...new Set(entries.map(entry => entry.rung))].sort((left, right) => left - right)
-  const top = levels.at(-1)
-  const rungs = levels.map(level => {
-    const at = entries.filter(entry => entry.rung === level)
-    return at.find(entry => { const option = optionOf(entry); return option !== undefined && chosen !== null && pickKey(option.variant.methods) === chosen.value }) ?? at.find(entry => entry.option === undefined) ?? { ...at[0]!, option: undefined, bought: [] }
-  })
+  const rungs = chosen === null ? [] : entries.filter(entry => pickKey(entry.methods) === chosen.value).sort((left, right) => left.rung - right.rung)
+  const top = rungs.at(-1)?.rung
   const views = rungs.map((rung, index): RungView => {
-    const option = optionOf(rung)
+    const option = rung.option === undefined ? undefined : model.options?.items.find(item => item.key === rung.option)
     const view = option === undefined ? null : statusView(option.status, context)
     return {
       rung: rung.rung, step: String(rung.rung + 1), name: rungName(rung, rungs[index - 1], context), allows: allowsOf(rung, index === 0, context), top: rung.rung === top, buy: rung.buy,
@@ -206,13 +194,12 @@ export const ladderView = (pages: readonly BuysPage[], model: PlanModel, context
       stale: option !== undefined && !option.fresh,
     }
   })
-  const rowsShown = methods.length <= 1
-  const rows = !rowsShown ? [] : items.flatMap(item => 'row' in item ? [item.row] : []).sort((left, right) => left.from - right.from).map((row): LadderRowView => ({
+  const rows = chosen === null ? [] : items.flatMap(item => 'row' in item && pickKey(item.row.methods) === chosen.value ? [item.row] : []).sort((left, right) => left.from - right.from).map((row): LadderRowView => ({
     from: row.from, to: row.to, word: row.word,
     differences: differenceText(row, context.inputs.settings.currency),
     finish: row.finish === undefined ? null : causeParts(row.finish, context),
   }))
-  return { rungs: views, rows, toSolve: views.filter(rung => rung.option === null), methods, method: chosen, rowsShown }
+  return { rungs: views, rows, toSolve: views.filter(rung => rung.option === null), methods, method: chosen }
 }
 
 /**

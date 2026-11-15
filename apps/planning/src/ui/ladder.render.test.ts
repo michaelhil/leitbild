@@ -41,6 +41,8 @@ const buyLists = (inputs: PlanModel['inputs']) => {
  * tested on their own below, from a hand calculation.
  */
 const or = { overtime: { span: 56.5, cost: 398_800 }, nights: { span: 54, cost: 464_250, nights: 1 } }
+/** The swap ladder: its rungs and rows name the swap method, as the buys section pages them. */
+const swapPicks = [{ choice: 'SWA-method', option: 'swap' }]
 const swapLadder = (): { model: PlanModel; pages: BuysPage[] } => {
   const inputs = trainACaseInputs()
   const grid = inputs.settings.grid
@@ -48,17 +50,17 @@ const swapLadder = (): { model: PlanModel; pages: BuysPage[] } => {
   const feasible = (key: string, span: number, cost: number): OptionView => optionOf(key, key, status({
     word: 'validated feasible', run: runBasis(grid),
     goals: [{ word: 'best found under budget', goal: 0, value: Math.max(0, span - guideline), unit: 'h' }, { word: 'best found under budget', goal: 1, value: cost, unit: inputs.settings.currency }],
-  }), { metrics: [{ id: 'goal:0:COOL-A', value: span, unit: 'h' }] })
-  const refused = optionOf('rung-0', 'Days only', status({ word: 'proven infeasible', run: runBasis(grid), cause: { kind: 'temporal', steps: [{ job: 'SWA-TAG', via: 'span-limit' }, { job: 'SWA-RTS', via: 'link' }] } }))
+  }), { metrics: [{ id: 'goal:0:COOL-A', value: span, unit: 'h' }], variant: { methods: swapPicks, purchases: [] } })
+  const refused = optionOf('rung-0', 'Days only', status({ word: 'proven infeasible', run: runBasis(grid), cause: { kind: 'temporal', steps: [{ job: 'SWA-TAG', via: 'span-limit' }, { job: 'SWA-RTS', via: 'link' }] } }), { variant: { methods: swapPicks, purchases: [] } })
   const options = [refused, feasible('rung-1', or.overtime.span, or.overtime.cost), feasible('rung-2', or.nights.span, or.nights.cost)]
   const model = modelOf(inputs, { options: { at: '2026-11-12T09:05:00.000Z', recommended: 'rung-2', items: options } })
   const [days, overtime, all] = buyLists(inputs)
   const pages = [page([
-    { rung: { rung: 0, methods: [], buy: days, option: 'rung-0', bought: [] } },
-    { rung: { rung: 1, methods: [], buy: overtime, option: 'rung-1', bought: [] } },
-    { rung: { rung: 2, methods: [], buy: all, option: 'rung-2', bought: [{ id: 'bought:contractor-nights', value: or.nights.nights, unit: 'periods' }] } },
-    { row: { methods: [], from: 0, to: 1, ends: { from: 'refused', to: 'found' }, word: 'makes it possible' } },
-    { row: { methods: [], from: 1, to: 2, ends: { from: 'found', to: 'found' }, word: 'found', outage: or.nights.span - or.overtime.span, cost: or.nights.cost - or.overtime.cost } },
+    { rung: { rung: 0, methods: swapPicks, buy: days, option: 'rung-0', bought: [] } },
+    { rung: { rung: 1, methods: swapPicks, buy: overtime, option: 'rung-1', bought: [] } },
+    { rung: { rung: 2, methods: swapPicks, buy: all, option: 'rung-2', bought: [{ id: 'bought:contractor-nights', value: or.nights.nights, unit: 'periods' }] } },
+    { row: { methods: swapPicks, from: 0, to: 1, ends: { from: 'refused', to: 'found' }, word: 'makes it possible' } },
+    { row: { methods: swapPicks, from: 1, to: 2, ends: { from: 'found', to: 'found' }, word: 'found', outage: or.nights.span - or.overtime.span, cost: or.nights.cost - or.overtime.cost } },
   ])]
   return { model, pages }
 }
@@ -90,6 +92,8 @@ describe('what overtime buys', () => {
     expect(view.rows[0]!.differences).toBeNull()
     const text = readableText(renderHtml(Ladder, { view, state: 'ready', onSolve: none, onFiner: none, onSelect: none, onClose: none }))
     expect(text).toMatch(/makes it possible\s+2 Rung 2: \+ /)
+    // The ladder names the method it is for.
+    expect(text).toContain(`For ${model.inputs.methods[0]!.options.find(option => option.key === 'swap')!.label}`)
     expect(text).toContain('found: longest outage 2.5 h shorter · extra cost NOK 65,450 more')
     expect(text).not.toMatch(/buys nothing/i)
     // The rung's own outcome: its status word, its longest outage against the plan's limit, and its extra cost.
