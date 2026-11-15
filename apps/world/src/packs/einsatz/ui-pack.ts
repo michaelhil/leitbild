@@ -178,7 +178,7 @@ export const einsatzPackView = {
     ],
     presentObject: (object, context) => presentEinsatzObject(object, context),
     /** Each unit's queued stops as straight segments after its route: the planned path of its plan, the selected unit's drawn strongly. */
-    mapFeatures: context => plannedPathFeatures(context.objects, unitsCategory, () => true, context.selectedObjectId),
+    mapFeatures: context => plannedPathFeatures(context.objects, unitsCategory, context.selectedObjectId),
     // The selected unit's path is drawn strongly, so the map redraws these features when the selection changes.
     mapFeaturesFollowSelection: true,
     mapFeatureLayers: ['routes'],
