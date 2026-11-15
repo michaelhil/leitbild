@@ -6,9 +6,12 @@
 // in time, the job at which that rule breaks, and by how much.
 // - span limit: it runs out at the span's first instant plus the limit; the job is the test that returns the
 //   group last (the span's end), and `by` is the span past the limit;
-// - due: it runs out at its due time; the job is the due job, and `by` is its finish past the due time.
-// Any other finding (the window, a link, a crew, a keep-in-service or protection rule the repair path keeps
-// by construction) is no outcome of a re-timing: it is refused with the checker's words.
+// - due: it runs out at its due time; the job is the due job, and `by` is its finish past the due time;
+// - the window: work that runs past the window end is judged on the plan's calendars continued past it; the
+//   window runs out at its end, the job is the first one past it, and `window.by` is when the work would end.
+// A rule that runs out at the same instant as the window comes first. Any other finding (a link, a crew, a
+// keep-in-service or protection rule the repair path keeps by construction) is no outcome of a re-timing: it
+// is refused with the checker's words.
 import type { PlanInputs, Robust } from '../plan/schema.ts'
 import { checkPlan, mergeIntervals, prepare, type CheckRow, type CheckVariant } from './check.ts'
 
@@ -84,7 +87,14 @@ export const judgeRetiming = (inputs: PlanInputs, variant: CheckVariant, planned
   const prepared = prepare(pessimistic, variant)
   if (!prepared.ok) return { ok: false, problems: prepared.problems.map(problem => problem.words) }
   const rules = prepared.context.inputs.rules   // the plan's, then the what-if's extra rules
-  const check = checkPlan(pessimistic, variant, retimed)
+  // Work past the window end is judged on the calendars continued to the last finish, on the grid.
+  const { windowStart, windowEnd, grid } = prepared.context
+  const last = retimed.reduce<CheckRow | undefined>((latest, row) => latest === undefined || Date.parse(row.finish) > Date.parse(latest.finish) ? row : latest, undefined)
+  const lastFinish = last === undefined ? NaN : Date.parse(last.finish)
+  const pastWindow = Number.isFinite(lastFinish) && lastFinish > windowEnd
+  const judgedEnd = pastWindow ? windowStart + Math.ceil((lastFinish - windowStart) / grid.slotMs) * grid.slotMs : windowEnd
+  const judged = pastWindow ? { ...pessimistic, settings: { ...pessimistic.settings, window: { start: pessimistic.settings.window!.start, end: new Date(judgedEnd).toISOString() } } } : pessimistic
+  const check = checkPlan(judged, variant, retimed)
   const ruled = check.violations.filter(violation => (violation.code === 'span-limit' || violation.code === 'due') && rules.some(rule => rule.key === violation.about[0]))
   const other = check.violations.filter(violation => !ruled.includes(violation))
   if (other.length > 0) return { ok: false, problems: other.map(violation => violation.words) }
@@ -115,6 +125,11 @@ export const judgeRetiming = (inputs: PlanInputs, variant: CheckVariant, planned
     breaks.push({ at: over.from + limit, order, outcome: { holds: false, rule: rule.key, job: returning.key, by: { value: (over.to - over.from - limit) / hourMs, unit: 'h' } } })
   })
   if (problems.length > 0) return { ok: false, problems }
+  if (pastWindow) {
+    const firstPast = inputs.jobs.flatMap(job => { const row = rowOf.get(job.key); return row !== undefined && Date.parse(row.finish) > windowEnd ? [row] : [] })
+      .reduce((earliest, row) => Date.parse(row.start) < Date.parse(earliest.start) ? row : earliest)
+    breaks.push({ at: windowEnd, order: rules.length, outcome: { holds: false, window: { by: last!.finish }, job: firstPast.job } })
+  }
   const first = [...breaks].sort((left, right) => left.at - right.at || left.order - right.order)[0]
   return { ok: true, outcome: first === undefined ? { holds: true } : first.outcome }
 }
