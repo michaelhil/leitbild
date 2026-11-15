@@ -13,6 +13,7 @@ import {
   contactRows,
   countsLine,
   deliverToOrder,
+  dispatchKindOf,
   dispatchWords,
   edgeTabText,
   emptySelectionText,
@@ -362,7 +363,7 @@ describe('Contacts', () => {
       trackObject('t3', { type: 'track', tier: 'destroyed', fix: false }),
       trackObject('t2', { type: 'track', tier: 'contact', fix: false }, '2026-01-01T00:00:00.000Z'),
       trackObject('t1', { type: 'track', tier: 'identified', fix: true, identity: { typeLabel: 'Skiff', icon: 'sailboat', side: 'east' } }),
-      trackObject('u1', { type: 'unit' }),
+      trackObject('u1', { type: 'unit', presentation: { icon: 'cog', typeLabel: 'Rover' }, phase: 'available', integrity: 'healthy', load: {} }),
     ]
     const rows = contactRows(objects, Date.parse('2026-01-01T00:01:30.000Z'), 't2')
     expect(rows.map(row => [row.label, row.icon, row.text, row.age, row.destroyed, row.selected])).toEqual([
@@ -370,6 +371,18 @@ describe('Contacts', () => {
       ['T2', 'circle-question-mark', 'Contact', '1:30', false, true],
       ['T3', 'circle-question-mark', 'Destroyed', null, true, false],
     ])
+  })
+  test('Einsatz objects are classified by their one record schema: a receiving unit is a site; a record that does not match is refused', () => {
+    const presentation = { icon: 'cog', typeLabel: 'Rover' }
+    const unitRecord = { type: 'unit', presentation, phase: 'available', integrity: 'healthy', load: {} }
+    const of = (packData: unknown, packId: string = einsatzPackId) => dispatchKindOf({ packId: packId as never, packData: packData as never })
+    expect(of({ ...unitRecord, accepting: true })).toBe('site')
+    expect(of(unitRecord)).toBe('unit')
+    expect(of({ type: 'task', presentation })).toBe('call')
+    expect(of({ type: 'track', tier: 'contact', fix: false })).toBe('track')
+    expect(of({ type: 'track-index', side: 'east', next: 1, subjects: {} })).toBeNull()
+    expect(of({ type: 'unit' }, 'other')).toBeNull()
+    expect(() => of({ type: 'unit' })).toThrow()
   })
   test('clock text', () => expect([clockText(59.6), clockText(3_725), clockText(-3)]).toEqual(['1:00', '1:02:05', '0:00']))
 })

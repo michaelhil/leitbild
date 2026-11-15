@@ -1,12 +1,11 @@
-import { z } from 'zod'
 import type { OperationalObject } from '../../core/model/index.ts'
 import { createWorldPackDescriptor, type PackObjectField, type PackObjectPresentation, type PackObjectPresentationContext, type PackObjectStatusPresentation, type WorldPackView } from '../../core/packs/protocol.ts'
 import { packField } from '../../core/packs/presentation.ts'
 import { plannedPathFeatures } from './chain-path.ts'
 import { einsatzColors } from './colors.ts'
 import { einsatzPackId, einsatzRuntimeId } from './ids.ts'
-import { neutralLexicon, unitPhases, type UnitPhase } from './lexicon.ts'
-import { clockText, contactIcon } from './ui/presenters.ts'
+import { neutralLexicon, type UnitPhase } from './lexicon.ts'
+import { contactIcon, einsatzRecordOf, kindOfRecord, tierWord, trackAgeText, type EinsatzRecord } from './ui/presenters.ts'
 
 /**
  * The browser-safe Einsatz view. It reads only the presentation each object
@@ -66,42 +65,13 @@ const phaseCodes: Readonly<Record<UnitPhase, string>> = {
   destroyed: 'X',
 }
 
-const presentationSchema = z.object({ icon: z.string().min(1), typeLabel: z.string().min(1) }).strict()
-const counts = z.record(z.string(), z.number())
+type UnitData = Extract<EinsatzRecord, { type: 'unit' }>
+type TrackData = Extract<EinsatzRecord, { type: 'track' }>
 
-const einsatzObjectSchema = z.discriminatedUnion('type', [
-  z.object({
-    type: z.literal('unit'),
-    presentation: presentationSchema,
-    phase: z.enum(unitPhases),
-    integrity: z.enum(['healthy', 'damaged', 'destroyed']),
-    taskId: z.string().min(1).optional(),
-    group: z.string().min(1).optional(),
-    load: counts,
-    /** Present on a receiving site only. */
-    accepting: z.boolean().optional(),
-  }).loose(),
-  z.object({ type: z.literal('task'), presentation: presentationSchema }).loose(),
-  z.object({
-    type: z.literal('track'),
-    tier: z.enum(['contact', 'identified', 'destroyed']),
-    fix: z.boolean(),
-    identity: z.object({ typeLabel: z.string().min(1), icon: z.string().min(1), side: z.string().min(1), rangeM: z.number().positive().optional() }).strict().optional(),
-  }).strict(),
-  z.object({ type: z.literal('track-index'), side: z.string().min(1), next: z.number().int().positive(), subjects: z.record(z.string(), z.string()) }).strict(),
-])
-type EinsatzObjectData = z.output<typeof einsatzObjectSchema>
-type UnitData = Extract<EinsatzObjectData, { type: 'unit' }>
-type TrackData = Extract<EinsatzObjectData, { type: 'track' }>
-
-const dataOf = (object: OperationalObject): EinsatzObjectData => einsatzObjectSchema.parse(object.packData)
-const typeOf = (object: OperationalObject): EinsatzObjectData['type'] | null => object.packId === einsatzPackId ? dataOf(object).type : null
+const typeOf = (object: OperationalObject): EinsatzRecord['type'] | null => object.packId === einsatzPackId ? einsatzRecordOf(object).type : null
 
 /** An Einsatz unit that moves: the map selects it to give it orders through the Dispatch panel. */
 const isMovingUnit = (object: OperationalObject): boolean => typeOf(object) === 'unit' && object.kind === 'mobile_entity'
-
-const tierWord = (tier: TrackData['tier']): string =>
-  tier === 'contact' ? neutralLexicon.contact : tier === 'identified' ? neutralLexicon.identified : neutralLexicon.destroyed
 
 const dot = { shape: 'dot' } as const
 
@@ -121,10 +91,8 @@ const unitLabel = (object: OperationalObject, data: UnitData): string => {
 
 /** The track's serial and, while the Run clock is known, the age of its last detection. */
 const trackLabel = (object: OperationalObject, context: PackObjectPresentationContext): string => {
-  const observedAt = object.spatial.position?.observedAt
-  const now = context.currentTime
-  if (observedAt === undefined || now === undefined) return object.label
-  return `${object.label} · ${clockText((Date.parse(now) - Date.parse(observedAt)) / 1_000)}`
+  const age = trackAgeText(object, context.currentTime === undefined ? null : Date.parse(context.currentTime))
+  return age === null ? object.label : `${object.label} · ${age}`
 }
 
 const presentTrack = (object: OperationalObject, data: TrackData, context: PackObjectPresentationContext): PackObjectPresentation => {
@@ -150,10 +118,10 @@ const presentTrack = (object: OperationalObject, data: TrackData, context: PackO
 }
 
 const presentEinsatzObject = (object: OperationalObject, context: PackObjectPresentationContext): PackObjectPresentation => {
-  const data = dataOf(object)
+  const data = einsatzRecordOf(object)
   switch (data.type) {
     case 'unit': {
-      const site = data.accepting !== undefined
+      const site = kindOfRecord(data) === 'site'
       return {
         categoryId: unitsCategory,
         icon: data.presentation.icon,

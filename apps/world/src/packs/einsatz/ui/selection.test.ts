@@ -1,8 +1,6 @@
 import { describe, expect, test } from 'bun:test'
 import { geoPointFromLonLat, type GeoJsonPoint } from '../../../core/model/index.ts'
-import { einsatzPackId } from '../ids.ts'
 import {
-  dispatchKindOf,
   doubleClickMs,
   initialSelection,
   reduceSelection,
@@ -236,14 +234,5 @@ describe('The shared selection', () => {
     expect(selectionChangeEvent(start(su), null, kindOf, 7)).toEqual({ kind: 'cleared' })
     expect(selectionChangeEvent(start(su), 'other-pack-object', kindOf, 7)).toEqual({ kind: 'cleared' })
     expect(step(sa, { kind: 'cleared' }).state.selection).toEqual(s0)
-  })
-  test('Einsatz objects are classified by their record: a receiving unit is a site', () => {
-    const of = (packData: unknown, packId: string = einsatzPackId) => dispatchKindOf({ packId: packId as never, packData: packData as never })
-    expect(of({ type: 'unit', accepting: true })).toBe('site')
-    expect(of({ type: 'unit' })).toBe('unit')
-    expect(of({ type: 'task' })).toBe('call')
-    expect(of({ type: 'track' })).toBe('track')
-    expect(of({ type: 'track-index' })).toBeNull()
-    expect(of({ type: 'unit' }, 'other')).toBeNull()
   })
 })

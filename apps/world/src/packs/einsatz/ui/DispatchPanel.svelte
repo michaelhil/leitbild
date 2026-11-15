@@ -15,6 +15,7 @@
     cardFor,
     contactRows,
     deliverToOrder,
+    dispatchKindOf,
     dispatchWords,
     edgeTabText,
     emptySelectionText,
@@ -28,7 +29,7 @@
     type PinnedProposal,
     type Receipt,
   } from './presenters.ts'
-  import { dispatchKindOf, initialSelection, reduceSelection, selectedObjectOf, selectionChangeEvent, type ClickedObject, type DispatchObjectKind, type SelectionEffect, type SelectionEvent, type SelectionState } from './selection.ts'
+  import { initialSelection, reduceSelection, selectedObjectOf, selectionChangeEvent, type ClickedObject, type DispatchObjectKind, type SelectionEffect, type SelectionEvent, type SelectionState } from './selection.ts'
   import ContactsSection from './ContactsSection.svelte'
   import OverviewLists from './OverviewLists.svelte'
   import SelectionCard from './SelectionCard.svelte'

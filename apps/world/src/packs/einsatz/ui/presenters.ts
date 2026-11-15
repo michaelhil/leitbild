@@ -1,12 +1,12 @@
 import { z } from 'zod'
 import { objectIdSchema, type OperationalObject } from '../../../core/model/index.ts'
 import { einsatzPackId } from '../ids.ts'
-import { neutralLexicon } from '../lexicon.ts'
+import { neutralLexicon, unitPhases } from '../lexicon.ts'
 import type { Stop, UnitOrderInput } from '../order-schema.ts'
 import type { Eta, RecommendAnswer } from '../recommendation-schema.ts'
 import type { Situation, SituationCall, SituationSite, SituationUnit, StopVerb, UnitOptions, UnitTone } from '../situation/schema.ts'
 import { mapTargetingMaxTargets, type MapTargeting } from '../../../ui/surface-panel-interaction.ts'
-import { selectedObjectOf, stopObjectId, type Selection } from './selection.ts'
+import { selectedObjectOf, stopObjectId, type DispatchObjectKind, type Selection } from './selection.ts'
 
 /**
  * What the Dispatch panel shows, as plain view models over the Run's own
@@ -121,6 +121,74 @@ export interface ButtonView {
 }
 
 const button = (label: string, reason: string | null): ButtonView => ({ label, enabled: reason === null, reason })
+
+// ——— Einsatz object records ———
+
+const presentationSchema = z.object({ icon: z.string().min(1), typeLabel: z.string().min(1) }).strict()
+const trackTiers = ['contact', 'identified', 'destroyed'] as const
+export type TrackTier = typeof trackTiers[number]
+
+/**
+ * The record an Einsatz object carries in its `packData`, as the browser
+ * reads it: the one schema the map presentation (`ui-pack.ts`), the
+ * selection table and the Contacts section parse it with. A unit's and a
+ * task's record carry more than the browser reads; a track's and a track
+ * index's carry exactly this.
+ */
+export const einsatzRecordSchema = z.discriminatedUnion('type', [
+  z.object({
+    type: z.literal('unit'),
+    presentation: presentationSchema,
+    phase: z.enum(unitPhases),
+    integrity: z.enum(['healthy', 'damaged', 'destroyed']),
+    taskId: z.string().min(1).optional(),
+    group: z.string().min(1).optional(),
+    load: z.record(z.string(), z.number()),
+    /** Present on a receiving site only. */
+    accepting: z.boolean().optional(),
+  }).loose(),
+  z.object({ type: z.literal('task'), presentation: presentationSchema }).loose(),
+  z.object({
+    type: z.literal('track'),
+    tier: z.enum(trackTiers),
+    fix: z.boolean(),
+    identity: z.object({ typeLabel: z.string().min(1), icon: z.string().min(1), side: z.string().min(1), rangeM: z.number().positive().optional() }).strict().optional(),
+  }).strict(),
+  z.object({ type: z.literal('track-index'), side: z.string().min(1), next: z.number().int().positive(), subjects: z.record(z.string(), z.string()) }).strict(),
+])
+export type EinsatzRecord = z.output<typeof einsatzRecordSchema>
+
+/** The record of an Einsatz object; one that does not match is refused loudly. */
+export const einsatzRecordOf = (object: Pick<OperationalObject, 'packData'>): EinsatzRecord => einsatzRecordSchema.parse(object.packData)
+
+/** What a record is to the panel: a unit that receives load is a site, any other unit a unit, a task a call, a track a track; a track index none of them. */
+export const kindOfRecord = (record: EinsatzRecord): DispatchObjectKind | null => {
+  switch (record.type) {
+    case 'unit': return record.accepting === undefined ? 'unit' : 'site'
+    case 'task': return 'call'
+    case 'track': return 'track'
+    case 'track-index': return null
+  }
+}
+
+/** What an object is to the panel; another Pack's object is none of them. */
+export const dispatchKindOf = (object: Pick<OperationalObject, 'packId' | 'packData'>): DispatchObjectKind | null =>
+  object.packId === einsatzPackId ? kindOfRecord(einsatzRecordOf(object)) : null
+
+/** A track's tier in the neutral words. */
+export const tierWord = (tier: TrackTier): string => {
+  switch (tier) {
+    case 'contact': return neutralLexicon.contact
+    case 'identified': return neutralLexicon.identified
+    case 'destroyed': return neutralLexicon.destroyed
+  }
+}
+
+/** How long ago a track was last detected, as m:ss at `nowMs`; null while the time or the detection is unknown. */
+export const trackAgeText = (object: Pick<OperationalObject, 'spatial'>, nowMs: number | null): string | null => {
+  const observedAt = object.spatial.position?.observedAt
+  return nowMs === null || observedAt === undefined ? null : clockText((nowMs - Date.parse(observedAt)) / 1_000)
+}
 
 // ——— Unit card ———
 
@@ -699,12 +767,6 @@ export const receiptUndoable = (receipt: Receipt, nowMs: number): boolean => now
 
 // ——— Contacts ———
 
-const trackSchema = z.object({
-  type: z.literal('track'),
-  tier: z.enum(['contact', 'identified', 'destroyed']),
-  identity: z.object({ typeLabel: z.string().min(1), icon: z.string().min(1), side: z.string().min(1) }).loose().optional(),
-}).loose()
-
 export interface ContactRowView {
   readonly id: string
   readonly icon: string
@@ -715,25 +777,22 @@ export interface ContactRowView {
   readonly selected: boolean
 }
 
-const tierOrder = { identified: 0, contact: 1, destroyed: 2 } as const
-const tierWord = { identified: neutralLexicon.identified, contact: neutralLexicon.contact, destroyed: neutralLexicon.destroyed } as const
+const tierOrder: Readonly<Record<TrackTier, number>> = { identified: 0, contact: 1, destroyed: 2 }
 
 /** The tracks this screen sees, identified first, then contacts, then destroyed, with the age of the last detection. */
 export const contactRows = (objects: ReadonlyArray<OperationalObject>, nowMs: number | null, selectedId: string | null): ReadonlyArray<ContactRowView> =>
   objects.flatMap(object => {
     if (object.packId !== einsatzPackId) return []
-    const parsed = trackSchema.safeParse(object.packData)
-    if (!parsed.success) return []
-    const track = parsed.data
-    const observedAt = object.spatial.position?.observedAt
+    const track = einsatzRecordOf(object)
+    if (track.type !== 'track') return []
     return [{
       tier: track.tier,
       row: {
         id: object.id as string,
         icon: track.identity?.icon ?? contactIcon,
         label: object.label,
-        text: track.identity === undefined ? tierWord[track.tier] : `${tierWord[track.tier]} · ${track.identity.typeLabel}`,
-        age: nowMs === null || observedAt === undefined ? null : clockText((nowMs - Date.parse(observedAt)) / 1_000),
+        text: track.identity === undefined ? tierWord(track.tier) : `${tierWord(track.tier)} · ${track.identity.typeLabel}`,
+        age: trackAgeText(object, nowMs),
         destroyed: track.tier === 'destroyed',
         selected: object.id === selectedId,
       },

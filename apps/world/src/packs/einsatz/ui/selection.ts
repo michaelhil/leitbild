@@ -1,6 +1,4 @@
-import { z } from 'zod'
-import type { GeoJsonPoint, OperationalObject } from '../../../core/model/index.ts'
-import { einsatzPackId } from '../ids.ts'
+import type { GeoJsonPoint } from '../../../core/model/index.ts'
 import type { OrderWhen, Stop } from '../order-schema.ts'
 
 /**
@@ -138,24 +136,6 @@ export const stopFor = (object: ClickedObject): Stop | null => {
 /** The object a stop names; a point names none. */
 export const stopObjectId = (stop: Stop): string | null =>
   'taskId' in stop ? stop.taskId : 'siteId' in stop ? stop.siteId : 'trackId' in stop ? stop.trackId : null
-
-const recordSchema = z.object({ type: z.string().min(1), accepting: z.boolean().optional() }).loose()
-
-/**
- * What an object is to the panel: an Einsatz unit that receives load is a
- * site, any other unit a unit, a task a call, a track a track. Any other
- * object (another Pack's, a track index) is none of them.
- */
-export const dispatchKindOf = (object: Pick<OperationalObject, 'packId' | 'packData'>): DispatchObjectKind | null => {
-  if (object.packId !== einsatzPackId) return null
-  const record = recordSchema.parse(object.packData)
-  switch (record.type) {
-    case 'unit': return record.accepting === undefined ? 'unit' : 'site'
-    case 'task': return 'call'
-    case 'track': return 'track'
-    default: return null
-  }
-}
 
 const clickKey = (on: Clicked): string => on.kind === 'ground' ? 'ground' : `${on.kind}:${on.id}`
 
