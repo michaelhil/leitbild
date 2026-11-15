@@ -186,10 +186,16 @@ const refuseAgentAuthorityField = (authority: unknown, access: AccessContext): v
   throw planningError(409, 'needs_person', 'Only a person gives authority, in the plan screen: send the edit without it, or ask them to make the change.')
 }
 
-/** The structured status the Assistant reads: the stored words, goals in order, and a cause only for a proof. */
+/**
+ * The structured status the Assistant reads: the stored words, goals in order by the plan's ids, a what-if's
+ * lead (the proof rule depends on it, so it is never left out), and a cause only for a proof.
+ */
 export const statusOut = (status: Status): StatusOut => {
   if (status.word === 'validated feasible') {
-    return { word: status.word, goals: status.goals.map(goal => ({ goal: goal.goal, word: goal.word, value: goal.value, unit: goal.unit, ...(goal.bound === undefined ? {} : { bound: goal.bound.value, gap: goal.value - goal.bound.value }) })) }
+    const line = (goal: { readonly word: StatusOut['goals'][number]['word']; readonly value: number; readonly unit: string; readonly bound?: { readonly value: number } | undefined }) =>
+      ({ word: goal.word, value: goal.value, unit: goal.unit, ...(goal.bound === undefined ? {} : { bound: goal.bound.value, gap: goal.value - goal.bound.value }) })
+    const lead = status.lead === undefined ? undefined : 'goal' in status.lead ? { goal: status.lead.goal } : { group: status.lead.group, ...line(status.lead) }
+    return { word: status.word, goals: status.goals.map(goal => ({ goal: goal.goal, ...line(goal) })), ...(lead === undefined ? {} : { lead }) }
   }
   if (status.word !== 'proven infeasible') return { word: status.word, goals: [] }
   const cause = certificateSchema.parse(status.cause)

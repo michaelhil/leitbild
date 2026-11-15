@@ -6,6 +6,8 @@ import {
   buysRowSchema, generateResultSchema, readInputSchema, refreshInputSchema, resultLimitBytes, schemaMapKeywords, sectionDataSchemas, statusOutSchema, stripForPublication,
   strippedKeywords, summaryDataSchema,
 } from './contract.ts'
+import { statusOut } from './operations.ts'
+import { optionSchema } from '../plan/schema.ts'
 
 const inputs: Record<string, z.ZodType> = {
   'world.simulation-run.planning-facts': planningFactsInputSchema,
@@ -266,5 +268,29 @@ describe('increment 2: explain recommended and versus {previous}; read buys', ()
     expect(row({ from: 1, to: 2, word: 'not found better', outage: -2, cost: 0 })).toEqual(['outage'])
     expect(row({ from: 0, to: 1, word: 'makes it possible', outage: -2, cost: 0 })).toEqual(['outage'])
     expect(row({ from: 0, to: 2, word: 'not solved' })).toEqual(['to'])
+  })
+})
+
+describe('increment 2: statusOut carries the lead, so a stored lead proof reaches the Assistant (adversary review P1)', () => {
+  const run = { grid: '30min', engine: 'ts-lahc', formulation: 'f1', seed: 1, budget: { evals: 1, cpuMs: 1, wallMs: 1 }, stoppedBy: 'done', evals: 1, cpuMs: 1 }
+  const proven = (goal: number) => ({ word: 'proven optimal', goal, value: 340_000, unit: 'NOK', bound: { value: 340_000, source: 'fixed-costs', certificate: { kind: 'fixed-costs', items: [{ key: 'SWA-method', amount: 340_000 }] } } })
+  const found = (goal: number) => ({ word: 'best found under budget', goal, value: 2.5, unit: 'h' })
+  const option = (lead: object, status: object) => optionSchema.parse({ key: 'cheapest', label: 'Cheapest that keeps every rule', variant: { methods: [], purchases: [], lead },
+    status: { word: 'validated feasible', run, ...status }, rows: [], metrics: [], inputsRevision: 1 })
+
+  test('lead {goal: 1} with goal 1 proven: statusOut keeps the lead and parses; without it the order rule would refuse it', () => {
+    const stored = option({ goal: 1 }, { goals: [found(0), proven(1), found(2)], lead: { goal: 1 } })
+    const out = statusOut(stored.status)
+    expect(statusOutSchema.safeParse(out).success).toBe(true)
+    expect(out).toMatchObject({ lead: { goal: 1 }, goals: [{ goal: 0, word: 'best found under budget' }, { goal: 1, word: 'proven optimal', bound: 340_000, gap: 0 }, { goal: 2 }] })
+    const { lead: _lead, ...withoutLead } = out
+    expect(statusOutSchema.safeParse(withoutLead).success).toBe(false)
+  })
+
+  test('a group lead\'s own line reaches statusOut with its bound and gap', () => {
+    const line = { group: 'AFW-A', word: 'proven optimal', value: 7.5, unit: 'h', bound: { value: 7.5, source: 'logic+calendars', certificate: { kind: 'least-span', spans: [{ group: 'AFW-A', hours: 7.5 }] } } }
+    const out = statusOut(option({ group: 'AFW-A' }, { goals: [found(0), found(1)], lead: line }).status)
+    expect(statusOutSchema.safeParse(out).success).toBe(true)
+    expect(out.lead).toEqual({ group: 'AFW-A', word: 'proven optimal', value: 7.5, unit: 'h', bound: 7.5, gap: 0 })
   })
 })
