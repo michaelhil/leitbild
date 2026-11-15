@@ -200,7 +200,7 @@ export const openScreen = async (run: OpenRun, wall: Wall, options: { readonly v
   }
   const mapClickContext = (objects: ReadonlyArray<OperationalObject>): MapClickContext => {
     const context: PackTargetContext = runViewer === undefined ? { objects } : { objects, viewer: runViewer }
-    return { controller: objects.find(object => object.id === mapSelection && targeting.isController(object, context)) ?? null, targeting, context, panel, opensDisplay: () => false }
+    return { controller: objects.find(object => object.id === mapSelection && targeting.isController(object, context)) ?? null, targeting, context, panel, closedMapTargetPanels: [], opensDisplay: () => false }
   }
   /** What the World surface does with a routed map tap; a note or nothing is still the operator's tap. */
   const followRoute = async (route: MapClickRoute): Promise<void> => {

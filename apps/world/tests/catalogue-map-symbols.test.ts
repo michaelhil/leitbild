@@ -159,6 +159,35 @@ describe('operational map icons', () => {
     expect(snapshot.points.map(point => [point.id, point.muted])).toEqual([['a', false], ['b', true]])
   })
 
+  test('an armed order rings and tags its targets and dims every other object but its own, and nothing changes once it clears', () => {
+    const store = createMapFeatureStore()
+    const objects = [objectOf('a', 11.3), objectOf('b', 11.4), objectOf('c', 11.5), objectOf('d', 11.6)]
+    const input = (targeting: { readonly fromId: string; readonly tags: ReadonlyMap<string, string> } | null) => ({
+      objects,
+      selectedControllerId: 'a',
+      highlightedObjectIds: [],
+      targeting,
+      hiddenObjectCategoryIds: [], alertPalette: 'day' as const,
+      placementPoints: [],
+      packFeatures: [],
+      hasNewInfo: () => false,
+      presentationFor: presentationWith({}),
+    })
+    const plain = store.update(input(null))
+    expect(plain.points.map(point => [point.id, point.targetTag, point.dimmed])).toEqual([['a', null, false], ['b', null, false], ['c', null, false], ['d', null, false]])
+    const armed = store.update(input({ fromId: 'a', tags: new Map([['b', '4 min'], ['c', 'Move · 9 min']]) }))
+    expect(armed.revisions.points).toBe(plain.revisions.points + 1)
+    expect(armed.points.map(point => [point.id, point.targetTag, point.dimmed, point.color[3]])).toEqual([['a', null, false, 255], ['b', '4 min', false, 255], ['c', 'Move · 9 min', false, 255], ['d', null, true, 72]])
+    const layers = layersOf(armed, emptyCatalogueSymbolAtlas)
+    const tags = layers.find(layer => layer.id === 'leitbild-target-tags')
+    expect((tags?.props.data as ReadonlyArray<{ readonly id: string }>).map(point => point.id)).toEqual(['b', 'c'])
+    const halos = layers.find(layer => layer.id === 'leitbild-object-halos')?.props as unknown as { readonly getRadius: (point: unknown) => number }
+    expect(armed.points.map(point => halos.getRadius(point))).toEqual([18, 18, 18, 0])
+    const cleared = store.update(input(null))
+    expect(cleared.points.map(point => [point.id, point.targetTag, point.dimmed])).toEqual(plain.points.map(point => [point.id, point.targetTag, point.dimmed]))
+    expect(layersOf(cleared, emptyCatalogueSymbolAtlas).map(layer => layer.id)).toEqual(todaysLayerIds)
+  })
+
   test('labels are drawn natively only for objects whose Pack presents one', () => {
     const snapshot = snapshotOf([objectOf('a', 11.3), objectOf('b', 11.4)], presentationWith({}, { b: 'B2 · ENR' }))
     expect(snapshot.points.find(point => point.id === 'a')?.label).toBeNull()
