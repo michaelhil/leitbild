@@ -51,15 +51,20 @@ const other = objectOf('o1', 'fixture', 'other')
 const objects = [unit, otherUnit, site, other]
 const context: PackTargetContext = { objects }
 
-const clickContext = (targeting: PackTargetingContribution, patch: Partial<MapClickContext> = {}): MapClickContext => ({
-  controller: unit,
-  targeting: createActivePackViews([viewOf('fixture', targeting)]).targeting,
-  context,
-  panel: null,
-  closedMapTargetPanels: [],
-  opensDisplay: () => false,
-  ...patch,
-})
+// The selection is the controller unless a case says otherwise.
+const clickContext = (targeting: PackTargetingContribution, patch: Partial<MapClickContext> = {}): MapClickContext => {
+  const controller = patch.controller === undefined ? unit : patch.controller
+  return {
+    controller,
+    selectedObjectId: controller?.id ?? null,
+    targeting: createActivePackViews([viewOf('fixture', targeting)]).targeting,
+    context,
+    panel: null,
+    closedMapTargetPanels: [],
+    opensDisplay: () => false,
+    ...patch,
+  }
+}
 
 describe('map clicks without a map-target panel', () => {
   test('select controllers and send the Pack command to targets, as the generic surface always did', () => {
@@ -106,8 +111,10 @@ describe('map clicks without a map-target panel', () => {
     const click = clickContext(pointing)
     expect(groundClicksWanted(click)).toBe(true)
     expect(routeGroundClick(ground, click)).toEqual({ kind: 'send', command: { kind: 'fixture.move', targetObjectIds: [unit.id], payload: { point: ground } }, subject: 'Sending U1 to the map point' })
-    expect(routeGroundClick(ground, { ...click, controller: otherUnit })).toEqual({ kind: 'none' })
-    expect(routeGroundClick(ground, { ...click, controller: null })).toEqual({ kind: 'none' })
+    expect(routeGroundClick(ground, { ...click, controller: otherUnit, selectedObjectId: otherUnit.id })).toEqual({ kind: 'none' })
+    expect(routeGroundClick(ground, { ...click, controller: null, selectedObjectId: null })).toEqual({ kind: 'none' })
+    // Without a map-target panel, open ground leaves a selection that is no controller alone, as it always did.
+    expect(routeGroundClick(ground, { ...click, controller: null, selectedObjectId: site.id })).toEqual({ kind: 'none' })
   })
 
   test('hand the screen role view to every targeting decision', () => {
@@ -155,8 +162,16 @@ describe('map clicks with a map-target panel', () => {
     // A second click on the selected controller is the panel's to read; without a panel it selects it again.
     expect(routeObjectClick(unit, click)).toEqual({ kind: 'panel', controllerId: unit.id, target: { kind: 'object', objectId: unit.id } })
     expect(routeObjectClick(unit, clickContext(sendTargeting))).toEqual({ kind: 'select', objectId: unit.id, note: 'Selected U1; click a valid target' })
-    expect(routeObjectClick(site, { ...click, controller: null })).toEqual({ kind: 'select', objectId: site.id, note: null })
-    expect(routeGroundClick(ground, { ...click, controller: null })).toEqual({ kind: 'none' })
+    expect(routeObjectClick(site, { ...click, controller: null, selectedObjectId: null })).toEqual({ kind: 'select', objectId: site.id, note: null })
+    expect(routeGroundClick(ground, { ...click, controller: null, selectedObjectId: null })).toEqual({ kind: 'none' })
+  })
+
+  test('open ground clears a selection that is no controller, such as a call or a site card, and goes to the panel with a controller', () => {
+    const click = clickContext(sendTargeting, { panel })
+    for (const selected of [site, other]) expect(routeGroundClick(ground, { ...click, controller: null, selectedObjectId: selected.id })).toEqual({ kind: 'deselect' })
+    expect(routeGroundClick(ground, click)).toEqual({ kind: 'panel', controllerId: unit.id, target: { kind: 'point', point: ground } })
+    // A panel still loading clears the selection too: clearing orders nothing.
+    expect(routeGroundClick(ground, { ...click, panel: { ...panel, onMapTarget: null }, controller: null, selectedObjectId: site.id })).toEqual({ kind: 'deselect' })
   })
 
   test('says so while the panel has not connected, instead of sending on its behalf', () => {
@@ -174,9 +189,9 @@ describe('map clicks with a map-target panel', () => {
     const views = createActivePackViews([viewOf('fixture', sendTargeting), viewOf('foreign', foreignTargeting)])
     const panelPreviews: ObjectId[] = []
     const previewingPanel: MapTargetPanel = { ...panel, previewMapTarget: controllerId => { panelPreviews.push(controllerId); return { text: 'from the Board', refused: false } } }
-    const click: MapClickContext = { controller: foreignUnit, targeting: views.targeting, context: { objects: [...objects, foreignUnit] }, panel: previewingPanel, closedMapTargetPanels: [], opensDisplay: () => false }
+    const click: MapClickContext = { controller: foreignUnit, selectedObjectId: foreignUnit.id, targeting: views.targeting, context: { objects: [...objects, foreignUnit] }, panel: previewingPanel, closedMapTargetPanels: [], opensDisplay: () => false }
     const before = received.length
-    expect(routeObjectClick(foreignUnit, { ...click, controller: null })).toEqual({ kind: 'select', objectId: foreignUnit.id, note: 'Selected F1; click a valid target' })
+    expect(routeObjectClick(foreignUnit, { ...click, controller: null, selectedObjectId: null })).toEqual({ kind: 'select', objectId: foreignUnit.id, note: 'Selected F1; click a valid target' })
     expect(routeObjectClick(site, click)).toEqual({ kind: 'send', command: { kind: 'fixture.send', targetObjectIds: [foreignUnit.id], payload: { to: site.id } }, subject: 'F1 flies to s1' })
     // An object of the panel's Pack that the foreign controller does not target becomes the panel's selection, never nothing.
     expect(routeObjectClick(other, click)).toEqual({ kind: 'select', objectId: other.id, note: null })
@@ -197,7 +212,7 @@ describe('a Pack that declares a map-target panel', () => {
   const foreignTargeting: PackTargetingContribution = { ...sendTargeting, isTarget: (_controller, candidate) => candidate.id === site.id }
   const views = createActivePackViews([viewOf('fixture', sendTargeting), viewOf('foreign', foreignTargeting)])
   const everything = [...objects, foreignUnit, foreignObject]
-  const contextWith = (patch: Partial<MapClickContext>): MapClickContext => ({ controller: null, targeting: views.targeting, context: { objects: everything }, panel: null, closedMapTargetPanels: [], opensDisplay: () => false, ...patch })
+  const contextWith = (patch: Partial<MapClickContext>): MapClickContext => ({ controller: null, selectedObjectId: patch.controller?.id ?? null, targeting: views.targeting, context: { objects: everything }, panel: null, closedMapTargetPanels: [], opensDisplay: () => false, ...patch })
 
   test('while its panel is closed, a click on any of its objects opens the panel with that object selected', () => {
     for (const controller of [null, unit, otherUnit]) {
@@ -326,13 +341,13 @@ describe('Drone targeting is unchanged', () => {
     const target = objectOf('t1', 'fixture', 'other')
     const views = createActivePackViews([dronePackView, viewOf('fixture')])
     const droneContext: PackTargetContext = { objects: [drone, target] }
-    const click: MapClickContext = { controller: null, targeting: views.targeting, context: droneContext, panel: null, closedMapTargetPanels: [], opensDisplay: () => false }
+    const click: MapClickContext = { controller: null, selectedObjectId: null, targeting: views.targeting, context: droneContext, panel: null, closedMapTargetPanels: [], opensDisplay: () => false }
     expect(routeObjectClick(drone, click)).toEqual({ kind: 'select', objectId: drone.id, note: 'Selected Drone A; click a valid target' })
     const sent = routeObjectClick(target, { ...click, controller: drone })
     expect(sent).toEqual({ kind: 'send', command: dronePackView.targeting.buildSetTargetCommand(drone, target), subject: 'Sending Drone A to T1' })
     expect(sent.kind === 'send' ? sent.command.kind : null).toBe(navigateDroneCommandKind)
     expect([groundClicksWanted(click), targetPickingWanted(click)]).toEqual([false, false])
-    expect(routeGroundClick(ground, { ...click, controller: drone })).toEqual({ kind: 'none' })
+    expect(routeGroundClick(ground, { ...click, controller: drone, selectedObjectId: drone.id })).toEqual({ kind: 'none' })
     expect(views.targeting?.describeTarget).toBeUndefined()
     expect(views.targeting?.pointTargets).toBeUndefined()
   })

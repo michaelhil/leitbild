@@ -390,7 +390,7 @@
     return mutedOnMap ? objects.filter(object => mutedOnMap(object, targetContext)).map(object => object.id) : emptyStringArray
   })
   const mapCameraInteraction = $derived(mapCameraInteractionFor(activePack?.packs ?? []))
-  const mapClickContext = $derived<MapClickContext>({ controller: selectedControllerObject, targeting: activePack?.targeting, context: targetContext, panel: mapTargetPanel, closedMapTargetPanels, opensDisplay })
+  const mapClickContext = $derived<MapClickContext>({ controller: selectedControllerObject, selectedObjectId: selectedControllerId, targeting: activePack?.targeting, context: targetContext, panel: mapTargetPanel, closedMapTargetPanels, opensDisplay })
   const physicalOperationalCapture = $derived(physicalExplorerOperationalCapture({ placement: placementMode !== null, assignment: mapAssignment !== null, targetPicking: targetPickingWanted(mapClickContext), controllerSelected: selectedControllerId !== null }))
   const mapStartupFailed = $derived(startupSteps.find(step => step.id === 'map')?.status === 'failed')
   const displayRunJoin = $derived.by<DeckRunJoin>(() => {
@@ -1648,6 +1648,10 @@
     if (route.kind === 'openPanel') {
       setSurfacePanelOpen(route.panelId, true)
       selectObjectById(route.objectId)
+      return
+    }
+    if (route.kind === 'deselect') {
+      selectedControllerId = null
       return
     }
     if (route.kind === 'panel') {

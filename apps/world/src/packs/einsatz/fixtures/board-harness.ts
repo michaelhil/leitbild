@@ -200,13 +200,17 @@ export const openScreen = async (run: OpenRun, wall: Wall, options: { readonly v
   }
   const mapClickContext = (objects: ReadonlyArray<OperationalObject>): MapClickContext => {
     const context: PackTargetContext = runViewer === undefined ? { objects } : { objects, viewer: runViewer }
-    return { controller: objects.find(object => object.id === mapSelection && targeting.isController(object, context)) ?? null, targeting, context, panel, closedMapTargetPanels: [], opensDisplay: () => false }
+    return { controller: objects.find(object => object.id === mapSelection && targeting.isController(object, context)) ?? null, selectedObjectId: objects.find(object => object.id === mapSelection)?.id ?? null, targeting, context, panel, closedMapTargetPanels: [], opensDisplay: () => false }
   }
   /** What the World surface does with a routed map tap; a note or nothing is still the operator's tap. */
   const followRoute = async (route: MapClickRoute): Promise<void> => {
     if (route.kind === 'select') {
       mapSelection = route.objectId
       return await operatorAction({ kind: 'selection', objectId: route.objectId })
+    }
+    if (route.kind === 'deselect') {
+      mapSelection = null
+      return await operatorAction({ kind: 'selection', objectId: null })
     }
     if (route.kind === 'panel') return await operatorAction({ kind: 'map-target', controllerId: route.controllerId, target: route.target })
     if (route.kind === 'send') throw new Error('The surface never sends an Einsatz order itself')
