@@ -186,9 +186,6 @@
   const whatIfs = $derived(model !== null && context !== null
     ? [...whatIfOptions(model)].sort((left, right) => Number(right.key === askedLast) - Number(left.key === askedLast)).map(option => whatIfCard(option, model!, context))
     : [])
-  const whatIfProofs = $derived(model !== null && context !== null
-    ? Object.fromEntries(whatIfOptions(model).map(option => [option.key, option.status.word === 'proven infeasible' ? refusalProof(model!.refusals[option.key], context) : null]))
-    : {})
   const recommendedOption = $derived(planOptions(model ?? { options: null }).find(option => option.key === model?.options?.recommended && option.fresh) ?? null)
   const shownIsWhatIf = $derived(shown !== null && isWhatIf(shown))
   const compareOption = $derived(model?.options?.items.find(option => option.key === compareFor) ?? null)
@@ -449,7 +446,8 @@
       {#if choosing !== 'whatif'}
         <section class="shown-option" aria-labelledby="shown-title">
           <h2 id="shown-title">Shown on the timeline</h2>
-          <WhatIfCard card={whatIfCard(shown, model, context)} {proof} selected busy={busy || generating !== null} onSelect={showOption} onPick={pick} />
+          <!-- A what-if's refusal is its causes by method on the card, never the plan's refusal lines (walk V1). -->
+          <WhatIfCard card={whatIfCard(shown, model, context)} selected busy={busy || generating !== null} onSelect={showOption} onPick={pick} />
         </section>
       {/if}
     {:else}
@@ -474,7 +472,7 @@
           onFiner={() => { whatIfKind = 'out'; openChoice('whatif') }} onSelect={showOption} onMethod={next => { ladderMethod = next }} onPick={pick} onClose={() => { choosing = null }} />
       {:else if choosing === 'whatif'}
         {#key whatIfKind}
-          <WhatIfPanel {context} cards={whatIfs} proofs={whatIfProofs} kind={whatIfKind} selected={selectedOption} busy={busy || generating !== null} {asking} missing={whatIfMissing}
+          <WhatIfPanel {context} cards={whatIfs} kind={whatIfKind} selected={selectedOption} busy={busy || generating !== null} {asking} missing={whatIfMissing}
             onAsk={askWhatIf} onSelect={showOption} onPick={pick} onClose={() => { choosing = null; whatIfKind = null }} />
         {/key}
       {:else if choosing === 'why'}

@@ -6,9 +6,9 @@
 import { timeUnitMs } from '../time/units.ts'
 import type { GenerateInput } from './api.ts'
 import { hoursText, quantityText } from './format.ts'
-import { otherWarnings, sizeCautionOf, type OptionView, type PlanModel } from './model.ts'
+import { createNames, otherWarnings, sizeCautionOf, type OptionView, type PlanModel } from './model.ts'
 import { outageOf, planLimitOf } from './options-glance.ts'
-import { goalMark, goalShort, statusView, type Context, type GoalLine, type StatusView } from './status-text.ts'
+import { certificateText, goalMark, goalShort, statusView, type Context, type GoalLine, type StatusView } from './status-text.ts'
 import { unpricedOf, type Unpriced } from './unpriced.ts'
 
 export type WhatIfKind = 'out' | 'first' | 'cheapest'
@@ -137,9 +137,27 @@ const againstRecommended = (option: OptionView, model: PlanModel, context: Conte
   return parts.length === 0 ? null : `Against ${recommended.label} (recommended): ${parts.join(', ')}.`
 }
 
+/** Method picks in planner words: "Swap in refurbished spare", or every method when the request fixed none. */
+const methodsLabel = (methods: ReadonlyArray<{ readonly choice: string; readonly option: string }>, inputs: Context['inputs']): string =>
+  methods.length === 0 ? 'Every method' : methods.map(pick => inputs.methods.find(choice => choice.key === pick.choice)?.options.find(entry => entry.key === pick.option)?.label ?? 'a method option no longer in this plan').join(', ')
+
+/**
+ * A refused what-if's causes (walk V1): one per method combination, as lane K verified each (`byMethod`), under
+ * its method's name, and worded with the what-if's own rule among the plan's, so a span cause names the limit
+ * the what-if asked for. Never the Module's refusal lines, which are written for the plan ("this plan allows").
+ */
+const refusalByMethod = (option: OptionView, context: Context): readonly string[] => {
+  if (option.status.word !== 'proven infeasible') return []
+  const withAlso = { ...context.inputs, rules: [...context.inputs.rules, ...option.variant.also ?? []] }
+  const asked: Context = { ...context, inputs: withAlso, names: createNames(withAlso) }
+  const entries = option.status.byMethod ?? [{ methods: option.variant.methods, cause: option.status.cause }]
+  return entries.map(entry => `${methodsLabel(entry.methods, context.inputs)}: ${certificateText(entry.cause, asked)}`)
+}
+
 export const whatIfCard = (option: OptionView, model: PlanModel, context: Context): WhatIfCardView => {
   const { inputs } = context
-  const view = statusView(option.status, context)
+  // A refusal: each method's verified cause under its name, never the plan's refusal lines (walk V1).
+  const view = option.status.word === 'proven infeasible' ? { ...statusView(option.status, context), details: refusalByMethod(option, context) } : statusView(option.status, context)
   const lead = option.variant.lead
   const also = option.variant.also?.[0]
   const question = lead !== undefined && 'goal' in lead

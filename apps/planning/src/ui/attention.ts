@@ -67,7 +67,8 @@ export const pessimisticCard = (option: OptionView, context: Context): Card | nu
   if (field === undefined || !option.fresh || option.status.word !== 'validated feasible') return null
   // The re-timings were not made, and why: said so, never a card that is silently missing.
   if ('notWorkedOut' in field) {
-    const why = field.notWorkedOut === 'time' ? 'the time ran out' : `re-timing could not place '${context.names.job(field.job)}'`
+    // Both causes in planner words: Generate's own time, or a job no single crew or tool is short of time for.
+    const why = field.notWorkedOut === 'time' ? 'Generate\'s time ran out before they could be made' : `re-timing could not place “${context.names.job(field.job)}”, and no single crew or tool is short of time for it`
     return {
       mark: { shape: '?', word: 'Pessimistic estimates' },
       title: `For ${option.label}, the pessimistic estimates were not worked out: ${why}.`,
@@ -90,13 +91,30 @@ export const pessimisticCard = (option: OptionView, context: Context): Card | nu
     const text = breaks(entry.outcome)
     return text === null ? [] : [`${names.job(entry.job)} alone at its high estimate: ${text}.`]
   })
-  const holding = robust.single.length - alone.length
+  // V12: a re-timing that holds with no margin left on a plan span limit is named, by lane K's own figures
+  // (the longest span the checker counts on it, and the limit less that), never worked out here.
+  const exactly = (outcome: Robust['allPessimistic']): string | null => {
+    if (!outcome.holds) return null
+    const span = outcome.spans?.find(entry => entry.margin <= 1e-9 && context.inputs.rules.some(rule => rule.kind === 'span-limit' && rule.key === entry.rule))
+    const rule = span === undefined ? undefined : context.inputs.rules.find(item => item.kind === 'span-limit' && item.key === span.rule)
+    return span === undefined || rule?.kind !== 'span-limit' ? null : `${names.group(rule.group)} is out exactly ${hoursText(span.hours)}`
+  }
+  const noMargin = [
+    ...[exactly(robust.allPessimistic)].flatMap(text => text === null ? [] : [`With every job with an estimate range at its high estimate together, there is no margin left: ${text}.`]),
+    ...robust.single.flatMap(entry => {
+      const text = exactly(entry.outcome)
+      return text === null ? [] : [`${names.job(entry.job)} holds alone at its high estimate with no margin left: ${text}.`]
+    }),
+  ]
+  const tight = robust.single.filter(entry => exactly(entry.outcome) !== null).length
+  const holding = robust.single.length - alone.length - tight
+  const others = holding > 0 && (alone.length > 0 || tight > 0) ? [holding === 1 ? 'The other job with an estimate range holds alone at its high estimate.' : `The other ${holding} jobs with an estimate range each hold alone at their high estimate.`] : []
   const how = 'Re-timed in the same order with the same crews, nothing earlier, and checked. Re-timed jobs may use any working time the option already buys. A plan made again at those estimates may do better.'
   if (together === null && alone.length === 0) {
     return {
       mark: { shape: '✓', word: 'Pessimistic estimates' },
       title: `At every high estimate, ${option.label} still keeps every hard rule and fits the window.`,
-      text: how, steps: [], actions: [],
+      text: how, steps: [...noMargin, ...others], actions: [],
     }
   }
   return {
@@ -105,7 +123,7 @@ export const pessimisticCard = (option: OptionView, context: Context): Card | nu
       ? `With every job with an estimate range at its high estimate together, ${option.label} still holds; some alone do not.`
       : `With every job with an estimate range at its high estimate, ${option.label} does not hold: ${together}.`,
     text: how,
-    steps: [...alone, ...holding > 0 && alone.length > 0 ? [holding === 1 ? 'The other job with an estimate range holds alone at its high estimate.' : `The other ${holding} jobs with an estimate range each hold alone at their high estimate.`] : []],
+    steps: [...alone, ...noMargin, ...others],
     actions: [],
   }
 }

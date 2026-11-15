@@ -30,7 +30,7 @@ describe('the pessimistic card', () => {
     const planned = trainAPlanned()
     const model: PlanModel = { ...planned, options: { ...planned.options!, items: planned.options!.items.map(option => ({ ...option, robust: robustNotWorkedOutSchema.parse({ notWorkedOut: 'time' }) })) } }
     const card = pessimisticCard(model.options!.items[0]!, contextOf(model))!
-    expect(card.title).toBe('For Option 1, the pessimistic estimates were not worked out: the time ran out.')
+    expect(card.title).toBe('For Option 1, the pessimistic estimates were not worked out: Generate\'s time ran out before they could be made.')
     expect(card.mark.word).toBe('Pessimistic estimates')
   })
 
@@ -39,7 +39,7 @@ describe('the pessimistic card', () => {
     const job = planned.inputs.jobs[0]!
     const model: PlanModel = { ...planned, options: { ...planned.options!, items: planned.options!.items.map(option => ({ ...option, robust: robustNotWorkedOutSchema.parse({ notWorkedOut: 'unplaced', job: job.key }) })) } }
     const card = pessimisticCard(model.options!.items[0]!, contextOf(model))!
-    expect(card.title).toBe(`For Option 1, the pessimistic estimates were not worked out: re-timing could not place '${job.title}'.`)
+    expect(card.title).toBe(`For Option 1, the pessimistic estimates were not worked out: re-timing could not place “${job.title}”, and no single crew or tool is short of time for it.`)
   })
 
   test('when every re-timing holds, it says so, and how the re-timing was done', () => {
