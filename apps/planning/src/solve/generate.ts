@@ -24,13 +24,13 @@ type Actor = OptionSet['by']
 export type GenerateInput = z.infer<typeof generateInputSchema>
 
 /**
- * The certified size (G2, A8). The owner's scale-gate decision is pending (`decided` false), so nothing is
- * certified, and Generate refuses above the measured size (`maxJobs`, jobs per solve as plan/summary's
- * jobsPerSolve counts them). `evidence` is the measurement, shown to planners only as detail; the words are
- * plan/summary's.
+ * The certified size (G2, A8), decided on 15 Nov (the owner delegated the scale decision): Planning is
+ * certified for plans of up to 33 jobs in one solve, the measured size, and Generate refuses above it
+ * (`maxJobs`, jobs per solve as plan/summary's jobsPerSolve counts them). A native CP solver for larger plans
+ * is deferred. `evidence` is the measurement, shown to planners only as detail; the words are plan/summary's.
  */
 export const CERTIFIED_SIZE: CertifiedSize = {
-  decided: false,
+  decided: true,
   family: 'one system window',
   maxJobs: 33,
   evidence: 'Measured 11 Nov on single-train work weeks: 9 of 9 runs within 5 % of the proven optimum at 33 jobs; 7 of 9 at 60; 4 of 9 at 100; 0 of 9 at 130.',

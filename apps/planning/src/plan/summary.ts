@@ -299,17 +299,18 @@ export const jobsPerSolve = (inputs: Pick<PlanInputs, 'jobs' | 'methods'>): numb
 /** Whether Generate takes the plan: no solve above the certified size's `maxJobs`. */
 export const withinCertifiedSize = (inputs: Pick<PlanInputs, 'jobs' | 'methods'>, size: CertifiedSize): boolean => jobsPerSolve(inputs) <= size.maxJobs
 /**
- * The certified size in planner words: exactly "Certified plan size: pending the owner's decision" until the
- * owner decides. The evidence is detail, never in this line.
+ * The certified size in planner words: "Certified for plans of up to 33 jobs in one solve (one system
+ * window)." (decided 15 Nov). While a size is undecided it reads exactly "Certified plan size: pending the
+ * owner's decision". The evidence is detail, never in this line.
  */
 export const certifiedSizeWords = (size: CertifiedSize): string => size.decided
-  ? `Certified plan size: up to ${size.maxJobs} jobs (${size.family})`
+  ? `Certified for plans of up to ${size.maxJobs} jobs in one solve (${size.family}).`
   : 'Certified plan size: pending the owner\'s decision'
 /** The measured limit, said under the pending size until the owner decides; nothing once decided. */
 export const measuredSizeWords = (size: CertifiedSize): string | null => (size.decided ? null : `Measured: up to ${size.maxJobs} jobs`)
 /** The refusal of a plan above the size (the 413 of Generate and the API), in planner words. */
 export const sizeRefusalWords = (size: CertifiedSize, inputs: Pick<PlanInputs, 'jobs' | 'methods'>): string =>
-  `This plan needs ${jobsPerSolve(inputs)} jobs in one solve. ${size.decided ? `Planning is certified for plans of up to ${size.maxJobs} jobs (${size.family}).` : `Measured for plans of up to ${size.maxJobs} jobs (${size.family}); larger plans wait for the owner's decision.`}`
+  `This plan needs ${jobsPerSolve(inputs)} jobs in one solve. ${size.decided ? `Planning is certified for up to ${size.maxJobs} (${size.family}). Split the work into system windows, or reduce the plan.` : `Measured for plans of up to ${size.maxJobs} jobs (${size.family}); larger plans wait for the owner's decision.`}`
 
 // ───────────── read sections ─────────────
 // The `data` of each planning.plan.read section, in the shapes of api/contract.ts sectionDataSchemas, which

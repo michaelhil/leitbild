@@ -190,7 +190,7 @@ describe('refusals name their cause and stay within 4 KB', () => {
       const big = await small.create('train-a-work-week')
       const refused = await small.call('planning.plan.generate', { resource: big.id, input: {}, expectedRevision: 1 })
       expect(error(refused)).toEqual([413, 'above_certified_size'])
-      expect(refused.body.error.message).toBe(`This plan needs ${jobsPerSolve(trainA)} jobs in one solve. Measured for plans of up to 1 jobs (test plans); larger plans wait for the owner's decision.`)
+      expect(refused.body.error.message).toBe(`This plan needs ${jobsPerSolve(trainA)} jobs in one solve. Planning is certified for up to 1 (test plans). Split the work into system windows, or reduce the plan.`)
       expect(refused.body.error.message).not.toContain(testCertifiedSize.evidence)   // the evidence is detail, never in the refusal
     } finally { await small.close() }
   })

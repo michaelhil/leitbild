@@ -109,9 +109,13 @@ describe('generate with the real checker', () => {
     for (const goal of proven(refused)) expect(goal).toEqual({ word: 'best found under budget', goal: goal.goal, value: goal.value, unit: goal.unit })
   })
 
-  test('the certified size: pending the owner, 33 jobs per solve as measured; the flagship and Supply run run, twin v3 is refused', async () => {
-    expect(certifiedSizeWords(CERTIFIED_SIZE)).toBe('Certified plan size: pending the owner\'s decision')
-    expect(measuredSizeWords(CERTIFIED_SIZE)).toBe('Measured: up to 33 jobs')
+  test('the certified size: 33 jobs in one solve, as measured and decided; the flagship and Supply run run, twin v3 is refused', async () => {
+    expect(CERTIFIED_SIZE.decided).toBe(true)
+    expect(certifiedSizeWords(CERTIFIED_SIZE)).toBe('Certified for plans of up to 33 jobs in one solve (one system window).')
+    expect(measuredSizeWords(CERTIFIED_SIZE)).toBeNull()
+    // A size not yet decided still reads as pending, with its measured limit.
+    expect(certifiedSizeWords({ ...CERTIFIED_SIZE, decided: false })).toBe('Certified plan size: pending the owner\'s decision')
+    expect(measuredSizeWords({ ...CERTIFIED_SIZE, decided: false })).toBe('Measured: up to 33 jobs')
     // The evidence is detail, in planner words: no review names.
     expect(CERTIFIED_SIZE.evidence).toBe('Measured 11 Nov on single-train work weeks: 9 of 9 runs within 5 % of the proven optimum at 33 jobs; 7 of 9 at 60; 4 of 9 at 100; 0 of 9 at 130.')
     expect(CERTIFIED_SIZE.evidence).not.toMatch(/\b(or|maint|twin)\b/i)
@@ -126,7 +130,7 @@ describe('generate with the real checker', () => {
     expect(jobsPerSolve(twin)).toBe(330)
     const refusal = await generate({ engine: searchEngine(), check: laneKCheck, verify: laneKVerify, verifyBound: laneKVerifyBound }, { inputs: twin, revision: 1, previous: null, input: {}, by, signal: new AbortController().signal }).catch((error: unknown) => error as Error)
     expect(refusal).toMatchObject({ code: 'above_certified_size' })
-    expect((refusal as Error).message).toBe('This plan needs 330 jobs in one solve. Measured for plans of up to 33 jobs (one system window); larger plans wait for the owner\'s decision.')
+    expect((refusal as Error).message).toBe('This plan needs 330 jobs in one solve. Planning is certified for up to 33 (one system window). Split the work into system windows, or reduce the plan.')
     const supply = await generate({ engine: searchEngine(), check: laneKCheck, verify: laneKVerify, verifyBound: laneKVerifyBound }, { inputs: supplyRun, revision: 1, previous: null, input: {}, by, signal: new AbortController().signal, evals: 200 })
     expect(supply.optionSet.options[0]!.status.word).toBe('validated feasible')
   })

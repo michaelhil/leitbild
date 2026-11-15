@@ -123,12 +123,13 @@ describe("maint's third walk, screen defects", () => {
     expect(readableText(renderHtml(EditPreview, { preview, context: contextOf(model), onApply: none, onDiscard: none, onUseTime: none, onAddEdits: none }))).toContain('Who does the drafted jobs Tag out Service Water Pump A')
     const css = readFileSync(join(import.meta.dir, 'App.svelte'), 'utf8')
     expect(css).toContain('button.primary:hover:not(:disabled) { background: var(--accent-strong);')
-    const size = { decided: false, family: 'single-train work weeks', maxJobs: 33, evidence: 'measured 11 Nov' }
-    const header = readableText(renderHtml(PlanHeader, { context: contextOf(model), title: model.title, certified: { text: "Certified plan size: pending the owner's decision", measured: 'Measured: up to 33 jobs', evidence: size.evidence, plan: 'x' }, onGenerate: none, onCancel: none }))
-    expect(header).toContain('Measured: up to 33 jobs')
+    const size = { decided: true, family: 'single-train work weeks', maxJobs: 33, evidence: 'measured 11 Nov' }
+    const header = readableText(renderHtml(PlanHeader, { context: contextOf(model), title: model.title, certified: { text: 'Certified for plans of up to 33 jobs in one solve (single-train work weeks).', measured: null, evidence: size.evidence, plan: 'x' }, onGenerate: none, onCancel: none }))
+    expect(header).toContain('Certified for plans of up to 33 jobs in one solve')
+    expect(header).not.toContain('Measured: up to')
     const client = createPlanningClient('0b4b9a52-2f7e-4c1a-9d3e-00000000000a', async () => { throw new Error('No Host in a render test') })
     const screen = readableText(renderHtml(PlanScreen, { client, planId: model.id, initial: { ...model, certifiedSize: size }, onChanged: none, onOpenWorkspace: none, onOpenLibrary: none }))
     // Hand count: the fragment's jobs, with one of the two SW A methods per solve.
-    expect(screen).toMatch(/This plan: \d+ jobs in one solve, within the measured size\./)
+    expect(screen).toMatch(/This plan: \d+ jobs in one solve, within the certified size\./)
   })
 })

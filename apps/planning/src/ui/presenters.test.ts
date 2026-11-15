@@ -55,13 +55,13 @@ describe('Needs your attention', () => {
     const stale: PlanModel = { ...planned, options: { ...planned.options!, items: planned.options!.items.map(option => ({ ...option, fresh: false })) } }
     // A stale option claims nothing; the Module's one stale item says so (the screen adds no card of its own).
     expect(attentionCards(stale, contextOf(stale)).some(card => card.title.includes(stale.options!.items[0]!.label))).toBe(false)
-    const size = { decided: false, family: 'single-train work weeks', maxJobs: jobsPerSolve(planned.inputs) - 1, evidence: 'measured 11 Nov' }
+    const size = { decided: true, family: 'single-train work weeks', maxJobs: jobsPerSolve(planned.inputs) - 1, evidence: 'measured 11 Nov' }
     const large: PlanModel = { ...planned, certifiedSize: size }
     const refusal = attentionCards(large, contextOf(large)).find(card => card.title === 'Too large for the certified size.')!
     // The evidence is for reviewers; the card says the size in words only (maint's walk G2).
     // The refusal in planner words, jobs counted per solve (after method selection).
-    expect(refusal.text).toBe(`This plan needs ${jobsPerSolve(planned.inputs)} jobs in one solve. Measured for plans of up to ${size.maxJobs} jobs (single-train work weeks); larger plans wait for the owner's decision.`)
-    expect(certifiedSizeWords(size)).toBe('Certified plan size: pending the owner\'s decision')
+    expect(refusal.text).toBe(`This plan needs ${jobsPerSolve(planned.inputs)} jobs in one solve. Planning is certified for up to ${size.maxJobs} (single-train work weeks). Split the work into system windows, or reduce the plan.`)
+    expect(certifiedSizeWords(size)).toBe(`Certified for plans of up to ${size.maxJobs} jobs in one solve (single-train work weeks).`)
   })
 })
 
