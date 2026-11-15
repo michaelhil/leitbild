@@ -141,9 +141,9 @@ describe('panels', () => {
 
 describe('the plan header', () => {
   test('says the certified size in one line, the evidence only behind its details', () => {
-    const size = { decided: true, family: 'one system window', maxJobs: 33, evidence: 'Measured 11 Nov on single-train work weeks.' }
+    const size = { decided: true, family: 'one system window', maxJobs: 33, evidence: 'Measured 11 Nov on single-train work weeks.', limitJobs: 60, limitEvidence: 'at 60 jobs, 7 of 9' }
     const html = renderHtml(PlanHeader, { context, title: model.title, certified: { text: certifiedSizeWords(size), measured: measuredSizeWords(size), evidence: size.evidence }, onGenerate: () => {}, onCancel: () => {} })
-    expect(html).toContain('<p class="hint">Certified for plans of up to 33 jobs in one solve (one system window).</p>')
+    expect(html).toContain('<p class="hint">Certified for plans of up to 33 jobs in one solve; handles up to 60 with a caution.</p>')
     expect(html).not.toContain('Measured: up to')
     expect(html).not.toContain('pending')
     expect(html).toMatch(/<details class="hint"><summary>How the size was measured<\/summary><p>Measured 11 Nov/)

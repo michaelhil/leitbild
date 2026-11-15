@@ -111,7 +111,7 @@ describe('the operations on the real solver and checker', () => {
     // 330 jobs per solve against the measured 33: refused before any solve (a 330-job solve is the solver's, called directly).
     const generated = await harness.call('planning.plan.generate', { resource: id, input: { seconds: 8 }, expectedRevision: 1 })
     expect([generated.status, generated.body.error.code]).toEqual([413, 'above_certified_size'])
-    expect(generated.body.error.message).toBe('This plan needs 330 jobs in one solve. Planning is certified for up to 33 (one system window). Split the work into system windows, or reduce the plan.')
+    expect(generated.body.error.message).toBe('This plan needs 330 jobs in one solve. Planning handles up to 60, and is certified for up to 33 (one system window). Split the work into system windows.')
     small(generated)
     const sizes: Record<string, number> = { generate: generated.bytes }
     for (const section of ['summary', 'jobs', 'rules', 'crews', 'sources', 'options', 'history']) {

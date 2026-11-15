@@ -2,7 +2,7 @@
 // The link card comes first until a Run is linked; the Module's own attention items follow; then the
 // one-sentence answer about the recommended option.
 import { simulationNow } from './edit-forms.ts'
-import { sizeRefusalWords, withinCertifiedSize } from '../plan/summary.ts'
+import { sizeBand, sizeRefusalWords } from '../plan/summary.ts'
 import { sourceMark, type Mark } from './format.ts'
 import type { AttentionKind, PlanModel } from './model.ts'
 import { outcomes, stoppedEarly } from './outcome.ts'
@@ -90,7 +90,7 @@ export const attentionCards = (model: PlanModel, context: Context, wallNowMs: nu
     })
   }
   const size = model.certifiedSize
-  if (size !== null && !withinCertifiedSize(inputs, size)) {
+  if (size !== null && sizeBand(inputs, size) === 'refused') {
     cards.push({
       mark: kindMarks.refusal,
       title: 'Too large for the certified size.',

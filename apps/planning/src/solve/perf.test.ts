@@ -10,13 +10,14 @@ import { trainAInputs } from './fixtures/train-a-case.ts'
 // Floors (design §9 row 8), OPT-IN: PLANNING_PERF=1 nice -n 10 bun test apps/planning/src/solve/perf.test.ts
 // At the certified size (33 jobs per solve): Generate within 20 s and 200 MB, preview p95 within 300 ms.
 // Records the flagship Generate (wall, solver CPU, peak memory), the preview p95 through the real preview
-// (compile, repair, dates, float, check), two concurrent flagship Generates on one pool, and one solve of
-// or's frozen 33-job subset S33v3 (read-only from PLANNING_SIZE_DIR, the review folder's or/inc1/size, when
-// present, else rebuilt from twin v3; either way its sha256 must be or's). Each solve runs in its own solver
-// child process: `servicePeakMb` is this process's RSS (the test runner included), sampled every 50 ms, and
-// `childPeaksMb` each child's own peak (pool records); each child stays under CHILD_RSS_LIMIT_MB. Service plus
-// children against the unit's 256 MB is recorded, not asserted: an open decision (see pool.ts). macOS here;
-// the Linux run under systemd-run -p MemoryMax=256M -p CPUQuota=50% belongs to ops before Release A.
+// (in a solver child: spawn, compile, repair, dates, float, check), and one Generate each of or's frozen
+// 33-job subset S33v3 and 60-job subset S60, the size limit (read-only from PLANNING_SIZE_DIR, the review
+// folder's or/inc1/size, when present, else rebuilt from twin v3; either way the sha256 must be or's). The
+// service runs one solver child at a time, and each whole sub-solve runs in it: `servicePeakMb` is this
+// process's RSS (the test runner included), sampled every 50 ms, and `childPeaksMb` each child's own peak
+// (pool records). Service plus child against the unit's 256 MB is recorded, not asserted beyond the child
+// ceiling at the certified size. macOS here; the Linux run under systemd-run -p MemoryMax=256M
+// -p CPUQuota=50% belongs to ops before Release A.
 const enabled = process.env.PLANNING_PERF === '1'
 const sizeDir = process.env.PLANNING_SIZE_DIR ?? '/Users/hilde/Documents/ChatGPT/leitbild-planning-review-2026-11-10/or/inc1/size'
 const sampleRss = () => {
@@ -36,7 +37,7 @@ describe.skipIf(!enabled)('solver floors at the certified size (opt-in)', () => 
   const solver = createRealSolver(pool)
   afterAll(() => pool.shutdown())
   const flagship = trainAInputs({ read: true })
-  const run = (inputs = flagship, input = {}) => generate({ engine: pool, check: laneKCheck, verify: laneKVerify, verifyBound: laneKVerifyBound }, { inputs, revision: 1, previous: null, input, by, signal: new AbortController().signal })
+  const run = (inputs = flagship, input = {}) => generate({ engine: pool, check: laneKCheck, verify: laneKVerify, verifyBound: laneKVerifyBound, subSolver: pool.subSolver }, { inputs, revision: 1, previous: null, input, by, signal: new AbortController().signal })
 
   test('flagship: Generate within 20 s and 200 MB, solver CPU within the cap; preview p95 within 300 ms', async () => {
     const stop = sampleRss()
@@ -56,18 +57,25 @@ describe.skipIf(!enabled)('solver floors at the certified size (opt-in)', () => 
     expect(p95(times)).toBeLessThanOrEqual(300)
   }, 60_000)
 
-  test('two concurrent flagship Generates on one pool: each within 20 s, together within the cap and 200 MB', async () => {
+  test('S60, or\'s frozen 60-job subset (the size limit): one Generate within 20 s, with the size caution; child peak recorded', async () => {
+    const frozen = Bun.file(`${sizeDir}/S60.json`)
+    const text = (await frozen.exists()) ? await frozen.text() : JSON.stringify(sizeCurveSubset('S60').bench)
+    expect(new Bun.CryptoHasher('sha256').update(text).digest('hex')).toBe(SIZE_CURVE_SHA256.S60)
+    const bench = JSON.parse(text)
+    const twin = twinPlan(bench, twinV3Options(bench))
     const stop = sampleRss()
     const at = performance.now()
-    const [a, b] = await Promise.all([run(), run()])
+    const result = await run(twin.inputs, { variants: [{ label: 'S60', methods: [...twin.variant.methods], buy: [...twin.variant.purchases] }] })
     const wallMs = performance.now() - at
     const servicePeakMb = stop()
-    const childPeaksMb = pool.records().slice(-4).map(record => record.peakRssMb ?? 0)
-    console.log(JSON.stringify({ twoFlagships: { wallMs: Math.round(wallMs), cpuMs: [cpuOf(a), cpuOf(b)], servicePeakMb, childPeaksMb, words: [wordsOf(a), wordsOf(b)], stoppedBy: [stoppedOf(a), stoppedOf(b)] } }))
+    const childPeaksMb = pool.records().slice(-1).map(record => record.peakRssMb ?? 0)
+    console.log(JSON.stringify({ s60: { wallMs: Math.round(wallMs), cpuMs: cpuOf(result), servicePeakMb, childPeaksMb, childCeilingMb: CHILD_RSS_LIMIT_MB, words: wordsOf(result), stoppedBy: stoppedOf(result) } }))
     expect(wallMs).toBeLessThanOrEqual(20_000)
-    expect(cpuOf(a) + cpuOf(b)).toBeLessThanOrEqual(SOLVER_CPU_CAP_CORES * 20_000 + 600)
-    for (const peak of childPeaksMb) expect(peak).toBeLessThanOrEqual(CHILD_RSS_LIMIT_MB)
-  }, 90_000)
+    expect(result.optionSet.options.map(option => [option.status.word, option.sizeCaution])).toEqual([['validated feasible', true]])
+    // Recorded, not asserted: measured on macOS (15 Nov) the child's peak at its answer is 144-164 MB, above
+    // the 140 MB ceiling (the guard does not tick during the final check), and 1 run in 3 stopped early at
+    // the ceiling during the search ('memory', the plan kept and said as stopped early). An open decision.
+  }, 60_000)
 
   test('S33v3, or\'s frozen 33-job subset: one Generate within 20 s and 200 MB', async () => {
     const frozen = Bun.file(`${sizeDir}/S33v3.json`)

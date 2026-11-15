@@ -180,7 +180,7 @@ describe('the presenter', () => {
   test('every section of both cases matches its shared schema, fits its budget and pages every record exactly once', () => {
     for (const inputs of [trainA, supplyRun]) {
       const plan = planOf(inputs)
-      const context = { plan, readiness: readiness(plan, { staleOptions: [], now: '2026-11-12T09:00:00Z' }), options: new Map(), certifiedSize: { decided: false, family: 'test plans', maxJobs: 100, evidence: 'test' } }
+      const context = { plan, readiness: readiness(plan, { staleOptions: [], now: '2026-11-12T09:00:00Z' }), options: new Map(), certifiedSize: { decided: false, family: 'test plans', maxJobs: 100, evidence: 'test', limitJobs: 100, limitEvidence: 'test' } }
       const summary = buildSection('summary', context, 0, 3_500)[0]!.data
       expect(sectionDataSchemas.summary.parse(summary).settings).toEqual(inputs.settings)
       const records = { jobs: inputs.jobs.length + inputs.links.length + inputs.methods.length, rules: inputs.rules.length, crews: inputs.calendars.length + inputs.resources.length + inputs.purchases.length, sources: inputs.equipment.length + inputs.groups.length + inputs.world.facts.length, history: plan.changes.length }

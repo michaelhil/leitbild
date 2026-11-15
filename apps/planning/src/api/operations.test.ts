@@ -425,3 +425,29 @@ describe("Generate stores lane K's verdict from the solver child as it came, val
     } finally { await local.close() }
   })
 })
+
+describe('an option solved above the certified size says so beside its status (size decision, 15 Nov)', () => {
+  test('the caution travels as a warning on Generate and on the options read; an option without it has none', async () => {
+    const { createSolverDouble, testCertifiedSize } = await import('./fixtures/doubles.ts')
+    const inner = createSolverDouble()
+    let caution = true
+    // Lane S's Generate marks each option of a solve above the certified size; the double's options are marked here.
+    const solver = { ...inner, generate: async (request: Parameters<typeof inner.generate>[0]) => {
+      const set = await inner.generate(request)
+      return caution ? { ...set, options: set.options.map(option => ({ ...option, sizeCaution: true as const })) } : set
+    } }
+    const local = await createHarness({ solver })
+    try {
+      const created = await local.create('train-a-work-week')
+      const words = `Above the certified size (${testCertifiedSize.maxJobs} jobs). This plan keeps every hard rule, but it may not be near the best: ${testCertifiedSize.limitEvidence}.`
+      const generated = await local.call('planning.plan.generate', { resource: created.id, input: {}, expectedRevision: 1 })
+      expect(generated.status).toBe(200)
+      for (const option of generated.body.result.options) expect(option.warnings).toContainEqual({ kind: 'above-certified-size', text: words, about: [] })
+      const read = await local.call('planning.plan.read', { resource: created.id, input: { section: 'options' } })
+      for (const option of read.body.result.sections[0].data.items) expect(option.warnings).toContainEqual({ kind: 'above-certified-size', text: words, about: [] })
+      caution = false
+      const again = await local.call('planning.plan.generate', { resource: created.id, input: {}, expectedRevision: 1 })
+      for (const option of again.body.result.options) expect(option.warnings.some((warning: { kind: string }) => warning.kind === 'above-certified-size')).toBe(false)
+    } finally { await local.close() }
+  })
+})

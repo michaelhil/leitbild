@@ -25,7 +25,7 @@ const summary = (result: Awaited<ReturnType<typeof generate>>) => result.optionS
 }))
 const run = (pool: ReturnType<typeof createSolverPool>, request: (typeof requests)[number]) =>
   // Twin v3 (330 jobs) is above the certified size: as a load for this test it is solved directly, the size lifted.
-  generate({ engine: pool, check: laneKCheck, verify: laneKVerify, verifyBound: laneKVerifyBound, certifiedSize: { ...CERTIFIED_SIZE, maxJobs: 330 } }, { inputs: request.inputs, revision: 1, previous: null, input: request.input, by: { kind: 'service', name: 'test' }, signal: new AbortController().signal, seed: 1, evals: request.evals })
+  generate({ engine: pool, check: laneKCheck, verify: laneKVerify, verifyBound: laneKVerifyBound, certifiedSize: { ...CERTIFIED_SIZE, maxJobs: 330, limitJobs: 330 } }, { inputs: request.inputs, revision: 1, previous: null, input: request.input, by: { kind: 'service', name: 'test' }, signal: new AbortController().signal, seed: 1, evals: request.evals })
 
 describe('solves on one pool are independent', () => {
   test('flagship, V1, V2, twin v3, flagship on one pool equal each run alone', async () => {

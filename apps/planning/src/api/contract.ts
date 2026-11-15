@@ -96,9 +96,11 @@ const byteLength = (value: unknown): number => new TextEncoder().encode(JSON.str
  * Something about an option a planner should see beside its status, which no hard rule refuses. redundancy:
  * items out together that no keep-in-service rule covers, e.g. "Both MFW pumps A and B are out Tue
  * 08:00-14:00 and no keep-in-service rule covers them". `about` names the jobs and equipment involved.
+ * above-certified-size: the option was solved above the certified size (its `sizeCaution`); it keeps every
+ * hard rule but may not be near the best. `about` is empty.
  */
 export const optionWarningSchema = z.object({
-  kind: z.enum(['redundancy']),
+  kind: z.enum(['redundancy', 'above-certified-size']),
   text: z.string().min(1).max(240),
   about: z.array(keySchema).max(4),
 }).strict()

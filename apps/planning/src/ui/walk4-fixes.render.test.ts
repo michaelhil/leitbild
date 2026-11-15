@@ -74,7 +74,7 @@ describe("maint's fourth walk, screen items", () => {
     expect(text.match(/Not saved/g)?.length).toBe(1)
     expect(text).toContain('Preview: Align the window to the simulation: Thu 3 Sep 10:00 to Thu 3 Sep 10:30')
     const one = { ...model.inputs, jobs: model.inputs.jobs.slice(0, 1), links: [] }
-    const single: PlanModel = { ...modelOf(one), certifiedSize: { decided: true, family: 'single-train work weeks', maxJobs: 33, evidence: 'measured 11 Nov' } }
+    const single: PlanModel = { ...modelOf(one), certifiedSize: { decided: true, family: 'single-train work weeks', maxJobs: 33, evidence: 'measured 11 Nov', limitJobs: 60, limitEvidence: 'measured 11 Nov' } }
     const screen = readableText(renderHtml(PlanScreen, { client: createPlanningClient('0b4b9a52-2f7e-4c1a-9d3e-00000000000a', async () => { throw new Error('offline') }), planId: single.id, initial: single, onChanged: none, onOpenWorkspace: none, onOpenLibrary: none }))
     expect(screen).toContain('This plan: 1 job in one solve')
   })

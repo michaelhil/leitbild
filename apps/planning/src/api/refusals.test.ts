@@ -185,12 +185,12 @@ describe('refusals name their cause and stay within 4 KB', () => {
   test('a retry key is refused, and Generate refuses a plan above the certified size', async () => {
     const plan = await harness.create('blank')
     expect(error(await harness.call('planning.plan.edit', { resource: plan.id, input: { edits: [{ edit: 'plan', title: 'x' }] }, expectedRevision: 1, idempotencyKey: 'k1' }))).toEqual([400, 'idempotency_not_supported'])
-    const small = await createHarness({ solver: { ...createSolverDouble(), certifiedSize: { ...testCertifiedSize, maxJobs: 1 } } })
+    const small = await createHarness({ solver: { ...createSolverDouble(), certifiedSize: { ...testCertifiedSize, maxJobs: 1, limitJobs: 1 } } })
     try {
       const big = await small.create('train-a-work-week')
       const refused = await small.call('planning.plan.generate', { resource: big.id, input: {}, expectedRevision: 1 })
       expect(error(refused)).toEqual([413, 'above_certified_size'])
-      expect(refused.body.error.message).toBe(`This plan needs ${jobsPerSolve(trainA)} jobs in one solve. Planning is certified for up to 1 (test plans). Split the work into system windows, or reduce the plan.`)
+      expect(refused.body.error.message).toBe(`This plan needs ${jobsPerSolve(trainA)} jobs in one solve. Planning handles up to 1, and is certified for up to 1 (test plans). Split the work into system windows.`)
       expect(refused.body.error.message).not.toContain(testCertifiedSize.evidence)   // the evidence is detail, never in the refusal
     } finally { await small.close() }
   })

@@ -21,7 +21,7 @@ import {
 import type { Edit } from '../plan/edit-schema.ts'
 import { assertRevision, type PlanStore, type RevisionGuard } from '../plan/store.ts'
 import {
-  attentionKind, basisWords, buildSection, clip, datedWords, names, jobsPerSolve, sizeRefusalWords, weakeningWords, withinCertifiedSize, byteLength, changeLines, changeSummary, nameOf, optionWarning, readinessText,
+  attentionKind, basisWords, buildSection, clip, datedWords, names, jobsPerSolve, sizeBand, sizeCautionWarning, sizeRefusalWords, weakeningWords, byteLength, changeLines, changeSummary, nameOf, optionWarning, readinessText,
   statusSentence, timeWords, valueWords, type OptionState, type Section, type SectionContext,
 } from '../plan/summary.ts'
 import type { Grid } from '../time/units.ts'
@@ -229,7 +229,8 @@ export const createPlanningOperations = (ports: PlanningOperationsPorts) => {
     const shown: Status = reason === undefined ? stored : withoutProof(stored)
     // The function-key rule; lane S's redundancyWarning fires on one train's series chain until it adopts it.
     const warning = shown.word === 'validated feasible' ? outTogether(plan.inputs, option.rows) : undefined
-    const warnings = warning === undefined ? [] : [optionWarning(warning, plan.inputs)]
+    // An option solved above the certified size says so beside its status (lane S's sizeCaution).
+    const warnings = [...(shown.word === 'validated feasible' && option.sizeCaution === true ? [sizeCautionWarning(certifiedSize)] : []), ...(warning === undefined ? [] : [optionWarning(warning, plan.inputs)])]
     return { stale: reason !== undefined, ...(reason === undefined ? {} : { reason }), warnings, shown, baselineAllowed: reason === undefined && stored.word === 'validated feasible' }
   }
   const optionStates = (plan: Plan): ReadonlyMap<string, OptionState> =>
@@ -389,8 +390,8 @@ export const createPlanningOperations = (ports: PlanningOperationsPorts) => {
   const generateOnce = async (workspaceId: WorkspaceId, planId: string, input: z.infer<typeof generateInputSchema>, expectedRevision: number | undefined, access: AccessContext, signal: AbortSignal): Promise<GenerateResult> => {
     const guard = { expectedRevision, required: true }
     const plan = await readGuarded(workspaceId, planId, guard)
-    if (!withinCertifiedSize(plan.inputs, certifiedSize)) {
-      throw planningError(413, 'above_certified_size', sizeRefusalWords(certifiedSize, plan.inputs), { maxJobs: certifiedSize.maxJobs, jobs: jobsPerSolve(plan.inputs) })
+    if (sizeBand(plan.inputs, certifiedSize) === 'refused') {
+      throw planningError(413, 'above_certified_size', sizeRefusalWords(certifiedSize, plan.inputs), { maxJobs: certifiedSize.maxJobs, limitJobs: certifiedSize.limitJobs, jobs: jobsPerSolve(plan.inputs) })
     }
     const at = now()
     const by = storedActor(access)

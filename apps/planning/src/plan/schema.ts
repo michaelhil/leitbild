@@ -365,6 +365,9 @@ export const optionSchema = z.object({
   rows: z.array(datedRowSchema).max(2_000),
   metrics: z.array(z.object({ id: z.string(), value: z.number(), unit: z.string() }).strict()).max(32),
   inputsRevision: z.number().int().positive(),      // with run.formulation: proofs reused only on an exact match
+  // Solved above the certified size (more jobs in its solve than `certifiedSize.maxJobs`): it keeps every
+  // hard rule, but may not be near the best. Shown beside its status as a caution.
+  sizeCaution: z.literal(true).optional(),
 }).strict()
 export const optionSetSchema = z.object({ at: instantSchema, by: actorSchema, options: z.array(optionSchema).max(8), recommended: keySchema.optional() }).strict()
 /** The edit kinds of plan/edit-schema.ts (a test keeps the two lists equal). */
@@ -395,7 +398,12 @@ export type Plan = z.infer<typeof planSchema>
  * decision yet, and planners read "Certified plan size: pending the owner's decision". `evidence` is the
  * measurement behind it, detail shown on request.
  */
-export const certifiedSizeSchema = z.object({ decided: z.boolean(), family: wordsSchema, maxJobs: z.number().int().positive(), evidence: wordsSchema }).strict()
+export const certifiedSizeSchema = z.object({
+  decided: z.boolean(), family: wordsSchema, maxJobs: z.number().int().positive(), evidence: wordsSchema,
+  // Above `maxJobs` and up to `limitJobs` jobs in one solve Generate still runs, and every option carries a
+  // caution (`sizeCaution`), worded with `limitEvidence`; above `limitJobs` it refuses.
+  limitJobs: z.number().int().positive(), limitEvidence: wordsSchema,
+}).strict().refine(size => size.limitJobs >= size.maxJobs, { message: 'The limit is at or above the certified size', path: ['limitJobs'] })
 export type CertifiedSize = z.infer<typeof certifiedSizeSchema>
 
 // ───────────── summed World values ─────────────

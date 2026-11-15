@@ -7,7 +7,7 @@ import type { z } from 'zod'
 import type { generateInputSchema } from '../api/contract.ts'
 import { planningError } from '../errors.ts'
 import { optionSetSchema, type CertifiedSize, type PlanInputs, type Status } from '../plan/schema.ts'
-import { jobsPerSolve, sizeRefusalWords, withinCertifiedSize } from '../plan/summary.ts'
+import { jobsPerSolve, sizeBand, sizeRefusalWords } from '../plan/summary.ts'
 import { bounds } from './bounds.ts'
 import { compile, formulationOf, methodCombinations, type Buy, type CompileIndex, type MethodPick } from './compile.ts'
 import { dateSchedule, slotInstant, undate } from './date.ts'
@@ -25,14 +25,19 @@ export type GenerateInput = z.infer<typeof generateInputSchema>
 
 /**
  * The certified size (G2, A8), decided on 15 Nov (the owner delegated the scale decision): Planning is
- * certified for plans of up to 33 jobs in one solve, the measured size, and Generate refuses above it
- * (`maxJobs`, jobs per solve as plan/summary's jobsPerSolve counts them). A native CP solver for larger plans
- * is deferred. `evidence` is the measurement, shown to planners only as detail; the words are plan/summary's.
+ * certified for plans of up to 33 jobs in one solve, the measured size (`maxJobs`, jobs per solve as
+ * plan/summary's jobsPerSolve counts them); it handles up to 60 (`limitJobs`) with a caution on every option,
+ * and refuses above that. The two numbers live here and nowhere else. A native CP solver for larger plans is
+ * deferred. `evidence` is the measurement, shown to planners only as detail; the words are plan/summary's.
  */
 export const CERTIFIED_SIZE: CertifiedSize = {
   decided: true,
   family: 'one system window',
   maxJobs: 33,
+  // Above 33 and up to 60 jobs Generate runs with a caution on every option; above 60 it refuses. On the
+  // size curve every run was feasible at every size; at 100 jobs only 4 of 9 came within 5 %, hence 60.
+  limitJobs: 60,
+  limitEvidence: 'at 60 jobs, 7 of 9 test runs came within 5 % of the proven best',
   evidence: 'Measured 11 Nov on single-train work weeks: 9 of 9 runs within 5 % of the proven optimum at 33 jobs; 7 of 9 at 60; 4 of 9 at 100; 0 of 9 at 130.',
 }
 
@@ -224,9 +229,12 @@ export const subSolve = (deps: SubSolveDeps): SubSolver => async (task, signal, 
 export const generate = async (deps: GenerateDeps, request: GenerateRequest): Promise<GenerateResult> => {
   const { inputs } = request
   const certified = deps.certifiedSize ?? CERTIFIED_SIZE
-  if (!withinCertifiedSize(inputs, certified)) {
+  if (sizeBand(inputs, certified) === 'refused') {
     throw planningError(413, 'above_certified_size', sizeRefusalWords(certified, inputs), { jobs: jobsPerSolve(inputs), certifiedSize: certified })
   }
+  // An option whose own solve (its method combination) has more jobs than the certified size carries the caution.
+  const jobsIn = (combo: readonly MethodPick[]) => inputs.jobs.filter(job => job.method === undefined || combo.some(pick => pick.choice === job.method!.choice && pick.option === job.method!.option)).length
+  const sized = (option: Option, combo: readonly MethodPick[]): Option => (jobsIn(combo) > certified.maxJobs ? { ...option, sizeCaution: true } : option)
   const variants = variantsOf(inputs, request.input)
   const subSolves = variants.reduce((sum, variant) => sum + variant.combos.length, 0)
   if (subSolves > MAX_SUB_SOLVES) throw planningError(422, 'too_many_sub_solves', `These what-ifs need ${subSolves} method combinations; at most ${MAX_SUB_SOLVES} are solved at once`, { subSolves })
@@ -263,7 +271,7 @@ export const generate = async (deps: GenerateDeps, request: GenerateRequest): Pr
   for (const variant of variants) {
     const attempts: Option[] = []
     for (const combo of variant.combos) {
-      attempts.push(await solveOne(variant, combo))
+      attempts.push(sized(await solveOne(variant, combo), combo))
       if (request.signal.aborted) break
     }
     if (attempts.length === 0) continue

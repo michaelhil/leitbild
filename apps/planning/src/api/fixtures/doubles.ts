@@ -12,7 +12,7 @@ import type { CheckViolation, SolverPort, WorldFactsPort } from '../operations.t
 
 type Option = NonNullable<Plan['options']>['options'][number]
 
-export const testCertifiedSize = { decided: true, family: 'test plans', maxJobs: 100, evidence: 'test double' }
+export const testCertifiedSize = { decided: true, family: 'test plans', maxJobs: 100, evidence: 'test double', limitJobs: 100, limitEvidence: 'test double' }
 const formulation = (grid: string) => `double 1; grid ${grid}`
 
 /** A job's duration in ms on the double's elapsed clock, or undefined while a World value is unread. */

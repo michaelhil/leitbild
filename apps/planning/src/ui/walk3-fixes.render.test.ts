@@ -124,7 +124,7 @@ describe("maint's third walk, screen defects", () => {
     expect(readableText(renderHtml(EditPreview, { preview, context: contextOf(model), onApply: none, onDiscard: none, onUseTime: none, onAddEdits: none }))).toContain('Who does the drafted jobs Tag out Service Water Pump A')
     const css = readFileSync(join(import.meta.dir, 'App.svelte'), 'utf8')
     expect(css).toContain('button.primary:hover:not(:disabled) { background: var(--accent-strong);')
-    const size = { decided: true, family: 'single-train work weeks', maxJobs: 33, evidence: 'measured 11 Nov' }
+    const size = { decided: true, family: 'single-train work weeks', maxJobs: 33, evidence: 'measured 11 Nov', limitJobs: 60, limitEvidence: 'measured 11 Nov' }
     const header = readableText(renderHtml(PlanHeader, { context: contextOf(model), title: model.title, certified: { text: 'Certified for plans of up to 33 jobs in one solve (single-train work weeks).', measured: null, evidence: size.evidence, plan: 'x' }, onGenerate: none, onCancel: none }))
     expect(header).toContain('Certified for plans of up to 33 jobs in one solve')
     expect(header).not.toContain('Measured: up to')

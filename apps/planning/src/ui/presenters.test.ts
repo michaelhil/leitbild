@@ -55,13 +55,16 @@ describe('Needs your attention', () => {
     const stale: PlanModel = { ...planned, options: { ...planned.options!, items: planned.options!.items.map(option => ({ ...option, fresh: false })) } }
     // A stale option claims nothing; the Module's one stale item says so (the screen adds no card of its own).
     expect(attentionCards(stale, contextOf(stale)).some(card => card.title.includes(stale.options!.items[0]!.label))).toBe(false)
-    const size = { decided: true, family: 'single-train work weeks', maxJobs: jobsPerSolve(planned.inputs) - 1, evidence: 'measured 11 Nov' }
+    const size = { decided: true, family: 'single-train work weeks', maxJobs: jobsPerSolve(planned.inputs) - 2, evidence: 'measured 11 Nov', limitJobs: jobsPerSolve(planned.inputs) - 1, limitEvidence: 'measured 11 Nov' }
     const large: PlanModel = { ...planned, certifiedSize: size }
     const refusal = attentionCards(large, contextOf(large)).find(card => card.title === 'Too large for the certified size.')!
     // The evidence is for reviewers; the card says the size in words only (maint's walk G2).
     // The refusal in planner words, jobs counted per solve (after method selection).
-    expect(refusal.text).toBe(`This plan needs ${jobsPerSolve(planned.inputs)} jobs in one solve. Planning is certified for up to ${size.maxJobs} (single-train work weeks). Split the work into system windows, or reduce the plan.`)
-    expect(certifiedSizeWords(size)).toBe(`Certified for plans of up to ${size.maxJobs} jobs in one solve (single-train work weeks).`)
+    expect(refusal.text).toBe(`This plan needs ${jobsPerSolve(planned.inputs)} jobs in one solve. Planning handles up to ${size.limitJobs}, and is certified for up to ${size.maxJobs} (single-train work weeks). Split the work into system windows.`)
+    expect(certifiedSizeWords(size)).toBe(`Certified for plans of up to ${size.maxJobs} jobs in one solve; handles up to ${size.limitJobs} with a caution.`)
+    // Above the certified size but within the limit: no "too large" card (Generate runs, with a caution).
+    const cautioned: PlanModel = { ...planned, certifiedSize: { ...size, limitJobs: jobsPerSolve(planned.inputs) } }
+    expect(attentionCards(cautioned, contextOf(cautioned)).some(card => card.title === 'Too large for the certified size.')).toBe(false)
   })
 })
 

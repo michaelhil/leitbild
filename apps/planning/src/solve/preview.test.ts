@@ -23,7 +23,7 @@ describe('preview re-timing repairs the option, never re-solves it', () => {
   afterAll(() => pool.shutdown())
   const generated = async (inputs: PlanInputs, variants?: GenerateInput['variants'], seed = 1, evals = 1_500) => {
     // S60 to S130 are above the certified size (33 jobs): solved directly here, the size lifted, as or's size curve did.
-    const result = await generate({ engine: pool, check: laneKCheck, verify: laneKVerify, verifyBound: laneKVerifyBound, certifiedSize: { ...CERTIFIED_SIZE, maxJobs: 130 } }, {
+    const result = await generate({ engine: pool, check: laneKCheck, verify: laneKVerify, verifyBound: laneKVerifyBound, certifiedSize: { ...CERTIFIED_SIZE, maxJobs: 130, limitJobs: 130 } }, {
       inputs, revision: 1, previous: null, input: variants === undefined ? {} : { variants }, by: { kind: 'service', name: 'test' }, signal: new AbortController().signal, seed, evals,
     })
     const option = result.optionSet.options.find(candidate => candidate.key === result.optionSet.recommended)!

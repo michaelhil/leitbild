@@ -25,10 +25,19 @@ const engine: Engine = {
     const budget = { ...options.budget }
     if (current !== undefined) current.budget = budget
     const result = await base.solve(problem, { ...options, budget })
+    // The search's garbage goes before dating and lane K's check run: they allocate too, with no sampler tick
+    // between them, and the child's RSS is what the unit counts (measured on a 60-job plan: the peak at the
+    // answer falls from 151-164 MB to 144-148 MB).
+    Bun.gc(true)
     return memory ? { ...result, stoppedBy: 'memory' } : result
   },
 }
-const run = subSolve({ engine, check: checkForSolver, verify: verifyForSolver, verifyBound: verifyBoundForSolver })
+// Lane K's check and bound re-derivation each start from a collected heap, for the same reason.
+const run = subSolve({
+  engine, verify: verifyForSolver,
+  check: plan => { Bun.gc(true); return checkForSolver(plan) },
+  verifyBound: (inputs, variant, goal, bound) => { Bun.gc(true); return verifyBoundForSolver(inputs, variant, goal, bound) },
+})
 
 const send = (response: ChildResponse): void => { process.send?.(response) }
 
