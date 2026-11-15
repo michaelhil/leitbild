@@ -113,7 +113,7 @@ const unitRow = (state: EngineState, viewer: EinsatzViewer, roles: ReadonlyArray
       by: actorWords(step.by, viewer),
     })),
     predictedDelivery: estimate.delivery === undefined ? null : { siteId: estimate.delivery.site.id, label: estimate.delivery.site.label, eta: estimate.delivery.eta },
-    lastOrder: last === undefined ? null : { by: actorWords(last.by, viewer), commandId: last.commandId ?? null },
+    lastOrder: last === undefined ? null : { by: actorWords(last.by, viewer), commandId: unit.lastCommand?.id ?? null },
     carry: type.components.carry === undefined ? null : { capacity: type.components.carry.capacity, load: loadCounts(state, unit.load) },
     properties: type.properties.filter(property => property.show).map(property => ({ id: property.id, label: property.label, value: propertyValueText(property, unit.properties[property.id]!) })),
     commandedBy: commandedByOf(state, viewer, roles, unit),

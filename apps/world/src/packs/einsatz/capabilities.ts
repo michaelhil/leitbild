@@ -160,7 +160,7 @@ export const einsatzCapabilities: ReadonlyArray<SimulationCapability> = [
   command({
     id: einsatzCommandIds.undo,
     title: 'Undo an order',
-    description: 'Take back a unit\'s order while none of it has been carried out: its stops leave quietly, and a task it dropped gets the unit back. Name the commandId the order answered with. Refused newer_order_exists when another command changed the unit\'s plan since, nothing_to_undo once the unit has arrived or nothing of the order is left. Example: `{unitId:\'unit:a4\', commandId:\'<commandId>\'}`.',
+    description: 'Take back a unit\'s order while none of it has been carried out: its stops leave quietly, and a task it dropped gets the unit back. Name the commandId the order answered with. Refused newer_order_exists when another command changed the unit\'s plan since; nothing_to_undo once the unit has arrived at or passed the order\'s first stop, and for a return; unit_loaded rather than leave load without its delivery. Example: `{unitId:\'unit:a4\', commandId:\'<commandId>\'}`.',
     searchTerms: ['undo', 'take back', 'revert', 'cancel order'],
     idempotent: false,
     targets: input => objectIds(input.unitId),

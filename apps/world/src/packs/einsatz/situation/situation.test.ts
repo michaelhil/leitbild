@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test'
-import { advance, append, at, commanding, config, emptyState, first, low, newTask, newUnit, ports, run, runAll, second, send, start, templates, top, types } from '../fixtures/engine-harness.ts'
+import { advance, append, at, commanding, config, emptyState, first, low, newTask, newUnit, ports, run, runAll, second, send, start, templates, top, types, unitOf } from '../fixtures/engine-harness.ts'
 import { einsatzConfigSchema } from '../config-validation.ts'
 import { executeIntent } from '../engine/engine.ts'
 import { emptyEngineState, type EngineState } from '../engine/model.ts'
@@ -57,6 +57,10 @@ describe('Einsatz situation', () => {
     expect(call.assigned).toMatchObject([{ unitId: 'c1', label: 'C1', phase: 'mobilizing' }])
     const site = read(outcome.state).sites[0]!
     expect(site).toMatchObject({ id: 'clinic', accepting: true, slots: { used: 0, total: 1 }, inbound: [{ unitId: 'c1' }] })
+    // The plan going on by itself is the last order now, but the command undo names stays the one that gave the plan.
+    let later = outcome.state
+    while (unitOf(later, 'c1').phase !== 'transporting') later = await advance(later, later.timeMs + 5_000)
+    expect(read(later).units.find(entry => entry.id === 'c1')!.lastOrder).toEqual({ by: { label: 'Standing order', isViewer: false }, commandId: 'command-1' })
   })
 
   test('a unit moving in straight lines has an estimate for every stop; a stop it delivers at is a delivery', async () => {

@@ -97,8 +97,8 @@ const unitRowSchema = z.object({
   }).strict().nullable().describe('Where a carrier\'s deliver standing order will take its load after the plan, as the engine resolves it now; null when there is none.'),
   lastOrder: z.object({
     by: actorSchema,
-    commandId: commandIdSchema.nullable().describe('The command that gave it, for world.einsatz.unit.undo; null for a standing order.'),
-  }).strict().nullable().describe('The unit\'s last order; null before its first.'),
+    commandId: commandIdSchema.nullable().describe('The latest command that changed the unit\'s plan, the one world.einsatz.unit.undo names; null while no command has.'),
+  }).strict().nullable().describe('The unit\'s last order, by whoever gave it, a standing order and the plan going on included; null before its first.'),
   carry: z.object({
     capacity: count.describe('How much load the unit carries at most.'),
     load: z.array(loadCountSchema).describe('The load on board, per class; empty when none.'),
