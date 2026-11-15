@@ -378,7 +378,19 @@ export interface SectionContext {
   readonly certifiedSize: CertifiedSize
   /** The buys section's items, for that section only (plan/buys.ts buysItems). */
   readonly buys?: readonly BuysItem[]
+  /** The previous section's option states, for that section only. */
+  readonly previous?: ReadonlyMap<string, OptionState>
+  /** For the options or previous section: each dominated option's key, and the key of an option of its set that dominates it. */
+  readonly dominated?: ReadonlyMap<string, string>
 }
+
+/** Options as the options and previous sections page them: no rows, the status to show, fresh, warnings, dominance. */
+const optionItems = (options: readonly Option[], states: ReadonlyMap<string, OptionState>, dominated: ReadonlyMap<string, string> | undefined) =>
+  options.map(({ rows: _rows, ...rest }) => {
+    const state = states.get(rest.key)
+    const by = dominated?.get(rest.key)
+    return { ...rest, status: state?.shown ?? rest.status, fresh: state !== undefined && !state.stale, warnings: [...(state?.warnings ?? []).slice(0, 4)], ...(by === undefined ? {} : { dominated: { by } }) }
+  })
 
 export interface Section { readonly id: string; readonly title: string; readonly description?: string; readonly data: unknown }
 
@@ -401,7 +413,7 @@ export const page = <T>(items: readonly T[], offset: number, budget: number, wra
 const titles: Readonly<Record<SectionName, string>> = {
   summary: 'Summary', jobs: 'Jobs, links and methods', rules: 'Rules', crews: 'Calendars, crews, tools and purchases',
   sources: 'Equipment, groups and World values', options: 'Options', schedule: 'Schedule', history: 'Change history',
-  buys: 'What overtime buys',
+  buys: 'What overtime buys', previous: 'Previous options',
 }
 
 const pagedSection = (name: SectionName, items: readonly unknown[], offset: number, budget: number, extra: Record<string, unknown> = {}): Section[] =>
@@ -430,10 +442,7 @@ export const buildSection = (name: SectionName, context: SectionContext, offset:
     case 'rules': return pagedSection(name, inputs.rules.map(rule => ({ rule })), offset, budget)
     case 'crews': return pagedSection(name, [...inputs.calendars.map(calendar => ({ calendar })), ...inputs.resources.map(resource => ({ resource })), ...inputs.purchases.map(purchase => ({ purchase }))], offset, budget)
     case 'sources': return pagedSection(name, [...inputs.equipment.map(equipment => ({ equipment })), ...inputs.groups.map(group => ({ group })), ...inputs.world.facts.map(fact => ({ fact }))], offset, budget)
-    case 'options': return pagedSection(name, (plan.options?.options ?? []).map(({ rows: _rows, ...rest }) => {
-      const state = context.options.get(rest.key)
-      return { ...rest, status: state?.shown ?? rest.status, fresh: state !== undefined && !state.stale, warnings: [...(state?.warnings ?? []).slice(0, 4)] }
-    }), offset, budget, { at: plan.options?.at ?? null, recommended: plan.options?.recommended ?? null })
+    case 'options': return pagedSection(name, optionItems(plan.options?.options ?? [], context.options, context.dominated), offset, budget, { at: plan.options?.at ?? null, recommended: plan.options?.recommended ?? null })
     case 'schedule': {
       if (option === undefined) throw new RangeError('A schedule names its option')
       return pagedSection(name, [...option.rows].sort((left, right) => left.start.localeCompare(right.start) || left.job.localeCompare(right.job)), offset, budget, { option: option.key })
@@ -443,6 +452,12 @@ export const buildSection = (name: SectionName, context: SectionContext, offset:
       // Built by the service from the stored options and lane K's standing of each (plan/buys.ts).
       if (context.buys === undefined) throw new Error('The buys section is built from its ladder')
       return [{ ...pagedSection(name, context.buys, offset, budget)[0]!, description: buysPointer }]
+    }
+    case 'previous': {
+      // The set before the last Generate on a newer revision (plan.previousOptions): never fresh, so said without proof words.
+      const set = plan.previousOptions
+      if (context.previous === undefined) throw new Error('The previous section is built from its option states')
+      return pagedSection(name, optionItems(set?.options ?? [], context.previous, context.dominated), offset, budget, { at: set?.at ?? null, recommended: set?.recommended ?? null })
     }
   }
 }

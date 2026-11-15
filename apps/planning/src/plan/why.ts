@@ -5,9 +5,9 @@
 // formulation); keys come from rank.ts exactly as Generate ranks. Prose is generated here, never stored.
 import { byteLength, clip, goalName, goalUnit, nameOf, names, valueWords } from './summary.ts'
 import { goalResolution, type BoundCertificate, type Plan, type PlanInputs } from './schema.ts'
-import { resultLimitBytes } from '../api/contract.ts'
-import { rawOf } from '../solve/generate.ts'
-import { goalKeys } from '../solve/rank.ts'
+import { resultLimitBytes, type RecommendedFacts } from '../api/contract.ts'
+import { rankableOf } from '../solve/generate.ts'
+import { dominatedKeys } from '../solve/rank.ts'
 
 type Option = NonNullable<Plan['options']>['options'][number]
 type Feasible = Extract<Option['status'], { word: 'validated feasible' }>
@@ -26,8 +26,20 @@ export const fitLines = (lines: readonly string[]): string[] => {
   return kept
 }
 
-const keysOf = (inputs: PlanInputs, option: Option): number[] =>
-  goalKeys(rawOf(option, inputs.goals.length), inputs.goals.map(goal => ({ threshold: goal.threshold?.value ?? 0, step: goal.tolerance.value })))
+const keysOf = (inputs: PlanInputs, option: Option): readonly number[] => rankableOf(option, inputs).keys
+
+/**
+ * Dominance within one option set (design §4.1, lane S's dominatedKeys): each dominated option's key, and the
+ * first option of `options` that dominates it. Lead what-ifs are left out: they are cards, never folded.
+ */
+export const dominatedBy = (inputs: PlanInputs, options: readonly Option[]): ReadonlyMap<string, string> => {
+  const ranked = options.filter(option => option.variant.lead === undefined).map(option => rankableOf(option, inputs))
+  return new Map(dominatedKeys(ranked).flatMap(key => {
+    const option = ranked.find(entry => entry.key === key)!
+    const by = ranked.find(other => other.key !== key && dominatedKeys([other, option]).includes(key))
+    return by === undefined ? [] : [[key, by.key] as const]
+  }))
+}
 const differ = (left: number, right: number): boolean => Math.abs(left - right) > EPSILON
 const goalsOf = (option: Option): readonly GoalLine[] => option.status.word === 'validated feasible' ? option.status.goals : []
 const ranked = (option: Option): boolean => option.status.word === 'validated feasible' && option.variant.lead === undefined
@@ -68,19 +80,8 @@ const outageLine = (inputs: PlanInputs, option: Option): string | undefined => {
   return gap > resolution / 2 ? `${head}, best found; it could be up to ${valueWords(gap, line.unit)} better.` : `${head}, best found.`
 }
 
-/**
- * The structure the words are generated from, in the shape coordinator decision "Lane P batch 2" 3 gives for
- * explain's `recommended` field (lane A lands it in api/contract.ts). Goals by the plan's ids; values are the
- * stored goal values (net of thresholds), in each goal's unit; `against` is the compared option's.
- */
-export interface RecommendedFacts {
-  readonly option: string
-  readonly against?: string
-  readonly deciding?: number
-  readonly goals: ReadonlyArray<{ readonly goal: number; readonly value: number; readonly against?: number; readonly unit: string }>
-  readonly caveats: ReadonlyArray<{ readonly choice: string; readonly option: string; readonly label: string; readonly value?: number; readonly unit?: string; readonly against?: number }>
-  readonly outage?: { readonly goal: number; readonly word: GoalLine['word']; readonly value: number; readonly unit: string; readonly bound?: number }
-}
+/** The structure the words are generated from: explain's `recommended` field (api/contract.ts recommendedFactsSchema). */
+export type { RecommendedFacts }
 
 /** The method options both picks name for each choice: the compared one only where it differs. */
 const methodPicks = (inputs: PlanInputs, option: Option, other: Option | undefined) => inputs.methods.flatMap(choice => {
@@ -140,10 +141,10 @@ export const whyRecommended = (inputs: PlanInputs, recommended: Option, others: 
   const asked = named !== undefined && named.key !== recommended.key ? named : undefined
   if (asked?.variant.lead !== undefined) {
     const lead = asked.variant.lead
-    return { lines: fitLines([policy, `'${asked.label}' is a what-if that solves ${'goal' in lead ? goalName(inputs, lead.goal, true) : `the outage of ${nameOf(inputs, lead.group)}`} first: it is not ranked with the options.`]), facts: { ...base(undefined), against: asked.key, goals: goalFacts(inputs, recommended) } }
+    return { lines: fitLines([policy, `'${asked.label}' is a what-if that solves ${'goal' in lead ? goalName(inputs, lead.goal, true) : `the outage of ${nameOf(inputs, lead.group)}`} first: it is not ranked with the options.`]), facts: { ...base(undefined), goals: goalFacts(inputs, recommended) } }
   }
   if (asked !== undefined && asked.status.word !== 'validated feasible') {
-    return { lines: fitLines([policy, `'${asked.label}' ${asked.status.word === 'proven infeasible' ? 'is proven infeasible' : `has no plan that keeps every hard rule (${asked.status.word})`}, so it is not ranked.`]), facts: { ...base(undefined), against: asked.key, goals: goalFacts(inputs, recommended) } }
+    return { lines: fitLines([policy, `'${asked.label}' ${asked.status.word === 'proven infeasible' ? 'is proven infeasible' : `has no plan that keeps every hard rule (${asked.status.word})`}, so it is not ranked.`]), facts: { ...base(undefined), goals: goalFacts(inputs, recommended) } }
   }
   const keys = new Map([recommended, ...others].map(option => [option.key, keysOf(inputs, option)]))
   const candidates = others.filter(option => option.key !== recommended.key && ranked(option))

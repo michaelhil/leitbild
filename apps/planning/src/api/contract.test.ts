@@ -4,7 +4,7 @@ import { planningFactsInputSchema } from '@leitbild/contracts'
 import {
   baselineInputSchema, createInputSchema, deleteInputSchema, editInputSchema, explainInputSchema, generateInputSchema, publishedInputSchema,
   buysRowSchema, generateResultSchema, readInputSchema, refreshInputSchema, resultLimitBytes, schemaMapKeywords, sectionDataSchemas, statusOutSchema, stripForPublication,
-  strippedKeywords, summaryDataSchema,
+  explainResultSchema, optionItemSchema, recommendedFactsSchema, strippedKeywords, summaryDataSchema, versusFactsSchema,
 } from './contract.ts'
 import { statusOut } from './operations.ts'
 import { optionSchema } from '../plan/schema.ts'
@@ -77,7 +77,7 @@ describe('published operation inputs', () => {
   // 20,000 B is the increment 1 ceiling. Any further growth must remove or merge something; raising this needs a coordinator decision.
   // Re-measured for increment 2 (lane A, 15 Nov): edit was 19,298 B before part 2; the method option's caveats
   // make create 19,240 B and edit 19,807 B, 193 B under the ceiling. generate grows from 965 B to 3,613 B with
-  // also, lead and keep; explain is 727 B and read 397 B.
+  // also, lead and keep; explain is 727 B, and read 460 B with buys and previous.
   test('create and edit stay within 20,000 B; every other input within 4,096 B', () => {
     for (const [id, schema] of Object.entries(inputs)) {
       const bytes = new TextEncoder().encode(JSON.stringify(publishedInputSchema(schema))).length
@@ -333,5 +333,97 @@ describe('increment 2: statusOut carries the lead, so a stored lead proof reache
     const out = statusOut(option({ group: 'AFW-A' }, { goals: [found(0), found(1)], lead: line }).status)
     expect(statusOutSchema.safeParse(out).success).toBe(true)
     expect(out.lead).toEqual({ group: 'AFW-A', word: 'proven optimal', value: 7.5, unit: 'h', bound: 7.5, gap: 0 })
+  })
+})
+
+// ═══════════ Increment 2: structured explain facts, the previous options page, dominated options (decision "Lane P batch 2", 3) ═══════════
+
+describe('increment 2: explain recommended gives its facts', () => {
+  const facts = {
+    option: 'swap.b1', against: 'rebuild.b1', deciding: 1,
+    goals: [{ goal: 0, value: 0, against: 0, unit: 'h' }, { goal: 1, value: 472_650, against: 498_200, unit: 'NOK' }, { goal: 2, value: 242.5, against: 322.5, unit: 'h' }],
+    caveats: [{ choice: 'SWA-method', option: 'swap', label: 'Weeks without a ready SW spare', value: 10, unit: 'weeks', against: 0 }],
+    outage: { goal: 0, word: 'proven optimal', value: 0, unit: 'h', bound: 0 },
+  }
+  const paths = (value: object) => recommendedFactsSchema.safeParse(value).error?.issues.map(issue => issue.path.join('.')) ?? []
+
+  test('accepted: against another option, or alone; caveats with or without a value', () => {
+    expect(paths(facts)).toEqual([])
+    expect(explainResultSchema.safeParse({ lines: ['Swap in the spare is recommended.'], items: [], recommended: facts }).success).toBe(true)
+    const { against: _against, deciding: _deciding, ...alone } = facts
+    expect(paths({ ...alone, goals: alone.goals.map(({ against: _value, ...line }) => line), caveats: [{ choice: 'SWA-method', option: 'swap', label: 'Depends on a delivery' }] })).toEqual([])
+    expect(paths({ ...facts, outage: { goal: 0, word: 'best found under budget', value: 2.5, unit: 'h' } })).toEqual([])
+  })
+
+  test('refused: a deciding goal or other values without an option to compare with, against itself, out of order, or a proof without its bound', () => {
+    const { against: _against, ...alone } = facts
+    expect(paths(alone)).toEqual(expect.arrayContaining(['deciding', 'goals.0.against', 'caveats.0.against']))
+    expect(paths({ ...facts, against: facts.option })).toEqual(['against'])
+    expect(paths({ ...facts, goals: [facts.goals[1], facts.goals[0]] })).toEqual(['goals'])
+    expect(paths({ ...facts, deciding: 4 })).toEqual(['deciding'])
+    expect(paths({ ...facts, goals: [facts.goals[0], { ...facts.goals[1], against: undefined }, facts.goals[2]] })).toEqual(['goals.1.against'])
+    expect(paths({ ...facts, caveats: [{ ...facts.caveats[0], unit: undefined }] })).toEqual(['caveats.0.unit'])
+    expect(paths({ ...facts, outage: { goal: 0, word: 'proven optimal', value: 0, unit: 'h' } })).toEqual(['outage.bound'])
+    expect(paths({ ...facts, outage: { ...facts.outage, goal: 5 } })).toEqual(['outage.goal'])
+    expect(paths({ ...facts, outage: { ...facts.outage, word: 'optimal' } }).length).toBeGreaterThan(0)
+    expect(paths({ ...facts, note: 'x' }).length).toBeGreaterThan(0)
+  })
+})
+
+describe('increment 2: explain versus {previous} gives its facts', () => {
+  const was = { start: '2026-11-17T06:00:00Z', finish: '2026-11-17T16:00:00Z' }, now = { start: '2026-11-17T08:00:00Z', finish: '2026-11-17T18:00:00Z' }
+  const facts = {
+    option: 'swap.c1', previous: 'swap.b1', from: 3, to: 4, complete: true,
+    changes: [{ revision: 4, summary: "Changed 'Replace CCW A pump seal': duration" }],
+    goals: [{ goal: 0, now: 2, was: 0, unit: 'h' }],
+    methods: [{ choice: 'SWA-method', now: 'swap', was: 'rebuild' }],
+    buys: { added: ['ot-mech'], dropped: ['contractor-nights'] },
+    moved: [{ job: 'CCWA-SEAL', now, was }], movedMore: 3, added: ['CCWA-SEAL-CHECK'], removed: [],
+  }
+  const paths = (value: object) => versusFactsSchema.safeParse(value).error?.issues.map(issue => issue.path.join('.')) ?? []
+
+  test('accepted: the same option key in both sets, with or without goal values', () => {
+    expect(paths(facts)).toEqual([])
+    expect(paths({ ...facts, previous: facts.option, complete: false, goals: undefined })).toEqual([])
+    expect(explainResultSchema.safeParse({ lines: ['What differs'], items: [], versus: facts }).success).toBe(true)
+  })
+
+  test('refused: a previous set not earlier, changes outside the two revisions, a pick or a job that did not change, or one said twice', () => {
+    expect(paths({ ...facts, from: 4 })).toEqual(expect.arrayContaining(['from']))
+    expect(paths({ ...facts, changes: [{ revision: 3, summary: 'x' }] })).toEqual(['changes'])
+    expect(paths({ ...facts, changes: [{ revision: 5, summary: 'x' }] })).toEqual(['changes'])
+    expect(paths({ ...facts, methods: [{ choice: 'SWA-method', now: 'swap', was: 'swap' }] })).toEqual(['methods.0.now'])
+    expect(paths({ ...facts, methods: [facts.methods[0], facts.methods[0]] })).toEqual(['methods'])
+    expect(paths({ ...facts, buys: { added: ['ot-mech'], dropped: ['ot-mech'] } })).toEqual(['buys'])
+    expect(paths({ ...facts, moved: [{ job: 'CCWA-SEAL', now: was, was }] })).toEqual(['moved.0'])
+    expect(paths({ ...facts, removed: ['CCWA-SEAL'] })).toEqual(['added'])
+    expect(paths({ ...facts, moved: Array.from({ length: 21 }, (_, index) => ({ job: `J${index}`, now, was })) }).length).toBeGreaterThan(0)
+    expect(paths({ ...facts, movedMore: -1 }).length).toBeGreaterThan(0)
+    expect(explainResultSchema.safeParse({ lines: [], items: [], versus: facts, recommended: { option: 'swap.c1', goals: [], caveats: [] } }).success).toBe(false)
+  })
+})
+
+describe('increment 2: the previous options page, and dominated options', () => {
+  const run = { grid: '30min', engine: 'ts-lahc', formulation: 'f1', seed: 1, budget: { evals: 1, cpuMs: 1, wallMs: 1 }, stoppedBy: 'done', evals: 1, cpuMs: 1 }
+  const item = (key: string, extra: object = {}) => ({ key, label: key, variant: { methods: [], purchases: [] }, status: { word: 'unresolved', run }, metrics: [], inputsRevision: 3, fresh: false, warnings: [], ...extra })
+  const page = (items: unknown[]) => ({ at: '2026-11-12T09:04:00Z', recommended: 'swap.b1', items })
+
+  test('previous pages as the options section does; it is a read section', () => {
+    expect(readInputSchema.safeParse({ section: 'previous' }).success).toBe(true)
+    expect(sectionDataSchemas.previous.safeParse(page([item('swap.b1'), item('rebuild.b1', { dominated: { by: 'swap.b1' } })])).success).toBe(true)
+    expect(sectionDataSchemas.previous.safeParse({ at: null, recommended: null, items: [] }).success).toBe(true)
+    expect(sectionDataSchemas.previous.safeParse(page([{ ...item('swap.b1'), rows: [] }])).success).toBe(false)
+    expect(sectionDataSchemas.previous.safeParse({ items: [] }).success).toBe(false)
+  })
+
+  test('an option is dominated by another option, never by itself; a lead what-if is never dominated', () => {
+    expect(optionItemSchema.safeParse(item('rebuild.b1', { dominated: { by: 'swap.b1' } })).success).toBe(true)
+    expect(optionItemSchema.safeParse(item('rebuild.b1', { dominated: { by: 'rebuild.b1' } })).error?.issues.map(issue => issue.path.join('.'))).toEqual(['dominated.by'])
+    expect(optionItemSchema.safeParse(item('rebuild.b1', { dominated: {} })).success).toBe(false)
+    expect(optionItemSchema.safeParse(item('rebuild.b1', { dominated: 'swap.b1' })).success).toBe(false)
+    expect(optionItemSchema.safeParse(item('afw-first', { variant: { methods: [], purchases: [], lead: { group: 'AFW-A' } }, dominated: { by: 'swap.b1' } })).success).toBe(false)
+    for (const section of ['options', 'previous'] as const) {
+      expect(sectionDataSchemas[section].safeParse(page([item('swap.b1', { dominated: { by: 'swap.b1' } })])).success).toBe(false)
+    }
   })
 })

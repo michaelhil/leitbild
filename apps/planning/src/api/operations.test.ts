@@ -4,7 +4,9 @@ import { planInputsSchema, planSchema } from '../plan/schema.ts'
 import { rungsOf } from '../plan/buys.ts'
 import { buysPointer } from '../plan/summary.ts'
 import { buysHonesty, rungStanding } from '../../tests/harness/buys-honesty.ts'
-import { sectionDataSchemas } from './contract.ts'
+import { recommendedFactsSchema, sectionDataSchemas, versusFactsSchema } from './contract.ts'
+import { versus } from '../plan/versus.ts'
+import { whyRecommended } from '../plan/why.ts'
 import { formulation, planWith, rebuild, refusedWith, swap, trainAInputs, variantOf } from './fixtures/choose.ts'
 import { bundledPlanDefinitions } from '../definitions/index.ts'
 import { worldSubjects } from '../plan/readiness.ts'
@@ -589,6 +591,61 @@ describe('increment 2: keep, the previous set, why recommended, versus and what 
       const empty = await local.create('train-a-work-week')
       const listed = sectionDataSchemas.buys.parse((await local.call('planning.plan.read', { resource: empty.id, input: { section: 'buys' } })).body.result.sections[0].data)
       expect(listed.items).toEqual(rungsOf(plan.inputs).map(rung => ({ rung: { rung: rung.rung, buy: [...rung.buy], bought: [] } })))
+    } finally { await local.close() }
+  })
+})
+
+describe('increment 2: the structured facts, dominance and the previous section (decision "Lane P batch 2", 3)', () => {
+  test('explain recommended and versus carry the facts their lines come from, one per answer, within 4 KB', async () => {
+    const local = await createHarness({ solver: { ...createSolverDouble(), formulation: () => formulation } })
+    try {
+      const previous = { at: planWith(local.workspaceId, [swap]).options!.at, by: { kind: 'human' as const }, options: [variantOf(swap, { revision: 2 })] }
+      const plan = await local.store.create(local.workspaceId, planWith(local.workspaceId, [swap, rebuild], 3, { previousOptions: previous }))
+      const why = await local.call('planning.plan.explain', { resource: plan.id, input: { ask: 'recommended' } })
+      expect([why.status, why.bytes <= 4_096, why.body.result.versus]).toEqual([200, true, undefined])
+      expect(recommendedFactsSchema.parse(why.body.result.recommended)).toEqual(whyRecommended(plan.inputs, swap, [rebuild]).facts)
+      expect(why.body.result.recommended).toMatchObject({ option: swap.key, against: rebuild.key, deciding: 0 })
+      const compared = await local.call('planning.plan.explain', { resource: plan.id, input: { ask: 'versus', option: rebuild.key, versus: { previous: swap.key } } })
+      expect([compared.status, compared.bytes <= 4_096, compared.body.result.recommended]).toEqual([200, true, undefined])
+      const facts = versusFactsSchema.parse(compared.body.result.versus)
+      const expected = versus({ inputs: plan.inputs, option: rebuild, previous: previous.options[0]!, plan }).facts
+      // Within 4 KB the last moved jobs may go, counted in movedMore; nothing else is cut.
+      expect({ ...facts, moved: [], movedMore: 0 }).toEqual({ ...expected, moved: [], movedMore: 0 })
+      expect(facts.moved.length + facts.movedMore).toBe(expected.moved.length + expected.movedMore)
+      expect(facts.moved).toEqual(expected.moved.slice(0, facts.moved.length))
+    } finally { await local.close() }
+  })
+
+  test('options and previous name the option that dominates a dominated one; lead what-ifs never; the previous set is never fresh', async () => {
+    const local = await createHarness({ solver: { ...createSolverDouble(), formulation: () => formulation } })
+    try {
+      // "Rebuild, later" is Rebuild with one more hour out of service: Rebuild is no worse on any goal and better on that one.
+      const later = variantOf(rebuild, { key: 'rebuild-later', label: 'Rebuild, later', metrics: rebuild.metrics.map(metric => metric.id === 'goal:2' ? { ...metric, value: metric.value + 1 } : metric) })
+      const lead = variantOf(rebuild, { key: 'cheapest', label: 'Cheapest that keeps every rule' })
+      const card = { ...lead, variant: { ...lead.variant, lead: { goal: 1 } }, status: { ...(lead.status as Extract<typeof lead.status, { word: 'validated feasible' }>), goals: (lead.status as Extract<typeof lead.status, { word: 'validated feasible' }>).goals.map(goal => ({ word: 'best found under budget' as const, goal: goal.goal, value: goal.value + 1, unit: goal.unit })), lead: { goal: 1 } } }
+      const options = [swap, rebuild, later, card]
+      const previous = { at: planWith(local.workspaceId, [swap]).options!.at, by: { kind: 'human' as const }, options: options.slice(0, 3).map(option => variantOf(option, { revision: 2 })) }
+      const plan = await local.store.create(local.workspaceId, planWith(local.workspaceId, options, 3, { previousOptions: previous }))
+      // Every page of the section, followed by its cursor.
+      const page = async (section: 'options' | 'previous') => {
+        const pages = []
+        let cursor: string | undefined
+        do {
+          const data = sectionDataSchemas[section].parse((await local.call('planning.plan.read', { resource: plan.id, input: { section, ...(cursor === undefined ? {} : { cursor }) } })).body.result.sections[0].data)
+          pages.push(data)
+          cursor = data.more
+        } while (cursor !== undefined)
+        return { ...pages[0]!, items: pages.flatMap(data => data.items) }
+      }
+      const current = await page('options')
+      expect(current.items.map(item => [item.key, item.dominated?.by ?? null, item.fresh])).toEqual([[swap.key, null, true], [rebuild.key, null, true], ['rebuild-later', rebuild.key, true], ['cheapest', null, true]])
+      const before = await page('previous')
+      expect(before.items.map(item => [item.key, item.dominated?.by ?? null, item.fresh])).toEqual([[swap.key, null, false], [rebuild.key, null, false], ['rebuild-later', rebuild.key, false]])
+      // Out of date: said without proof words.
+      expect(JSON.stringify(before.items.map(item => item.status))).not.toContain('proven optimal')
+      expect(before.at).toBe(previous.at)
+      const none = await local.create('train-a-work-week')
+      expect(sectionDataSchemas.previous.parse((await local.call('planning.plan.read', { resource: none.id, input: { section: 'previous' } })).body.result.sections[0].data)).toEqual({ items: [], at: null, recommended: null })
     } finally { await local.close() }
   })
 })

@@ -4,6 +4,7 @@
 // goals stayed as they were, the method and purchases, and each job that moved, was added or left.
 import { clip, goalName, nameOf, names, spanAndCost, timeWords, valueWords } from './summary.ts'
 import type { Plan, PlanInputs } from './schema.ts'
+import type { VersusFacts } from '../api/contract.ts'
 import { fitLines, listWords } from './why.ts'
 
 type Option = NonNullable<Plan['options']>['options'][number]
@@ -17,28 +18,10 @@ const shifted = (value: number, later: string, earlier: string): string => `${va
 /** At most this many moved jobs are named; the rest are counted. */
 const movedShown = 6
 
-/**
- * The structure the words are generated from, in the shape coordinator decision "Lane P batch 2" 3 gives for
- * explain's `versus` field (lane A lands it in api/contract.ts). `goals` only when the plan's goal ids still
- * name the same goals; `moved` the largest shifts first, `movedMore` the rest; job and purchase keys.
- */
-export interface VersusFacts {
-  readonly option: string
-  readonly previous: string
-  readonly from: number
-  readonly to: number
-  readonly complete: boolean
-  readonly changes: ReadonlyArray<{ readonly revision: number; readonly summary: string }>
-  readonly goals?: ReadonlyArray<{ readonly goal: number; readonly now: number; readonly was: number; readonly unit: string }>
-  readonly methods: ReadonlyArray<{ readonly choice: string; readonly now: string; readonly was: string }>
-  readonly buys: { readonly added: readonly string[]; readonly dropped: readonly string[] }
-  readonly moved: ReadonlyArray<{ readonly job: string; readonly now: { readonly start: string; readonly finish: string }; readonly was: { readonly start: string; readonly finish: string } }>
-  readonly movedMore: number
-  readonly added: readonly string[]
-  readonly removed: readonly string[]
-}
+/** The structure the words are generated from: explain's `versus` field (api/contract.ts versusFactsSchema). */
+export type { VersusFacts }
 /** At most this many input changes are listed in the facts; the history has them all. */
-const changesListed = 8
+const changesListed = 20
 
 export const versusLines = (input: Parameters<typeof versus>[0]): string[] => versus(input).lines
 

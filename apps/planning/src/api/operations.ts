@@ -16,8 +16,8 @@ import { definitionRevision, startPlan } from '../definitions/start.ts'
 import type { PlanDefinitionsPort } from '../definitions/index.ts'
 import { outTogether, readiness, worldSubjects, type ReadinessItem } from '../plan/readiness.ts'
 import { buysItems, ladderOf, rungsOf, type FinishCause, type Standing } from '../plan/buys.ts'
-import { versusLines } from '../plan/versus.ts'
-import { whyRecommendedLines } from '../plan/why.ts'
+import { versus } from '../plan/versus.ts'
+import { dominatedBy, whyRecommended } from '../plan/why.ts'
 import { withoutProof } from '../solve/status.ts'
 import {
   certificateSchema, certifiedSizeSchema, optionSetSchema, planInputsSchema,
@@ -428,6 +428,19 @@ export const createPlanningOperations = (ports: PlanningOperationsPorts) => {
     return buysItems(ladder, new Map(causes.flat()))
   }
 
+  /**
+   * An explain answer with its facts within 4 KB: the facts' last moved jobs go first, which `movedMore` then
+   * counts, then the last lines. The facts are never cut in any other way.
+   */
+  const withinResult = (result: ExplainResult): ExplainResult => {
+    let next = result
+    while (byteLength(next) > resultLimitBytes && next.versus !== undefined && next.versus.moved.length > 0) {
+      next = { ...next, versus: { ...next.versus, moved: next.versus.moved.slice(0, -1), movedMore: next.versus.movedMore + 1 } }
+    }
+    while (byteLength(next) > resultLimitBytes && next.lines.length > 1) next = { ...next, lines: next.lines.slice(0, -1) }
+    return next
+  }
+
   /** The purchases the schedule uses; an option's stored purchases are the set it was allowed. */
   const purchasesUsed = (option: Option): readonly string[] => [...new Set(option.rows.flatMap(row => row.uses.flatMap(use => use.purchase === undefined ? [] : [use.purchase])))]
 
@@ -620,7 +633,8 @@ export const createPlanningOperations = (ports: PlanningOperationsPorts) => {
         const named = input.option === undefined ? undefined : findOption(plan, input.option)
         if (named !== undefined) requireFresh(plan, named)
         const others = plan.options!.options.filter(option => option.key !== recommended.key && !optionState(plan, option).stale)
-        return resultOf(explainResultSchema, { lines: whyRecommendedLines(plan.inputs, recommended, others, named), items: [] })
+        const why = whyRecommended(plan.inputs, recommended, others, named)
+        return resultOf(explainResultSchema, withinResult({ lines: why.lines, items: [], recommended: why.facts }))
       }
       // What differs from an option of the previous set, kept from before the last Generate on a newer revision.
       if (ask === 'versus') {
@@ -630,7 +644,8 @@ export const createPlanningOperations = (ports: PlanningOperationsPorts) => {
         const wanted = input.versus!.previous
         const previous = plan.previousOptions.options.find(entry => entry.key === wanted)
         if (previous === undefined) throw planningError(400, 'unknown_reference', `No option ${wanted} in the previous options`, { about: [wanted] })
-        return resultOf(explainResultSchema, { lines: versusLines({ inputs: plan.inputs, option, previous, plan }), items: [] })
+        const compared = versus({ inputs: plan.inputs, option, previous, plan })
+        return resultOf(explainResultSchema, withinResult({ lines: compared.lines, items: [], versus: compared.facts }))
       }
       const option = findOption(plan, input.option)
       requireFresh(plan, option)
@@ -643,7 +658,16 @@ export const createPlanningOperations = (ports: PlanningOperationsPorts) => {
       const plan = await store.read(workspaceId, planId)
       const states = optionStates(plan)
       const section = input.section ?? 'summary'
-      const context: SectionContext = { plan, readiness: readinessOf(plan, states), options: states, certifiedSize, ...(section === 'buys' ? { buys: await buysOf(plan, states) } : {}) }
+      const context: SectionContext = {
+        plan, readiness: readinessOf(plan, states), options: states, certifiedSize,
+        ...(section === 'buys' ? { buys: await buysOf(plan, states) } : {}),
+        // Dominance within the set the section pages: the current set's fresh options, or the previous set as stored.
+        ...(section === 'options' ? { dominated: dominatedBy(plan.inputs, (plan.options?.options ?? []).filter(option => states.get(option.key)?.stale === false)) } : {}),
+        ...(section === 'previous' ? (() => {
+          const previous = plan.previousOptions?.options ?? []
+          return { previous: new Map(previous.map(option => [option.key, optionState(plan, option)])), dominated: dominatedBy(plan.inputs, previous) }
+        })() : {}),
+      }
       const option = section === 'schedule' ? findOption(plan, input.option) : undefined
       const offset = sliceCursor(input.cursor)
       const frame = { target: { kind: 'resource' as const, resource: planReference(workspaceId, plan.id) }, title: plan.inputs.settings.title, observedAt: now() }
