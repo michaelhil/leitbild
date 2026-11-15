@@ -51,6 +51,9 @@ describe('the outcome is the checker\'s', () => {
   test('a 7 h limit holds', () => {
     expect(judgeRetiming(plan([limit('L', 7)]), none, planned, retimed, ['W'])).toMatchObject({ ok: true, outcome: { holds: true } })
   })
+  test('a re-timing that holds gives each span against its limit: G out 6 h of 7 h, 1 h margin (V12)', () => {
+    expect(judgeRetiming(plan([limit('L', 7)]), none, planned, retimed, ['W'])).toEqual({ ok: true, outcome: { holds: true }, spans: [{ rule: 'L', hours: 6, margin: 1 }] })
+  })
   test('a due time at 11:30Z: the test finishes at 12:00Z, 0.5 h late', () => {
     expect(judgeRetiming(plan([limit('L', 7), due('D', at(11.5))]), none, planned, retimed, ['W'])).toMatchObject({ ok: true, outcome: { holds: false, rule: 'D', job: 'R', by: { value: 0.5, unit: 'h' } } })
   })

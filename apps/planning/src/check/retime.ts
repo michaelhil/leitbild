@@ -25,8 +25,13 @@ import { checkPlan, jobDuration, mergeIntervals, prepare, type CheckRow, type Ch
 
 /** A re-timing's outcome, as `option.robust` stores it. */
 export type Retimed = Robust['allPessimistic']
+/**
+ * A span limit's longest span on a re-timing that holds, in h, and its margin: the rule's limit less it (V12).
+ * The card names a job that holds with no margin from these, never from figures of its own.
+ */
+export interface SpanMargin { readonly rule: string; readonly hours: number; readonly margin: number }
 export type RetimeJudgement =
-  | { readonly ok: true; readonly outcome: Retimed }
+  | { readonly ok: true; readonly outcome: Retimed; readonly spans?: readonly SpanMargin[] }
   | { readonly ok: false; readonly problems: readonly string[] }
 
 type Job = PlanInputs['jobs'][number]
@@ -309,5 +314,15 @@ export const judgeRetiming = (inputs: PlanInputs, variant: CheckVariant, planned
   }
   if (unplaced !== undefined && unplaced.ok) breaks.push({ at: unplaced.at, order: rules.length + 1, outcome: { holds: false, unplaced: unplaced.unplaced } })
   const first = [...breaks].sort((left, right) => left.at - right.at || left.order - right.order)[0]
-  return { ok: true, outcome: first === undefined ? { holds: true } : first.outcome }
+  if (first !== undefined) return { ok: true, outcome: first.outcome }
+  // It holds: each span limit's longest span on these rows, as the checker counts it, against its limit (V12).
+  const spans = rules.flatMap((rule): SpanMargin[] => {
+    if (rule.kind !== 'span-limit') return []
+    const intervals = mergeIntervals(inputs.equipment.filter(item => item.group === rule.group).flatMap(item => check.outages.get(item.key) ?? []))
+    if (intervals.length === 0) return []
+    const spansOf = rule.singleEntry ? [{ from: intervals[0]!.from, to: Math.max(...intervals.map(interval => interval.to)) }] : intervals
+    const hours = Math.max(...spansOf.map(span => span.to - span.from)) / hourMs
+    return [{ rule: rule.key, hours, margin: rule.limit.value * unitMs[rule.limit.unit] / hourMs - hours }]
+  })
+  return { ok: true, outcome: { holds: true }, spans }
 }

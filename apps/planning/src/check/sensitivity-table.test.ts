@@ -72,3 +72,20 @@ describe('the sensitivity table, on a stored baseline', () => {
     expect(printed.filter(figure => !allowed.has(figure))).toEqual([])
   })
 })
+
+describe('V12: a job that holds alone gives its span against the limit, from lane K\'s judgement', () => {
+  test('the walk\'s case: the pump install alone at its high estimate holds with no margin, the chain out exactly 72 h', () => {
+    const install = rows.find(row => row.high.length === 1 && row.high[0] === 'SWA-PUMP-IN')!
+    expect(install.judged).toMatchObject({ ok: true, outcome: { holds: true } })
+    const spans = install.judged!.ok ? (install.judged as { readonly spans?: ReadonlyArray<{ readonly rule: string; readonly hours: number; readonly margin: number }> }).spans : undefined
+    expect(spans?.find(entry => entry.rule === 'R2')).toEqual({ rule: 'R2', hours: 72, margin: 0 })
+    // every span is the checker's on the judged rows, and its margin the rule's limit less it
+    for (const entry of spans ?? []) {
+      const rule = inputs.rules.find(candidate => candidate.key === entry.rule)!
+      const check = checkPlan(judgedInputs(install.inputs, install.high, install.retimed!), option.variant, install.retimed!)
+      if (rule.kind !== 'span-limit') throw new Error('not a span limit')
+      expect(entry.hours).toBe(check.metrics.find(metric => metric.id === `span:${rule.group}`)!.value)
+      expect(entry.margin).toBe(rule.limit.value - entry.hours)
+    }
+  })
+})
