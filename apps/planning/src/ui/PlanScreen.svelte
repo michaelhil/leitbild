@@ -41,10 +41,10 @@
   import { layoutTimeline } from './timeline-layout.ts'
   import WhatIfCard from './WhatIfCard.svelte'
   import WhatIfPanel from './WhatIfPanel.svelte'
-  import { whatIfCard, whatIfChoices, type WhatIfKind, type WhatIfVariant } from './what-if.ts'
+  import { whatIfAskedNotice, whatIfCard, whatIfChoices, whatIfsClearedNotice, type WhatIfKind, type WhatIfVariant } from './what-if.ts'
   import WhyRecommended from './WhyRecommended.svelte'
   import type { RecommendedFacts, VersusFacts } from '../api/contract.ts'
-  import { compareView, policyLines, previousFor, previousRows, recommendedAnswer, versusAnswer, whyView, type Answer, type CompareView, type WhyView } from './why-text.ts'
+  import { compareView, moreMoved, policyLines, previousFor, previousRows, recommendedAnswer, versusAnswer, whyView, type Answer, type CompareView, type WhyView } from './why-text.ts'
   import WorkList from './WorkList.svelte'
 
   /**
@@ -111,6 +111,21 @@
   /** The set made before the latest change, from the previous read section, and the option of it compared with. */
   let previousSet = $state<{ readonly at: string | null; readonly recommended: string | null; readonly items: readonly OptionView[] } | null>(null)
   let compareAgainst = $state<string | null>(null)
+  /** The earlier set has no option of the shown option's variant: the planner chooses one (walk V3). */
+  let compareUnpaired = $state(false)
+  /** The moved jobs after the first ones, once read, and the cursor that reads them (walk V10). */
+  let compareCursor = $state<string | null>(null)
+  let compareMore = $state<CompareView['moved'] | null>(null)
+  const readMoreMoved = (): void => {
+    const option = compareFor, against = compareAgainst, cursor = compareCursor
+    if (option === null || against === null || cursor === null || context === null) return
+    void attempt(async () => {
+      const result = await actions.versus(option, against, cursor)
+      if (result.versus === undefined) return
+      compareMore = [...compareMore ?? [], ...moreMoved(result.versus, context)]
+      compareCursor = result.more ?? null
+    })
+  }
   let compareFor = $state<string | null>(null)
   /** The goals before the first goal change saved in this session, for "Undo goal changes made since you opened this plan". */
   let earlierGoals = $state<readonly Goal[] | null>(null)
@@ -185,7 +200,7 @@
   })
   const whyChoices = $derived(recommendedOption === null || model === null ? [] : [
     { value: '', label: 'The next in rank' },
-    ...planOptions(model).filter(option => option.fresh && option.key !== recommendedOption.key).map(option => ({ value: option.key, label: option.label })),
+    ...planOptions(model).filter(option => option.fresh && option.status.word === 'validated feasible' && option.key !== recommendedOption.key).map(option => ({ value: option.key, label: option.label })),
   ])
   const compareShown = $derived.by((): Answer<CompareView> => {
     const answer = compareAnswer
@@ -240,10 +255,14 @@
       // The earlier set comes first: it says whether there is one, and which of its options to compare with.
       actions.previous().then(async page => {
         previousSet = page
-        const against = previousFor(option, page, compareAgainst)
+        const against = previousFor(model?.options?.items.find(item => item.key === option) ?? null, page, compareAgainst)
         compareAgainst = against
+        compareUnpaired = page.at !== null && page.items.length > 0 && against === null
         if (page.at === null || against === null) { compareAnswer = { state: 'none' }; return }
-        compareAnswer = versusAnswer(await actions.versus(option, against))
+        const result = await actions.versus(option, against)
+        compareCursor = result.more ?? null
+        compareMore = null
+        compareAnswer = versusAnswer(result)
       }).catch(cause => { compareAnswer = missing(cause) })
     }
   }
@@ -341,6 +360,8 @@
     error = shown.error
     errorCause = shown.cause
     onChanged()
+    const cleared = whatIfsClearedNotice(whatIfOptions(current), whatIfOptions(shown.model))
+    if (cleared !== null) notice = cleared
   })
   /** Works out the rungs of "what overtime buys" still to solve, lowest first. */
   const solveLadder = (): void => {
@@ -368,7 +389,7 @@
         const shown = await actions.whatIf(current, variant, signal, selectedOption)
         askedLast = shown.asked
         show(shown)
-        notice = `What-if answered: ${label}. Its card is ${wide ? 'on the right' : 'below'}.`
+        notice = whatIfAskedNotice(label, whatIfOptions(current), whatIfOptions(shown.model), wide)
         onChanged()
       } catch (cause) {
         if (signal.aborted) notice = 'Cancelled. Nothing was asked.'
@@ -463,7 +484,7 @@
           <section class="why-panel"><div class="panel-heading"><h2 tabindex="-1">Why recommended</h2><button type="button" class="quiet" onclick={() => { choosing = null }}>Close</button></div><p class="hint">No option is recommended on the plan as it is now. Generate first.</p></section>
         {/if}
       {:else if compareOption}
-        <ComparePanel answer={compareShown} previous={previousSet === null ? [] : previousRows(previousSet)} against={compareAgainst} onAgainst={option => { compareAgainst = option; ask('compare') }} onClose={() => { choosing = null }} />
+        <ComparePanel answer={compareShown} unpaired={compareUnpaired} more={compareMore} onMore={compareCursor === null ? undefined : readMoreMoved} previous={previousSet === null ? [] : previousRows(previousSet)} against={compareAgainst} onAgainst={option => { compareAgainst = option; ask('compare') }} onClose={() => { choosing = null }} />
       {/if}
     </div>
   {/if}

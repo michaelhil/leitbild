@@ -99,9 +99,43 @@ export interface WhatIfCardView {
   readonly warnings: readonly string[]
   readonly caution: string | null
   readonly stale: boolean
+  /** "Against Swap in refurbished spare (recommended): −1 h longest outage, +NOK 18,900 extra cost, back at the same time.": a difference from stored figures, never a ranking. */
+  readonly against: string | null
 }
 
 const lower = (text: string): string => `${text.charAt(0).toLowerCase()}${text.slice(1)}`
+
+/**
+ * How a what-if differs from the recommended option, from the stored figures of both (walk V13): the longest
+ * outage, the extra cost, and when the last test is done. A difference, not a ranking: what-ifs are never
+ * ranked. Null unless both are validated feasible on the current plan.
+ */
+const againstRecommended = (option: OptionView, model: PlanModel, context: Context): string | null => {
+  const recommended = model.options?.items.find(item => item.key === model.options?.recommended)
+  if (recommended === undefined || recommended.key === option.key || !recommended.fresh || !option.fresh) return null
+  if (recommended.status.word !== 'validated feasible' || option.status.word !== 'validated feasible') return null
+  const signed = (by: number, text: (amount: number) => string) => `${by > 0 ? '+' : '−'}${text(Math.abs(by))}`
+  const parts: string[] = []
+  const mine = outageOf(option, context.inputs), theirs = outageOf(recommended, context.inputs)
+  if (mine !== null && theirs !== null) {
+    const by = mine.value - theirs.value
+    parts.push(Math.abs(by) < 1e-9 ? 'the same longest outage' : `${signed(by, amount => quantityText(amount, mine.unit))} longest outage`)
+  }
+  const cost = context.inputs.goals.findIndex(goal => goal.metric === 'extra-cost')
+  const costOf = (status: typeof option.status) => status.word === 'validated feasible' ? status.goals.find(line => line.goal === cost) : undefined
+  const myCost = costOf(option.status), theirCost = costOf(recommended.status)
+  if (cost >= 0 && myCost !== undefined && theirCost !== undefined) {
+    const by = myCost.value - theirCost.value
+    parts.push(Math.abs(by) < 0.5 ? 'the same extra cost' : `${signed(by, amount => quantityText(amount, myCost.unit))} extra cost`)
+  }
+  const lastTest = (of: OptionView) => of.metrics.find(metric => metric.id === 'last-test')
+  const myBack = lastTest(option), theirBack = lastTest(recommended)
+  if (myBack !== undefined && theirBack !== undefined) {
+    const by = myBack.value - theirBack.value
+    parts.push(Math.abs(by) < 1e-9 ? 'back at the same time' : `back ${quantityText(Math.abs(by), myBack.unit)} ${by > 0 ? 'later' : 'earlier'}`)
+  }
+  return parts.length === 0 ? null : `Against ${recommended.label} (recommended): ${parts.join(', ')}.`
+}
 
 export const whatIfCard = (option: OptionView, model: PlanModel, context: Context): WhatIfCardView => {
   const { inputs } = context
@@ -136,7 +170,7 @@ export const whatIfCard = (option: OptionView, model: PlanModel, context: Contex
       const gap = solved.word === 'proven optimal' || solved.bound === undefined ? 0 : solved.value - solved.bound.value
       const leadLine: GoalLine = {
         name: `Shortest outage for ${groupLabel(context, solved.group)} (solved first)`, value: quantityText(solved.value, solved.unit), mark: goalMark(solved.word),
-        distance: gap > 0 ? `could be up to ${quantityText(gap, solved.unit)} shorter` : '',
+        distance: gap > 0 && solved.bound !== undefined ? `no plan has it out for less than ${quantityText(solved.bound.value, solved.unit)}` : '',
       }
       status = { ...view, goals: [leadLine, ...rest(null)] }
     }
@@ -154,5 +188,25 @@ export const whatIfCard = (option: OptionView, model: PlanModel, context: Contex
     ].join(' · '),
     unpriced: unpricedOf(option, inputs, model.rows[option.key]),
     warnings: otherWarnings(option), caution: sizeCautionOf(option), stale: !option.fresh,
+    against: againstRecommended(option, model, context),
   }
 }
+
+const quotedList = (labels: readonly string[]): string => {
+  const quoted = labels.map(label => `“${label}”`)
+  return quoted.length <= 1 ? quoted.join('') : `${quoted.slice(0, -1).join(', ')} and ${quoted.at(-1)}`
+}
+
+/**
+ * The notice after a what-if is answered (walk V9): what was asked, the cards it replaced, if any, by name, and
+ * where its card is. A card never vanishes without a word.
+ */
+export const whatIfAskedNotice = (label: string, before: ReadonlyArray<Pick<OptionView, 'key' | 'label'>>, after: ReadonlyArray<Pick<OptionView, 'key'>>, wide: boolean): string => {
+  const replaced = before.filter(card => !after.some(item => item.key === card.key)).map(card => card.label)
+  return `What-if answered: ${label}.${replaced.length === 0 ? '' : ` It replaced ${quotedList(replaced)}.`} Its card is ${wide ? 'on the right' : 'below'}.`
+}
+
+/** After a Generate that cleared the what-ifs, why they are gone (walk V9); null when none were cleared. */
+export const whatIfsClearedNotice = (before: readonly unknown[], after: readonly unknown[]): string | null =>
+  before.length === 0 || after.length > 0 ? null
+    : `The ${before.length === 1 ? 'what-if was' : `${before.length} what-ifs were`} asked against the earlier options, so Generate cleared ${before.length === 1 ? 'it' : 'them'}. Ask again for the plan as it is now.`

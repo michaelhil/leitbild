@@ -79,9 +79,10 @@ describe("maint's third walk, screen defects", () => {
     const early = status({ ...planned.options!.items[0]!.status, run: { ...runBasis(planned.inputs.settings.grid), stoppedBy: 'memory' } })
     const model: PlanModel = { ...planned, options: { ...planned.options!, items: [{ ...planned.options!.items[0]!, status: early }] } }
     const context = contextOf(model)
-    expect(outcomeBanner(model, context)!.lines[0]).toBe('The search stopped early, at the memory limit: this option may not be the best. Generate again.')
+    // Walk V7 and V8 (increment 2): the option is named, and the memory stop in its own words.
+    expect(outcomeBanner(model, context)!.lines[0]).toBe('The search stopped early for Option 1: it reached the memory it may use. The recommended option may not be the best. Generate again.')
     const card = attentionCards(model, context).find(item => item.mark.word === 'Stopped early')!
-    expect([card.title, card.actions]).toEqual(['The search stopped early, at the memory limit.', ['generate']])
+    expect([card.title, card.actions]).toEqual(['The search stopped early for Option 1: it reached the memory it may use.', ['generate']])
     expect(outcomeBanner(planned, contextOf(planned))!.lines).toEqual([])
   })
 

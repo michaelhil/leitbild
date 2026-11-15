@@ -143,6 +143,8 @@ export interface CompareView {
   readonly buys: readonly string[]
   readonly moved: ReadonlyArray<{ readonly job: string; readonly was: string; readonly now: string; readonly shift: string }>
   readonly more: string | null
+  /** How many moved jobs the Module has not listed yet. */
+  readonly moreCount: number
   readonly added: readonly string[]
   /** Jobs no longer in the plan: they have no names left in it, so they are counted, and the changes name them. */
   readonly removed: string | null
@@ -155,6 +157,16 @@ const shiftText = (was: { start: string; finish: string }, now: { start: string;
   if (start !== 0) return `starts ${hoursText(Math.abs(start))} ${start > 0 ? 'later' : 'earlier'}`
   const finish = (Date.parse(now.finish) - Date.parse(was.finish)) / 3_600_000
   return `finishes ${hoursText(Math.abs(finish))} ${finish > 0 ? 'later' : 'earlier'}`
+}
+
+/** Moved jobs as the compare panel lists them: name, the two times, and the shift. */
+const movedRows = (moved: VersusFacts['moved'], context: Context): CompareView['moved'] =>
+  moved.map(entry => ({ job: context.names.job(entry.job), was: context.format.range(entry.was.start, entry.was.finish), now: context.format.range(entry.now.start, entry.now.finish), shift: shiftText(entry.was, entry.now) }))
+
+/** The moved jobs the Module pages after the first ones, in plan order (walk V10: every moved job is reachable). */
+export const moreMoved = (facts: VersusFacts, context: Context): CompareView['moved'] => {
+  const order = new Map(context.inputs.jobs.map((job, index) => [job.key, index]))
+  return movedRows([...facts.moved].sort((left, right) => (order.get(left.job) ?? Infinity) - (order.get(right.job) ?? Infinity)), context)
 }
 
 export const compareView = (facts: VersusFacts, option: Pick<OptionView, 'label'>, previous: Pick<OptionView, 'label'>, context: Context): CompareView => {
@@ -173,7 +185,7 @@ export const compareView = (facts: VersusFacts, option: Pick<OptionView, 'label'
   const goals = facts.goals?.map(entry => ({
     name: goalWords(context, entry.goal), now: quantityText(entry.now, entry.unit), was: quantityText(entry.was, entry.unit), change: signed(entry.now - entry.was, entry.unit),
   })) ?? null
-  const moved = facts.moved.map(entry => ({ job: names.job(entry.job), was: format.range(entry.was.start, entry.was.finish), now: format.range(entry.now.start, entry.now.finish), shift: shiftText(entry.was, entry.now) }))
+  const moved = movedRows(facts.moved, context)
   // G5: an outage that grows under the guideline changes no goal, so each limited group's longest outage is
   // shown, from the Module's `outages` facts (both options' own checker figures, in hours).
   const outages = (facts.outages ?? []).map(entry => ({ name: `Longest outage, ${names.group(entry.group)}`, now: quantityText(entry.now, 'h'), was: quantityText(entry.was, 'h'), change: signed(entry.now - entry.was, 'h') }))
@@ -185,6 +197,7 @@ export const compareView = (facts: VersusFacts, option: Pick<OptionView, 'label'
     goals, outages, goalsNote: goals === null ? 'The goals themselves changed, so their values are not compared.' : null,
     methods, buys, moved,
     more: facts.movedMore === 0 ? null : `${facts.movedMore} more ${facts.movedMore === 1 ? 'job moved' : 'jobs moved'}.`,
+    moreCount: facts.movedMore,
     added: facts.added.map(names.job),
     removed: facts.removed.length === 0 ? null : `${facts.removed.length} ${facts.removed.length === 1 ? 'job of the earlier set is' : 'jobs of the earlier set are'} no longer in the plan.`,
     same: sameGoals && methods.length === 0 && buys.length === 0 && moved.length === 0 && facts.movedMore === 0 && facts.added.length === 0 && facts.removed.length === 0,
@@ -196,12 +209,19 @@ export interface PreviousRow { readonly key: string; readonly label: string; rea
 export const previousRows = (page: { readonly items: readonly OptionView[]; readonly recommended: string | null }): readonly PreviousRow[] =>
   page.items.map(item => ({ key: item.key, label: item.label, mark: statusMark(item.status.word), recommended: item.key === page.recommended }))
 
-/** The earlier option a shown option is compared with: the same option if the earlier set has it, else the one it recommended. */
-export const previousFor = (shown: string | null, page: { readonly items: readonly OptionView[]; readonly recommended: string | null }, chosen: string | null): string | null => {
-  const has = (key: string | null) => key !== null && page.items.some(item => item.key === key)
-  if (has(chosen)) return chosen
-  if (has(shown)) return shown
-  return has(page.recommended) ? page.recommended : page.items[0]?.key ?? null
+/** An option's key without its set's suffix: the same variant in two sets has the same base (lane P, V3). */
+const baseKey = (key: string): string => key.replace(/\.[0-9a-f]{8}$/, '')
+const plain = (option: Pick<OptionView, 'variant'>): boolean => option.variant.also === undefined && option.variant.lead === undefined
+
+/**
+ * The earlier option a shown option is compared with (walk V3): the one the planner chose; else the plain option
+ * of the same variant in the earlier set (no extra rule, nothing solved first); else none, and the planner
+ * chooses. Never the earlier set's recommended option by default.
+ */
+export const previousFor = (shown: Pick<OptionView, 'key' | 'variant'> | null, page: { readonly items: readonly OptionView[]; readonly recommended: string | null }, chosen: string | null): string | null => {
+  if (chosen !== null && page.items.some(item => item.key === chosen)) return chosen
+  if (shown === null || !plain(shown)) return null
+  return page.items.find(item => plain(item) && baseKey(item.key) === baseKey(shown.key))?.key ?? null
 }
 
 

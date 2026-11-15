@@ -13,7 +13,7 @@ export interface GlanceCell {
   readonly value: string
   /** The goal's word ("proven optimal", "best found"); none for a value that is not a goal's. */
   readonly mark: Mark | null
-  /** "could be up to 3.5 h better", or nothing. */
+  /** The proven bound, said as itself, or nothing. */
   readonly distance: string
 }
 export interface GlanceRow {

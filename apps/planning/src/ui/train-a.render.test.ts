@@ -119,8 +119,9 @@ describe('Train A on the plan screen', () => {
     expect(text).toContain('The search ran to the end.')
     expect(text).toContain('Station mechanical crew')
     expect(text).toContain('one at a time')
-    expect(text).toContain('Float')
-    expect(text).toContain('limited by: the window end (crew availability is not counted)')
+    // Walk V11 (increment 2): the margin in planner words, never "Float 0 s".
+    expect(text).toMatch(/of margin before the finish moves|No margin: any delay here moves the finish/)
+    expect(text).toContain('limited by the window end; crew availability is not counted')
     expect(text).toContain('Mon 07:00–10:00')
   })
 
