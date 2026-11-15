@@ -567,12 +567,13 @@ export const createOperationalDeckLayers = (config: OperationalDeckLayerConfig):
           onHover: onSymbolHover,
         })]
       : []),
-    // Each target's tag above its halo while an order is armed: the verb or ETA a click there gives.
+    // Each target's tag above its halo while an order is armed: the verb or ETA a click there gives. Like a label, a
+    // tag is part of its target: a tap on it picks the target, never the ground or an icon fanned out beneath it.
     ...(layerData.targetTagPoints.length > 0
       ? [new TextLayer<OperationalPointFeature>({
           id: 'leitbild-target-tags',
           data: layerData.targetTagPoints,
-          pickable: false,
+          pickable: true,
           visible: visible(visibleFamilies, 'objects'),
           characterSet: 'auto',
           fontFamily: 'system-ui, -apple-system, "Segoe UI", sans-serif',
@@ -588,6 +589,8 @@ export const createOperationalDeckLayers = (config: OperationalDeckLayerConfig):
           background: true,
           getBackgroundColor: targetHaloStroke,
           backgroundPadding: [6, 3],
+          onClick: onSymbolClick,
+          onHover: onSymbolHover,
           updateTriggers: {
             getText: snapshot.revisions.points,
             getPosition: snapshot.revisions.points,

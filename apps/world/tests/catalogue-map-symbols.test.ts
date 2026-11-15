@@ -188,6 +188,46 @@ describe('operational map icons', () => {
     expect(layersOf(cleared, emptyCatalogueSymbolAtlas).map(layer => layer.id)).toEqual(todaysLayerIds)
   })
 
+  test('a tap or hover on a target\'s tag acts on that target, never on the ground or an icon beneath it', () => {
+    const store = createMapFeatureStore()
+    const objects = [objectOf('a', 11.3), objectOf('b', 11.4), objectOf('c', 11.5)]
+    const armed = store.update({
+      objects,
+      selectedControllerId: 'a',
+      highlightedObjectIds: [],
+      targeting: { fromId: 'a', tags: new Map([['b', '4 min'], ['c', '9 min']]) },
+      hiddenObjectCategoryIds: [], alertPalette: 'day' as const,
+      placementPoints: [],
+      packFeatures: [],
+      hasNewInfo: () => false,
+      presentationFor: presentationWith({}),
+    })
+    const selected: string[] = []
+    const seen: string[] = []
+    const hovered: Array<string | null> = []
+    const tags = createOperationalDeckLayers({
+      snapshot: armed,
+      visibleFamilies: new Set(['objects', 'routes']),
+      catalogueAtlas: emptyCatalogueSymbolAtlas,
+      disksPick: true,
+      diskClicks: null,
+      zoom: 10,
+      onObjectSelected: point => { selected.push(point.id) },
+      onObjectSeen: point => { seen.push(point.id) },
+      onObjectHover: point => { hovered.push(point?.id ?? null) },
+    }).find(layer => layer.id === 'leitbild-target-tags')
+    expect(tags?.props.pickable).toBe(true)
+    // deck.gl hands a click on a tag, its text or its pill, the tag's own data row: the target's point.
+    const tagged = (tags?.props.data as ReadonlyArray<{ readonly id: string }>).find(point => point.id === 'c')
+    type Pick = (info: { readonly object: unknown }) => void
+    ;(tags?.props.onClick as unknown as Pick)({ object: tagged })
+    ;(tags?.props.onHover as unknown as Pick)({ object: tagged })
+    ;(tags?.props.onHover as unknown as Pick)({ object: undefined })
+    expect(selected).toEqual(['c'])
+    expect(seen).toEqual(['c'])
+    expect(hovered).toEqual(['c', null])
+  })
+
   test('labels are drawn natively only for objects whose Pack presents one', () => {
     const snapshot = snapshotOf([objectOf('a', 11.3), objectOf('b', 11.4)], presentationWith({}, { b: 'B2 · ENR' }))
     expect(snapshot.points.find(point => point.id === 'a')?.label).toBeNull()
