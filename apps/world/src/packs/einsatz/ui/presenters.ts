@@ -188,6 +188,19 @@ export const trackAgeText = (object: Pick<OperationalObject, 'spatial'>, nowMs: 
   return nowMs === null || observedAt === undefined ? null : clockText((nowMs - Date.parse(observedAt)) / 1_000)
 }
 
+/**
+ * When the panel reads the situation again: the Einsatz records the
+ * screen's own projection holds, as a key that changes whenever the Run
+ * commits a change to one (a call made, served or closed, an order, a phase,
+ * a site opened or closed) and never for movement alone, which the panel's
+ * clocks carry between reads. Einsatz announces no Pack data revision (its
+ * runtime emits no `pack.data.changed`, and a side view hears none), so
+ * this is the panel's data revision; built from what the screen already
+ * sees, it tells a side nothing it could not see.
+ */
+export const einsatzRecordsKey = (objects: ReadonlyArray<Pick<OperationalObject, 'id' | 'packId' | 'lifecycle' | 'packData'>>): string =>
+  JSON.stringify(objects.flatMap(object => object.packId === einsatzPackId ? [[object.id, object.lifecycle, object.packData]] : []))
+
 // ——— Unit card ———
 
 export interface PlanStopView {

@@ -15,6 +15,7 @@ import {
   currentJobOf,
   deliverToOrder,
   dispatchKindOf,
+  einsatzRecordsKey,
   dispatchWords,
   edgeTabText,
   emptySelectionText,
@@ -483,5 +484,13 @@ describe('Contacts', () => {
     expect(of({ type: 'track-index', side: 'east', next: 1, subjects: {} })).toBeNull()
     expect(of({ type: 'unit' }, 'other')).toBeNull()
     expect(() => of({ type: 'unit' })).toThrow()
+  })
+  test('the panel reads again when an Einsatz record or its lifecycle changes; another Pack\'s objects and an object\'s movement leave the key alone', () => {
+    const record = { id: 'u1', packId: einsatzPackId, lifecycle: 'active', packData: { type: 'unit', phase: 'available' } } as unknown as OperationalObject
+    const key = einsatzRecordsKey([record])
+    expect(einsatzRecordsKey([{ ...record, spatial: { frame: { kind: 'wgs84' } } } as OperationalObject])).toBe(key)
+    expect(einsatzRecordsKey([record, { ...record, id: 'w1', packId: 'weather' } as unknown as OperationalObject])).toBe(key)
+    expect(einsatzRecordsKey([{ ...record, packData: { type: 'unit', phase: 'en-route' } } as unknown as OperationalObject])).not.toBe(key)
+    expect(einsatzRecordsKey([{ ...record, lifecycle: 'inactive' } as OperationalObject])).not.toBe(key)
   })
 })

@@ -49,9 +49,12 @@ import { operator, type OpenRun } from './run-harness.ts'
  * click does, the presenters (`ui/presenters.ts`) what the card, lists and
  * receipts show, and the panel's client (`ui/einsatz-client.ts`) what is
  * read and sent, validated with the Capabilities' own schemas. It performs
- * the selection effects as `DispatchPanel.svelte` does: it reads the
- * situation after every action and Run step, an armed unit's options, the
- * call card's pinned proposal, and sends every order through the Run's
+ * the selection effects as `DispatchPanel.svelte` does. It reads the
+ * situation, and an armed unit's options, after every action and Run step
+ * (the panel reads only when an Einsatz record it sees changed,
+ * `einsatzRecordsKey`, and carries waiting times and ETAs on its own clock
+ * between reads; the harness has no clock, so it reads each time); it pins
+ * the call card's proposal; and it sends every order through the Run's
  * Capability path as the screen's actor. Map taps are routed as the World
  * surface routes them with the panel open (`ui/map-target-routing.ts`,
  * the Pack's own targeting), so a tap selects, reaches the panel as a map
@@ -117,7 +120,7 @@ export interface CardScreen {
   readonly prompt: () => ReadonlyArray<string> | null
   /** The object the map selects. */
   readonly mapSelection: () => string | null
-  /** Reads the situation again, and an armed unit's options: a data revision. */
+  /** Reads the situation again, and an armed unit's options. */
   readonly sync: () => Promise<void>
   readonly mapTap: (objectId: string, gapMs?: number) => Promise<void>
   readonly groundTap: (position: readonly [number, number], gapMs?: number) => Promise<void>

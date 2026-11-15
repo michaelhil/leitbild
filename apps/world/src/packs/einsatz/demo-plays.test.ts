@@ -17,6 +17,7 @@ import type { RecommendAnswer } from './recommendation-schema.ts'
 import type { Situation } from './situation/schema.ts'
 import { einsatzPackView } from './ui-pack.ts'
 import { dispatchMapCover, panelBottomClearancePx, panelLayoutFor, panelTopClearancePx } from './ui/dispatch-layout.ts'
+import { einsatzRecordsKey } from './ui/presenters.ts'
 
 /**
  * The demo Definitions every leitbild.app user can start, held to the demo
@@ -423,6 +424,44 @@ describe('supply-run pressure moments', () => {
     expect(mobile.length).toBe(1)
     for (const icon of [...mobile.map(type => type.icon), ...config.taskTemplates.map(template => template.icon)]) expect(Object.keys(atlas)).not.toContain(icon)
   })
+})
+
+describe('when the Dispatch panel reads the situation again', () => {
+  test('on halden-emergency the screen\'s Einsatz records change with an order, a phase and a new call, never with movement alone', async () => {
+    const run = await openRun({ definition: emergency })
+    try {
+      const key = () => einsatzRecordsKey(run.run.snapshot().objects)
+      const answer = await run.query<RecommendAnswer>(einsatzQueryIds.recommend, { taskId: run.run.snapshot().objects.find(object => object.kind === 'incident')!.id })
+      const unitId = answer.proposal!.units[0]!.unitId
+      const before = key()
+      expect((await run.invoke(ids.order, answer.proposal!.order)).ok).toBe(true)
+      await run.settle()
+      expect(key()).not.toBe(before)
+      // Step until the unit is under way, then on: while it only moves, nothing the panel reads changed.
+      while (run.unit(unitId).phase !== 'en-route') {
+        run.forward(1_000)
+        await run.settle()
+      }
+      const underWay = key()
+      const at = lonLatOf(run.object(unitId)!)
+      run.forward(5_000)
+      await run.settle()
+      expect([run.unit(unitId).phase, lonLatOf(run.object(unitId)!)]).not.toEqual(['en-route', at])
+      expect(run.unit(unitId).phase).toBe('en-route')
+      expect(key()).toBe(underWay)
+      // The next cue's call is a new record.
+      const calls = () => run.run.snapshot().objects.filter(object => object.kind === 'incident').length
+      const held = calls()
+      const quiet = key()
+      while (calls() === held) {
+        run.forward(5_000)
+        await run.settle()
+      }
+      expect(key()).not.toBe(quiet)
+    } finally {
+      await run.close()
+    }
+  }, 120_000)
 })
 
 /**

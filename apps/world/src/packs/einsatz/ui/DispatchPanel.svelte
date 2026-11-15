@@ -20,6 +20,7 @@
     dispatchKindOf,
     dispatchWords,
     edgeTabText,
+    einsatzRecordsKey,
     emptySelectionText,
     movePromptText,
     overview,
@@ -58,9 +59,11 @@
    * (`selection.ts`) decides what each click does, the presenters what is
    * shown, the client what is read and sent, the layout where it lies.
    *
-   * It holds the Run's situation, read on open and on every data revision;
-   * an armed unit's options, read on arming and on every data revision while
-   * it stays armed, with the armed list's order fixed at arming; and the
+   * It holds the Run's situation, read on open and whenever an Einsatz
+   * record the screen sees changes (`einsatzRecordsKey`: Einsatz announces
+   * no Pack data revision); an armed unit's options, read on arming and on
+   * every such change while it stays armed, with the armed list's order
+   * fixed at arming; and the
    * call card's proposal, pinned when the card opens and read again only on
    * Refresh, which keeps the old answer greyed until the new one arrives. It
    * never holds the configuration.
@@ -377,9 +380,10 @@
     }
   })
 
-  // Every data revision reads the situation again, and an armed unit's options; the first runs on open.
+  // Every change of an Einsatz record the screen sees reads the situation again, and an armed unit's options; the first runs on open.
+  const recordsKey = $derived(einsatzRecordsKey(props.objects))
   $effect(() => {
-    void props.dataRevision
+    void recordsKey
     untrack(() => {
       void readSituation()
       const armed = selection.selection
