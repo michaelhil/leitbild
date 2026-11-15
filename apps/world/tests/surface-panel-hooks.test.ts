@@ -6,7 +6,7 @@ import { createWorldPackDescriptor, type PackSurfacePanelContribution, type Pack
 import { assertCameraInteractionContract } from '../src/ui/map/map-camera.ts'
 import { knownUiPackIds, loadUiPack } from '../src/ui/pack-loader.ts'
 import { geoPointFromLonLat, type IsoTimestamp, type ObjectId, type OperationalObject, type PackId, type SimulationRunId } from '../src/core/model/index.ts'
-import { groundClicksWanted, mapClickOutcome, targetPreviewsWanted } from '../src/ui/map-target-routing.ts'
+import { groundClicksWanted, targetPreviewsWanted } from '../src/ui/map-target-routing.ts'
 import { assertMapCover, assertPanelInteraction, cameraPaddingFor, mapCameraInteractionFor, noMapCover, openPanelDeclaring, railStartsCollapsed, startingControllerId, surfacePanelPackId } from '../src/ui/surface-panel-interaction.ts'
 
 const panelOf = (id: string, hooks: Pick<PackSurfacePanelContribution, 'mapTargets' | 'keymap'> = {}): PackSurfacePanelContribution => ({
@@ -74,12 +74,6 @@ describe('World surface hooks among the built-in Packs', () => {
     expect(active.targeting?.mutedOnMap).toBeUndefined()
     expect(targetPreviewsWanted({ targeting: active.targeting, panel: null })).toBe(false)
     expect(groundClicksWanted({ targeting: active.targeting, panel: null })).toBe(false)
-  })
-
-  test('Ambulance still contributes its hold gesture, and a click while it is armed cancels it and is never open ground', async () => {
-    expect((await loadUiPack('ambulance')).mapAssignment).toBeDefined()
-    for (const handled of [false, true]) expect(mapClickOutcome({ suppressed: false, assignmentActive: true, handled })).toBe('assignment-cancel')
-    expect(mapClickOutcome({ suppressed: true, assignmentActive: true, handled: true })).toBe('suppressed')
   })
 })
 

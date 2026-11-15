@@ -14,7 +14,7 @@ import type { RoutingAdapter } from '../src/routing/protocol.ts'
 import { createRoleRunWorkspaces, roleRunPacks } from './fixtures/role-runs.ts'
 
 /**
- * Einsatz as production registers it, beside Ambulance: the application
+ * Einsatz as production registers it: the application
  * assembly hands it the same routing every road Pack gets, a routing outage
  * reaches the caller as a refusal and never as a straight line, and a Run
  * whose Definition declares only a Controller and groups publishes its roles
@@ -87,12 +87,10 @@ const createRun = async (workspaces: WorldWorkspaceRuntimeRegistry, workspaceId:
   await workspaces.withRuntime(workspaceId, async runtime => (await runtime.simulationRuns.create({ scenarioId })).id)
 
 describe('Einsatz registered in the World application assembly', () => {
-  test('it stands beside Ambulance, which stays registered', () => {
+  test('it is registered with its runtime adapter', () => {
     const assembly = createWorldApplicationAssembly({ routing: offlineRouting().routing })
-    const ids = assembly.packs.map(pack => pack.descriptor.id)
-    expect(ids).toContain('ambulance')
-    expect(ids).toContain(einsatzPackId)
-    expect(assembly.runtimeAdapters.map(adapter => String(adapter.id))).toEqual(expect.arrayContaining(['ambulance.local', einsatzRuntimeId]))
+    expect(assembly.packs.map(pack => pack.descriptor.id)).toContain(einsatzPackId)
+    expect(assembly.runtimeAdapters.map(adapter => String(adapter.id))).toContain(einsatzRuntimeId)
   })
 
   test('a road send goes to the assembly\'s router, and an outage is refused routing_unavailable, never sent in a straight line', async () => {

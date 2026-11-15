@@ -15,7 +15,7 @@ import { dronePackConfigSchema } from '../src/packs/drone/config.ts'
 import { deepCopy, setValueAtPath } from '../src/ui/scenario-builder-model.ts'
 import { allPackAuthoringExample } from './fixtures/all-pack-authoring.ts'
 
-test('all eight owner selections survive discovered schema, preview, published start/read, live changes, revision edits and restore', async () => {
+test('all seven owner selections survive discovered schema, preview, published start/read, live changes, revision edits and restore', async () => {
   const dataDir = await mkdtemp(join(tmpdir(), 'world-all-pack-authoring-')), workspaceId = newWorkspaceId(), routing = createDirectRoutingAdapter()
   const assembly = createWorldApplicationAssembly({ routing })
   let connections = 0
@@ -50,7 +50,6 @@ test('all eight owner selections survive discovered schema, preview, published s
       }
     }
     for (const [packId, change, reason] of [
-      ['ambulance', (selection: any) => { selection.items.find((item: any) => item.type === 'patient').incidentId = 'missing-incident' }, 'missing-incident'],
       ['drone', (selection: any) => { selection.items[0].modelId = 'unknown-model' }, 'unknown drone vehicle model'],
       ['weather', (selection: any) => { selection.items[0].atmosphere.precipitation = { type: 'none', intensityMmPerHour: 1 } }, 'No precipitation'],
       ['situation-monitor', (selection: any) => { selection.config.sources.push(structuredClone(selection.config.sources[0])) }, 'unique'],
@@ -83,7 +82,7 @@ test('all eight owner selections survive discovered schema, preview, published s
     const run = await registry.load(started.body.result.id); await run.setClock({ paused: true })
     const resource = { workspaceId, moduleId: 'world', type: 'world.simulation-run', id: run.id }
     const reads = [
-      ['ambulance', 'world.ambulance.dispatch-state', {}], ['drone', 'world.drone.scene', {}],
+      ['drone', 'world.drone.scene', {}],
       ['weather', 'world.weather.describe', {}], ['situation-monitor', 'world.situation-monitor.status', {}],
       ['einsatz', 'world.einsatz.configuration', {}], ['process-plant', 'world.process-plant.plants.list', {}],
       ['electric-grid', 'world.electric-grid.catalog.list', {}], ['physical-layout', 'world.simulation-run.read-object', { objectId: source.packs.find(pack => pack.id === 'physical-layout')!.items[0]!.id }],
@@ -93,7 +92,6 @@ test('all eight owner selections survive discovered schema, preview, published s
       expect(source.packs.some(selection => selection.id === pack)).toBe(true)
     }
     for (const [capabilityId, input] of [
-      ['world.ambulance.set-unit-readiness', { unitId: 'example:ambulance', ready: false }],
       ['world.weather.set-enabled', { objectId: 'example:weather', enabled: false }],
       ['world.drone.set-gimbal', { droneId: 'example:drone', yawDeg: 15, pitchDeg: -20 }],
       ['world.situation-monitor.configuration.replace', { expectedRevision: 0, config: { sources: [], areas: [] } }],
@@ -135,7 +133,6 @@ test('all eight owner selections survive discovered schema, preview, published s
     const restored = await registry.load(run.id)
     expect(JSON.parse(JSON.stringify(restored.snapshot().objects))).toEqual(JSON.parse(frozen))
     expect((await invoke('world.situation-monitor.status', {}, 'ai', { resource })).body.result.config.sources).toEqual([])
-    expect((await invoke('world.ambulance.object', { objectId: 'example:ambulance' }, 'ai', { resource })).body.result.object.packData.crewReady).toBe(false)
     expect((await invoke('world.simulation-run.read-object', { objectId: 'example:weather' }, 'ai', { resource })).body.result.packData.definition.enabled).toBe(false)
     expect((await invoke('world.electric-grid.asset.get', { gridId: 'grid:halden-four-unit', assetId: branch.id }, 'ai', { resource })).body.result.asset.state.availability).toBe(0.5)
     expect((await invoke('world.simulation-run.read-object', { objectId: 'example:drone' }, 'ai', { resource })).body.result.packData.payload).toMatchObject({ gimbalPitchDeg: -20, gimbalYawDeg: 15 })
