@@ -32,7 +32,8 @@ interface CaseCase {
     readonly ect: { readonly intervals: ReadonlyArray<readonly string[]>; readonly rebookOption: { readonly interval: readonly string[]; readonly costNok: number } }
   }
   readonly resources: ReadonlyArray<{ readonly id: string; readonly label: string; readonly kind: string; readonly count: number; readonly crewSize?: number; readonly calendars: readonly string[]; readonly orderBy?: string; readonly words?: string }>
-  readonly methods: { readonly SWA: ReadonlyArray<{ readonly id: string; readonly label: string; readonly spareArrivalBasis?: string }> }
+  readonly methods: { readonly SWA: ReadonlyArray<{ readonly id: string; readonly label: string; readonly spareArrivalBasis?: string; readonly spareExposureWeeks: number; readonly spareExposureBasis?: string }> }
+  readonly measures: ReadonlyArray<{ readonly id?: string; readonly label?: string; readonly unit?: string; readonly definition?: string }>
   readonly jobs: readonly CaseJob[]
   readonly links: ReadonlyArray<{ readonly from: string; readonly to: string; readonly type: 'FS' | 'SS' | 'FF'; readonly lagHours: number; readonly method?: string; readonly words?: string }>
   readonly costs: {
@@ -174,6 +175,13 @@ export const convertTrainACase = (frozen: CaseCase): PlanInputs => {
   const weeklyOf = (weekly: CaseCase['calendars']['day']['weekly']) => weekly.map(entry => ({ days: lower(entry.days), from: entry.from, to: entry.to }))
   const allDays = ['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun'] as const
 
+  // What each SW A method leaves unpriced: the case's spare-exposure measure, with each method's own value
+  // and, where the case gives one, its basis (the measure's definition otherwise).
+  const exposure = once(frozen.measures.find(measure => measure.id === 'spare-exposure'), 'spare-exposure measure')
+  const caveatsOf = (method: CaseCase['methods']['SWA'][number]) => [{
+    label: once(exposure.label, 'spare-exposure label'), value: method.spareExposureWeeks, unit: once(exposure.unit, 'spare-exposure unit'),
+    words: method.spareExposureBasis ?? once(exposure.definition, 'spare-exposure definition'),
+  }]
   const cool = once(frozen.functionGroups.find(group => group.id === 'COOL-A'), 'cooling-chain group')
   const r1Keys = [...frozen.protectedEquipment.items, ...frozen.protectedEquipment.alsoProtectedNotInPlanningBasis].map(keyOf).concat(switchyard.key)
   return planInputsSchema.parse({
@@ -208,7 +216,7 @@ export const convertTrainACase = (frozen: CaseCase): PlanInputs => {
       { key: 'ect-friday', label: 'Rebook the eddy-current team to Friday', resource: 'ect-team', adds: { periods: [pair(frozen.calendars.ect.rebookOption.interval)] },
         replaces: frozen.calendars.ect.intervals.map(pair), price: { once: frozen.costs.ectRebookNok }, allowed: true },
     ],
-    methods: [{ key: methodChoice, label: 'SW A pump assembly', options: frozen.methods.SWA.map(method => ({ key: once(optionKey[method.id], method.id), label: method.label, fixedCost: once(frozen.costs.methodParts[method.id], `${method.id} parts`) })) }],
+    methods: [{ key: methodChoice, label: 'SW A pump assembly', options: frozen.methods.SWA.map(method => ({ key: once(optionKey[method.id], method.id), label: method.label, fixedCost: once(frozen.costs.methodParts[method.id], `${method.id} parts`), caveats: caveatsOf(method) })) }],
     jobs, links,
     rules: [
       { kind: 'protected', key: 'R1', equipment: r1Keys,

@@ -18,6 +18,20 @@ describe('Definition fidelity', () => {
     expect([inputs.jobs.length, inputs.links.length]).toEqual([frozen.jobs.length, frozen.links.length])
   })
 
+  test('Train A states what each SW A method leaves unpriced: the frozen case\'s spare exposure (design §1.1, T10)', async () => {
+    const frozen = await read('../solve/fixtures/train-a-case-v0.2.json')
+    const measure = frozen.measures.find((entry: { id?: string }) => entry.id === 'spare-exposure')
+    const options = (await read('./train-a-work-week.plan-definition.json')).inputs.methods[0].options
+    const caseMethod: Record<string, string> = { rebuild: 'M1-rebuild', swap: 'M2-swap' }
+    expect(options.map((option: { key: string }) => option.key)).toEqual(Object.keys(caseMethod))
+    for (const option of options) {
+      const method = frozen.methods.SWA.find((entry: { id: string }) => entry.id === caseMethod[option.key])
+      expect(option.caveats).toEqual([{ label: measure.label, value: method.spareExposureWeeks, unit: measure.unit, words: method.spareExposureBasis ?? measure.definition }])
+    }
+    // The two methods differ on it, as the case's own comparison table shows.
+    expect(new Set(options.map((option: { caveats: Array<{ value: number }> }) => option.caveats[0]!.value)).size).toBe(2)
+  })
+
   test('Supply run is the converted case2 fixture, unchanged, from the frozen case2 v1.1', async () => {
     expect((await read('./supply-run.plan-definition.json')).inputs).toEqual(await fixture('supply-run.case2.json'))
     const recorded = (await Bun.file(new URL('../plan/fixtures/supply-run.case2.sha256', import.meta.url)).text()).trim().split(/\s+/)

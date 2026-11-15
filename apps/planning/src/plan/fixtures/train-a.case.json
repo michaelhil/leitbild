@@ -538,12 +538,28 @@
         {
           "key": "rebuild",
           "label": "Rebuild in place",
-          "fixedCost": 120000
+          "fixedCost": 120000,
+          "caveats": [
+            {
+              "label": "Weeks without a ready SW spare",
+              "value": 0,
+              "unit": "weeks",
+              "words": "Rebuild in place: 0 (the spare stays on the shelf). Swap: the vendor's refurbishment turnaround of the removed pump (planner estimate 10 weeks, range 8-14), during which a failure of either SW pump would have no ready spare."
+            }
+          ]
         },
         {
           "key": "swap",
           "label": "Swap in refurbished spare",
-          "fixedCost": 340000
+          "fixedCost": 340000,
+          "caveats": [
+            {
+              "label": "Weeks without a ready SW spare",
+              "value": 10,
+              "unit": "weeks",
+              "words": "Vendor refurbishment turnaround, planner estimate 10 weeks (range 8-14). During it neither SW pump has a ready spare."
+            }
+          ]
         }
       ]
     }
