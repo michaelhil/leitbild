@@ -76,6 +76,13 @@ describe('a row\'s word stands on the two ends it is given', () => {
     expect(rows(ladder([lower, solvedAt('found', 65, 200_000), undefined]))).toEqual([{ from: 0, to: 1, ends: { from: 'proven', to: 'found' }, word: 'not found better', outage: 0, cost: 0 }])
   })
 
+  test('every row with both rungs solved names the higher rung\'s cause of the finish when it has one (G3)', () => {
+    const found = rows(ladder([solvedAt('found', 65, 200_000), solvedAt('found', 59.5, 260_000), solvedAt('found', 59.5, 300_000)], new Map([['r1', cause], ['r2', cause]])))
+    expect(found.map(row => [row.word, row.finish ?? null])).toEqual([['found', cause], ['not found better', cause]])
+    // A refused or unsolved end has no plan to explain: no cause.
+    expect(rows(ladder([refusedEnd, solvedAt('found', 60, 1_000), undefined], new Map([['r1', cause]])))[0]!.finish).toBeUndefined()
+  })
+
   test('a solved standing without its figures gives no row, never a guessed one; every row parses the contract; never "buys nothing"', () => {
     expect(rows(ladder([solvedAt('found', 60, 1_000), { end: 'found', outage: 55, bought: [] }, undefined]))).toEqual([])
     const items = ladder([refusedEnd, solvedAt('found', 60, 1_000), solvedAt('found', 60, 3_000)])
