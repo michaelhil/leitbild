@@ -54,11 +54,19 @@ export const valueWords = (value: number, unit: string): string => {
   return `${decimal(value)} ${unit}`
 }
 
-/** A duration in planner words to a tenth of a second: "3 min 29.8 s", "2 h 30 min". */
+/** A duration in planner words, in whole seconds, never a fraction (walk 5, R4-4-08): "3 min 30 s", "2 h 30 min". */
 export const msWords = (ms: number): string => {
-  const hours = Math.floor(ms / 3_600_000), minutes = Math.floor(ms % 3_600_000 / 60_000), seconds = Math.round(ms % 60_000 / 100) / 10
+  const total = Math.round(ms / 1_000)
+  const hours = Math.floor(total / 3_600), minutes = Math.floor(total % 3_600 / 60), seconds = total % 60
   return [hours > 0 ? `${hours} h` : '', minutes > 0 ? `${minutes} min` : '', seconds > 0 ? `${seconds} s` : ''].filter(Boolean).join(' ') || '0 s'
 }
+
+/**
+ * A duration before it was rounded up to `toMs`: exact when it is whole seconds, else "about 7 min 49 s", or
+ * "just under 3 min 30 s" when the nearest whole second is the rounded value itself.
+ */
+const beforeRounding = (fromMs: number, toMs: number): string =>
+  fromMs % 1_000 === 0 ? msWords(fromMs) : Math.round(fromMs / 1_000) * 1_000 >= toMs ? `just under ${msWords(toMs)}` : `about ${msWords(fromMs)}`
 
 export const basisWords: Readonly<Record<string, string>> = { design: 'design', configured: 'configured', observed: 'observed', 'owner-estimate': 'owner estimate' }
 
@@ -218,8 +226,15 @@ export const readinessText = (item: ReadinessItem, inputs: Inputs): string => {
       case 'rounded': {
         const rounded = item.durations ?? []
         const step = inputs.settings.grid === '30s' ? '30 s' : '30 min'
-        const shown = rounded.slice(0, 2).map(entry => `${nameOf(inputs, entry.job)}${entry.resource === undefined ? '' : ` with ${nameOf(inputs, entry.resource)}`} from ${msWords(entry.fromMs)} to ${msWords(entry.toMs)}`)
-        return `${rounded.length === 1 ? 'One duration was' : `${rounded.length} durations were`} rounded up to the ${step} step: ${shown.join('; ')}${rounded.length > 2 ? '; …' : '.'}`
+        const head = `${rounded.length === 1 ? 'One duration was' : `${rounded.length} durations were`} rounded up to the ${step} step`
+        const each = rounded.map(entry => `${nameOf(inputs, entry.job)}${entry.resource === undefined ? '' : ` with ${nameOf(inputs, entry.resource)}`} from ${beforeRounding(entry.fromMs, entry.toMs)} to ${msWords(entry.toMs)}`)
+        // As many as fit whole, at most two; the rest are counted, and the sentence always ends in a full stop.
+        for (const count of [2, 1]) {
+          const more = rounded.length - Math.min(count, each.length)
+          const text = `${head}: ${each.slice(0, count).join('; ')}${more > 0 ? `, and ${more} more` : ''}.`
+          if (text.length <= 240) return text
+        }
+        return `${head}.`
       }
       case 'redundancy': return `${item.count} items are taken out and no rule keeps any of them in service. If they back each other up, add 'keep at least k of these in service'.`
       case 'options-stale': return `${item.count === 1 ? 'One option no longer matches' : `${item.count} options no longer match`} the plan; generate again.`
