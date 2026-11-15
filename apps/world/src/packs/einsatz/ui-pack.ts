@@ -5,7 +5,7 @@ import { plannedPathFeatures } from './chain-path.ts'
 import { einsatzColors } from './colors.ts'
 import { einsatzPackId, einsatzRuntimeId } from './ids.ts'
 import { neutralLexicon, type UnitPhase } from './lexicon.ts'
-import { contactIcon, einsatzRecordOf, kindOfRecord, tierWord, trackAgeText, type EinsatzRecord } from './ui/presenters.ts'
+import { contactIcon, dispatchWords, einsatzRecordOf, kindOfRecord, tierWord, trackAgeText, type EinsatzRecord } from './ui/presenters.ts'
 
 /**
  * The browser-safe Einsatz view. It reads only the presentation each object
@@ -194,7 +194,7 @@ export const einsatzPackView = {
   ui: {
     surfacePanels: [{
       id: einsatzDispatchPanelId,
-      label: neutralLexicon.send,
+      label: dispatchWords.panel,
       defaultOpen: true,
       mapTargets: true,
       load: async () => await import('./ui/DispatchPanel.svelte'),

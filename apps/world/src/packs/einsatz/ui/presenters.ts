@@ -44,8 +44,6 @@ export const dispatchWords = {
   undo: 'Undo',
   undoLast: 'Undo last order',
   nothingToUndo: 'No order to undo',
-  addStop: '+ Add stop',
-  removeStop: 'Remove stop',
   deliverTo: 'Deliver to',
   refresh: 'Refresh suggestion',
   whyNot: 'Why not others?',
@@ -200,6 +198,8 @@ export interface PlanStopView {
   readonly active: boolean
   /** Who gave it, when not this viewer. */
   readonly by: string | null
+  /** The × that removes it, named in the situation's stop word. */
+  readonly removeLabel: string
 }
 
 export interface ArmedTargetView {
@@ -241,11 +241,13 @@ export interface UnitCardView {
   readonly dispatch: ButtonView
   readonly recall: ButtonView
   readonly undo: ButtonView & { readonly commandId: string | null }
+  /** The situation's word for the unit's stops. */
+  readonly planHeading: string
   readonly plan: ReadonlyArray<PlanStopView>
   readonly removable: boolean
   readonly predicted: string | null
   readonly deliverTo: ReadonlyArray<{ readonly siteId: string; readonly label: string }>
-  /** "+ Add stop", only while the unit has a plan. */
+  /** "+ Add stop" in the situation's stop word, only while the unit has a plan. */
   readonly addStop: ButtonView | null
   readonly facts: ReadonlyArray<string>
   readonly states: ReadonlyArray<string>
@@ -306,10 +308,12 @@ export const unitCard = (situation: Situation, unit: SituationUnit, selection: S
     dispatch: button(`${words.send} ${unit.label}…`, readOnly ?? destroyed),
     recall: button(recallLabel, readOnly ?? destroyed ?? (loaded.length > 0 ? `Carrying ${joined(loaded)}: deliver first` : null)),
     undo: { ...button(dispatchWords.undoLast, readOnly ?? (lastCommand === null ? dispatchWords.nothingToUndo : null)), commandId: lastCommand },
+    planHeading: words.plan,
     plan: unit.plan.map((stop, index) => ({
       id: stop.id,
       index: index + 1,
       text: `${verbText(stop.verb, words)} ${stop.label}`,
+      removeLabel: `Remove ${words.stop.toLowerCase()} ${index + 1}: ${verbText(stop.verb, words)} ${stop.label}`,
       eta: stop.eta === null ? (index === 0 ? dueText(unit, elapsedS) : null) : etaText(stop.eta, elapsedS),
       active: stop.state === 'active',
       by: stop.by.isViewer ? null : `by ${stop.by.label}`,
@@ -317,7 +321,7 @@ export const unitCard = (situation: Situation, unit: SituationUnit, selection: S
     removable: readOnly === null,
     predicted: unit.predictedDelivery === null ? null : `then ${unit.predictedDelivery.label} (nearest accepting) · ${etaText(unit.predictedDelivery.eta, elapsedS)}`,
     deliverTo: readOnly !== null || !bound ? [] : situation.sites.filter(site => site.accepting).map(site => ({ siteId: site.id, label: site.label })),
-    addStop: unit.plan.length === 0 ? null : button(dispatchWords.addStop, readOnly ?? destroyed),
+    addStop: unit.plan.length === 0 ? null : button(`+ Add ${words.stop.toLowerCase()}`, readOnly ?? destroyed),
     facts,
     states: unit.states.map(state => state.text),
     armed: selection.kind === 'armed' && selection.unitId === unit.id ? armedView(unit, words, options, selection) : null,

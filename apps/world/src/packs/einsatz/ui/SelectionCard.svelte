@@ -90,12 +90,13 @@
       {/if}
     {/if}
     {#if card.plan.length > 0 || card.predicted !== null}
+      <h4>{card.planHeading}</h4>
       <ol class="plan">
         {#each card.plan as stop (stop.id)}
           <li class:active={stop.active}>
             <span class="index">{stop.index}</span>
             <span class="what">{stop.text}{#if stop.eta !== null} · <span class="num">{stop.eta}</span>{/if}{#if stop.by !== null} <span class="by">{stop.by}</span>{/if}</span>
-            {#if card.removable}<button type="button" class="x" aria-label={`${dispatchWords.removeStop}: ${stop.text}`} onclick={() => props.removeStop(card.id, stop.id)}>×</button>{/if}
+            {#if card.removable}<button type="button" class="x" aria-label={stop.removeLabel} onclick={() => props.removeStop(card.id, stop.id)}>×</button>{/if}
           </li>
         {/each}
         {#if card.predicted !== null}<li class="predicted"><span class="index">┄</span><span class="what">{card.predicted}</span></li>{/if}

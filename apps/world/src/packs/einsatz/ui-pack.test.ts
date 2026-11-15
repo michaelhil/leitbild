@@ -12,9 +12,9 @@ import { definitionOf, lonLat, openRun, taskItem, unitItem } from './fixtures/ru
 import { trackDataSchema } from './engine/combat-model.ts'
 import { engineObjects } from './engine/objects.ts'
 import { config as engineConfig, low, templates, types as engineTypes } from './fixtures/engine-harness.ts'
-import { neutralLexicon } from './lexicon.ts'
 import { einsatzPack } from './pack.ts'
 import { einsatzDispatchPanelId, einsatzPackView } from './ui-pack.ts'
+import { dispatchWords } from './ui/presenters.ts'
 
 const { categories, presentObject } = einsatzPackView.presentation
 const recordType = (object: OperationalObject): unknown => (object.packData as { readonly type?: unknown }).type
@@ -87,10 +87,11 @@ describe('Einsatz presentation', () => {
 })
 
 describe('Einsatz UI declarations', () => {
-  test('the Dispatch panel is the Pack\'s one surface panel: open by default, taking map targets, no keymap, labelled with the lexicon\'s send verb, under an id whose first segment is the Pack\'s', () => {
+  test('the Dispatch panel is the Pack\'s one surface panel: open by default, taking map targets, no keymap, under the static label "Dispatch" its header shows too, under an id whose first segment is the Pack\'s', () => {
     const panels = einsatzPackView.ui.surfacePanels
     expect(panels.map(panel => ({ id: panel.id, label: panel.label, defaultOpen: panel.defaultOpen, mapTargets: panel.mapTargets, keymap: 'keymap' in panel })))
-      .toEqual([{ id: einsatzDispatchPanelId, label: neutralLexicon.send, defaultOpen: true, mapTargets: true, keymap: false }])
+      .toEqual([{ id: einsatzDispatchPanelId, label: dispatchWords.panel, defaultOpen: true, mapTargets: true, keymap: false }])
+    expect(dispatchWords.panel).toBe('Dispatch')
     expect(einsatzDispatchPanelId).toBe('einsatz.dispatch')
     expect(einsatzDispatchPanelId.split('.')[0]).toBe(einsatzPackView.descriptor.id)
     const active = createActivePackViews([einsatzPackView])

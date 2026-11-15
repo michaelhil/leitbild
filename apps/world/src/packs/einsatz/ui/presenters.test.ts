@@ -148,13 +148,14 @@ describe('Unit card', () => {
 
   test('a busy carrier: its plan with verbs, ETAs and the actor, the predicted delivery as a "then" line, Return naming what it drops, Deliver-to chips, Add stop', () => {
     const card = unitCard(situation, situation.units[1]!, su('r2'), null, 60)
-    expect(card.plan).toEqual([{ id: 'leg-1', index: 1, text: 'Pick up at J-2 Bay', eta: '2 min', active: true, by: 'by Assistant' }])
+    expect(card.planHeading).toBe('Route')
+    expect(card.plan).toEqual([{ id: 'leg-1', index: 1, text: 'Pick up at J-2 Bay', eta: '2 min', active: true, by: 'by Assistant', removeLabel: 'Remove leg 1: Pick up at J-2 Bay' }])
     expect(card.predicted).toBe('then Depot A (nearest accepting) · 5 min')
     expect(card.recall.label).toBe('Home (drops J-2 Bay)')
     expect(card.undo).toMatchObject({ enabled: true, commandId: 'cmd-7' })
     // Only accepting sites are offered.
     expect(card.deliverTo).toEqual([{ siteId: 'depot-a', label: 'Depot A' }])
-    expect(card.addStop).toEqual({ label: dispatchWords.addStop, enabled: true, reason: null })
+    expect(card.addStop).toEqual({ label: '+ Add leg', enabled: true, reason: null })
     expect(deliverToOrder(situation.units[1]!, 'depot-a')).toEqual({ units: ['r2'], stops: [{ siteId: 'depot-a' }], when: 'after' })
     expect(deliverToOrder(situation.units[0]!, 'depot-a')).toEqual({ units: ['r1'], stops: [{ siteId: 'depot-a' }] })
   })
