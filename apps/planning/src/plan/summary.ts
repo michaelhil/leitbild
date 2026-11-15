@@ -73,6 +73,30 @@ const goalWords: Readonly<Record<Inputs['goals'][number]['metric'], string>> = {
   'span-over': 'outage time over target', finish: 'finish', 'extra-cost': 'extra cost', 'unavailable-hours': 'hours out of service', lateness: 'lateness',
 }
 
+/**
+ * Plan goal `k` in planner words, from its metric, scope and threshold: "outage time of Train A cooling chain
+ * over 54 h", "extra cost". `short` leaves out the groups: "outage time over 54 h".
+ */
+export const goalName = (inputs: Inputs, k: number, short = false): string => {
+  const goal = inputs.goals[k]
+  if (goal === undefined) return `goal ${k + 1}`
+  const over = goal.threshold === undefined || goal.threshold.value === 0 ? '' : ` over ${valueWords(goal.threshold.value, goal.threshold.unit)}`
+  if (goal.metric !== 'span-over') return `${goalWords[goal.metric]}${goal.metric === 'extra-cost' ? '' : over}`
+  const groups = goal.scope?.groups ?? []
+  return `outage time${short || groups.length === 0 ? '' : ` of ${names(inputs, groups, 2)}`}${over}`
+}
+/** The unit a goal's values are in: the plan's currency for extra cost, else the goal's own time unit. */
+export const goalUnit = (inputs: Inputs, k: number): string => inputs.goals[k]?.metric === 'extra-cost' ? inputs.settings.currency : inputs.goals[k]?.tolerance.unit ?? 'h'
+
+/** The option's longest outage (from the plan's span-over goal's spans, in that goal's unit) and its extra cost, from its stored metrics. */
+export const spanAndCost = (inputs: Inputs, option: Pick<Option, 'metrics'>): { readonly span?: number; readonly cost?: number } => {
+  const k = (metric: string) => inputs.goals.findIndex(goal => goal.metric === metric)
+  const spanGoal = k('span-over'), costGoal = k('extra-cost')
+  const spans = option.metrics.filter(metric => spanGoal >= 0 && (metric.id === `goal:${spanGoal}` || metric.id.startsWith(`goal:${spanGoal}:`)))
+  const cost = costGoal < 0 ? undefined : option.metrics.find(metric => metric.id === `goal:${costGoal}`)?.value
+  return { ...(spans.length === 0 ? {} : { span: Math.max(...spans.map(metric => metric.value)) }), ...(cost === undefined ? {} : { cost }) }
+}
+
 // ───────────── names ─────────────
 
 /** The name a person knows a plan key by. */
