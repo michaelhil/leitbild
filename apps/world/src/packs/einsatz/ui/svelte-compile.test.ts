@@ -5,8 +5,8 @@ import { compile } from 'svelte/compiler'
 import ts from 'typescript'
 
 /**
- * The Board's Svelte files compile in runes mode with no warning: no
- * accessibility, unused-style or reactivity warning slips into the panel.
+ * The Dispatch panel's Svelte files compile in runes mode with no warning:
+ * no accessibility, unused-style or reactivity warning slips into the panel.
  * And, as World's lifecycle policy asks of `src/ui`, no raw `$effect` does
  * mount-only setup: timers, listeners and observers start in `runOnMount`.
  */
@@ -29,8 +29,8 @@ const effectSnippets = (source: string): ReadonlyArray<string> => {
 }
 
 describe('Einsatz Svelte files', () => {
-  test('the Board panel and its parts are all here', () => {
-    expect(files).toEqual(['BoardActionBar.svelte', 'BoardContacts.svelte', 'BoardIcon.svelte', 'BoardPanel.svelte', 'BoardUnits.svelte', 'BoardWorkList.svelte'])
+  test('the Dispatch panel and its parts are all here', () => {
+    expect(files).toEqual(['ContactsSection.svelte', 'DispatchPanel.svelte', 'OverviewLists.svelte', 'SelectionCard.svelte'])
   })
 
   for (const file of files) {

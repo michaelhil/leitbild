@@ -16,7 +16,7 @@ import { openRun, operator } from './fixtures/run-harness.ts'
 import { groupRoleId } from './ids.ts'
 import { einsatzPack } from './pack.ts'
 import type { Recommendation } from './recommendation-schema.ts'
-import { boardBottomClearancePx, boardLayoutFor, boardMapCover, boardTopClearancePx } from './ui/board-layout.ts'
+import { dispatchMapCover, panelBottomClearancePx, panelLayoutFor, panelTopClearancePx } from './ui/dispatch-layout.ts'
 
 /**
  * The demo Definitions every leitbild.app user can start, held to the demo
@@ -187,10 +187,12 @@ for (const demo of Object.values(demos)) {
       expect(endOf(definition) - callTimes.at(-1)!).toBeLessThanOrEqual(3 * 60)
     })
 
-    test('on a 1024 × 768 iPad in landscape every object stands in the map the Board leaves clear at the starting fit, and units start a short drive from every call', () => {
-      // The browser and World chrome take about 120 px of the screen's height; the Board takes its width on the right.
+    test('on a 1024 × 768 iPad in landscape every object stands in the map the Dispatch panel leaves clear at the starting fit, and units start a short drive from every call', () => {
+      // The browser and World chrome take about 120 px of the screen's height; the Dispatch panel takes its width on the right.
       const surface = { width: 1024, height: 768 - 120 }
-      const cover = boardMapCover(boardLayoutFor(surface.width, 'work-list').widthPx)
+      const layout = panelLayoutFor(surface.width, surface.height)
+      if (layout.mode !== 'docked') throw new Error('The Dispatch panel docks beside the map at 1024 px')
+      const cover = dispatchMapCover(layout, { width: layout.widthPx, height: surface.height }, true)
       const zoom = startingZoomFor(definition.view.map.zoom, surface, cover)
       const worldPx = 512 * 2 ** zoom
       const project = ([lon, lat]: readonly [number, number]): [number, number] => [
@@ -206,7 +208,7 @@ for (const demo of Object.values(demos)) {
         const top = y - (centreY - surface.height / 2)
         // An icon is 23 px; keep it whole and clear of the role bar and the status line.
         expect(Math.min(left, clearWidth - left)).toBeGreaterThanOrEqual(24)
-        expect(Math.min(top - boardTopClearancePx, surface.height - boardBottomClearancePx - top)).toBeGreaterThanOrEqual(24)
+        expect(Math.min(top - panelTopClearancePx, surface.height - panelBottomClearancePx - top)).toBeGreaterThanOrEqual(24)
       }
       const mobile = new Set(config.unitTypes.filter(type => type.components.mobility !== undefined).map(type => type.id))
       const starts = [...items.filter(item => item.type === 'unit' && mobile.has(item.unitType!)).map(item => item.position), ...created.filter(entry => entry.capabilityId === ids.unitCreate).map(entry => entry.input.at.coordinates)]

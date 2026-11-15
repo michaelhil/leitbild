@@ -4,7 +4,7 @@ import { startingZoomFor } from '../../ui/map/map-camera.ts'
 import { borderConfig, borderDefinitions, borderStart, groupOf, isScout, isShooter, sideTypes, timelineOf, unitsWhere } from './fixtures/border-harness.ts'
 import { addToEnd, askThenAddToEnd, commandIds, playDemo, slowedRouting, unitVerb, type Beat, type DemoContext, type DemoOutcome, type RedOrder } from './fixtures/border-demo.ts'
 import { unitTypeOf } from './engine/model.ts'
-import { boardBottomClearancePx, boardEdgeGapPx, boardLayoutFor, boardTopClearancePx } from './ui/board-layout.ts'
+import { panelBottomClearancePx, panelEdgeGapPx, panelLayoutFor, panelTopClearancePx } from './ui/dispatch-layout.ts'
 
 /**
  * halden-border as a demo, played headless on a real Run with every Blue
@@ -326,23 +326,22 @@ describe('halden-border Definitions as demos', () => {
     }
   })
 
-  test('at the starting camera every object and every place a cue names lies beside the Board on an iPad in landscape', () => {
+  test('at the starting camera every object and every place a cue names lies beside the Dispatch panel on an iPad in landscape', () => {
     // 1024 × 768 less the Host's workspace bar and the browser's own bars; the role bar and status line lie over the map's top and bottom.
     const surface = { width: 1024, height: 640 }
     const margin = 16
+    const panel = panelLayoutFor(surface.width, surface.height)
+    if (panel.mode !== 'docked') throw new Error('The Dispatch panel docks beside the map at 1024 px')
     for (const source of definitions) {
-      for (const lead of ['work-list', 'map'] as const) {
-        const board = boardLayoutFor(surface.width, lead)
-        const padding = { top: 0, right: board.widthPx + boardEdgeGapPx, bottom: 0, left: 0 }
-        const zoom = startingZoomFor(source.view.map.zoom, surface, padding)
-        const centre = project(source.view.map.center, zoom)
-        for (const point of pointsOf(source)) {
-          const [x, y] = project(point.lonLat, zoom)
-          const left = board.mapWidthPx / 2 + x - centre[0]
-          const top = surface.height / 2 + y - centre[1]
-          const inside = left >= margin && left <= board.mapWidthPx - margin && top >= boardTopClearancePx + margin && top <= surface.height - boardBottomClearancePx - margin
-          expect([source.id, lead, point.name, inside]).toEqual([source.id, lead, point.name, true])
-        }
+      const padding = { top: 0, right: panel.widthPx + panelEdgeGapPx, bottom: 0, left: 0 }
+      const zoom = startingZoomFor(source.view.map.zoom, surface, padding)
+      const centre = project(source.view.map.center, zoom)
+      for (const point of pointsOf(source)) {
+        const [x, y] = project(point.lonLat, zoom)
+        const left = panel.mapWidthPx / 2 + x - centre[0]
+        const top = surface.height / 2 + y - centre[1]
+        const inside = left >= margin && left <= panel.mapWidthPx - margin && top >= panelTopClearancePx + margin && top <= surface.height - panelBottomClearancePx - margin
+        expect([source.id, point.name, inside]).toEqual([source.id, point.name, true])
       }
     }
   })
