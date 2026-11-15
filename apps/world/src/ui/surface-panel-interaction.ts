@@ -169,3 +169,12 @@ export const mapCameraInteractionFor = (packs: ReadonlyArray<WorldPackView>): Ca
 /** Whether the surface starts with the control rail collapsed. */
 export const railStartsCollapsed = (packs: ReadonlyArray<WorldPackView>): boolean =>
   packs.some(pack => pack.ui?.surfaceLayout?.railCollapsed === true)
+
+/**
+ * Whether a surface panel is open: what this tab chose for it, else the
+ * panel's declared `defaultOpen`. A panel the tab never touched opens as its
+ * Pack declares, so a Pack whose only list and map-target handler is its
+ * panel (Einsatz) is usable without first finding it in the View menu.
+ */
+export const surfacePanelIsOpen = (panel: Pick<PackSurfacePanelContribution, 'id' | 'defaultOpen'>, chosen: Readonly<Record<string, boolean>>): boolean =>
+  chosen[panel.id] ?? panel.defaultOpen

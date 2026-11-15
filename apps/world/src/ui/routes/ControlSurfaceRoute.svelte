@@ -66,7 +66,7 @@
   import { startupScenarioSource } from '../app/startup-scenario.ts'
   import { loadActivePackViews } from '../pack-loader.ts'
   import { groundClicksWanted, previewObjectTarget, routeGroundClick, routeObjectClick, targetPickingWanted, targetPreviewsWanted, type MapClickContext, type MapClickRoute, type MapTargetPanel } from '../map-target-routing.ts'
-  import { assertMapCover, assertPanelInteraction, cameraPaddingFor, mapCameraInteractionFor, openPanelDeclaring, railStartsCollapsed, startingControllerId, surfacePanelPackId, type MapPrompt, type SurfacePanelInteraction, type SurfacePanelProps } from '../surface-panel-interaction.ts'
+  import { assertMapCover, assertPanelInteraction, cameraPaddingFor, mapCameraInteractionFor, openPanelDeclaring, railStartsCollapsed, startingControllerId, surfacePanelIsOpen, surfacePanelPackId, type MapPrompt, type SurfacePanelInteraction, type SurfacePanelProps } from '../surface-panel-interaction.ts'
   import type { MapCover } from '../surface-panel-contract.ts'
   import PanelKeyRouter from '../keys/PanelKeyRouter.svelte'
   import type { PanelKey } from '../keys/panel-key.ts'
@@ -354,13 +354,13 @@
   let guidanceBottom = $state(0)
   let categoryMapVisibility = $state<Record<string, boolean>>({})
   const surfacePanels = $derived(activePack?.surfacePanels ?? [])
-  const surfacePanelLaunchers = $derived(surfacePanels.map(panel => ({ id: panel.id, label: panel.label, open: surfacePanelOpen[panel.id] ?? false })))
+  const surfacePanelLaunchers = $derived(surfacePanels.map(panel => ({ id: panel.id, label: panel.label, open: surfacePanelIsOpen(panel, surfacePanelOpen) })))
   // Handlers the mounted panels lend the surface; only panels whose contribution declares a hook connect one.
   let panelInteractions = $state.raw<Readonly<Record<string, SurfacePanelInteraction>>>({})
   let panelKeysActive = $state(true)
   // How far each panel last reported reaching over the map; only open panels' reports pad the camera.
   let panelMapCovers = $state.raw<Readonly<Record<string, MapCover>>>({})
-  const isSurfacePanelOpen = (panel: PackSurfacePanelContribution): boolean => surfacePanelOpen[panel.id] ?? false
+  const isSurfacePanelOpen = (panel: PackSurfacePanelContribution): boolean => surfacePanelIsOpen(panel, surfacePanelOpen)
   const mapTargetPanelContribution = $derived(openPanelDeclaring(surfacePanels, isSurfacePanelOpen, 'mapTargets'))
   const mapTargetPanel = $derived<MapTargetPanel | null>(mapTargetPanelContribution && activePack
     ? {
@@ -479,7 +479,7 @@
   const toggleSurfacePanel = (panelId: string): void => {
     const panel = surfacePanels.find(candidate => candidate.id === panelId)
     if (!panel) return
-    setSurfacePanelOpen(panelId, !(surfacePanelOpen[panelId] ?? false))
+    setSurfacePanelOpen(panelId, !surfacePanelIsOpen(panel, surfacePanelOpen))
   }
 
   const focusMapTarget = (target: MapFocusTarget): void => {
@@ -2196,9 +2196,9 @@
     const key = panels.map(panel => panel.id).join('|')
     if (key === appliedSurfacePanelKey) return
     untrack(() => {
-      const next: Record<string, boolean> = {}
-      for (const panel of panels) next[panel.id] = surfacePanelOpen[panel.id] ?? false
-      surfacePanelOpen = next
+      // Keep only the choices this tab made for panels that still exist; an untouched panel follows its defaultOpen.
+      const ids = new Set(panels.map(panel => panel.id))
+      surfacePanelOpen = Object.fromEntries(Object.entries(surfacePanelOpen).filter(([id]) => ids.has(id)))
       appliedSurfacePanelKey = key
     })
   })
@@ -2206,7 +2206,7 @@
   $effect(() => {
     if (!richOperationalUiReady) return
     for (const panel of surfacePanels) {
-      if (surfacePanelOpen[panel.id] ?? false) void loadSurfacePanel(panel.id)
+      if (surfacePanelIsOpen(panel, surfacePanelOpen)) void loadSurfacePanel(panel.id)
     }
   })
 
@@ -2448,7 +2448,7 @@
         {#key perspectiveEpoch}
         {#each surfacePanels as panel (panel.id)}
           {@const Panel = surfacePanelComponents[panel.id]}
-          {#if (surfacePanelOpen[panel.id] ?? false) && Panel}
+          {#if surfacePanelIsOpen(panel, surfacePanelOpen) && Panel}
             <div id={`world-panel-${panel.id}`} class="presentation-panel-host"><Panel {simulationRunId} {objects} {seenRoleIds} mapView={panelMapView} dataRevision={packDataRevisions[panel.id.split('.')[0]! ] ?? 0} selectedItemId={packPanelSelections[panel.id] ?? null} onSelectItem={(itemId: string | null) => { packPanelSelections = { ...packPanelSelections, [panel.id]: itemId } }} onClose={() => setSurfacePanelOpen(panel.id, false)} onFocusMap={focusMapTarget} currentTime={currentPackTime} selectedObjectId={selectedControllerId} onSelectObject={selectObjectById} connectInteraction={(interaction: SurfacePanelInteraction) => connectPanelInteraction(panel, interaction)} keysActive={panelKeysActive} roleSet={panelRoleSet} onMapCover={(cover: MapCover) => { panelMapCovers = { ...panelMapCovers, [panel.id]: assertMapCover(panel.id, cover) } }} onMapPrompt={(prompt: MapPrompt | null) => { panelMapPrompts = { ...panelMapPrompts, [panel.id]: prompt } }} /></div>
           {/if}
         {/each}
