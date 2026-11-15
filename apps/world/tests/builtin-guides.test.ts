@@ -55,11 +55,12 @@ test('all bundled guides compile with exact owner targets and perspective-compat
       expect(attempt.completed.every(record => record.outcome === 'skipped')).toBe(true)
     }
   }
-  expect(stateTasks).toBeGreaterThanOrEqual(5)
+  // halden-emergency's guide is one optional card (Einsatz plan S4), so it holds no state task.
+  expect(stateTasks).toBeGreaterThanOrEqual(4)
   expect(promptTasks).toBeGreaterThanOrEqual(7)
 })
 
-test('the two novice dispatch guides choose eligible real units and their actual arrival gate is reachable', async () => {
+test('the novice dispatch guide chooses an eligible real unit and its actual arrival gate is reachable', async () => {
   const dataDir = await mkdtemp(join(tmpdir(), 'builtin-guide-arrival-'))
   const routing = createDirectRoutingAdapter(), assembly = createWorldApplicationAssembly({ routing })
   const registry = createSimulationRunRegistry({ dataDir, workspaceId: newWorkspaceId(), scenarioDefinitions: builtinScenarioDefinitions,
@@ -68,12 +69,11 @@ test('the two novice dispatch guides choose eligible real units and their actual
   try {
     for (const [scenarioId, unitId, taskId, roles] of [
       ['supply-run', 'unit:truck-3', 'task:field-kitchen', []],
-      ['halden-emergency', 'unit:amb-4', 'task:tistedal-fall', []],
     ] as const) {
       const run = await registry.create({ scenarioId })
       const actor = { id: 'actor:guide-learner' as never, label: 'Guide learner', role: 'operator' as const, ...(roles.length === 0 ? {} : { roleIds: roles }) }
       const source = registry.loadedCompiledScenario(run.id)
-      const condition = source.guide!.steps.find(step => step.id === (scenarioId === 'supply-run' ? 'arrival' : 'ems-arrival'))!.completion
+      const condition = source.guide!.steps.find(step => step.id === 'arrival')!.completion
       if (condition.kind !== 'condition') throw new Error('The arrival step must read actual World evidence')
       const evidence = () => evaluateGuideCondition({ condition: condition.condition, runtime: run, actor, startsAt: source.world.startsAt, canInspect: id => run.inspectionPolicy(actor).canInspect(id) })
       expect((await evidence()).status).toBe('contradicted')

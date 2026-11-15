@@ -761,7 +761,7 @@
       {
         "id": "civil",
         "title": "Civil dispatch in your picture",
-        "instruction": "Inspect your own calls and eligible units through the Board. Dispatch a response and inspect assignment and arrival history; do not infer hidden opposing positions from a missing map symbol.",
+        "instruction": "Inspect your own calls and eligible units in the Dispatch panel. Dispatch a response and inspect assignment and arrival history; do not infer hidden opposing positions from a missing map symbol.",
         "effects": [
           {
             "id": "board",
