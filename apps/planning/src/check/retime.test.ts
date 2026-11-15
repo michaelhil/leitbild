@@ -111,3 +111,65 @@ describe('a re-timing that runs past the window is judged as the window', () => 
     expect(judgeRetiming(plan([shielded]), none, planned, retimed, ['W']).ok).toBe(false)
   })
 })
+
+describe('a job the re-timing cannot place is judged as unplaced', () => {
+  // The test R now needs a booth booked Mon 09:00Z-11:00Z only. With W at its high 4 h (07:00Z-11:00Z), R
+  // is ready at 11:00Z, when the booth has nothing left: a 1 h test fits no later than 10:00Z, so none of the
+  // booth's time remains from 10:30Z. The re-timing has rows for T and W only.
+  const booth = (rules: PlanInputs['rules']): PlanInputs => {
+    const base = plan(rules)
+    return {
+      ...base,
+      calendars: [...base.calendars, { key: 'booked', label: 'Booth booking', weekly: [], periods: [{ start: at(9), end: at(11) }], except: [], source: planner }],
+      resources: [...base.resources, { key: 'booth', label: 'Test booth', kind: 'crew', count: 1, calendar: 'booked', attributes: [], source: planner }],
+      jobs: base.jobs.map(job => job.key === 'R' ? { ...job, needs: onOps(['booth']) } : job),
+    }
+  }
+  const bookedPlan = [rowOf('T', 6, 7), rowOf('W', 7, 9), rowOf('R', 9, 10, 'booth')]
+  const placed = [rowOf('T', 6, 7), rowOf('W', 7, 11)]
+  test('R could not be done: the booth has no time left from Mon 10:30Z', () => {
+    expect(judgeRetiming(booth([]), none, bookedPlan, placed, ['W'])).toEqual({ ok: true, outcome: { holds: false, unplaced: { job: 'R', resource: 'booth', after: new Date(at(10.5)).toISOString() } } })
+  })
+  test('a rule that breaks earlier comes first: W due at 09:30Z finishes at 11:00Z', () => {
+    expect(judgeRetiming(booth([{ ...due('D', at(9.5)), job: 'W' }]), none, bookedPlan, placed, ['W']))
+      .toMatchObject({ ok: true, outcome: { holds: false, rule: 'D', job: 'W', by: { value: 1.5, unit: 'h' } } })
+  })
+  test('a missing job whose crew still has time is refused: the operator works around the clock', () => {
+    expect(judgeRetiming(plan([]), none, planned, retimed.filter(entry => entry.job !== 'R'), ['W']).ok).toBe(false)
+  })
+})
+
+describe("Train A: tube cleaning at its high estimate leaves the eddy-current test unplaced", async () => {
+  // The flagship's Swap option, solved by lane S's search (seed 1, 600 evaluations), re-timed by lane S's
+  // repair path with CCWHXA-CLEAN at 12 h. The eddy-current team is booked Wed 18 Nov 06:00Z-18:00Z only
+  // (calendar 'ect'), and CCWHXA-ECT is 8 h without a break: it fits no later than 10:00Z, so none of the
+  // team's time remains from 10:30Z. The cleaning, on the contractor's nights, ends after that.
+  const { generate } = await import('../solve/generate.ts')
+  const { searchEngine } = await import('../solve/search.ts')
+  const { laneKCheck, laneKVerify, laneKVerifyBound } = await import('../solve/fixtures/lane-k.ts')
+  const { trainAInputs } = await import('../solve/fixtures/train-a-case.ts')
+  const { compile } = await import('../solve/compile.ts')
+  const { dateSchedule, undate } = await import('../solve/date.ts')
+  const { prepare: prepareProblem, repair } = await import('../solve/decode.ts')
+  const flagship = trainAInputs({ read: true })
+  const option = (await generate({ engine: searchEngine(), check: laneKCheck, verify: laneKVerify, verifyBound: laneKVerifyBound }, { inputs: flagship, revision: 1, previous: null, input: { variants: [{ label: 'Swap', methods: [{ choice: 'SWA-method', option: 'swap' }] }] }, by: { kind: 'service', name: 'test' }, signal: new AbortController().signal, seed: 1, evals: 600 })).optionSet.options[0]!
+  // lane S's repair, keeping the rows of the jobs it places (the lost ones are dated at their planned start, then dropped)
+  const high = new Set(['CCWHXA-CLEAN'])
+  const sub = { methods: option.variant.methods, buy: option.variant.purchases }
+  const before = compile(flagship, sub), after = compile({ ...flagship, jobs: flagship.jobs.map(job => high.has(job.key) ? { ...job, duration: { ...job.duration, value: job.duration.range!.high } } : job) }, sub)
+  if (!before.ok || !after.ok) throw new Error('the flagship does not compile')
+  const saved = undate(prepareProblem(before.problem), before.index, option.rows)
+  if (!saved.ok) throw new Error('the option does not read back')
+  const prep = prepareProblem(after.problem)
+  const { decoded } = repair(prep, saved.schedule)
+  const lost = new Set(after.index.jobs.flatMap((job, a) => job !== null && (decoded.finish[a]! < 0 || decoded.finish[a]! >= prep.H) ? [job] : []))
+  const start = Int32Array.from(decoded.start, (slot, a) => lost.has(after.index.jobs[a] ?? '') ? saved.schedule.start[a]! : slot)
+  const placedRows = dateSchedule(prep, after.index, { start, mode: decoded.mode }).filter(row => !lost.has(row.job))
+  test('the repair loses the test and what follows it', () => {
+    expect(option.status.word).toBe('validated feasible')
+    expect(lost.has('CCWHXA-ECT')).toBe(true)
+  })
+  test('lane K judges it: the eddy-current team has no time left from Wed 10:30Z', () => {
+    expect(judgeRetiming(flagship, option.variant, option.rows, placedRows, ['CCWHXA-CLEAN'])).toEqual({ ok: true, outcome: { holds: false, unplaced: { job: 'CCWHXA-ECT', resource: 'ect-team', after: '2026-11-18T10:30:00.000Z' } } })
+  })
+})
