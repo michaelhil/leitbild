@@ -19,6 +19,21 @@ const EPSILON = 1e-9
 export const listWords = (items: readonly string[]): string => items.length <= 1 ? items.join('') : `${items.slice(0, -1).join(', ')} and ${items.at(-1)}`
 const capital = (text: string): string => `${text.charAt(0).toUpperCase()}${text.slice(1)}`
 
+/**
+ * An option's name for the banner and "why recommended" (U1): its method picks' labels, never a rung label
+ * such as "…: days only". A what-if with an extra rule or a lead, or an option of a plan without methods, keeps
+ * its own label. `beside`: the option it is said with; when both read the same, each keeps its own label.
+ */
+export const optionName = (inputs: PlanInputs, option: Option, beside?: Option): string => {
+  const method = (of: Option): string | undefined => {
+    if (of.variant.also !== undefined || of.variant.lead !== undefined || of.variant.methods.length === 0) return undefined
+    const labels = of.variant.methods.map(pick => inputs.methods.find(choice => choice.key === pick.choice)?.options.find(entry => entry.key === pick.option)?.label)
+    return labels.every(label => label !== undefined) ? labels.join(', ') : undefined
+  }
+  const own = method(option) ?? option.label
+  return beside !== undefined && own === (method(beside) ?? beside.label) && option.label !== beside.label ? option.label : own
+}
+
 /** Lines within an explain result's 4 KB (with no items): later lines go first. */
 export const fitLines = (lines: readonly string[]): string[] => {
   const kept = lines.slice(0, 20).map(line => clip(line, 240))
@@ -151,16 +166,16 @@ export const whyRecommended = (inputs: PlanInputs, recommended: Option, others: 
   const tail = [...caveatLines(inputs, recommended, other), ...[outageLine(inputs, recommended)].filter((line): line is string => line !== undefined)]
   if (other === undefined) {
     const refused = others.filter(option => option.key !== recommended.key && option.variant.lead === undefined && option.status.word !== 'validated feasible').length
-    return { lines: fitLines([policy, `'${recommended.label}' is the only ranked option that keeps every hard rule${refused === 0 ? '' : `; ${refused} other${refused === 1 ? ' does' : 's do'} not`}.`, ...tail]), facts: { ...base(undefined), goals: goalFacts(inputs, recommended) } }
+    return { lines: fitLines([policy, `'${optionName(inputs, recommended)}' is the only ranked option that keeps every hard rule${refused === 0 ? '' : `; ${refused} other${refused === 1 ? ' does' : 's do'} not`}.`, ...tail]), facts: { ...base(undefined), goals: goalFacts(inputs, recommended) } }
   }
   const mine = keys.get(recommended.key)!, theirs = keys.get(other.key)!
   const deciding = mine.findIndex((value, index) => differ(value, theirs[index]!))
   const values = (option: Option) => goalsOf(option)
   const value = (option: Option, k: number) => values(option)[k]?.value ?? 0
   const words = (option: Option, k: number) => valueWords(value(option, k), values(option)[k]?.unit ?? goalUnit(inputs, k))
-  const head = asked === undefined ? `Next in rank: '${other.label}'.` : `Against '${other.label}':`
+  const head = asked === undefined ? `Next in rank: '${optionName(inputs, other, recommended)}'.` : `Against '${optionName(inputs, other, recommended)}':`
   const facts = { ...base(other), ...(deciding < 0 ? {} : { deciding }), goals: goalFacts(inputs, recommended, other) }
-  if (deciding < 0) return { lines: fitLines([policy, head, `They tie on every goal within its step, so either may be chosen; Planning lists '${recommended.label}' first.`, ...tail]), facts }
+  if (deciding < 0) return { lines: fitLines([policy, head, `They tie on every goal within its step, so either may be chosen; Planning lists '${optionName(inputs, recommended, other)}' first.`, ...tail]), facts }
   // Earlier goals equal within their step, though their values differ.
   const within = inputs.goals.slice(0, deciding).flatMap((goal, k) => differ(value(recommended, k), value(other, k))
     ? [`Within one step of ${valueWords(goal.tolerance.value, goal.tolerance.unit)} on ${goalName(inputs, k, true)}: ${words(recommended, k)} and ${words(other, k)}.`] : [])

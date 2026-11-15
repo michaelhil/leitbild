@@ -48,6 +48,17 @@ describe('why the recommended option ranks first', () => {
     expect(proven.at(-1)).toStartWith(`Outage time over 54 h: ${valueWords(goal(rebuild, 0), 'h')}, proven optimal: no plan has less (`)
   })
 
+  test('the options are named by their method, never by a rung label; two of one method keep their own labels (U1)', () => {
+    const daysOnly = variantOf(swap, { label: 'Swap in refurbished spare: days only' })
+    const withOvertime = variantOf(rebuild, { label: 'Rebuild in place: with Station mechanical crew overtime to 19:00' })
+    const text = lines(daysOnly, [withOvertime])
+    expect(text).toContain('Next in rank: \'Rebuild in place\'.')
+    expect(text.join(' ')).not.toMatch(/days only|with Station/)
+    expect(lines(daysOnly, [variantOf(withOvertime, { status: refused() })])).toContain('\'Swap in refurbished spare\' is the only ranked option that keeps every hard rule; 1 other does not.')
+    // Swap at two rungs: the method alone would not tell them apart, so each keeps its label.
+    expect(lines(variantOf(swap, { key: 'top' }), [variantOf(daysOnly, { key: 'low', status: found(swap) })])).toContain('Next in rank: \'Swap in refurbished spare: days only\'.')
+  })
+
   test('the only ranked option; a named option, refused, a what-if solved first, or tied on every goal', () => {
     expect(lines(swap, [variantOf(rebuild, { status: refused() })])).toContain('\'Swap in refurbished spare\' is the only ranked option that keeps every hard rule; 1 other does not.')
     // A what-if with a lead is a card: never the next in rank.

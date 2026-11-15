@@ -66,10 +66,13 @@ describe('a row\'s word stands on the two ends it is given', () => {
     expect(rows(ladder([solvedAt('found', 65, 200_000), solvedAt('found', 65, 260_000), undefined]))[0]!.word).toBe('not found better')
   })
 
-  test('"proven: no gain" needs both ends proven, equal outages and the higher rung\'s cause of the finish; without that cause, no row', () => {
+  test('"proven: no gain" needs both ends proven, equal outages and the higher rung\'s cause of the finish; without that cause, the weaker "not found better" (F6)', () => {
     const [lower, upper] = [solvedAt('proven', 65, 200_000), solvedAt('proven', 65, 200_000)]
     expect(rows(ladder([lower, upper, undefined], new Map([['r1', cause]])))).toEqual([{ from: 0, to: 1, ends: { from: 'proven', to: 'proven' }, word: 'proven: no gain', outage: 0, cost: 0, finish: cause }])
-    expect(rows(ladder([lower, upper, undefined], new Map([['r0', cause]])))).toEqual([])
+    // No cause: never dropped. The higher end is stated "found", no more than it is, so the row claims no proof.
+    const weaker = rows(ladder([lower, upper, undefined], new Map([['r0', cause]])))
+    expect(weaker).toEqual([{ from: 0, to: 1, ends: { from: 'proven', to: 'found' }, word: 'not found better', outage: 0, cost: 0 }])
+    expect(buysRowSchema.safeParse(weaker[0]).success).toBe(true)
     expect(rows(ladder([lower, solvedAt('found', 65, 200_000), undefined]))).toEqual([{ from: 0, to: 1, ends: { from: 'proven', to: 'found' }, word: 'not found better', outage: 0, cost: 0 }])
   })
 

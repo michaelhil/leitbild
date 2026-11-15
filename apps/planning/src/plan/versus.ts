@@ -25,6 +25,18 @@ const changesListed = 20
 
 export const versusLines = (input: Parameters<typeof versus>[0]): string[] => versus(input).lines
 
+/**
+ * The input changes since revision `from`, from the change log: every raised revision has its entry, unless
+ * the history was trimmed (`complete` false), and whether any changed the goals. The plan's goal ids name the
+ * same goals as at `from` only when the history is complete and none did (`goalsSame`).
+ */
+export const changesSince = (plan: Pick<Plan, 'revision' | 'changes'>, from: number) => {
+  const changes = plan.changes.filter(change => change.revision > from && change.revision <= plan.revision && change.kinds.length > 0)
+  const complete = Array.from({ length: Math.max(0, plan.revision - from) }, (_, index) => from + 1 + index).every(revision => changes.some(change => change.revision === revision))
+  const goalsChanged = changes.some(change => change.kinds.includes('goals'))
+  return { changes, complete, goalsChanged, goalsSame: complete && !goalsChanged }
+}
+
 /** What differs between the two options, in words and as the structure they come from. */
 export const versus = (input: {
   readonly inputs: PlanInputs
@@ -41,9 +53,7 @@ export const versus = (input: {
   const status = option.status.word === previous.status.word ? [] : [`Status: ${option.status.word}, was ${previous.status.word}.`]
 
   // The input changes between the two: every raised revision has its entry, unless the history was trimmed.
-  const changes = plan.changes.filter(change => change.revision > from && change.revision <= to && change.kinds.length > 0)
-  const complete = Array.from({ length: Math.max(0, to - from) }, (_, index) => from + 1 + index).every(revision => changes.some(change => change.revision === revision))
-  const goalsChanged = changes.some(change => change.kinds.includes('goals'))
+  const { changes, complete, goalsChanged, goalsSame } = changesSince(plan, from)
   const changeLines = [
     ...changes.slice(0, 4).map(change => `Changed since: ${sentence(change.summary)}.`),
     ...(changes.length > 4 ? [`…and ${changes.length - 4} more changes: read the history.`] : []),
@@ -54,8 +64,7 @@ export const versus = (input: {
   if (nowStatus.word !== 'validated feasible' || thenStatus.word !== 'validated feasible') {
     return { lines: fitLines([head, ...status, ...changeLines]), facts: { ...frame, methods: [], buys: { added: [], dropped: [] }, moved: [], movedMore: 0, added: [], removed: [] } }
   }
-  const comparable = complete && !goalsChanged
-  const goalFacts = comparable ? nowStatus.goals.flatMap(goal => {
+  const goalFacts = goalsSame ? nowStatus.goals.flatMap(goal => {
     const was = thenStatus.goals[goal.goal]
     return was === undefined ? [] : [{ goal: goal.goal, now: goal.value, was: was.value, unit: goal.unit }]
   }) : undefined

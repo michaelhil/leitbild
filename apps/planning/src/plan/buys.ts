@@ -92,13 +92,14 @@ export const ladderOf = (rungs: readonly LadderRung[]): Ladder => ({
 
 /**
  * The section's items: every rung, then every row. A "proven: no gain" row names the higher rung's cause of
- * the finish (`finish`, by option key); without it the row is left out, never worded without its cause.
+ * the finish (`finish`, by option key). Without that cause it is never dropped: it reads the weaker "not found
+ * better", its higher end stated as found, so it claims no proof it cannot name (adversary review, finding 6).
  */
 export const buysItems = (ladder: Ladder, finish: ReadonlyMap<string, FinishCause>): BuysItem[] => [
   ...ladder.rungs.map(rung => ({ rung })),
   ...ladder.rows.flatMap(({ row, finishFrom }) => {
     if (finishFrom === undefined) return [{ row }]
     const cause = finish.get(finishFrom)
-    return cause === undefined ? [] : [{ row: { ...row, finish: cause } }]
+    return [cause === undefined ? { row: { ...row, ends: { ...row.ends, to: 'found' as const }, word: 'not found better' as const } } : { row: { ...row, finish: cause } }]
   }),
 ]
