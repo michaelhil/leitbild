@@ -75,3 +75,18 @@ describe('U1, the banner side: the Generate sentence names the recommended optio
     } finally { await local.close() }
   })
 })
+
+describe('G2: no what-if is ever recommended, so the Generate sentence never names one', () => {
+  test('a set that recommends a what-if with an extra rule is refused, and nothing is stored', async () => {
+    const inner = createSolverDouble()
+    const also = { kind: 'span-limit' as const, key: 'W50', group: 'COOL-A', limit: { value: 50, unit: 'h' as const }, singleEntry: true, words: 'Train A cooling chain back within 50 h', source: { by: 'planner' as const } }
+    const at50 = (revision: number) => optionSchema.parse({ ...swap, key: 'at-50', label: 'At most 50 h out', inputsRevision: revision, variant: { ...swap.variant, also: [also] } })
+    const local = await createHarness({ solver: { ...inner, formulation: () => formulation, generate: async request => ({ at: request.at, by: request.by, options: [at50(request.inputsRevision), variantOf(rebuild, { revision: request.inputsRevision })], recommended: 'at-50' }) } })
+    try {
+      const created = await local.create('train-a-work-week')
+      const answer = await local.call('planning.plan.generate', { resource: created.id, input: {}, expectedRevision: 1 })
+      expect([answer.status, answer.body.error?.code, answer.body.error?.message]).toEqual([500, 'invalid_planning_result', 'Generate recommended a what-if; only the plan\'s own options are recommended'])
+      expect((await local.store.read(local.workspaceId, created.id)).options).toBeNull()
+    } finally { await local.close() }
+  })
+})

@@ -3,9 +3,11 @@
 // from stored, checked options only. Options and expected figures come from increment 1's real Train A options.
 import { describe, expect, test } from 'bun:test'
 import { explainResultSchema } from '../api/contract.ts'
-import { found, provenOn, rebuild, refused, swap, trainAInputs, variantOf, type Option } from '../api/fixtures/choose.ts'
-import { valueWords } from './summary.ts'
-import { whyRecommendedLines } from './why.ts'
+import { formulation, found, planWith, provenOn, rebuild, refused, swap, trainAInputs, variantOf, type Option } from '../api/fixtures/choose.ts'
+import { rungStanding } from '../check/buys.ts'
+import { optionSchema } from './schema.ts'
+import { nameOf, valueWords } from './summary.ts'
+import { outageFloor, whyRecommended, whyRecommendedLines } from './why.ts'
 
 const goal = (option: Option, k: number) => option.status.word === 'validated feasible' ? option.status.goals[k]!.value : NaN
 const lines = (recommended: Option, others: readonly Option[], named?: Option) => whyRecommendedLines(trainAInputs, recommended, others, named)
@@ -31,21 +33,36 @@ describe('why the recommended option ranks first', () => {
     expect(text).toContain(`The trade: ${valueWords(outage, 'h')} less outage time over 54 h and ${valueWords(outOfService, 'h')} fewer hours out of service, for ${valueWords(costMore, 'NOK')} more extra cost.`)
   })
 
-  test('the unpriced caveat of each method, for both options; what is proven about the outage', () => {
+  test('the unpriced caveat of each method, for both options', () => {
     const text = lines(swap, [rebuild])
     const method = trainAInputs.methods[0]!
     const caveat = (option: string) => method.options.find(entry => entry.key === option)!.caveats![0]!
     expect(text).toContain(`Not in the ranking: ${caveat('swap').label}: ${valueWords(caveat('swap').value!, caveat('swap').unit!)} with 'Swap in refurbished spare', against ${valueWords(caveat('rebuild').value!, caveat('rebuild').unit!)} with 'Rebuild in place'.`)
-    // Swap is proven optimal at 0 h over the target: the least possible, said with its proof.
-    expect(text.at(-1)).toBe('Outage time over 54 h: 0 h, proven optimal: no plan has less (nothing is below 0 h).')
-    // Rebuild, best found with a lower bound: "could be up to … better", never "proven".
-    const named = lines(variantOf(rebuild, { key: 'rebuild-first' }), [variantOf(swap, { status: refused() })])
-    const bound = rebuild.status.word === 'validated feasible' ? rebuild.status.goals[0]!.bound!.value : NaN
-    expect(named.at(-1)).toBe(`Outage time over 54 h: ${valueWords(goal(rebuild, 0), 'h')}, best found; it could be up to ${valueWords(goal(rebuild, 0) - bound, 'h')} better.`)
-    expect(named.join(' ')).not.toContain('proven optimal')
-    // A proof on the outage over its target names its bound and certificate.
-    const proven = lines(variantOf(rebuild, { status: provenOn(rebuild, 0) }), [])
-    expect(proven.at(-1)).toStartWith(`Outage time over 54 h: ${valueWords(goal(rebuild, 0), 'h')}, proven optimal: no plan has less (`)
+  })
+
+  test('the outage line only with a proven floor of the longest outage, in hours from lane K\'s stored figure (G4)', () => {
+    const outageLines = (text: readonly string[]) => text.filter(line => /^Outage time|^Proven:/.test(line))
+    // Swap is proven optimal at 0 h over the 54 h target: that fixes no outage, so no floor and no line.
+    const swapPlan = planWith(crypto.randomUUID(), [swap, rebuild])
+    expect(outageFloor(swapPlan, swap, formulation)).toBeUndefined()
+    expect(outageLines(lines(swap, [rebuild]))).toEqual([])
+    // Rebuild best found: no floor either.
+    expect(outageFloor(swapPlan, rebuild, formulation)).toBeUndefined()
+    // Rebuild proven over its target, on the checker's stored figure: the floor is its own longest outage.
+    const proven = variantOf(rebuild, { status: provenOn(rebuild, 0) })
+    const plan = planWith(crypto.randomUUID(), [proven])
+    const standing = rungStanding(plan, proven, formulation)
+    expect(standing.end).toBe('proven')
+    const floor = outageFloor(plan, proven, formulation)!
+    expect(floor).toEqual({ goal: 0, group: 'COOL-A', hours: standing.outage! })
+    expect(outageLines(whyRecommended(trainAInputs, proven, [], undefined, floor).lines)).toEqual([`Proven: with what this option may buy, no plan that keeps every hard rule has ${nameOf(trainAInputs, 'COOL-A')} out less than ${valueWords(standing.outage!, 'h')}.`])
+  })
+
+  test('a what-if is never the next in rank, nor named as recommended: one with an extra rule is a card too (G2)', () => {
+    const also = { kind: 'span-limit' as const, key: 'W50', group: 'COOL-A', limit: { value: 50, unit: 'h' as const }, singleEntry: true, words: 'Train A cooling chain back within 50 h', source: { by: 'planner' as const } }
+    const at50 = optionSchema.parse({ ...rebuild, key: 'at-50', label: 'At most 50 h out', variant: { ...rebuild.variant, also: [also] } })
+    expect(lines(swap, [at50])).toContain('\'Swap in refurbished spare\' is the only ranked option that keeps every hard rule.')
+    expect(lines(swap, [at50], at50)).toContain('\'At most 50 h out\' is a what-if with an extra rule: it is not ranked with the options.')
   })
 
   test('the options are named by their method, never by a rung label; two of one method keep their own labels (U1)', () => {

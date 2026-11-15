@@ -17,7 +17,7 @@ import { outTogether, readiness, worldSubjects, type ReadinessItem } from '../pl
 import { buysItems, ladderOf, rungsOf, type FinishCause } from '../plan/buys.ts'
 import { rungStanding } from '../check/buys.ts'
 import { changesSince, versus } from '../plan/versus.ts'
-import { dominatedWithin, optionName, whyRecommended } from '../plan/why.ts'
+import { dominatedWithin, optionName, outageFloor, whyRecommended } from '../plan/why.ts'
 import { withoutProof } from '../solve/status.ts'
 import {
   certificateSchema, certifiedSizeSchema, optionSetSchema, planInputsSchema,
@@ -484,6 +484,9 @@ export const createPlanningOperations = (ports: PlanningOperationsPorts) => {
       stoppedByWho: () => stopping.signal.aborted ? 'host' : signal.aborted ? 'person' : undefined,
     }))
     if (!answer.success) throw planningError(500, 'invalid_planning_result', 'Generate returned options that do not match the plan schema')
+    // Only the plan's own options are recommended: a what-if (an extra rule or a leading goal) is a card (G2).
+    const named = answer.data.options.find(option => option.key === answer.data.recommended)
+    if (named !== undefined && (named.variant.also !== undefined || named.variant.lead !== undefined)) throw planningError(500, 'invalid_planning_result', 'Generate recommended a what-if; only the plan\'s own options are recommended')
     // A set on one revision only: a stored option kept from an older revision would read as fresh beside the new ones.
     if (answer.data.options.some(option => option.inputsRevision !== plan.revision)) throw planningError(500, 'invalid_planning_result', 'Generate returned an option of another plan revision')
     // Lane K's check, its certificate and bound re-verifications ran on these options inside the solver
@@ -631,7 +634,7 @@ export const createPlanningOperations = (ports: PlanningOperationsPorts) => {
         const named = input.option === undefined ? undefined : findOption(plan, input.option)
         if (named !== undefined) requireFresh(plan, named)
         const others = plan.options!.options.filter(option => option.key !== recommended.key && !optionState(plan, option).stale)
-        const why = whyRecommended(plan.inputs, recommended, others, named)
+        const why = whyRecommended(plan.inputs, recommended, others, named, outageFloor(plan, recommended, solver.formulation(plan.inputs.settings.grid)))
         return resultOf(explainResultSchema, withinResult({ lines: why.lines, items: [], recommended: why.facts }))
       }
       // What differs from an option of the previous set, kept from before the last Generate on a newer revision.
