@@ -366,9 +366,11 @@ export const subSolve = (deps: SubSolveDeps): SubSolver => async (task, signal, 
     const solved = feasibleStatus(solving.goals, run, raw, found.goals).status
     const lead = variant.lead
     const group = lead !== undefined && 'group' in lead ? lead.group : undefined
+    // Every proof is re-derived on the purchases this sub-solve may use (variantOut), as refusals are: fewer
+    // purchases give a higher bound, so the rows' own purchases would confirm what the rung cannot (blocker 2).
     const status = verifiedGoals(onPlanGoals(solved, lead, planGoalOf),
-      (goal, bound) => deps.verifyBound(inputs, planned, goal, bound),
-      group === undefined ? undefined : bound => deps.verifyBound(inputs, planned, { group, unit: groupLeadGoal(group).tolerance.unit }, bound))
+      (goal, bound) => deps.verifyBound(inputs, variantOut, goal, bound),
+      group === undefined ? undefined : bound => deps.verifyBound(inputs, variantOut, { group, unit: groupLeadGoal(group).tolerance.unit }, bound))
     return { ...base, variant: stored(planned.purchases), status, rows, metrics: metricsOf(problem, index, raw, planGoalOf, report.metrics) }
   }
   const usedBy = (rows: ReadonlyArray<Pick<DatedRow, 'uses'>>): string[] => [...new Set([...rows.flatMap(row => row.uses.flatMap(use => (use.purchase === undefined ? [] : [use.purchase]))), ...index.purchases.filter(purchase => purchase.committed).map(purchase => purchase.key)])]
@@ -497,6 +499,25 @@ export const generate = async (deps: GenerateDeps, request: GenerateRequest): Pr
     return outcome.option
   }
 
+  /**
+   * A variant's option from its method combinations (adversary server review, blocker 1), whatever their
+   * order: the best feasible one; with none, "proven infeasible" only when every combination is proven
+   * infeasible. When some are and another is unresolved or stopped, no plan was ruled out for that one, so
+   * the option carries no proof: it is unresolved, with that combination's run and attempt. An input finding
+   * stands as it is: the inputs need fixing whatever is searched.
+   */
+  const variantOption = (attempts: readonly Option[]): Option => {
+    const picks = (option: Option): string => JSON.stringify(option.variant.methods)
+    const ordered = [...attempts].sort((x, y) => compareOptions(rankable(x, inputs), rankable(y, inputs)) || (picks(x) < picks(y) ? -1 : picks(x) > picks(y) ? 1 : 0))
+    const first = ordered[0]!
+    if (first.status.word === 'validated feasible' || ordered.every(option => option.status.word === 'proven infeasible')) return first
+    const input = ordered.find(option => option.status.word === 'invalid input') ?? ordered.find(option => option.status.word === 'unsupported feature')
+    if (input !== undefined) return input
+    if (!ordered.some(option => option.status.word === 'proven infeasible')) return first
+    const open = ordered.find(option => option.status.word === 'unresolved' && option.status.attempt !== undefined)
+      ?? ordered.find(option => option.status.word === 'unresolved') ?? ordered.find(option => option.status.word === 'cancelled')!
+    return open.status.word === 'cancelled' ? { ...open, status: unresolvedStatus(open.status.run) } : open
+  }
   const fresh: Option[] = []
   for (const variant of variants) {
     const attempts: Option[] = []
@@ -505,8 +526,7 @@ export const generate = async (deps: GenerateDeps, request: GenerateRequest): Pr
       if (request.signal.aborted) break
     }
     if (attempts.length === 0) continue
-    // A variant's option is its best method combination.
-    fresh.push(attempts.sort((x, y) => compareOptions(rankable(x, inputs), rankable(y, inputs)))[0]!)
+    fresh.push(variantOption(attempts))
     if (request.signal.aborted) break
   }
 
