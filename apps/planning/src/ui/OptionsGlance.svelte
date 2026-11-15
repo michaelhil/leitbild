@@ -1,17 +1,25 @@
 <script lang="ts">
   import MarkTag from './MarkTag.svelte'
   import { sizeCautionMark } from './model.ts'
-  import type { OptionsGlance } from './options-glance.ts'
+  import type { ChoosePanel, OptionsGlance } from './options-glance.ts'
   import { statusLegend } from './status-text.ts'
+  import { unpricedMark } from './unpriced.ts'
 
   // The options at a glance, above the timeline. Each option is two rows: its name and values, then its
   // status with any caution beside it, across the whole width, so the table fits its column at any width
   // and nothing in it is cut off. Choosing an option shows it on the timeline; the Options view keeps the detail.
-  let { glance, selected = null, busy = false, onSelect }: {
+  // What-ifs are never rows here; one shown on the timeline is named under the table.
+  let { glance, selected = null, busy = false, shownWhatIf = null, choices = [], open = null, onSelect, onChoose }: {
     glance: OptionsGlance
     selected?: string | null
     busy?: boolean
+    /** The label of the what-if shown on the timeline, when one is. */
+    shownWhatIf?: string | null
+    /** The questions offered under the table, in order, with their words. */
+    choices?: ReadonlyArray<{ readonly panel: ChoosePanel; readonly word: string }>
+    open?: ChoosePanel | null
     onSelect: (option: string) => void
+    onChoose?: ((panel: ChoosePanel) => void) | undefined
   } = $props()
 </script>
 
@@ -50,13 +58,22 @@
                 {#if row.stale}<MarkTag mark={{ shape: '↻', word: 'Out of date' }} tone="warning" />{/if}
               </span>
               {#each row.warnings as warning (warning)}<p class="beside"><MarkTag mark={{ shape: '!', word: 'Warning' }} tone="warning" /> {warning}</p>{/each}
+              {#each row.unpriced as line (line)}<p class="beside"><MarkTag mark={unpricedMark} tone="assumption" /> {line}</p>{/each}
             </td>
           </tr>
         </tbody>
       {/each}
     </table>
   </div>
+  {#if shownWhatIf}<p class="shown-what-if"><MarkTag mark={{ shape: '◇', word: 'What-if' }} tone="estimate" /> Shown on the timeline: {shownWhatIf}, a what-if, not one of the plan's options.</p>{/if}
   <p class="legend">
     {#each statusLegend as entry, index (entry.word)}{index === 0 ? '' : ' · '}<span class="legend-word">{entry.word}</span>: {entry.means}{/each}
   </p>
+  {#if choices.length > 0 && onChoose}
+    <div class="choose" role="group" aria-label="Ask about the options">
+      {#each choices as choice (choice.panel)}
+        <button type="button" class="quiet" class:current={open === choice.panel} aria-pressed={open === choice.panel} disabled={busy} onclick={() => onChoose?.(choice.panel)}>{choice.word}</button>
+      {/each}
+    </div>
+  {/if}
 </section>

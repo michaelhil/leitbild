@@ -4,14 +4,15 @@
   import MarkTag from './MarkTag.svelte'
   import RuleForm from './RuleForm.svelte'
   import { ruleView, settingViews } from './rules-text.ts'
-  import { goalOrderText, type Context } from './status-text.ts'
+  import GoalsEditor from './GoalsEditor.svelte'
+  import type { Goal } from './model.ts'
+  import type { Context } from './status-text.ts'
 
   // Hard rules in words with their kind and source; the window and one-at-a-time crews as settings;
   // the goals as an ordered policy. Rules are never offered as a trade.
-  let { context, busy = false, onPreview }: { context: Context; busy?: boolean; onPreview: (edits: readonly Edit[], label: string) => void } = $props()
+  let { context, earlierGoals = null, busy = false, onPreview }: { context: Context; earlierGoals?: readonly Goal[] | null; busy?: boolean; onPreview: (edits: readonly Edit[], label: string) => void } = $props()
   const rules = $derived(context.inputs.rules.map(rule => ruleView(rule, context)))
   const settings = $derived(settingViews(context))
-  const goals = $derived(goalOrderText(context.inputs.goals, context))
   let moving = $state<string | null>(null)
   let movedTo = $state('')
   let problems = $state<readonly string[]>([])
@@ -55,7 +56,6 @@
   <ul class="rule-list">
     {#each settings as setting, index (index)}<li><MarkTag mark={setting.mark} /> <strong>{setting.name}:</strong> {setting.text}</li>{/each}
   </ul>
-  <h3>Goals, in order</h3>
-  <ol class="goal-order">{#each goals as goal (goal)}<li>{goal.replace(/^\d+\. /, '')}</li>{/each}</ol>
+  <GoalsEditor {context} earlier={earlierGoals} {busy} {onPreview} />
   <RuleForm {context} {busy} {onPreview} />
 </section>
