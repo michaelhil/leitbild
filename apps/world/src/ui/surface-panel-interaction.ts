@@ -17,6 +17,8 @@ export interface SurfacePanelInteraction {
    * Every map target click while a controller of the panel's own Pack is
    * selected; the surface never sends one itself. A controller of another
    * Pack keeps that Pack's generic targeting and never reaches the panel.
+   * While any other object of the panel's Pack is selected, an open-ground
+   * click arrives here too, as a point target of that object.
    */
   readonly onMapTarget?: (controllerId: ObjectId, target: PackMapTarget) => void
   /**

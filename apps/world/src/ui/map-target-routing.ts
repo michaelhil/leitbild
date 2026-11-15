@@ -38,6 +38,8 @@ export interface ClosedMapTargetPanel {
 export interface MapClickContext {
   /** The selected controller, if the selection is one. */
   readonly controller: OperationalObject | null
+  /** The selected object, controller or not; null when nothing is selected. */
+  readonly selected: OperationalObject | null
   readonly targeting: PackTargetingContribution | undefined
   readonly context: PackTargetContext
   readonly panel: MapTargetPanel | null
@@ -114,10 +116,19 @@ export const routeObjectClick = (object: OperationalObject, click: MapClickConte
   return genericObjectClick(object, controller, click)
 }
 
-/** A click on open ground, reported only while a panel or a Pack takes point targets. */
+/**
+ * A click on open ground, reported only while a panel or a Pack takes point
+ * targets. With no controller selected, it is the open map-target panel's
+ * to read while the selection is one of that panel's Pack's objects (a
+ * call's or a site's card, say), handed over as a point target of the
+ * selected object: open ground there means "away".
+ */
 export const routeGroundClick = (point: GeoJsonPoint, click: MapClickContext): MapClickRoute => {
   const { controller, targeting, context, panel } = click
-  if (!controller) return none
+  if (!controller) {
+    const selected = click.selected
+    return panel && selected && selected.packId === panel.packId ? toPanel(panel, selected.id, { kind: 'point', point }) : none
+  }
   const owningPanel = panelFor(panel, controller)
   if (owningPanel) return toPanel(owningPanel, controller.id, { kind: 'point', point })
   const pointTargets = targeting?.pointTargets
