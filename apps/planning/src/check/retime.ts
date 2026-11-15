@@ -85,6 +85,21 @@ const notARetiming = (inputs: PlanInputs, planned: readonly CheckRow[], retimed:
 }
 
 const unitMs = { s: 1_000, min: 60_000, h: hourMs, d: 86_400_000 } as const
+const gridMs = { '30s': 30_000, '30min': 1_800_000 } as const
+
+/**
+ * The inputs a re-timing is judged on: the jobs `high` at their high estimate, and, when the re-timed work runs
+ * past the window end, the window continued to its last finish (on the grid), so the work there is judged on
+ * the plan's own calendars. The checker's figures for a re-timing (its spans, say) are measured on these.
+ */
+export const judgedInputs = (inputs: PlanInputs, high: readonly string[], retimed: readonly CheckRow[]): PlanInputs => {
+  const pessimistic = atHigh(inputs, high)
+  const window = pessimistic.settings.window
+  const lastFinish = Math.max(-Infinity, ...retimed.map(row => Date.parse(row.finish)))
+  if (window === null || !Number.isFinite(lastFinish) || lastFinish <= Date.parse(window.end)) return pessimistic
+  const start = Date.parse(window.start), slotMs = gridMs[pessimistic.settings.grid]
+  return { ...pessimistic, settings: { ...pessimistic.settings, window: { start: window.start, end: new Date(start + Math.ceil((lastFinish - start) / slotMs) * slotMs).toISOString() } } }
+}
 const yearMs = 366 * 86_400_000
 
 /** Jobs that must follow each job: its links, a tag-out's work and tests, inside work's tests, a supporter's tests. */
@@ -116,8 +131,13 @@ const downstreamOf = (graph: ReadonlyMap<string, ReadonlySet<string>>, from: str
 
 type Unplaced = Extract<Retimed, { unplaced: unknown }>['unplaced']
 
+type UnplacedResult = { readonly ok: true; readonly unplaced: Unplaced; readonly at: number } | { readonly ok: false; readonly problems: string[] }
+
 /**
- * The job left out that every other one left out follows, and the crew or tool of its planned row with no
+ * The jobs left out that no other one left out leads to (each the start of what the repair could not place),
+ * and every other job left out follows one of them; the re-timing places nothing that follows one. Each must
+ * be unplaceable, and the first in time is the outcome (at one instant, the first in plan order). A job is
+ * unplaceable when a crew or tool of its planned row has no
  * stretch long enough for it at or after it is ready, on the calendars continued a year past the last dated
  * entry. Ready: no earlier than planned, its release and the data date, its links from the placed jobs
  * (finish-to-start after the finish, start-to-start after the start, each with its lag), and the orders the
@@ -125,19 +145,26 @@ type Unplaced = Extract<Retimed, { unplaced: unknown }>['unplaced']
  * tag-out and the work; a supported item's tests after its supporters'): a lower bound, so "nothing fits
  * after it" is never claimed too early.
  */
-const unplacedOf = (context: Context, planned: readonly CheckRow[], retimed: readonly CheckRow[], missing: readonly string[]): { readonly ok: true; readonly unplaced: Unplaced; readonly at: number } | { readonly ok: false; readonly problems: string[] } => {
-  const { inputs, windowStart, grid } = context
+const unplacedOf = (context: Context, planned: readonly CheckRow[], retimed: readonly CheckRow[], missing: readonly string[]): UnplacedResult => {
   const title = (key: string) => `'${context.jobs.get(key)?.title ?? key}'`
   const graph = followers(context)
   const roots = missing.filter(key => !missing.some(other => other !== key && downstreamOf(graph, other).has(key)))
-  if (roots.length !== 1) return { ok: false, problems: [`The re-timing leaves out ${missing.map(title).join(', ')}, which do not all follow one job it could not place.`] }
-  const key = roots[0]!
-  const after = downstreamOf(graph, key)
+  const after = new Set(roots.flatMap(root => [...downstreamOf(graph, root)]))
   const skipped = retimed.filter(row => after.has(row.job)).map(row => title(row.job))
-  if (skipped.length > 0) return { ok: false, problems: [`The re-timing places ${skipped.join(', ')}, which follow ${title(key)}, which it leaves out.`] }
-  const stray = missing.filter(job => job !== key && !after.has(job))
-  if (stray.length > 0) return { ok: false, problems: [`The re-timing leaves out ${stray.map(title).join(', ')}, which do not follow ${title(key)}.`] }
+  if (skipped.length > 0) return { ok: false, problems: [`The re-timing places ${skipped.join(', ')}, which follow a job it leaves out.`] }
+  const stray = missing.filter(job => !roots.includes(job) && !after.has(job))
+  if (roots.length === 0 || stray.length > 0) return { ok: false, problems: [`The re-timing leaves out ${(stray.length > 0 ? stray : missing).map(title).join(', ')}, which follow no job it could not place.`] }
+  const results = roots.map(root => unplaceable(context, planned, retimed, root))
+  const failed = results.find(result => !result.ok)
+  if (failed !== undefined) return failed
+  const order = (key: string) => context.inputs.jobs.findIndex(job => job.key === key)
+  return results.filter((result): result is Extract<UnplacedResult, { ok: true }> => result.ok).sort((x, y) => x.at - y.at || order(x.unplaced.job) - order(y.unplaced.job))[0]!
+}
 
+/** One job left out: a crew or tool with no time left for it once it is ready, or why it could still be placed. */
+const unplaceable = (context: Context, planned: readonly CheckRow[], retimed: readonly CheckRow[], key: string): UnplacedResult => {
+  const { inputs, windowStart, grid } = context
+  const title = (job: string) => `'${context.jobs.get(job)?.title ?? job}'`
   const job = context.jobs.get(key)!
   const plannedRow = planned.find(row => row.job === key)!
   const placed = new Map(retimed.map(row => [row.job, row]))
@@ -236,13 +263,11 @@ export const judgeRetiming = (inputs: PlanInputs, variant: CheckVariant, planned
   const unplaced = missing.size === 0 ? undefined : unplacedOf(prepared.context, planned, retimed, shape.missing)
   if (unplaced !== undefined && !unplaced.ok) return { ok: false, problems: unplaced.problems }
   // Work past the window end is judged on the calendars continued to the last finish, on the grid.
-  const { windowStart, windowEnd, grid } = prepared.context
+  const { windowEnd } = prepared.context
   const last = retimed.reduce<CheckRow | undefined>((latest, row) => latest === undefined || Date.parse(row.finish) > Date.parse(latest.finish) ? row : latest, undefined)
   const lastFinish = last === undefined ? NaN : Date.parse(last.finish)
   const pastWindow = Number.isFinite(lastFinish) && lastFinish > windowEnd
-  const judgedEnd = pastWindow ? windowStart + Math.ceil((lastFinish - windowStart) / grid.slotMs) * grid.slotMs : windowEnd
-  const judged = pastWindow ? { ...pessimistic, settings: { ...pessimistic.settings, window: { start: pessimistic.settings.window!.start, end: new Date(judgedEnd).toISOString() } } } : pessimistic
-  const check = checkPlan(judged, variant, retimed)
+  const check = checkPlan(judgedInputs(inputs, high, retimed), variant, retimed)
   // What only follows from the jobs left out: they are not scheduled, an item they would return is never
   // returned (and its span stays open, below).
   const returnedBy = (item: string) => inputs.jobs.some(job => missing.has(job.key) && job.kind === 'test' && job.equipment.includes(item))
