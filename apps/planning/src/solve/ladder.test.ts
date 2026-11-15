@@ -1,6 +1,7 @@
 // "What overtime buys" (design §4.1, §8 C7 and D5): the rungs come from plan data; each rung is one Generate
 // with `keep`, lowest first, and a higher rung solved after a lower one is never worse.
 import { describe, expect, test } from 'bun:test'
+import { checkPlan } from '../check/check.ts'
 import { planInputsSchema, type PlanInputs } from '../plan/schema.ts'
 import { formulationOf } from './compile.ts'
 import { GENERATE_DEADLINE_MS, generate, rankableOf, subSolve, variantsOf, type GenerateDeps, type SubSolveTask } from './generate.ts'
@@ -104,6 +105,13 @@ describe('one Generate per rung, with keep, lowest first', () => {
       return [key]
     })
     expect(startedFrom.length).toBeGreaterThan(0)
+    // Each feasible rung option carries lane K's own figure of the crew time it buys, per purchase its rows use.
+    for (const option of last.options.filter(entry => entry.status.word === 'validated feasible')) {
+      const used = [...new Set(option.rows.flatMap(row => row.uses.flatMap(use => (use.purchase === undefined ? [] : [use.purchase]))))]
+      const own = checkPlan(flagship, option.variant, option.rows).metrics.filter(metric => metric.id.startsWith('bought:'))
+      expect(own.map(metric => metric.id).toSorted()).toEqual(used.map(key => `bought:${key}`).toSorted())
+      expect(option.metrics.filter(metric => metric.id.startsWith('bought:'))).toEqual(own)
+    }
     // Days only is proven impossible for both methods: the next rung "makes it possible".
     expect(sets[0]!.options.map(option => option.status.word)).toEqual(['proven infeasible', 'proven infeasible'])
   }, 120_000)
