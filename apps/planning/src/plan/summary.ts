@@ -375,7 +375,7 @@ export const page = <T>(items: readonly T[], offset: number, budget: number, wra
 const titles: Readonly<Record<SectionName, string>> = {
   summary: 'Summary', jobs: 'Jobs, links and methods', rules: 'Rules', crews: 'Calendars, crews, tools and purchases',
   sources: 'Equipment, groups and World values', options: 'Options', schedule: 'Schedule', history: 'Change history',
-  buys: 'What overtime buys',
+  buys: 'What overtime buys', previous: 'Previous options',
 }
 
 const pagedSection = (name: SectionName, items: readonly unknown[], offset: number, budget: number, extra: Record<string, unknown> = {}): Section[] =>
@@ -415,5 +415,7 @@ export const buildSection = (name: SectionName, context: SectionContext, offset:
     case 'history': return pagedSection(name, [...plan.changes].reverse(), offset, budget)
     // The ladder rows are the service lane's (design §4.1). Until they are built the section is refused, never empty.
     case 'buys': throw planningError(501, 'not_built', 'What overtime buys is not built in this version of Planning')
+    // The previous options page is the service lane's (decision "Lane P batch 2", 3): refused until it is built.
+    case 'previous': throw planningError(501, 'not_built', 'The previous options are not built in this version of Planning')
   }
 }

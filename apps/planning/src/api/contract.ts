@@ -5,7 +5,7 @@ import { workspaceResourceReferenceSchema } from '@leitbild/contracts'
 import { editSchema, sourceInputSchema } from '../plan/edit-schema.ts'
 import {
   calendarSchema, certifiedSizeSchema, changeSchema, datedRowSchema, dueRuleSchema, equipmentSchema, goalProofBreaks, goalWordSchema, gridSchema, groupSchema, instantSchema, jobSchema,
-  keySchema, labelSchema, leadSchema, linkSchema, methodChoiceSchema, metricSchema, optionLeadRefinement, optionWithoutRowsShape, planInputsSchema, purchaseSchema, resourceSchema, ruleSchema,
+  caveatSchema, keySchema, labelSchema, leadSchema, linkSchema, methodChoiceSchema, metricSchema, optionLeadRefinement, optionWithoutRowsShape, planInputsSchema, purchaseSchema, resourceSchema, ruleSchema,
   spanLimitRuleSchema, statusWordSchema, timeUnitSchema, wordsSchema, worldFactCopySchema,
 } from '../plan/schema.ts'
 
@@ -59,7 +59,7 @@ export const explainInputSchema = z.object({
   cursor: z.string().max(256).optional().describe('From a previous answer'),
 }).strict().refine(input => (input.ask === 'versus') === (input.versus !== undefined), { message: 'versus names the option to compare with, and only for ask versus', path: ['versus'] })
 export const readInputSchema = z.object({
-  section: z.enum(['summary', 'jobs', 'rules', 'crews', 'sources', 'options', 'schedule', 'history', 'buys']).optional().describe('Default summary; buys: what bought crew time gains'),
+  section: z.enum(['summary', 'jobs', 'rules', 'crews', 'sources', 'options', 'schedule', 'history', 'buys', 'previous']).optional().describe('Default summary; buys: what bought crew time gains; previous: the options before the last input change'),
   option: keySchema.optional().describe('schedule: which option; default recommended'),
   cursor: z.string().max(256).optional().describe('From a previous page'),
 }).strict()
@@ -150,6 +150,83 @@ const becauseSchema = z.object({
   // Every name says what it names, so no reader guesses: the screen and the Assistant look it up as that kind.
   about: z.array(z.object({ kind: z.enum(['job', 'resource', 'calendar', 'rule', 'equipment', 'purchase']), key: keySchema }).strict()).max(6), until: instantSchema.optional(),
 }).strict()
+/** A plan goal by its id, its position in the plan's goals. */
+const goalIdSchema = z.number().int().nonnegative()
+const distinct = (values: readonly unknown[]): boolean => new Set(values).size === values.length
+const ascending = (values: readonly number[]): boolean => values.every((value, index) => index === 0 || values[index - 1]! < value)
+type Issue = (path: Array<string | number>, message: string) => void
+const issuesOf = (context: z.core.$RefinementCtx): Issue => (path, message) => context.addIssue({ code: 'custom', path, message })
+
+/**
+ * explain recommended (decision "Lane P batch 2", 3): why `option` is recommended, against `against`, the best
+ * other ranked option (absent: none to compare with). `deciding`: the first goal on which their ranking keys
+ * differ. `goals`: each plan goal's value, and the other option's beside it. `caveats`: what each method pick
+ * leaves unpriced, with the other option's value for the same caveat. `outage`: what the option's status says
+ * about the plan's outage goal. Prose is generated from these, never stored.
+ */
+export const recommendedFactsSchema = z.object({
+  option: keySchema, against: keySchema.optional(), deciding: goalIdSchema.optional(),
+  goals: z.array(z.object({ goal: goalIdSchema, value: z.number().finite(), against: z.number().finite().optional(), unit: z.string() }).strict()).max(6),
+  caveats: z.array(z.object({
+    choice: keySchema, option: keySchema, label: caveatSchema.shape.label, value: z.number().finite().optional(), unit: caveatSchema.shape.unit, against: z.number().finite().optional(),
+  }).strict()).max(32),
+  outage: z.object({ goal: goalIdSchema, word: goalWordSchema, value: z.number().finite(), unit: z.string(), bound: z.number().finite().optional() }).strict().optional(),
+}).strict().superRefine((facts, context) => {
+  const issue = issuesOf(context)
+  const compared = facts.against !== undefined
+  if (facts.against === facts.option) issue(['against'], 'An option is recommended against another option')
+  if (facts.deciding !== undefined && !compared) issue(['deciding'], 'A deciding goal needs the option it decides against')
+  const ids = facts.goals.map(line => line.goal)
+  if (!ascending(ids)) issue(['goals'], 'Goals are listed once each, in the plan\'s order')
+  if (facts.deciding !== undefined && !ids.includes(facts.deciding)) issue(['deciding'], 'The deciding goal is one of the goals listed')
+  facts.goals.forEach((line, index) => { if ((line.against !== undefined) !== compared) issue(['goals', index, 'against'], 'Each goal gives the other option\'s value exactly when there is one') })
+  facts.caveats.forEach((caveat, index) => {
+    if ((caveat.value === undefined) !== (caveat.unit === undefined)) issue(['caveats', index, 'unit'], 'A caveat value comes with its unit')
+    if (caveat.against !== undefined && (!compared || caveat.value === undefined)) issue(['caveats', index, 'against'], 'The other option\'s caveat value is given only beside a value, against an option')
+  })
+  const outage = facts.outage
+  if (outage !== undefined && outage.word === 'proven optimal' && outage.bound === undefined) issue(['outage', 'bound'], 'Proven optimal names its bound')
+  if (outage !== undefined && !ids.includes(outage.goal)) issue(['outage', 'goal'], 'The outage goal is one of the goals listed')
+})
+export type RecommendedFacts = z.infer<typeof recommendedFactsSchema>
+
+const timesSchema = z.object({ start: instantSchema, finish: instantSchema }).strict()
+/**
+ * explain versus {previous} (decision "Lane P batch 2", 3): `option` of the current set against `previous` of
+ * the previous set. `from` is the previous option's inputs revision and `to` the plan's; `changes` the change
+ * log's own summaries between them, and `complete` whether the log still holds every one. `goals` only when
+ * the goals stayed as they were. `methods` the picks that differ; `buys` the purchases added and dropped;
+ * `moved` jobs in both at another start or finish (at most 20, `movedMore` counts the rest); `added` and
+ * `removed` jobs in only one of the two.
+ */
+export const versusFactsSchema = z.object({
+  option: keySchema, previous: keySchema,
+  from: z.number().int().positive(), to: z.number().int().positive(), complete: z.boolean(),
+  changes: z.array(z.object({ revision: z.number().int().positive(), summary: changeSchema.shape.summary }).strict()).max(20),
+  goals: z.array(z.object({ goal: goalIdSchema, now: z.number().finite(), was: z.number().finite(), unit: z.string() }).strict()).max(6).optional(),
+  methods: z.array(z.object({ choice: keySchema, now: keySchema, was: keySchema }).strict()).max(8),
+  buys: z.object({ added: z.array(keySchema).max(64), dropped: z.array(keySchema).max(64) }).strict(),
+  moved: z.array(z.object({ job: keySchema, now: timesSchema, was: timesSchema }).strict()).max(20),
+  movedMore: z.number().int().nonnegative(),
+  added: z.array(keySchema).max(64), removed: z.array(keySchema).max(64),
+}).strict().superRefine((facts, context) => {
+  const issue = issuesOf(context)
+  if (!(facts.from < facts.to)) issue(['from'], 'The previous options are from an earlier revision')
+  const revisions = facts.changes.map(change => change.revision)
+  if (revisions.some((revision, index) => revision <= facts.from || revision > facts.to || (index > 0 && revision < revisions[index - 1]!))) issue(['changes'], 'Changes lie after the previous options\' revision and up to now, in order')
+  if (facts.goals !== undefined && !ascending(facts.goals.map(line => line.goal))) issue(['goals'], 'Goals are listed once each, in the plan\'s order')
+  if (!distinct(facts.methods.map(method => method.choice))) issue(['methods'], 'Each method choice is listed once')
+  facts.methods.forEach((method, index) => { if (method.now === method.was) issue(['methods', index, 'now'], 'Only a pick that differs is listed') })
+  const { added, dropped } = facts.buys
+  if (!distinct([...added, ...dropped])) issue(['buys'], 'A purchase is added or dropped, once')
+  if (!distinct(facts.moved.map(entry => entry.job))) issue(['moved'], 'Each moved job is listed once')
+  facts.moved.forEach((entry, index) => {
+    if (Date.parse(entry.now.start) === Date.parse(entry.was.start) && Date.parse(entry.now.finish) === Date.parse(entry.was.finish)) issue(['moved', index], 'A moved job starts or finishes at another time')
+  })
+  if (!distinct([...facts.added, ...facts.removed, ...facts.moved.map(entry => entry.job)])) issue(['added'], 'A job is moved, added or removed, once')
+})
+export type VersusFacts = z.infer<typeof versusFactsSchema>
+
 export const explainResultSchema = z.object({
   lines: z.array(z.string().max(240)).max(20),
   items: z.array(z.object({
@@ -165,8 +242,11 @@ export const explainResultSchema = z.object({
     z.object({ result: z.literal('gain'), about: z.object({ kind: z.literal('resource'), key: keySchema }).strict(), hoursEarlier: z.number().positive() }).strict(),
     z.object({ result: z.literal('no-gain'), about: z.object({ kind: z.literal('resource'), key: keySchema }).strict() }).strict(),
   ]).optional(),
+  // 'recommended' and 'versus' only: the facts the lines are generated from.
+  recommended: recommendedFactsSchema.optional(),
+  versus: versusFactsSchema.optional(),
   more: z.string().max(256).optional(),
-}).strict()
+}).strict().refine(result => result.recommended === undefined || result.versus === undefined, { message: 'An answer explains one ask', path: ['versus'] })
 // ───────────── read sections ─────────────
 // planning.plan.read returns the Host inspection view (@leitbild/contracts inspection); input {} gives the
 // summary. Each section's `data` has one of these shapes, shared by the service, the screen and the
@@ -236,6 +316,18 @@ export const buysRowSchema = z.object({
   if (row.word === 'not found better' && from === 'proven' && to === 'proven' && row.outage === 0) issue('word', 'Two proven rungs with equal outages read "proven: no gain"')
 })
 
+/**
+ * An option as the options and previous sections page it: no rows; `fresh` (it re-checks on the current
+ * revision and formulation), its warnings, and `dominated` when another option of the same set is no worse on
+ * every goal and better on one (lead what-ifs are never dominated nor dominate). No option dominates itself.
+ */
+export const optionItemSchema = optionWithoutRowsShape.extend({
+  fresh: z.boolean(), warnings: z.array(optionWarningSchema).max(4), dominated: z.object({ by: keySchema }).strict().optional(),
+}).strict().superRefine(optionLeadRefinement)
+  .refine(item => item.dominated?.by !== item.key, { message: 'An option is not dominated by itself', path: ['dominated', 'by'] })
+  .refine(item => item.dominated === undefined || item.variant.lead === undefined, { message: 'A what-if with a leading goal is never dominated', path: ['dominated'] })
+const optionsPage = paged(optionItemSchema).extend({ at: instantSchema.nullable(), recommended: keySchema.nullable() }).strict()
+
 export const summaryDataSchema = z.object({
   plan: z.object({ id: z.uuid(), title: labelSchema, revision: z.number().int().positive(), updatedAt: instantSchema }).strict(),
   settings: planInputsSchema.shape.settings,
@@ -252,11 +344,11 @@ export const sectionDataSchemas = {
   crews: paged(z.union([z.object({ calendar: calendarSchema }).strict(), z.object({ resource: resourceSchema }).strict(), z.object({ purchase: purchaseSchema }).strict()])),
   sources: paged(z.union([z.object({ equipment: equipmentSchema }).strict(), z.object({ group: groupSchema }).strict(), z.object({ fact: worldFactCopySchema }).strict()])),
   // fresh: the option re-checks on the current inputs revision and formulation.
-  options: paged(optionWithoutRowsShape.extend({ fresh: z.boolean(), warnings: z.array(optionWarningSchema).max(4) }).strict().superRefine(optionLeadRefinement))
-    .extend({ at: instantSchema.nullable(), recommended: keySchema.nullable() }).strict(),
+  options: optionsPage,
   schedule: paged(datedRowSchema).extend({ option: keySchema }).strict(),
   history: paged(changeSchema),
   buys: paged(z.union([z.object({ rung: buysRungSchema }).strict(), z.object({ row: buysRowSchema }).strict()])),
+  previous: optionsPage,
 } as const satisfies Record<NonNullable<z.infer<typeof readInputSchema>['section']>, z.ZodType>
 export type SectionName = keyof typeof sectionDataSchemas
 export type PagedSectionName = Exclude<SectionName, 'summary'>
