@@ -53,7 +53,7 @@ export interface LadderRung {
 }
 export interface Ladder {
   readonly rungs: readonly BuysRung[]
-  /** `finishFrom`: the option whose cause of the finish a "proven: no gain" row still needs. */
+  /** `finishFrom`: the higher rung's option, whose cause of the finish a row of two solved rungs carries (G3). */
   readonly rows: ReadonlyArray<{ readonly row: Omit<BuysRow, 'finish'>; readonly finishFrom?: string }>
 }
 
@@ -76,7 +76,7 @@ const rowOf = (lower: Required<LadderRung>, upper: Required<LadderRung>): Ladder
   const outage = exact(to.outage - from.outage), cost = exact(to.cost - from.cost)
   const proven = from.end === 'proven' && to.end === 'proven'
   const word = outage < 0 ? (proven ? 'proven' : 'found') : outage === 0 && proven ? 'proven: no gain' : 'not found better'
-  return { row: { ...head, word, outage, cost }, ...(word === 'proven: no gain' ? { finishFrom: upper.option.key } : {}) }
+  return { row: { ...head, word, outage, cost }, finishFrom: upper.option.key }
 }
 
 /** The rungs, each with its option and that option's bought time, and a row for each adjacent pair solved here. */
@@ -91,14 +91,17 @@ export const ladderOf = (rungs: readonly LadderRung[]): Ladder => ({
 })
 
 /**
- * The section's items: every rung, then every row. A "proven: no gain" row names the higher rung's cause of
- * the finish (`finish`, by option key); without it the row is left out, never worded without its cause.
+ * The section's items: every rung, then every row. A row of two solved rungs names the higher rung's cause of
+ * the finish (`finish`, by option key) when its chain names one (G3). "Proven: no gain" needs it: without it
+ * that row is never dropped, it reads the weaker "not found better", its higher end stated as found, so it
+ * claims no proof it cannot name (adversary review, finding 6).
  */
 export const buysItems = (ladder: Ladder, finish: ReadonlyMap<string, FinishCause>): BuysItem[] => [
   ...ladder.rungs.map(rung => ({ rung })),
   ...ladder.rows.flatMap(({ row, finishFrom }) => {
     if (finishFrom === undefined) return [{ row }]
     const cause = finish.get(finishFrom)
-    return cause === undefined ? [] : [{ row: { ...row, finish: cause } }]
+    if (cause !== undefined) return [{ row: { ...row, finish: cause } }]
+    return [row.word === 'proven: no gain' ? { row: { ...row, ends: { ...row.ends, to: 'found' as const }, word: 'not found better' as const } } : { row }]
   }),
 ]

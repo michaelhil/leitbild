@@ -2,7 +2,8 @@
 // the previous option set, kept from before the last Generate on a newer revision. Said from structure only:
 // the input changes between the two revisions from the change log's own summaries, the goal values when the
 // goals stayed as they were, the method and purchases, and each job that moved, was added or left.
-import { clip, goalName, nameOf, names, spanAndCost, timeWords, valueWords } from './summary.ts'
+import { clip, goalName, nameOf, names, timeWords, valueWords } from './summary.ts'
+import { isTimeUnit, timeUnitMs } from '../time/units.ts'
 import type { Plan, PlanInputs } from './schema.ts'
 import type { VersusFacts } from '../api/contract.ts'
 import { fitLines, listWords } from './why.ts'
@@ -25,6 +26,18 @@ const changesListed = 20
 
 export const versusLines = (input: Parameters<typeof versus>[0]): string[] => versus(input).lines
 
+/**
+ * The input changes since revision `from`, from the change log: every raised revision has its entry, unless
+ * the history was trimmed (`complete` false), and whether any changed the goals. The plan's goal ids name the
+ * same goals as at `from` only when the history is complete and none did (`goalsSame`).
+ */
+export const changesSince = (plan: Pick<Plan, 'revision' | 'changes'>, from: number) => {
+  const changes = plan.changes.filter(change => change.revision > from && change.revision <= plan.revision && change.kinds.length > 0)
+  const complete = Array.from({ length: Math.max(0, plan.revision - from) }, (_, index) => from + 1 + index).every(revision => changes.some(change => change.revision === revision))
+  const goalsChanged = changes.some(change => change.kinds.includes('goals'))
+  return { changes, complete, goalsChanged, goalsSame: complete && !goalsChanged }
+}
+
 /** What differs between the two options, in words and as the structure they come from. */
 export const versus = (input: {
   readonly inputs: PlanInputs
@@ -41,9 +54,7 @@ export const versus = (input: {
   const status = option.status.word === previous.status.word ? [] : [`Status: ${option.status.word}, was ${previous.status.word}.`]
 
   // The input changes between the two: every raised revision has its entry, unless the history was trimmed.
-  const changes = plan.changes.filter(change => change.revision > from && change.revision <= to && change.kinds.length > 0)
-  const complete = Array.from({ length: Math.max(0, to - from) }, (_, index) => from + 1 + index).every(revision => changes.some(change => change.revision === revision))
-  const goalsChanged = changes.some(change => change.kinds.includes('goals'))
+  const { changes, complete, goalsChanged, goalsSame } = changesSince(plan, from)
   const changeLines = [
     ...changes.slice(0, 4).map(change => `Changed since: ${sentence(change.summary)}.`),
     ...(changes.length > 4 ? [`…and ${changes.length - 4} more changes: read the history.`] : []),
@@ -54,8 +65,7 @@ export const versus = (input: {
   if (nowStatus.word !== 'validated feasible' || thenStatus.word !== 'validated feasible') {
     return { lines: fitLines([head, ...status, ...changeLines]), facts: { ...frame, methods: [], buys: { added: [], dropped: [] }, moved: [], movedMore: 0, added: [], removed: [] } }
   }
-  const comparable = complete && !goalsChanged
-  const goalFacts = comparable ? nowStatus.goals.flatMap(goal => {
+  const goalFacts = goalsSame ? nowStatus.goals.flatMap(goal => {
     const was = thenStatus.goals[goal.goal]
     return was === undefined ? [] : [{ goal: goal.goal, now: goal.value, was: was.value, unit: goal.unit }]
   }) : undefined
@@ -72,13 +82,20 @@ export const versus = (input: {
           return Math.abs(difference) < 1e-9 ? `${name}: ${valueWords(goal.value, goal.unit)}, unchanged.`
             : `${name}: ${valueWords(goal.value, goal.unit)}, was ${valueWords(was.value, was.unit)} (${valueWords(Math.abs(difference), goal.unit)} ${difference > 0 ? 'more' : 'less'}).`
         }),
-        ...(() => {
-          const now = spanAndCost(inputs, option).span, then = spanAndCost(inputs, previous).span
-          const unit = inputs.goals.find(goal => goal.metric === 'span-over')?.tolerance.unit ?? 'h'
-          if (now === undefined || then === undefined) return []
-          return [Math.abs(now - then) < 1e-9 ? `Longest outage: ${valueWords(now, unit)}, unchanged.` : `Longest outage: ${valueWords(now, unit)}, was ${valueWords(then, unit)} (${valueWords(Math.abs(now - then), unit)} ${now > then ? 'longer' : 'shorter'}).`]
-        })(),
       ]
+  // The longest outage of each group a span rule names (G5): the checker's stored 'span:<group>' figure, or
+  // the outage goal's own stored figure for its group while the goals are as they were. In h.
+  const spanGoal = inputs.goals.findIndex(goal => goal.metric === 'span-over')
+  const outageOf = (of: Option, group: string): number | undefined => {
+    const figure = of.metrics.find(metric => metric.id === `span:${group}`) ?? (goalsSame && spanGoal >= 0 ? of.metrics.find(metric => metric.id === `goal:${spanGoal}:${group}`) : undefined)
+    return figure === undefined || !isTimeUnit(figure.unit) ? undefined : figure.value * timeUnitMs[figure.unit] / timeUnitMs.h
+  }
+  const outages = [...new Set(inputs.rules.flatMap(rule => rule.kind === 'span-limit' ? [rule.group] : []))].flatMap(group => {
+    const now = outageOf(option, group), was = outageOf(previous, group)
+    return now === undefined || was === undefined ? [] : [{ group, now, was }]
+  })
+  const outageLines = outages.map(({ group, now, was }) => Math.abs(now - was) < 1e-9 ? `Longest outage of ${nameOf(inputs, group)}: ${valueWords(now, 'h')}, unchanged.`
+    : `Longest outage of ${nameOf(inputs, group)}: ${valueWords(now, 'h')}, was ${valueWords(was, 'h')} (${valueWords(Math.abs(now - was), 'h')} ${now > was ? 'longer' : 'shorter'}).`)
 
   // The method picked and the purchases used.
   const methodFacts = inputs.methods.flatMap(choice => {
@@ -119,7 +136,7 @@ export const versus = (input: {
       return `No longer in it: ${listWords([...(named.length === 0 ? [] : [names(inputs, named, 3)]), ...(gone === 0 ? [] : [`${gone} job${gone === 1 ? '' : 's'} removed from the plan`])])}.`
     })()]),
   ]
-  const fixed = [head, ...status, ...changeLines, ...goalLines, ...methodLines, ...purchaseLines]
+  const fixed = [head, ...status, ...changeLines, ...goalLines, ...outageLines.map(line => clip(line, 240)), ...methodLines, ...purchaseLines]
   const room = Math.max(0, Math.min(movedShown, 20 - fixed.length - jobLines.length - 2))
   const movedLines = moved.length === 0 ? (joined.length === 0 && left.length === 0 ? ['No job moved.'] : [])
     : [`${moved.length} job${moved.length === 1 ? '' : 's'} moved${moved.length === 1 ? ':' : '; the largest shifts first:'}`, ...moved.slice(0, room).map(movedLine), ...(moved.length > room ? [`…and ${moved.length - room} more: read the schedule.`] : [])]

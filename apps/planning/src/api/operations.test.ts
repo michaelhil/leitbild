@@ -568,7 +568,7 @@ describe('increment 2: keep, the previous set, why recommended, versus and what 
       const stale = await local.store.create(local.workspaceId, planWith(local.workspaceId, [variantOf(swap, { revision: 2 }), variantOf(rebuild, { revision: 2 })]))
       expect((await explain(stale.id, { ask: 'recommended' })).body.error.code).toBe('option_stale')
       const refusedOnly = await local.store.create(local.workspaceId, planWith(local.workspaceId, [refusedWith(swap, rungsOf(plan.inputs)[0]!.buy)]))
-      expect((await explain(refusedOnly.id, { ask: 'recommended' })).body.result.lines).toEqual(['No option is recommended: none is validated feasible.'])
+      expect((await explain(refusedOnly.id, { ask: 'recommended' })).body.result.lines).toEqual(['No option is recommended: no ranked option is validated feasible.'])
       expect(calls.filter(call => call.kind === 'explain')).toEqual([])
     } finally { await local.close() }
   })

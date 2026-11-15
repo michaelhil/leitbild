@@ -28,7 +28,8 @@ describe('what differs from an option of the previous set', () => {
     expect(text).toContain('Changed since: Change 4.')
     expect(text).toContain(`Outage time over 54 h: ${valueWords(goal(rebuild, 0), 'h')}, was ${valueWords(goal(swap, 0), 'h')} (${valueWords(goal(rebuild, 0) - goal(swap, 0), 'h')} more).`)
     expect(text).toContain(`Extra cost: ${valueWords(goal(rebuild, 1), 'NOK')}, was ${valueWords(goal(swap, 1), 'NOK')} (${valueWords(goal(swap, 1) - goal(rebuild, 1), 'NOK')} less).`)
-    expect(text).toContain(`Longest outage: ${valueWords(longest(rebuild), 'h')}, was ${valueWords(longest(swap), 'h')} (${valueWords(longest(rebuild) - longest(swap), 'h')} longer).`)
+    // The outage goal's group, from its stored figure (G5); groups of other span rules need lane K's stored span figures.
+    expect(text).toContain(`Longest outage of ${nameOf(trainAInputs, 'COOL-A')}: ${valueWords(longest(rebuild), 'h')}, was ${valueWords(longest(swap), 'h')} (${valueWords(longest(rebuild) - longest(swap), 'h')} longer).`)
     expect(text).toContain('SW A pump assembly: \'Rebuild in place\', was \'Swap in refurbished spare\'.')
     const label = (key: string) => trainAInputs.purchases.find(purchase => purchase.key === key)!.label
     const dropped = swap.variant.purchases.filter(key => !rebuild.variant.purchases.includes(key))
@@ -66,6 +67,23 @@ describe('what differs from an option of the previous set', () => {
     expect(text[1]).toBe('Status: validated feasible, was proven infeasible.')
     expect(text.some(line => line.includes('moved'))).toBe(false)
     expect(compare(variantOf(swap, { revision: 4 }), swap)).toContain('No job moved.')
+  })
+})
+
+describe('the longest outage of each group with a span rule (G5)', () => {
+  test('from the checker\'s stored span figures, for every group a span rule names, beside the goal values', async () => {
+    const { checkPlan } = await import('../check/check.ts')
+    // As Generate stores them: lane K's 'span:<group>' figures on the option's own rows.
+    const spanned = (option: Option, revision?: number) => variantOf(option, { ...(revision === undefined ? {} : { revision }), metrics: [...option.metrics, ...checkPlan(trainAInputs, option.variant, option.rows).metrics.filter(metric => metric.id.startsWith('span:'))] })
+    const now = spanned(rebuild, 4), was = spanned(swap)
+    const text = compare(now, was)
+    const groups = [...new Set(trainAInputs.rules.flatMap(rule => rule.kind === 'span-limit' ? [rule.group] : []))]
+    expect(groups.length).toBeGreaterThan(1)
+    for (const group of groups) {
+      const figure = (option: Option) => option.metrics.find(metric => metric.id === `span:${group}`)!.value
+      const difference = figure(now) - figure(was)
+      expect(text).toContain(`Longest outage of ${nameOf(trainAInputs, group)}: ${valueWords(figure(now), 'h')}${Math.abs(difference) < 1e-9 ? ', unchanged.' : `, was ${valueWords(figure(was), 'h')} (${valueWords(Math.abs(difference), 'h')} ${difference > 0 ? 'longer' : 'shorter'}).`}`)
+    }
   })
 })
 

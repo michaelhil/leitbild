@@ -16,8 +16,8 @@ import type { PlanDefinitionsPort } from '../definitions/index.ts'
 import { outTogether, readiness, worldSubjects, type ReadinessItem } from '../plan/readiness.ts'
 import { buysItems, ladderOf, rungsOf, type FinishCause } from '../plan/buys.ts'
 import { rungStanding } from '../check/buys.ts'
-import { versus } from '../plan/versus.ts'
-import { dominatedWithin, whyRecommended } from '../plan/why.ts'
+import { changesSince, versus } from '../plan/versus.ts'
+import { dominatedWithin, optionName, outageFloor, whyRecommended } from '../plan/why.ts'
 import { withoutProof } from '../solve/status.ts'
 import {
   certificateSchema, certifiedSizeSchema, optionSetSchema, planInputsSchema,
@@ -484,6 +484,9 @@ export const createPlanningOperations = (ports: PlanningOperationsPorts) => {
       stoppedByWho: () => stopping.signal.aborted ? 'host' : signal.aborted ? 'person' : undefined,
     }))
     if (!answer.success) throw planningError(500, 'invalid_planning_result', 'Generate returned options that do not match the plan schema')
+    // Only the plan's own options are recommended: a what-if (an extra rule or a leading goal) is a card (G2).
+    const named = answer.data.options.find(option => option.key === answer.data.recommended)
+    if (named !== undefined && (named.variant.also !== undefined || named.variant.lead !== undefined)) throw planningError(500, 'invalid_planning_result', 'Generate recommended a what-if; only the plan\'s own options are recommended')
     // A set on one revision only: a stored option kept from an older revision would read as fresh beside the new ones.
     if (answer.data.options.some(option => option.inputsRevision !== plan.revision)) throw planningError(500, 'invalid_planning_result', 'Generate returned an option of another plan revision')
     // Lane K's check, its certificate and bound re-verifications ran on these options inside the solver
@@ -506,8 +509,8 @@ export const createPlanningOperations = (ports: PlanningOperationsPorts) => {
     const recommended = generated.options.find(option => option.key === generated.recommended)
     const used = recommended === undefined ? [] : purchasesUsed(recommended)
     const sentence = recommended === undefined
-      ? 'No option can be recommended: none is validated feasible.'
-      : `${recommended.label}: ${statusSentence(states.get(recommended.key)?.shown ?? recommended.status, saved.inputs)}${used.length === 0 ? '' : ` Buys: ${used.map(key => nameOf(saved.inputs, key)).join(', ')}.`}`
+      ? 'No option can be recommended: no ranked option is validated feasible.'
+      : `${optionName(saved.inputs, recommended)}: ${statusSentence(states.get(recommended.key)?.shown ?? recommended.status, saved.inputs)}${used.length === 0 ? '' : ` Buys: ${used.map(key => nameOf(saved.inputs, key)).join(', ')}.`}`
     const cautioned = recommended !== undefined && (states.get(recommended.key)?.warnings ?? []).some(warning => warning.kind === 'above-certified-size')
     const sizeNote = cautioned ? ` Above the certified size (${certifiedSize.maxJobs} jobs): it may not be near the best.` : ''
     const result: GenerateResult = {
@@ -625,13 +628,13 @@ export const createPlanningOperations = (ports: PlanningOperationsPorts) => {
       // Why recommended: the recommended option against the next in rank, or the option named. Only options
       // fresh on this revision and formulation are compared (C5); none runs the solver.
       if (ask === 'recommended') {
-        if (plan.options !== null && plan.options.recommended === undefined) return resultOf(explainResultSchema, { lines: ['No option is recommended: none is validated feasible.'], items: [] })
+        if (plan.options !== null && plan.options.recommended === undefined) return resultOf(explainResultSchema, { lines: ['No option is recommended: no ranked option is validated feasible.'], items: [] })
         const recommended = findOption(plan, undefined)
         requireFresh(plan, recommended)
         const named = input.option === undefined ? undefined : findOption(plan, input.option)
         if (named !== undefined) requireFresh(plan, named)
         const others = plan.options!.options.filter(option => option.key !== recommended.key && !optionState(plan, option).stale)
-        const why = whyRecommended(plan.inputs, recommended, others, named)
+        const why = whyRecommended(plan.inputs, recommended, others, named, outageFloor(plan, recommended, solver.formulation(plan.inputs.settings.grid)))
         return resultOf(explainResultSchema, withinResult({ lines: why.lines, items: [], recommended: why.facts }))
       }
       // What differs from an option of the previous set, kept from before the last Generate on a newer revision.
@@ -663,7 +666,9 @@ export const createPlanningOperations = (ports: PlanningOperationsPorts) => {
         ...(section === 'options' ? { dominated: dominatedWithin(plan.inputs, (plan.options?.options ?? []).filter(option => states.get(option.key)?.stale === false)) } : {}),
         ...(section === 'previous' ? (() => {
           const previous = plan.previousOptions?.options ?? []
-          return { previous: new Map(previous.map(option => [option.key, optionState(plan, option)])), dominated: dominatedWithin(plan.inputs, previous) }
+          // Dominance on the plan's goals only while they are the goals that set was made with (finding 5).
+          const made = Math.max(0, ...previous.map(option => option.inputsRevision))
+          return { previous: new Map(previous.map(option => [option.key, optionState(plan, option)])), dominated: changesSince(plan, made).goalsSame ? dominatedWithin(plan.inputs, previous) : new Map() }
         })() : {}),
       }
       const option = section === 'schedule' ? findOption(plan, input.option) : undefined
