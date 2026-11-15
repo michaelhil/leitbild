@@ -69,11 +69,12 @@ export const rankOptions = <T extends Rankable>(options: readonly T[]): T[] => [
 export const recommend = <T extends Rankable>(options: readonly T[]): T | undefined => rankOptions(options).find(option => option.feasible)
 
 /**
- * Dominance (design §4.1): the keys of the feasible options that another feasible option is no worse than on
- * every goal key and better on one, in input order. They are folded on the screen, never deleted. Callers
- * leave lead what-ifs out: they are cards, never folded.
+ * Dominance (design §4.1): the feasible options that another feasible option is no worse than on every goal
+ * key and better on one, in input order, each with `by`, the best-ranked option that dominates it (the
+ * options section's `dominated: {by}`). They are folded on the screen, never deleted. Callers leave lead
+ * what-ifs out: they are cards, never folded.
  */
-export const dominatedKeys = (options: readonly Rankable[]): string[] => {
+export const dominatedBy = (options: readonly Rankable[]): Array<{ readonly key: string; readonly by: string }> => {
   const feasible = options.filter(option => option.feasible)
   const beats = (a: Rankable, b: Rankable): boolean => {
     let better = false
@@ -84,7 +85,10 @@ export const dominatedKeys = (options: readonly Rankable[]): string[] => {
     }
     return better
   }
-  return feasible.filter(option => feasible.some(other => other !== option && beats(other, option))).map(option => option.key)
+  return feasible.flatMap(option => {
+    const by = rankOptions(feasible.filter(other => other !== option && beats(other, option)))[0]
+    return by === undefined ? [] : [{ key: option.key, by: by.key }]
+  })
 }
 
 /** An option's ranking keys and, per goal, its excess in the goal's unit (goalExcess): what "why recommended" is said from. */
