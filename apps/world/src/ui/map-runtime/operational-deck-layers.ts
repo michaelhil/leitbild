@@ -1,8 +1,8 @@
 import type { Layer, PickingInfo } from '@deck.gl/core'
 import type { OperationalObject } from '../../core/model/index.ts'
-import { IconLayer, PathLayer, ScatterplotLayer } from '@deck.gl/layers'
+import { IconLayer, PathLayer, ScatterplotLayer, TextLayer } from '@deck.gl/layers'
 import type { CatalogueSymbolAtlasState } from './catalogue-symbol-atlas.ts'
-import { colorWithAlpha, darkStroke, rgba, white } from './colors.ts'
+import { colorWithAlpha, darkStroke, dimmedAlpha, rgba, white } from './colors.ts'
 import { ObjectLabelLayer } from './object-label-layer.ts'
 import { declutterPoints, type PointLeader } from './point-declutter.ts'
 import {
@@ -73,6 +73,8 @@ export interface OperationalDeckLayerData {
   /** Points with another catalogue icon whose artwork has arrived. */
   readonly cataloguePoints: ReadonlyArray<OperationalPointFeature>
   readonly labelPoints: ReadonlyArray<OperationalPointFeature>
+  /** The armed order's targets, whose halos carry a tag. */
+  readonly targetTagPoints: ReadonlyArray<OperationalPointFeature>
   readonly compiledAreaSymbols: ReadonlyArray<OperationalSymbolFeature>
   readonly catalogueAreaSymbols: ReadonlyArray<OperationalSymbolFeature>
 }
@@ -109,12 +111,18 @@ export const visibleFamiliesKey = (
   [...visibleFamilies].sort().join('|')
 
 const pointFill = (point: OperationalPointFeature): ColorRgba => {
+  if (point.dimmed) return [point.color[0], point.color[1], point.color[2], dimmedAlpha]
   if (point.muted) return [point.color[0], point.color[1], point.color[2], 132]
   return point.color
 }
 
+/** An armed order's target: a green ring, apart from the selection's blue and a highlight's amber. */
+const targetHaloFill = rgba(22, 133, 92, 44)
+const targetHaloStroke = rgba(22, 133, 92, 245)
+
 const haloFill = (point: OperationalPointFeature): ColorRgba => {
   if (point.selected) return rgba(29, 102, 210, 62)
+  if (point.targetTag !== null) return targetHaloFill
   if (point.highlighted) return rgba(193, 122, 19, 58)
   if (point.alert !== null) return colorWithAlpha(point.alert.color, 52)
   return rgba(255, 255, 255, 0)
@@ -122,10 +130,16 @@ const haloFill = (point: OperationalPointFeature): ColorRgba => {
 
 const haloStroke = (point: OperationalPointFeature): ColorRgba => {
   if (point.selected) return rgba(29, 102, 210, 245)
+  if (point.targetTag !== null) return targetHaloStroke
   if (point.highlighted) return rgba(193, 122, 19, 230)
   if (point.alert !== null) return colorWithAlpha(point.alert.color, 230)
   return rgba(255, 255, 255, 0)
 }
+
+const haloRingged = (point: OperationalPointFeature): boolean => point.selected || point.targetTag !== null || point.highlighted
+
+/** A glyph's colour: faint while dimmed by an armed order, softened while muted. */
+const glyphColor = (point: OperationalPointFeature): ColorRgba => point.dimmed ? white(95) : point.muted ? white(150) : white(245)
 
 const asPointPicking = (info: PickingInfo<OperationalPointFeature>): OperationalPointFeature | null =>
   info.object ?? null
@@ -186,6 +200,7 @@ export const createOperationalDeckLayerDataCache = (): OperationalDeckLayerDataC
   let atlasRevision = -1
   let pointsByAtlas: { readonly compiled: ReadonlyArray<OperationalPointFeature>; readonly catalogue: ReadonlyArray<OperationalPointFeature> } = { compiled: emptyPoints, catalogue: emptyPoints }
   let labelPoints: ReadonlyArray<OperationalPointFeature> = emptyPoints
+  let targetTagPoints: ReadonlyArray<OperationalPointFeature> = emptyPoints
   let areaSymbolsByAtlas: { readonly compiled: ReadonlyArray<OperationalSymbolFeature>; readonly catalogue: ReadonlyArray<OperationalSymbolFeature> } = { compiled: emptySymbols, catalogue: emptySymbols }
 
   const reset = (): void => {
@@ -206,6 +221,7 @@ export const createOperationalDeckLayerDataCache = (): OperationalDeckLayerDataC
     atlasRevision = -1
     pointsByAtlas = { compiled: emptyPoints, catalogue: emptyPoints }
     labelPoints = emptyPoints
+    targetTagPoints = emptyPoints
     areaSymbolsByAtlas = { compiled: emptySymbols, catalogue: emptySymbols }
   }
 
@@ -236,6 +252,7 @@ export const createOperationalDeckLayerDataCache = (): OperationalDeckLayerDataC
         newInfoPoints = drawnPoints.filter(point => point.hasNewInfo)
         pointsByAtlas = byAtlas(drawnPoints, catalogueAtlas, emptyPoints)
         labelPoints = drawnPoints.some(point => point.label !== null) ? drawnPoints.filter(point => point.label !== null) : emptyPoints
+        targetTagPoints = drawnPoints.some(point => point.targetTag !== null) ? drawnPoints.filter(point => point.targetTag !== null) : emptyPoints
       }
       if (placementRevision !== snapshot.revisions.placement) {
         placementRevision = snapshot.revisions.placement
@@ -255,6 +272,7 @@ export const createOperationalDeckLayerDataCache = (): OperationalDeckLayerDataC
         compiledPoints: pointsByAtlas.compiled,
         cataloguePoints: pointsByAtlas.catalogue,
         labelPoints,
+        targetTagPoints,
         compiledAreaSymbols: areaSymbolsByAtlas.compiled,
         catalogueAreaSymbols: areaSymbolsByAtlas.catalogue,
       }
@@ -429,10 +447,10 @@ export const createOperationalDeckLayers = (config: OperationalDeckLayerConfig):
       stroked: true,
       filled: true,
       getPosition: point => point.position,
-      getRadius: point => point.selected || point.highlighted || point.alert !== null ? 18 : 0,
+      getRadius: point => haloRingged(point) || point.alert !== null ? 18 : 0,
       getFillColor: haloFill,
       getLineColor: haloStroke,
-      getLineWidth: point => point.selected || point.highlighted ? 2.5 : point.alert !== null ? 2 : 0,
+      getLineWidth: point => haloRingged(point) ? 2.5 : point.alert !== null ? 2 : 0,
       updateTriggers: {
         getPosition: snapshot.revisions.points,
         getRadius: snapshot.revisions.points,
@@ -454,13 +472,14 @@ export const createOperationalDeckLayers = (config: OperationalDeckLayerConfig):
       getPosition: point => point.position,
       getRadius: point => statusDiskRadiusPx(point.sizePx),
       getFillColor: pointFill,
-      getLineColor: darkStroke(185),
+      getLineColor: point => point.dimmed ? darkStroke(70) : darkStroke(185),
       getLineWidth: 1,
       ...(config.disksPick ? { onClick: onSymbolClick, onHover: onSymbolHover } : {}),
       updateTriggers: {
         getPosition: snapshot.revisions.points,
         getRadius: snapshot.revisions.points,
         getFillColor: snapshot.revisions.points,
+        getLineColor: snapshot.revisions.points,
       },
     }),
     // The disks of objects a click opens a display for, drawn transparent and
@@ -496,7 +515,7 @@ export const createOperationalDeckLayers = (config: OperationalDeckLayerConfig):
       sizeUnits: 'pixels',
       getIcon: point => point.symbolId,
       getPosition: point => point.position,
-      getColor: point => point.muted ? white(150) : white(245),
+      getColor: glyphColor,
       getSize: point => point.sizePx,
       getAngle: point => point.rotationDeg,
       onClick: onSymbolClick,
@@ -520,7 +539,7 @@ export const createOperationalDeckLayers = (config: OperationalDeckLayerConfig):
           sizeUnits: 'pixels',
           getIcon: point => point.symbolId,
           getPosition: point => point.position,
-          getColor: point => point.muted ? white(150) : white(245),
+          getColor: glyphColor,
           getSize: point => point.sizePx,
           getAngle: point => point.rotationDeg,
           onClick: onSymbolClick,
@@ -542,10 +561,38 @@ export const createOperationalDeckLayers = (config: OperationalDeckLayerConfig):
           // A label is part of its object: a click or hover on it acts on the object, never on the ground beneath.
           pickable: true,
           visible: visible(visibleFamilies, 'objects'),
-          getColor: point => point.muted ? rgba(40, 46, 56, 150) : rgba(24, 28, 36, 245),
+          getColor: point => point.dimmed ? rgba(40, 46, 56, 95) : point.muted ? rgba(40, 46, 56, 150) : rgba(24, 28, 36, 245),
           backgroundColor: white(215),
           onClick: onSymbolClick,
           onHover: onSymbolHover,
+        })]
+      : []),
+    // Each target's tag above its halo while an order is armed: the verb or ETA a click there gives.
+    ...(layerData.targetTagPoints.length > 0
+      ? [new TextLayer<OperationalPointFeature>({
+          id: 'leitbild-target-tags',
+          data: layerData.targetTagPoints,
+          pickable: false,
+          visible: visible(visibleFamilies, 'objects'),
+          characterSet: 'auto',
+          fontFamily: 'system-ui, -apple-system, "Segoe UI", sans-serif',
+          fontWeight: 650,
+          sizeUnits: 'pixels',
+          getText: point => point.targetTag ?? '',
+          getPosition: point => point.position,
+          getSize: 13,
+          getColor: white(250),
+          getTextAnchor: 'middle',
+          getAlignmentBaseline: 'bottom',
+          getPixelOffset: point => [0, -(Math.max(18, statusDiskRadiusPx(point.sizePx)) + 6)],
+          background: true,
+          getBackgroundColor: targetHaloStroke,
+          backgroundPadding: [6, 3],
+          updateTriggers: {
+            getText: snapshot.revisions.points,
+            getPosition: snapshot.revisions.points,
+            getPixelOffset: snapshot.revisions.points,
+          },
         })]
       : []),
     new ScatterplotLayer<OperationalPointFeature>({
