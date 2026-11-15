@@ -619,12 +619,6 @@ export interface PackTargetingContribution {
   ) => PackCommandRequest
 }
 
-export interface PackMapAssignmentHandle {
-  readonly id: string
-  readonly controllerId: ObjectId
-  readonly point: GeoJsonPoint
-}
-
 export interface PackInteractionContribution {
   readonly handlers: ReadonlyArray<InteractionHandler>
 }

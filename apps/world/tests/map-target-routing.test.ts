@@ -6,7 +6,7 @@ import { defaultDroneVehicleModels, requireDroneVehicleModel } from '../src/pack
 import { navigateDroneCommandKind } from '../src/packs/drone/commands.ts'
 import { createScenarioDroneObject } from '../src/packs/drone/native/object-state.ts'
 import { dronePackView } from '../src/packs/drone/ui-pack.ts'
-import { groundClicksWanted, mapClickOutcome, previewObjectTarget, routeGroundClick, routeObjectClick, targetPickingWanted, targetPreviewsWanted, type ClosedMapTargetPanel, type MapClickContext, type MapClickOutcome, type MapClickRoute, type MapTargetPanel } from '../src/ui/map-target-routing.ts'
+import { groundClicksWanted, previewObjectTarget, routeGroundClick, routeObjectClick, targetPickingWanted, targetPreviewsWanted, type ClosedMapTargetPanel, type MapClickContext, type MapClickRoute, type MapTargetPanel } from '../src/ui/map-target-routing.ts'
 
 const at = '2026-10-12T08:00:00.000Z' as IsoTimestamp
 const ground = geoPointFromLonLat(11.38, 59.12)
@@ -288,27 +288,6 @@ describe('map target previews', () => {
     expect(targetPreviewsWanted(clickContext(sendTargeting, { panel: silentPanel }))).toBe(false)
     expect(targetPreviewsWanted(clickContext(sendTargeting))).toBe(false)
     expect(previewObjectTarget(site, clickContext(sendTargeting, { panel: silentPanel }))).toBeNull()
-  })
-})
-
-describe('one map click, once every layer has seen it', () => {
-  test('a suppressed click is consumed, an armed assignment is cancelled, and only an unhandled click is open ground', () => {
-    const outcomes: Record<string, MapClickOutcome> = {}
-    for (const suppressed of [false, true]) {
-      for (const assignmentActive of [false, true]) {
-        for (const handled of [false, true]) outcomes[`${suppressed}/${assignmentActive}/${handled}`] = mapClickOutcome({ suppressed, assignmentActive, handled })
-      }
-    }
-    expect(outcomes).toEqual({
-      'false/false/false': 'ground',
-      'false/false/true': 'handled',
-      'false/true/false': 'assignment-cancel',
-      'false/true/true': 'assignment-cancel',
-      'true/false/false': 'suppressed',
-      'true/false/true': 'suppressed',
-      'true/true/false': 'suppressed',
-      'true/true/true': 'suppressed',
-    })
   })
 })
 

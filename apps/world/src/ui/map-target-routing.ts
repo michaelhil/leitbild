@@ -158,21 +158,3 @@ export const previewObjectTarget = (object: OperationalObject, click: MapClickCo
   if (previewMapTarget) return previewMapTarget(controller.id, target)
   return targeting?.describeTarget?.(controller, target, context) ?? null
 }
-
-/** What one map click amounts to, decided once every layer has seen it. */
-export type MapClickOutcome = 'suppressed' | 'assignment-cancel' | 'handled' | 'ground'
-
-export interface MapClickMarks {
-  /** A long press, a hold-gesture target or an assignment handle consumed the click. */
-  readonly suppressed: boolean
-  /** The hold-gesture assignment is armed: any other click cancels it, and is never also a ground click. */
-  readonly assignmentActive: boolean
-  /** An object, a label, a Pack feature or a handle took the click. */
-  readonly handled: boolean
-}
-
-export const mapClickOutcome = (marks: MapClickMarks): MapClickOutcome => {
-  if (marks.suppressed) return 'suppressed'
-  if (marks.assignmentActive) return 'assignment-cancel'
-  return marks.handled ? 'handled' : 'ground'
-}

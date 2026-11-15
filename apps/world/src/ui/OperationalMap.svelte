@@ -18,7 +18,6 @@
     PackCreateObjectType,
     PackMapFeature,
     PackMapLayerGroup,
-    PackMapAssignmentHandle,
     PackMapFeatureQuery,
     PackObjectPresentation,
     PackTargetPreview,
@@ -39,13 +38,12 @@
   import { createCatalogueSymbolAtlas } from './map-runtime/catalogue-symbol-atlas.ts'
   import type { Map as MapLibreMap } from 'maplibre-gl'
   import { startingZoomFor, type CameraInteraction } from './map/map-camera.ts'
-  import { mapClickOutcome } from './map-target-routing.ts'
   import { noMapCover, type MapPrompt, type MapTargeting } from './surface-panel-interaction.ts'
   import type { MapCover } from './surface-panel-contract.ts'
   import { createMapPromptController } from './map/map-prompt.ts'
   import { createMapStackChooser } from './map/map-stack-chooser.ts'
   import { objectsUnder, stackPick } from './map/map-stack.ts'
-  import { disksPickFor, hoverCardsFor, longPressObject, pickingRadiusFor } from './map/map-pointer.ts'
+  import { disksPickFor, hoverCardsFor, pickingRadiusFor } from './map/map-pointer.ts'
   import { operationalIconPx } from './map-runtime/symbol-kit.ts'
   import { createReferenceLayerController } from './map-runtime/reference-layer-controller.ts'
   import {
@@ -57,7 +55,7 @@
     MapRuntimeDiagnosticsSnapshot,
     MapFocusRequest,
     MapRuntimeHandle,
-    MapAssignmentInteraction,
+    MapTargetingLine,
     MapTargetingRender,
     Position3,
   } from './map-runtime/types.ts'
@@ -132,15 +130,6 @@
     /** A role Run's perspective epoch: a hover card of an earlier one is never left showing. */
     readonly perspectiveEpoch?: number
     readonly onPackFeatureSelected?: (selection: NonNullable<PackMapFeature['selection']>) => void
-    readonly assignmentActive?: boolean
-    readonly assignmentAnchor?: GeoJsonPoint | null
-    readonly assignmentHandles?: ReadonlyArray<PackMapAssignmentHandle>
-    readonly onAssignmentObjectSelected?: (object: OperationalObject, screen: { readonly x: number; readonly y: number }) => void
-    readonly onAssignmentHandleSelected?: (controllerId: string) => void
-    readonly onAssignmentCancelled?: () => void
-    /** A mouse long press on an object `canLongPress` accepts; a press on any other object stays a plain click. */
-    readonly onObjectLongPressed?: (object: OperationalObject) => void
-    readonly canLongPress?: (object: OperationalObject) => boolean
     /** Camera gestures on or off; only an active Pack switches one off. */
     readonly cameraInteraction: CameraInteraction
     /** How far open surface panels reach over the map: the camera centres and fits clear of them, and so do the map's own controls. */
@@ -219,14 +208,6 @@
     packDataRevisionKey = '',
     perspectiveEpoch = 0,
     onPackFeatureSelected = () => {},
-    assignmentActive = false,
-    assignmentAnchor = null,
-    assignmentHandles = [],
-    onAssignmentObjectSelected = () => {},
-    onAssignmentHandleSelected = () => {},
-    onAssignmentCancelled = () => {},
-    onObjectLongPressed = () => {},
-    canLongPress = () => false,
     cameraInteraction,
     cameraPadding = noMapCover,
     targetPicking = false,
@@ -251,42 +232,37 @@
   let appliedFocusRevision = -1
   let mapReadyNotified = false
   let hoveredObject: OperationalObject | null = null
-  /** The type of the last pointer seen on the canvas; hover cards and the long press are for a mouse only (map-pointer.ts). */
+  /** The type of the last pointer seen on the canvas; hover cards and an armed order's line are for a mouse only (map-pointer.ts). */
   let lastPointerType: string | null = null
   /** How far around a press the map picks, for the last pointer seen: a mouse's 0 until a finger or a pen sets more. */
   let pickingRadius = 0
-  let assignmentPointer = $state<GeoJsonPoint | null>(null)
-  let interactionRevision = $state(0)
+  /** Where the mouse is while an order is armed: the end of its line. */
+  let linePointer = $state<GeoJsonPoint | null>(null)
+  let lineRevision = $state(0)
   let lastPointerScreen = { x: 0, y: 0 }
-  let suppressBackgroundClick = false
-  let longPressConsumedUntil = 0
-  // Set while one map click is handled by an object, a Pack feature or a handle, so it is not also a ground click.
+  // Set while one map click is handled by an object or a Pack feature, so it is not also a ground click.
   let clickHandled = false
   // One click selects one thing: a Pack feature beneath an object's icon (a grid line under a Plant) is selected only when no object took the click.
   let objectTookClick = false
   let featureSelection: NonNullable<PackMapFeature['selection']> | null = null
 
   const targetingRender = $derived<MapTargetingRender | null>(targeting === null ? null : { fromId: targeting.from, tags: new Map(targeting.targets.map(target => [target.id as string, target.tag])) })
-  /** Whether a line follows the pointer: an armed hold-gesture assignment, or a panel's armed order while the pointer is a mouse. */
-  const pointerLineWanted = (pointerType: string | null): boolean => assignmentActive || (targeting !== null && hoverCardsFor(pointerType))
+  /** Whether a line follows the pointer: a panel's armed order while the pointer is a mouse. */
+  const pointerLineWanted = (pointerType: string | null): boolean => targeting !== null && hoverCardsFor(pointerType)
 
-  /** Where the line starts: the assignment's anchor, else the armed order's object where its icon is drawn. */
+  /** Where the line starts: the armed order's object, where its icon is drawn. */
   const lineAnchor = (): Position3 | null => {
-    if (assignmentActive) return assignmentAnchor ? [assignmentAnchor.coordinates[0], assignmentAnchor.coordinates[1], 0] : null
     if (targeting === null || !hoverCardsFor(lastPointerType)) return null
     return operationalRenderController.points().find(point => point.id === targeting.from)?.position ?? null
   }
 
-  // The hold-gesture assignment and a panel's armed order draw their line to the pointer with the same layers.
-  const assignmentInteraction = (): MapAssignmentInteraction => {
+  /** The armed order's line to the mouse pointer. */
+  const targetingLine = (): MapTargetingLine => {
     const anchor = lineAnchor()
-    const active = assignmentActive || anchor !== null
     return {
-      revision: interactionRevision,
-      active,
+      revision: lineRevision,
       anchor,
-      pointer: active && assignmentPointer ? [assignmentPointer.coordinates[0], assignmentPointer.coordinates[1], 0] : null,
-      handles: assignmentHandles.map(handle => ({ id: handle.id, controllerId: handle.controllerId, position: [handle.point.coordinates[0], handle.point.coordinates[1], 0] })),
+      pointer: anchor !== null && linePointer ? [linePointer.coordinates[0], linePointer.coordinates[1], 0] : null,
     }
   }
 
@@ -332,18 +308,10 @@
   }
   const stackChooser = createMapStackChooser({ getMap: () => runtime?.map ?? null })
 
-  /** An object a click picked, or the one chosen from a stack: an assignment's target, or a selection. */
-  const pickObject = (object: OperationalObject): void => {
-    if (assignmentActive) {
-      suppressBackgroundClick = true
-      onAssignmentObjectSelected(object, lastPointerScreen)
-    } else onObjectSelected(object)
-  }
-
   /** The objects whose icons lie under the last press itself, while the surface picks targets. */
   const stackUnderPointer = (): ReadonlyArray<OperationalObject> => {
     const current = runtime
-    if (!targetPicking || assignmentActive || current === null) return []
+    if (!targetPicking || current === null) return []
     return objectsUnder(operationalRenderController.points(), position => current.map.project([position[0], position[1]]), lastPointerScreen)
   }
 
@@ -356,7 +324,7 @@
       label: presentationFor(object).mapLabel ?? object.label,
       choose: () => {
         onObjectSeen(object)
-        pickObject(object)
+        onObjectSelected(object)
       },
     })))
   }
@@ -395,7 +363,7 @@
       packFeatures: cachedPackMapFeatures,
       visibleFamilies: visibleFamilies(),
       placementCursorActive: placementCursor !== null,
-      assignmentInteraction: assignmentInteraction(),
+      targetingLine: targetingLine(),
       disksPick: disksPickFor(targetPicking, pickingRadius),
       diskClicks: pickingRadius === 0 ? takesDiskClicks : null,
       presentationKey: `${presentationKey}|physical:${[...detailedLayoutOwnerIds].sort().join(',')}`,
@@ -405,15 +373,14 @@
     onObjectSelected: object => {
       clickHandled = true
       objectTookClick = true
-      if (performance.now() < longPressConsumedUntil) return
       const stack = stackUnderPointer()
       if (stack.length > 1) {
         const picked = stackPick(stack, controllerHighlighted, isController)
         if (picked === null) return showStackChooser(stack)
         onObjectSeen(picked)
-        return pickObject(picked)
+        return onObjectSelected(picked)
       }
-      pickObject(object)
+      onObjectSelected(object)
     },
     onObjectSeen: object => onObjectSeen(object),
     onObjectHover: object => {
@@ -421,7 +388,6 @@
       if (object && hoverCardsFor(lastPointerType)) popupController.show(object)
       else popupController.hide()
     },
-    onAssignmentHandleSelected: handle => { clickHandled = true; suppressBackgroundClick = true; onAssignmentHandleSelected(handle.controllerId) },
     setCursor: cursor => {
       const canvas = runtime?.map.getCanvas()
       if (canvas) canvas.style.cursor = cursor
@@ -654,7 +620,7 @@
         placementActive: () => placementMode !== null,
         onPlacementPoint,
         onMapClick: point => {
-          // This listener runs first; object, label, Pack feature and handle clicks of the same event follow it
+          // This listener runs first; object, label and Pack feature clicks of the same event follow it
           // synchronously, because the deck overlay picks with pickAsync 'sync' (map-runtime.ts).
           // A double-click's extra object click leaves no mark on the next click.
           clickHandled = false
@@ -665,20 +631,17 @@
           // A click anywhere on the map dismisses the panel's prompt without confirming; its buttons stop their own clicks.
           promptController.dismiss()
           queueMicrotask(() => {
-            const outcome = mapClickOutcome({ suppressed: suppressBackgroundClick, assignmentActive, handled: clickHandled })
+            const handled = clickHandled
             const feature = objectTookClick ? null : featureSelection
             clickHandled = false
             objectTookClick = false
             featureSelection = null
-            if (outcome === 'handled') physicalLayoutInteraction?.dismiss()
+            if (handled) physicalLayoutInteraction?.dismiss()
             if (feature !== null && !placementMode) onPackFeatureSelected(feature)
-            if (outcome === 'suppressed') suppressBackgroundClick = false
-            else if (outcome === 'assignment-cancel') onAssignmentCancelled()
-            else if (outcome === 'ground') {
-              const captured = placementMode !== null || targetPicking || selectedControllerId !== null
-              if (!captured && physicalLayoutInteraction?.activate(lastPointerScreen)) return
-              onGroundSelected?.(point)
-            }
+            if (handled) return
+            const captured = placementMode !== null || targetPicking || selectedControllerId !== null
+            if (!captured && physicalLayoutInteraction?.activate(lastPointerScreen)) return
+            onGroundSelected?.(point)
           })
         },
         onMoveStart: event => {
@@ -709,9 +672,6 @@
       // Icons that would overlap fan out anew at each zoom step (point-declutter.ts).
       nextRuntime.map.on('zoom', () => operationalRenderController.syncZoom())
       const canvas = nextRuntime.map.getCanvas()
-      let holdTimer: ReturnType<typeof setTimeout> | null = null
-      let holdStart: { x: number; y: number } | null = null
-      const clearHold = () => { if (holdTimer !== null) clearTimeout(holdTimer); holdTimer = null; holdStart = null }
       // A finger picks objects within a 44 px target around the tap; a mouse only under it.
       const trackPointer = (pointerType: string) => {
         lastPointerType = pointerType
@@ -731,50 +691,27 @@
         pointerPoint(event)
         trackPointer(event.pointerType)
         if (!hoverCardsFor(lastPointerType)) popupController.hide()
-        const origin = longPressObject({ pointerType: event.pointerType, button: event.button, hovered: hoveredObject, busy: assignmentActive || placementMode !== null, canLongPress })
-        if (origin === null) return
-        holdStart = { x: event.clientX, y: event.clientY }
-        holdTimer = setTimeout(() => {
-          holdTimer = null
-          holdStart = null
-          assignmentPointer = pointerPoint(event)
-          interactionRevision += 1
-          longPressConsumedUntil = performance.now() + 500
-          suppressBackgroundClick = true
-          popupController.hide()
-          onObjectLongPressed(origin)
-        }, 420)
       }
       const onPointerMove = (event: PointerEvent) => {
         const point = pointerPoint(event)
         trackPointer(event.pointerType)
-        if (holdStart && Math.hypot(event.clientX - holdStart.x, event.clientY - holdStart.y) > 7) clearHold()
         if (!pointerLineWanted(event.pointerType)) return
-        assignmentPointer = point
-        interactionRevision += 1
+        linePointer = point
+        lineRevision += 1
       }
-      const onPointerEnd = () => clearHold()
       const onKeyDown = (event: KeyboardEvent) => {
         if (event.key !== 'Escape' || event.defaultPrevented) return
         if (event.target instanceof Element && event.target.closest('[role="dialog"], dialog, input, textarea, select, [contenteditable="true"]')) return
         if (stackChooser.shown()) stackChooser.hide()
-        else if (!promptController.dismiss() && !popupController.dismiss()) {
-          if (!assignmentActive) return
-          onAssignmentCancelled()
-        }
+        else if (!promptController.dismiss() && !popupController.dismiss()) return
         event.preventDefault()
       }
       canvas.addEventListener('pointerdown', onPointerDown)
       canvas.addEventListener('pointermove', onPointerMove)
-      canvas.addEventListener('pointerup', onPointerEnd)
-      canvas.addEventListener('pointercancel', onPointerEnd)
       window.addEventListener('keydown', onKeyDown)
       cleanupMapGestures = () => {
-        clearHold()
         canvas.removeEventListener('pointerdown', onPointerDown)
         canvas.removeEventListener('pointermove', onPointerMove)
-        canvas.removeEventListener('pointerup', onPointerEnd)
-        canvas.removeEventListener('pointercancel', onPointerEnd)
         window.removeEventListener('keydown', onKeyDown)
       }
       onMapView(readMapView(nextRuntime.map))
@@ -839,22 +776,15 @@
   })
 
   $effect(() => {
-    assignmentActive
-    assignmentAnchor
-    assignmentHandles
     targeting
-    interactionRevision
+    lineRevision
     untrack(() => {
       const canvas = runtime?.map.getCanvas()
-      if (!pointerLineWanted(lastPointerType) && assignmentPointer) {
-        assignmentPointer = null
-        interactionRevision += 1
+      if (!pointerLineWanted(lastPointerType) && linePointer) {
+        linePointer = null
+        lineRevision += 1
       }
-      if (assignmentActive && !assignmentPointer && assignmentAnchor) {
-        assignmentPointer = assignmentAnchor
-        interactionRevision += 1
-      }
-      if (canvas) canvas.style.cursor = assignmentActive ? 'crosshair' : placementCursor ? 'crosshair' : hoveredObject ? 'pointer' : ''
+      if (canvas) canvas.style.cursor = placementCursor ? 'crosshair' : hoveredObject ? 'pointer' : ''
       operationalRenderController.syncInteraction()
     })
   })

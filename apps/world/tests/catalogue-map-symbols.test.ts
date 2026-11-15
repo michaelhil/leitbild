@@ -63,9 +63,8 @@ const layersOf = (snapshot: OperationalRenderSnapshot, catalogueAtlas: Catalogue
 })
 
 const todaysLayerIds = [
-  'leitbild-assignment-preview-line',
-  'leitbild-assignment-crosshair',
-  'leitbild-assignment-handles',
+  'leitbild-targeting-line',
+  'leitbild-targeting-crosshair',
   'leitbild-operational-path-casing',
   'leitbild-operational-paths',
   'leitbild-object-halos',
