@@ -5,6 +5,7 @@ import { neutralLexicon, unitPhases } from '../lexicon.ts'
 import type { Stop, UnitOrderInput } from '../order-schema.ts'
 import type { Eta, RecommendAnswer } from '../recommendation-schema.ts'
 import type { Situation, SituationCall, SituationSite, SituationUnit, StopVerb, UnitOptions, UnitTone } from '../situation/schema.ts'
+import { clockText, contactIcon } from '../situation/text.ts'
 import { mapTargetingMaxTargets, type MapTargeting } from '../../../ui/surface-panel-interaction.ts'
 import { selectedObjectOf, stopObjectId, type CurrentJob, type DispatchObjectKind, type Selection } from './selection.ts'
 
@@ -28,8 +29,6 @@ import { selectedObjectOf, stopObjectId, type CurrentJob, type DispatchObjectKin
 export const receiptUndoMs = 8_000
 /** The most receipts the footer keeps, newest on top. */
 export const maxReceipts = 3
-/** The icon a contact shows: it has no identified type. */
-export const contactIcon = 'circle-question-mark'
 
 /** Mechanism words of the controls; every domain word comes from the situation. */
 export const dispatchWords = {
@@ -72,15 +71,6 @@ export const dispatchWords = {
   you: 'You',
   mapPoint: 'the map point',
 } as const
-
-const clockPad = (value: number): string => value.toString().padStart(2, '0')
-
-/** Seconds as m:ss, or h:mm:ss from an hour. */
-export const clockText = (seconds: number): string => {
-  const whole = Math.max(0, Math.round(seconds))
-  const [hours, minutes, rest] = [Math.floor(whole / 3600), Math.floor(whole / 60) % 60, whole % 60]
-  return hours > 0 ? `${hours}:${clockPad(minutes)}:${clockPad(rest)}` : `${minutes}:${clockPad(rest)}`
-}
 
 /** Seconds as whole minutes, at least one. */
 export const minutesText = (seconds: number): string => `${Math.max(1, Math.round(Math.max(0, seconds) / 60))} min`

@@ -1,7 +1,8 @@
 <script lang="ts">
   import { einsatzColors } from '../colors.ts'
   import { svgImageSource } from './einsatz-client.ts'
-  import { contactIcon, type ContactRowView } from './presenters.ts'
+  import { contactIcon } from '../situation/text.ts'
+  import type { ContactRowView } from './presenters.ts'
   import type { ClickedObject } from './selection.ts'
 
   /**

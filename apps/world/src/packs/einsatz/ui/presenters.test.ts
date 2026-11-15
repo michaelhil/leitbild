@@ -9,7 +9,6 @@ import {
   busyChoices,
   callCard,
   cardFor,
-  clockText,
   closedCallCard,
   contactRows,
   countsLine,
@@ -470,5 +469,4 @@ describe('Contacts', () => {
     expect(of({ type: 'unit' }, 'other')).toBeNull()
     expect(() => of({ type: 'unit' })).toThrow()
   })
-  test('clock text', () => expect([clockText(59.6), clockText(3_725), clockText(-3)]).toEqual(['1:00', '1:02:05', '0:00']))
 })
