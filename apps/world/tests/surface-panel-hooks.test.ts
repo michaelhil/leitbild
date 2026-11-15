@@ -4,10 +4,11 @@ import { createActivePackViews } from '../src/core/packs/active-views.ts'
 import type { Component } from 'svelte'
 import { createWorldPackDescriptor, type PackSurfacePanelContribution, type PackUiContribution, type PackWindowToolsProps, type WorldPackView } from '../src/core/packs/protocol.ts'
 import { assertCameraInteractionContract } from '../src/ui/map/map-camera.ts'
+import { mapPromptOffsets } from '../src/ui/map/map-prompt.ts'
 import { knownUiPackIds, loadUiPack } from '../src/ui/pack-loader.ts'
 import { geoPointFromLonLat, type IsoTimestamp, type ObjectId, type OperationalObject, type PackId, type SimulationRunId } from '../src/core/model/index.ts'
 import { groundClicksWanted, mapClickOutcome, targetPreviewsWanted } from '../src/ui/map-target-routing.ts'
-import { assertMapCover, assertPanelInteraction, cameraPaddingFor, mapCameraInteractionFor, noMapCover, openPanelDeclaring, railStartsCollapsed, startingControllerId, surfacePanelPackId } from '../src/ui/surface-panel-interaction.ts'
+import { assertMapCover, assertMapPrompt, assertPanelInteraction, cameraPaddingFor, mapCameraInteractionFor, noMapCover, openPanelDeclaring, railStartsCollapsed, startingControllerId, surfacePanelPackId } from '../src/ui/surface-panel-interaction.ts'
 
 const panelOf = (id: string, hooks: Pick<PackSurfacePanelContribution, 'mapTargets' | 'keymap'> = {}): PackSurfacePanelContribution => ({
   id,
@@ -182,6 +183,27 @@ describe('camera padding from surface panels', () => {
     const cover = { top: 0, right: 492, bottom: 0, left: 0 }
     expect(assertMapCover('first.board', cover)).toBe(cover)
     expect(() => assertMapCover('first.board', { top: 0, right: -1, bottom: Number.NaN, left: 0 })).toThrow('Surface panel first.board reported a map cover that is no length: right -1, bottom NaN')
+  })
+})
+
+describe('map prompts', () => {
+  const point = geoPointFromLonLat(11.38, 59.12)
+  const option = (label: string) => ({ label, onConfirm: () => undefined })
+
+  test('a prompt has one or two labelled options, and any other is refused naming the panel', () => {
+    const one = { point, options: [option('Move A4 here')] }
+    const two = { point, options: [option('After current job'), { ...option('Now (drops C-3 · P3)'), tone: 'warning' as const }] }
+    expect(assertMapPrompt('fixture.panel', one)).toBe(one)
+    expect(assertMapPrompt('fixture.panel', two)).toBe(two)
+    expect(() => assertMapPrompt('fixture.panel', { point, options: [] })).toThrow('Surface panel fixture.panel showed a map prompt with 0 options; a prompt has one or two')
+    expect(() => assertMapPrompt('fixture.panel', { point, options: [option('a'), option('b'), option('c')] })).toThrow('with 3 options')
+    expect(() => assertMapPrompt('fixture.panel', { point, options: [option('a'), option(' ')] })).toThrow('option 2 has no label')
+  })
+
+  test('wherever the map anchors it, the prompt stands clear of a 44 px tap around its point, above it unless an edge leaves no room', () => {
+    for (const [anchor, [x, y]] of Object.entries(mapPromptOffsets)) expect({ anchor, clear: Math.hypot(x, y) >= 22 }).toEqual({ anchor, clear: true })
+    expect(mapPromptOffsets.bottom[1]).toBeLessThan(0)
+    expect(mapPromptOffsets.center[1]).toBeLessThan(0)
   })
 })
 

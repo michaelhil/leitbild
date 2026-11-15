@@ -30,15 +30,33 @@ export interface SurfacePanelInteraction {
   readonly onKey?: (key: PanelKey) => boolean
 }
 
+/** One button of a map prompt; a warning one names work it drops, e.g. "Now (drops C-3 · P3)". */
+export interface MapPromptOption {
+  readonly label: string
+  readonly tone?: 'default' | 'warning'
+  readonly onConfirm: () => void
+}
+
 /**
- * A one-button prompt a map-target panel shows at a point on the map, such as
- * "Move here" after a tap on open ground: the map draws the button there and
- * a tap on it confirms. A tap anywhere else on the map does not.
+ * A prompt a map-target panel shows at a point on the map, such as "Move
+ * here" after a tap on open ground, or "After current job" and "Now (drops
+ * …)" for a busy unit: one or two buttons, in the order given. The map draws
+ * them offset above or beside the point, never under it, so the finger or
+ * pointer that made the tap does not land on one; a tap on a button confirms
+ * it, and a tap anywhere else on the map dismisses the prompt without
+ * confirming.
  */
 export interface MapPrompt {
   readonly point: GeoJsonPoint
-  readonly label: string
-  readonly onConfirm: () => void
+  readonly options: ReadonlyArray<MapPromptOption>
+}
+
+/** A panel's prompt, refused unless it has one or two options, each with a label. */
+export const assertMapPrompt = (panelId: string, prompt: MapPrompt): MapPrompt => {
+  if (prompt.options.length < 1 || prompt.options.length > 2) throw new Error(`Surface panel ${panelId} showed a map prompt with ${prompt.options.length} options; a prompt has one or two`)
+  const unlabelled = prompt.options.findIndex(option => option.label.trim().length === 0)
+  if (unlabelled >= 0) throw new Error(`Surface panel ${panelId} showed a map prompt whose option ${unlabelled + 1} has no label`)
+  return prompt
 }
 
 export const noMapCover: MapCover = Object.freeze({ top: 0, right: 0, bottom: 0, left: 0 })

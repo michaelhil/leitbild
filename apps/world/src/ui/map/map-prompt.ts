@@ -1,12 +1,31 @@
-import { Popup, type Map as MapLibreMap } from 'maplibre-gl'
+import { Popup, type Map as MapLibreMap, type PositionAnchor } from 'maplibre-gl'
 import type { MapPrompt } from '../surface-panel-interaction.ts'
 
 /**
- * The map's one panel prompt: a button anchored at a point, drawn as a
- * MapLibre popup so it stays on its point while the map moves. A tap on the
- * button confirms; the button is a real control, so it never also counts as
- * a click on the ground beneath it.
+ * The map's one panel prompt: one or two buttons offset from a point, drawn
+ * as a MapLibre popup so they stay by their point while the map moves. The
+ * popup sits above the point by default and beside or below it only where
+ * the map edge leaves no room; it is always offset clear of the point, never
+ * over it. A tap on a button confirms that option; the buttons are real
+ * controls, so a tap on one never also counts as a click on the ground
+ * beneath. A click anywhere on the map dismisses the prompt without
+ * confirming (`dismiss`, called by the map for every click).
  */
+
+/** How far the popup stands off its point, per anchor MapLibre picks: clear of a 44 px tap around the point. */
+const clearOfPointPx = 26
+const diagonalPx = Math.round(clearOfPointPx * Math.SQRT1_2)
+export const mapPromptOffsets: Readonly<Record<PositionAnchor, [number, number]>> = {
+  center: [0, -clearOfPointPx],
+  top: [0, clearOfPointPx],
+  bottom: [0, -clearOfPointPx],
+  left: [clearOfPointPx, 0],
+  right: [-clearOfPointPx, 0],
+  'top-left': [diagonalPx, diagonalPx],
+  'top-right': [-diagonalPx, diagonalPx],
+  'bottom-left': [diagonalPx, -diagonalPx],
+  'bottom-right': [-diagonalPx, -diagonalPx],
+}
 
 export interface MapPromptController {
   /** Shows the prompt, replacing any other, or clears it with null. */
@@ -35,14 +54,17 @@ export const createMapPromptController = (config: { readonly getMap: () => MapLi
       dismiss()
       const map = config.getMap()
       if (prompt === null || map === null) { shown = null; return }
-      const button = document.createElement('button')
-      button.type = 'button'
-      button.className = 'map-prompt-button'
-      button.textContent = prompt.label
       shown = prompt
-      button.addEventListener('click', event => {
-        event.stopPropagation()
-        prompt.onConfirm()
+      const buttons = prompt.options.map(option => {
+        const button = document.createElement('button')
+        button.type = 'button'
+        button.className = option.tone === 'warning' ? 'map-prompt-button map-prompt-button-warning' : 'map-prompt-button'
+        button.textContent = option.label
+        button.addEventListener('click', event => {
+          event.stopPropagation()
+          option.onConfirm()
+        })
+        return button
       })
       const [lon, lat] = prompt.point.coordinates
       const content = document.createElement('div')
@@ -53,8 +75,8 @@ export const createMapPromptController = (config: { readonly getMap: () => MapLi
       close.setAttribute('aria-label', 'Dismiss map prompt')
       close.textContent = '×'
       close.addEventListener('click', event => { event.stopPropagation(); dismiss() })
-      content.append(button, close)
-      popup = new Popup({ closeButton: false, closeOnClick: false, anchor: 'bottom', offset: 10, className: 'map-prompt' })
+      content.append(...buttons, close)
+      popup = new Popup({ closeButton: false, closeOnClick: false, offset: { ...mapPromptOffsets }, className: 'map-prompt' })
         .setLngLat([lon, lat])
         .setDOMContent(content)
         .addTo(map)

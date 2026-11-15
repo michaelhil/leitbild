@@ -232,7 +232,7 @@
     const key = prompt === null ? null : JSON.stringify([prompt.unitId, prompt.point.coordinates, prompt.label])
     if (key === shownPromptKey) return
     shownPromptKey = key
-    untrack(() => props.onMapPrompt(prompt === null ? null : { point: prompt.point, label: prompt.label, onConfirm: () => click({ kind: 'move-here' }) }))
+    untrack(() => props.onMapPrompt(prompt === null ? null : { point: prompt.point, options: [{ label: prompt.label, onConfirm: () => click({ kind: 'move-here' }) }] }))
   })
 </script>
 

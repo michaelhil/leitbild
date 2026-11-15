@@ -78,7 +78,7 @@
     readonly highlightedObjectIds?: ReadonlyArray<string>
     /** Objects the screen sees but may not order: drawn muted. */
     readonly mutedObjectIds?: ReadonlyArray<string>
-    /** The open map-target panel's one-button prompt at a point, e.g. "Move here". */
+    /** The open map-target panel's prompt of one or two buttons by a point, e.g. "Move here"; any map click dismisses it. */
     readonly prompt?: MapPrompt | null
     readonly hiddenObjectCategoryIds?: ReadonlyArray<string>
     readonly hasNewInfo: (object: OperationalObject) => boolean
@@ -636,6 +636,8 @@
           featureSelection = null
           // Any click lets a stack's chooser go; an object click on a stack shows a new one.
           stackChooser.hide()
+          // A click anywhere on the map dismisses the panel's prompt without confirming; its buttons stop their own clicks.
+          promptController.dismiss()
           queueMicrotask(() => {
             const outcome = mapClickOutcome({ suppressed: suppressBackgroundClick, assignmentActive, handled: clickHandled })
             const feature = objectTookClick ? null : featureSelection
@@ -1076,5 +1078,17 @@
     font: inherit;
     font-weight: 650;
     cursor: pointer;
+  }
+
+  .map :global(.map-prompt-actions .map-prompt-button + .map-prompt-button) {
+    margin-left: 6px;
+  }
+
+  /* An option that drops work, such as "Now (drops C-3 · P3)". */
+  .map :global(.map-prompt-button-warning) {
+    border-color: var(--warning);
+    background: var(--panel);
+    color: var(--text);
+    box-shadow: inset 4px 0 0 var(--warning);
   }
 </style>
