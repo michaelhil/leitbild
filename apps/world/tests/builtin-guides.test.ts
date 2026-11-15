@@ -68,16 +68,16 @@ test('the two novice dispatch guides choose eligible real units and their actual
   try {
     for (const [scenarioId, unitId, taskId, roles] of [
       ['supply-run', 'unit:truck-3', 'task:field-kitchen', []],
-      ['halden-emergency', 'unit:amb-4', 'task:tistedal-fall', ['group:ambulance']],
+      ['halden-emergency', 'unit:amb-4', 'task:tistedal-fall', []],
     ] as const) {
       const run = await registry.create({ scenarioId })
-      const actor = { id: 'actor:guide-learner' as never, label: 'Guide learner', role: 'operator' as const, roleIds: roles }
+      const actor = { id: 'actor:guide-learner' as never, label: 'Guide learner', role: 'operator' as const, ...(roles.length === 0 ? {} : { roleIds: roles }) }
       const source = registry.loadedCompiledScenario(run.id)
       const condition = source.guide!.steps.find(step => step.id === (scenarioId === 'supply-run' ? 'arrival' : 'ems-arrival'))!.completion
       if (condition.kind !== 'condition') throw new Error('The arrival step must read actual World evidence')
       const evidence = () => evaluateGuideCondition({ condition: condition.condition, runtime: run, actor, startsAt: source.world.startsAt, canInspect: id => run.inspectionPolicy(actor).canInspect(id) })
       expect((await evidence()).status).toBe('contradicted')
-      const dispatched = await run.invokeCapability(actor, { capabilityId: 'world.einsatz.unit.send', input: { units: [unitId], to: { taskId } } })
+      const dispatched = await run.invokeCapability(actor, { capabilityId: 'world.einsatz.unit.order', input: { units: [unitId], stops: [{ taskId }] } })
       expect(dispatched.kind === 'command' && dispatched.result.ok, scenarioId).toBe(true)
       // Stop at the model's observed arrival, not an authored ETA or click receipt.
       await run.runMaximumPace(new Date(Date.parse(source.world.startsAt) + 15 * 60_000).toISOString() as never, {

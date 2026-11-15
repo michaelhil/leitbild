@@ -46,7 +46,7 @@ const groupsOnlyDefinition = {
   ...definitionOf(groupItems, undefined, {
     roles: [{ id: 'control', label: 'Control', class: 'controller', sees: 'all' }],
     sides: groupSides,
-    config: { ...groupConfig, authority: [] },
+    config: groupConfig,
   }),
   id: 'einsatz-groups-only',
 }
@@ -99,12 +99,12 @@ describe('Einsatz registered in the World application assembly', () => {
     const { routing, calls } = offlineRouting()
     const { workspaces, workspaceId } = await setup(routing)
     const run = await createRun(workspaces, workspaceId, openDefinition.id)
-    const sent = await invoke<unknown>(workspaces, workspaceId, run, einsatzCommandIds.send, { units: ['c1'], to: { taskId: 'low1' } })
-    expect(sent).toEqual({ status: 409, body: { error: { code: 'simulation_command_rejected', message: 'routing_unavailable: No route for C1: Router offline' } } })
+    const sent = await invoke<unknown>(workspaces, workspaceId, run, einsatzCommandIds.order, { units: ['c1'], stops: [{ taskId: 'low1' }] })
+    expect(sent).toEqual({ status: 409, body: { error: { code: 'routing_unavailable', message: 'routing_unavailable: No route for C1: Router offline' } } })
     expect(calls.route).toBe(1)
-    const recommended = await invoke<{ result: { proposal: { units: ReadonlyArray<{ unitId: string; eta: { kind: string; reason?: string } }> } } }>(workspaces, workspaceId, run, einsatzQueryIds.recommend, { taskId: 'low1' })
+    const recommended = await invoke<{ result: { proposal: { units: ReadonlyArray<{ unitId: string; eta: { kind: string; reason?: string } }> } | null } }>(workspaces, workspaceId, run, einsatzQueryIds.recommend, { taskId: 'low1' })
     expect(recommended.status).toBe(200)
-    expect(recommended.body.result.proposal.units).toMatchObject([{ unitId: 'c1', eta: { kind: 'unavailable', reason: 'routing_unavailable: ETA unavailable: Router offline' } }])
+    expect(recommended.body.result.proposal?.units).toMatchObject([{ unitId: 'c1', eta: { kind: 'unavailable', reason: 'routing_unavailable: ETA unavailable: Router offline' } }])
     expect(calls.table).toBe(1)
   })
 
