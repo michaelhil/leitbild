@@ -32,7 +32,6 @@ export const physicalExplorerNeedsLive = (input: {
 /** Physical inspection yields to operational target capture on the native map. */
 export const physicalExplorerOperationalCapture = (input: {
   readonly placement: boolean
-  readonly assignment: boolean
   readonly targetPicking: boolean
   readonly controllerSelected: boolean
-}): boolean => input.placement || input.assignment || input.targetPicking || input.controllerSelected
+}): boolean => input.placement || input.targetPicking || input.controllerSelected

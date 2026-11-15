@@ -134,9 +134,9 @@ describe('the Plant\'s window tools offer what the card offered, each by the car
 describe('a press on a Plant opens its overview display', () => {
   const route = source('ui/routes/ControlSurfaceRoute.svelte')
 
-  test('a press its Pack opens a display for opens it, unless a placement or an assignment has the map; the map\'s disk takes the same presses', () => {
+  test('a press its Pack opens a display for opens it, unless a placement has the map; the map\'s disk takes the same presses', () => {
     expect(route).toMatch(/const opensDisplay = \(object: OperationalObject\): boolean => activePack\?\.packForObject\(object\)\.ui\?\.displayOnPress === true/)
-    expect(route).toMatch(/if \(route\.kind === 'display'\) \{[^}]*if \(placementMode === null && mapAssignment === null\) openDisplayFromPress\(route\.objectId\)/)
+    expect(route).toMatch(/if \(route\.kind === 'display'\) \{[^}]*if \(placementMode === null\) openDisplayFromPress\(route\.objectId\)/)
     expect(route).toContain('takesDiskClicks={opensDisplay}')
     expect(route).toMatch(/opensDisplay \}\)/)
     // On close the window gives focus back to the rail row the press came from, else to the map.
