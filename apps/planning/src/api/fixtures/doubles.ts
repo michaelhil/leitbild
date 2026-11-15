@@ -81,7 +81,6 @@ export const createSolverDouble = (options: { readonly calls?: Array<{ readonly 
       items: [{ job: row.job, start: row.start, finish: row.finish, floatHours: row.float.workingHours, because: [{ kind: 'link', about: [{ kind: 'job', key: row.job }] }], joint: false }],
     }
   },
-  variantKey: (_inputs, variant) => doubleVariantKey(variant),
   finishCause: async request => {
     options.calls?.push({ kind: 'finish-cause' })
     const row = request.option.rows.at(-1)

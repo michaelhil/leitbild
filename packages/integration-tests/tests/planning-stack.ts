@@ -51,6 +51,9 @@ const startWorld = async (cleanup: Array<() => Promise<void> | void>) => {
   const assembly = createWorldApplicationAssembly({ routing })
   const workspaces = createWorldWorkspaceRuntimeRegistry({
     dataDir, moduleState: createWorldModuleState({ dataDir }),
+    // Runs stay loaded for the whole test, so runEvents reads the journal a long journey started with: an idle
+    // Run is otherwise closed after its delay, and a journey of several Generates outlasts it.
+    idleRuntimeCloseDelayMs: -1,
     scenarioRuntimeResolver: createScenarioRuntimeResolver({ packs: assembly.packs }),
     scenarioDefinitions: builtinScenarioDefinitions,
     compileScenarioDefinition: source => compileScenarioDefinition(source, assembly.packs, { routing }),

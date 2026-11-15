@@ -7,6 +7,8 @@ import { afterAll, expect, test } from 'bun:test'
 import { buysHonesty } from '../../../apps/planning/tests/harness/buys-honesty.ts'
 import { sectionDataSchemas } from '../../../apps/planning/src/api/contract.ts'
 import { rungsOf } from '../../../apps/planning/src/plan/buys.ts'
+import { methodCombinations } from '../../../apps/planning/src/solve/keys.ts'
+import { ladderRungs, rungRequest } from '../../../apps/planning/src/solve/ladder.ts'
 import { formulationOf } from '../../../apps/planning/src/solve/compile.ts'
 import { createPlanningClient } from '../../../apps/planning/src/ui/api.ts'
 import { createPlanningStack } from './planning-stack.ts'
@@ -21,6 +23,10 @@ const small = <T>(result: T): T => {
 const seconds = 10
 const stored = (planId: string) => stack.store.read(stack.workspaceId, planId)
 const buys = async (planId: string) => sectionDataSchemas.buys.parse(small(await client.read(planId, { section: 'buys' })).sections[0]!.data).items
+type BuysItem = Awaited<ReturnType<typeof buys>>[number]
+/** The items of one method's ladder: one ladder per method (U3). */
+const methodOf = (item: BuysItem) => JSON.stringify('rung' in item ? item.rung.methods : item.row.methods)
+const perMethod = (items: readonly BuysItem[]) => [...new Set(items.map(methodOf))].map(method => items.filter(item => methodOf(item) === method))
 
 /** Steps 1 and 2: the Definition's Scenario started by a person, the plan created, linked and refreshed; days only refused, then with purchases. */
 const firstPlan = async () => {
@@ -56,8 +62,10 @@ test('steps 1, 2 and 4: first plan, why recommended, the rungs to solve; seal at
   expect(reason.some(line => line.startsWith('Not in the ranking: Weeks without a ready SW spare'))).toBe(true)
   const plan = await stored(planId)
   const ladder = await buys(planId)
-  expect(ladder.flatMap(item => 'rung' in item ? [item.rung.buy] : [])).toEqual(rungsOf(plan.inputs).map(rung => [...rung.buy]))
-  expect(buysHonesty(plan, ladder, formulationOf(plan.inputs.settings.grid))).toEqual([])
+  // One ladder per method, each with every rung and its buy list, each rung naming its method.
+  const methods = methodCombinations(plan.inputs)
+  expect(ladder.flatMap(item => 'rung' in item ? [[item.rung.methods, item.rung.buy]] : [])).toEqual(methods.flatMap(combo => rungsOf(plan.inputs).map(rung => [combo, [...rung.buy]])))
+  for (const items of perMethod(ladder)) expect(buysHonesty(plan, items, formulationOf(plan.inputs.settings.grid))).toEqual([])
 
   // Step 4: the seal at 14 h, previewed, then saved; Generate again; what differs from the earlier set (T12).
   const seal = plan.inputs.jobs.find(job => job.title === 'Replace CCW A mechanical seal')!
@@ -81,15 +89,22 @@ test('steps 1, 2 and 4: first plan, why recommended, the rungs to solve; seal at
 
 test('step 3: the ladder solved bottom-up with keep, its rows honest by lane K; at most 48 h out; cheapest that keeps every rule', async () => {
   const { runId, journal, planId, revision } = await firstPlan()
-  // One Generate per rung, each with its buy list and keep, as the screen sends them (design §4.1).
+  // One Generate per rung, lowest first, with keep: lane S's per-method requests, as the screen sends them
+  // (solve/ladder.ts rungRequest; the top rung is the plain kept Generate).
   const plan = await stored(planId)
-  for (const rung of rungsOf(plan.inputs)) small(await client.generate(planId, revision, { seconds, variants: [{ buy: [...rung.buy] }], keep: true }))
+  const label = (combo: readonly { readonly option: string }[]) => combo.map(pick => plan.inputs.methods.flatMap(choice => choice.options).find(option => option.key === pick.option)!.label).join(', ')
+  for (const rung of ladderRungs(plan.inputs)) small(await client.generate(planId, revision, { seconds, ...rungRequest(plan.inputs, rung, combo => `${label(combo)}: rung ${rung.rung + 1}`) }))
   const solved = await stored(planId)
   const ladder = await buys(planId)
   console.log('what overtime buys:', JSON.stringify(ladder))
-  expect(ladder.filter(item => 'rung' in item && item.rung.option !== undefined)).toHaveLength(rungsOf(plan.inputs).length)
-  expect(ladder.filter(item => 'row' in item).length).toBeGreaterThan(0)
-  expect(buysHonesty(solved, ladder, formulationOf(solved.inputs.settings.grid))).toEqual([])
+  // A three-rung ladder per method, every rung solved, with its rows, and every word honest by lane K.
+  const ladders = perMethod(ladder)
+  expect(ladders).toHaveLength(methodCombinations(plan.inputs).length)
+  for (const items of ladders) {
+    expect(items.filter(item => 'rung' in item && item.rung.option !== undefined)).toHaveLength(rungsOf(plan.inputs).length)
+    expect(items.filter(item => 'row' in item).length).toBeGreaterThan(0)
+    expect(buysHonesty(solved, items, formulationOf(solved.inputs.settings.grid))).toEqual([])
+  }
 
   // At most 48 h out: a what-if with one extra hard rule, under a key no plan rule has (T8).
   const span = plan.inputs.rules.find(rule => rule.kind === 'span-limit' && rule.group === 'COOL-A')!

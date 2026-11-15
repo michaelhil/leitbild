@@ -3,11 +3,11 @@
 // The last part runs lane K's own judge, buysHonesty, on increment 1's real Train A options.
 import { describe, expect, test } from 'bun:test'
 import { buysRowSchema, sectionDataSchemas } from '../api/contract.ts'
-import { planWith, rebuild, refusedWith, swap, trainAInputs, variantOf } from '../api/fixtures/choose.ts'
+import { ladderFor, planWith, rebuild, refusedWith, swap, trainAInputs, variantOf } from '../api/fixtures/choose.ts'
 import { formulationOf } from '../solve/compile.ts'
 import { rungStanding } from '../check/buys.ts'
 import { buysHonesty } from '../../tests/harness/buys-honesty.ts'
-import { buysItems, ladderOf, rungsOf, type FinishCause, type Standing } from './buys.ts'
+import { buysItems, ladderOf, methodLadders, rungsOf, type FinishCause, type Standing } from './buys.ts'
 import type { PlanInputs } from './schema.ts'
 
 const rungs = rungsOf(trainAInputs)
@@ -88,6 +88,29 @@ describe('a row\'s word stands on the two ends it is given', () => {
     const items = ladder([refusedEnd, solvedAt('found', 60, 1_000), solvedAt('found', 60, 3_000)])
     for (const row of rows(items)) expect(buysRowSchema.safeParse(row).success).toBe(true)
     expect(JSON.stringify(items)).not.toContain('buys nothing')
+  })
+})
+
+describe('one ladder per method (U3, G1): each rung found by lane S\'s per-method key, each naming its method', () => {
+  test('a three-rung ladder per method on Train A has its rows, and no rung or row carries empty methods', () => {
+    const formulation = formulationOf(trainAInputs.settings.grid)
+    const plan = planWith(crypto.randomUUID(), [...ladderFor(rebuild), ...ladderFor(swap)])
+    const ladders = methodLadders(trainAInputs, key => {
+      const option = plan.options!.options.find(entry => entry.key === key)
+      return option === undefined ? undefined : { key: option.key, standing: rungStanding(plan, option, formulation) }
+    })
+    expect(ladders.map(ladder => ladder.rungs.map(rung => rung.option ?? null))).toEqual([ladderFor(rebuild).map(option => option.key), ladderFor(swap).map(option => option.key)])
+    const picks = (option: typeof rebuild) => option.variant.methods.map(pick => ({ choice: pick.choice, option: pick.option }))
+    expect(ladders.map(ladder => ladder.rows.map(({ row }) => row.word))).toEqual([['makes it possible', 'not found better'], ['makes it possible', 'not found better']])
+    ladders.forEach((ladder, index) => {
+      const method = picks([rebuild, swap][index]!)
+      expect(method.length).toBeGreaterThan(0)
+      for (const rung of ladder.rungs) expect(rung.methods).toEqual(method)
+      for (const { row } of ladder.rows) expect(row.methods).toEqual(method)
+      // Lane K's judge, on each method's ladder.
+      expect(buysHonesty(plan, buysItems(ladder, new Map()), formulation)).toEqual([])
+    })
+    expect(sectionDataSchemas.buys.safeParse({ items: ladders.flatMap(ladder => buysItems(ladder, new Map())) }).success).toBe(true)
   })
 })
 

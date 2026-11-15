@@ -13,6 +13,8 @@ import { bundledPlanDefinitions } from '../../definitions/index.ts'
 import { optionSchema, planInputsSchema, planSchema, type Plan, type PlanInputs, type Status } from '../../plan/schema.ts'
 import { formulationOf } from '../../solve/compile.ts'
 import { explainRefusal } from '../../solve/explain.ts'
+import { methodCombinations } from '../../solve/keys.ts'
+import { ladderRungs, rungOptionKeys } from '../../solve/ladder.ts'
 
 export type Option = NonNullable<Plan['options']>['options'][number]
 type Feasible = Extract<Status, { word: 'validated feasible' }>
@@ -75,6 +77,18 @@ export const refusedWith = (option: Option, buy: readonly string[]): Option => {
   if (refusal === undefined || !refusal.proves) throw new Error(`${option.key} is not refused with ${buy.join(', ')}`)
   const allowed = trainAInputs.purchases.filter(purchase => buy.includes(purchase.key) || purchase.ordered !== undefined).map(purchase => purchase.key)
   return optionSchema.parse({ ...option, variant: { methods: option.variant.methods, purchases: allowed }, status: { word: 'proven infeasible', cause: refusal.cause, run: feasible(swap).run }, rows: [], metrics: [] })
+}
+
+/**
+ * `option`'s method's ladder as lane S keys and Generate stores it (rungOptionKeys): rung 0, days only,
+ * refused with its real certificate; rungs 1 and 2 that option's own plan, the top rung under the method's
+ * default key. Each at `revision`.
+ */
+export const ladderFor = (option: Option, revision = 3): Option[] => {
+  const index = methodCombinations(trainAInputs).findIndex(combo => JSON.stringify(combo) === JSON.stringify(option.variant.methods))
+  const rungs = ladderRungs(trainAInputs)
+  const keys = rungs.map(rung => rungOptionKeys(trainAInputs, rung)[index]!)
+  return [refusedWith(variantOf(option, { key: keys[0]!, revision }), rungs[0]!.buy), ...keys.slice(1).map(key => variantOf(option, { key, revision }))]
 }
 
 /** A search that found nothing in its time. */

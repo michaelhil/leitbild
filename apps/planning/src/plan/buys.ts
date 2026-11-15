@@ -4,7 +4,8 @@
 // module only words a row on the two ends it is given, and words nothing a standing does not support.
 import type { z } from 'zod'
 import type { buysRowSchema, buysRungSchema, sectionDataSchemas } from '../api/contract.ts'
-import { ladderRungs } from '../solve/ladder.ts'
+import { methodCombinations } from '../solve/keys.ts'
+import { ladderRungs, rungOptionKeys } from '../solve/ladder.ts'
 import type { metricSchema, PlanInputs } from './schema.ts'
 
 type Metric = z.infer<typeof metricSchema>
@@ -32,6 +33,22 @@ export interface Standing {
  */
 export const rungsOf = (inputs: PlanInputs): Array<{ readonly rung: number; readonly buy: readonly string[] }> =>
   ladderRungs(inputs).map(rung => ({ rung: rung.rung, buy: rung.buy }))
+
+/**
+ * One ladder per method combination (U3, G1): each rung's option is the one lane S keys for that method and
+ * the rung's buy list (rungOptionKeys; the top rung is the default option of the method), and each rung and
+ * row names the method's picks, so no row compares two methods. `optionFor`: the stored option under that
+ * key, when fresh on the plan's revision and formulation, with its standing; else the rung is still to solve.
+ * A plan without method choices has one ladder, whose picks are none.
+ */
+export const methodLadders = (inputs: PlanInputs, optionFor: (key: string) => { readonly key: string; readonly standing: Standing } | undefined): Ladder[] => {
+  const rungs = ladderRungs(inputs)
+  const keys = rungs.map(rung => rungOptionKeys(inputs, rung))
+  return methodCombinations(inputs).map((combo, index) => ladderOf(rungs.map((rung, r) => {
+    const option = optionFor(keys[r]![index]!)
+    return { rung: rung.rung, buy: rung.buy, ...(option === undefined ? {} : { option }) }
+  }), combo.map(pick => ({ choice: pick.choice, option: pick.option }))))
+}
 
 /** A rung with its stored option, fresh on the plan's revision and formulation, and that option's standing. */
 export interface LadderRung {
