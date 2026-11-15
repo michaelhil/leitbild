@@ -126,9 +126,10 @@ export const createPlanActions = (client: PlanningClient, planId: string, progre
       return { ...read, notice: worldReadNotice(read.model) }
     },
     /** Generate, or Cancel through `signal`: either way the plan is read again, so what is kept shows. */
-    generate: async (model: PlanModel, input: GenerateInput, signal: AbortSignal, keep: string | null): Promise<Shown & { readonly error: string | null }> => {
+    generate: async (model: PlanModel, input: GenerateInput, signal: AbortSignal, keep: string | null): Promise<Shown & { readonly error: string | null; readonly cause: unknown }> => {
       let notice: string | null = null
       let error: string | null = null
+      let failed: unknown = null
       let option = keep
       try {
         // The outcome banner says what Generate found, from the options read back; no prose is copied.
@@ -136,9 +137,9 @@ export const createPlanActions = (client: PlanningClient, planId: string, progre
         option = result.recommended ?? keep
       } catch (cause) {
         if (signal.aborted) notice = 'Cancelled. The best plan found before the stop is kept only if it is better than the one you had.'
-        else error = refusalText(cause, createNames(model.inputs).any)
+        else { error = refusalText(cause, createNames(model.inputs).any); failed = cause }
       }
-      return { ...await load(option, notice), error }
+      return { ...await load(option, notice), error, cause: failed }
     },
     rows: async (model: PlanModel, option: string): Promise<PlanModel> =>
       model.rows[option] === undefined ? { ...model, rows: { ...model.rows, [option]: await loadRows(client, planId, option) } } : model,

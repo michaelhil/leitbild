@@ -9,6 +9,7 @@
   import CrewForm from './CrewForm.svelte'
   import EditPreview from './EditPreview.svelte'
   import EquipmentPicker from './EquipmentPicker.svelte'
+  import ErrorNotice from './ErrorNotice.svelte'
   import Glance from './Glance.svelte'
   import { glance } from './orientation.ts'
   import FinishPanel from './FinishPanel.svelte'
@@ -77,6 +78,9 @@
   let busy = $state(false)
   let generating = $state<AbortController | null>(null)
   let error = $state<string | null>(null)
+  /** What failed, kept for the detail behind "Details for support" when the screen could not read an answer. */
+  let errorCause = $state<unknown>(null)
+  const fail = (cause: unknown): void => { error = refusalText(cause, context?.names.any); errorCause = cause }
   let notice = $state<string | null>(null)
   let finish = $state<readonly FinishStep[] | null>(null)
   let limiting = $state<{ readonly parts: readonly Part[] } | null>(null)
@@ -257,8 +261,9 @@
   const attempt = async (work: () => Promise<void>): Promise<void> => {
     busy = true
     error = null
+    errorCause = null
     try { await work() } catch (cause) {
-      error = refusalText(cause, context?.names.any)
+      fail(cause)
       if (isRequestError(cause) && cause.code === 'plan_revision_conflict') await actions.load(selectedOption).then(show, () => undefined)
     } finally { busy = false }
   }
@@ -320,8 +325,9 @@
     generating = controller
     gate.start()
     error = null
+    errorCause = null
     void (async () => {
-      try { await work(current, controller.signal) } catch (cause) { error = refusalText(cause, context?.names.any) } finally {
+      try { await work(current, controller.signal) } catch (cause) { fail(cause) } finally {
         generating = null
         // A preview asked for during the run goes now, against the plan as Generate left it.
         const held = gate.end()
@@ -333,6 +339,7 @@
     const shown = await actions.generate(current, input, signal, selectedOption)
     show(shown)
     error = shown.error
+    errorCause = shown.cause
     onChanged()
   })
   /** Works out the rungs of "what overtime buys" still to solve, lowest first. */
@@ -347,7 +354,7 @@
         onChanged()
         if (shown.error === null) notice = shown.notice ?? 'Every rung of what overtime buys is worked out on this plan.'
         else if (isNotBuilt(shown.error)) { notice = null; buys = { state: 'not-built', pages: [], text: null } }
-        else { notice = null; error = refusalText(shown.error, context?.names.any) }
+        else { notice = null; fail(shown.error) }
       } finally { solving = false }
     })
   }
@@ -466,7 +473,7 @@
   <div class="plan-screen">
     <p class="back"><button type="button" class="link" onclick={onOpenLibrary}>← All plans</button></p>
     <PlanHeader {context} title={model.title} {size} generating={generating !== null} {busy} onGenerate={generate} onCancel={() => generating?.abort()} />
-    {#if error}<p class="error" role="alert">{error}</p>{/if}
+    {#if error}<ErrorNotice text={error} cause={errorCause} />{/if}
     {#if notice}<p class="notice" aria-live="polite">{notice}</p>{/if}
     {#if banner}
       <section class="outcome" class:refused={!banner.recommended} aria-labelledby="outcome-title">
@@ -519,7 +526,7 @@
     </div>
   </div>
 {:else if error}
-  <div class="plan-screen"><p class="error" role="alert">{error}</p><button type="button" onclick={onOpenLibrary}>← All plans</button></div>
+  <div class="plan-screen"><ErrorNotice text={error} cause={errorCause} /><button type="button" onclick={onOpenLibrary}>← All plans</button></div>
 {:else}
   <p class="loading">Opening the plan…</p>
 {/if}

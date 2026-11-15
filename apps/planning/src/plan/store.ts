@@ -90,7 +90,8 @@ export const summarize = (plan: Plan): PlanSummary => ({
   id: plan.id, title: plan.inputs.settings.title,
   ...(plan.inputs.settings.purpose === undefined ? {} : { purpose: plan.inputs.settings.purpose }),
   revision: plan.revision, updatedAt: plan.updatedAt, linked: plan.inputs.settings.run !== null,
-  optionCount: plan.options?.options.length ?? 0,
+  // The plan's own options: a what-if (an extra rule or a goal solved first) is never one (walk W2).
+  optionCount: (plan.options?.options ?? []).filter(option => option.variant.also === undefined && option.variant.lead === undefined).length,
   optionsOutOfDate: (plan.options?.options ?? []).some(option => option.inputsRevision !== plan.revision),
 })
 

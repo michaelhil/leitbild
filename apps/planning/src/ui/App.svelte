@@ -65,6 +65,9 @@
     small { display: block; color: var(--ink-3); font-size: 11px; font-weight: 400; }
     .hint { color: var(--ink-3); font-size: 12px; }
     .error { padding: 10px 12px; border-radius: 6px; border: 1px solid #e5c3b9; background: var(--refusal-bg); color: var(--refusal); }
+    .error-words { margin: 0; }
+    .error-detail { margin-top: 6px; font-size: 11px; color: var(--ink-2); }
+    .error-detail pre { white-space: pre-wrap; overflow-wrap: anywhere; max-height: 200px; overflow: auto; margin: 4px 0 0; }
     .notice { padding: 8px 12px; border-left: 3px solid var(--accent); background: var(--accent-2); font-size: 13px; }
     .loading { margin: 24px; color: var(--ink-3); }
     .outcome.refused { border-left-color: var(--refusal); }

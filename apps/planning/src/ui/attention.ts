@@ -94,7 +94,7 @@ export const pessimisticCard = (option: OptionView, context: Context): Card | nu
       ? `With every job with an estimate range at its high estimate together, ${option.label} still holds; some alone do not.`
       : `With every job with an estimate range at its high estimate, ${option.label} does not hold: ${together}.`,
     text: how,
-    steps: [...alone, ...holding > 0 && alone.length > 0 ? [`${holding} other ${holding === 1 ? 'job with an estimate range holds' : 'jobs with an estimate range hold'} alone at its high estimate.`] : []],
+    steps: [...alone, ...holding > 0 && alone.length > 0 ? [holding === 1 ? 'The other job with an estimate range holds alone at its high estimate.' : `The other ${holding} jobs with an estimate range each hold alone at their high estimate.`] : []],
     actions: [],
   }
 }

@@ -44,7 +44,7 @@ describe('the pessimistic card', () => {
     const cards = attentionCards(model, contextOf(model))
     const card = cards.find(item => item.mark.word === 'Pessimistic estimates')!
     expect(card.title).toBe(`With every job with an estimate range at its high estimate, Option 1 does not hold: ${name(model, 'SWA-RTS')} breaks “${name(model, 'R2')}” by 3 h.`)
-    expect(card.steps).toEqual([`${name(model, 'SWA-PUMP-OUT')} alone at its high estimate: ${name(model, 'SWA-RTS')} breaks “${name(model, 'R2')}” by 3 h.`, '1 other job with an estimate range holds alone at its high estimate.'])
+    expect(card.steps).toEqual([`${name(model, 'SWA-PUMP-OUT')} alone at its high estimate: ${name(model, 'SWA-RTS')} breaks “${name(model, 'R2')}” by 3 h.`, 'The other job with an estimate range holds alone at its high estimate.'])
     // It follows the recommended option's own card.
     expect(cards.indexOf(card)).toBe(cards.findIndex(item => item.title === 'Option 1: validated feasible.') + 1)
     const text = readableText(renderHtml(AttentionColumn, { cards, onAction: none }))

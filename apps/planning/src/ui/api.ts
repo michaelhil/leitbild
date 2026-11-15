@@ -110,6 +110,15 @@ export const refusalAuthority = (error: PlanningRequestError): string | null => 
 /** A part of Planning this version does not have yet (501 not_built): said as "not available yet", never as a fault. */
 export const isNotBuilt = (error: unknown): boolean => isRequestError(error) && error.code === 'not_built'
 export const notBuiltWords = 'This is not available yet in this version of Planning.'
+
+/**
+ * An answer the screen's own contract refuses (a schema parse error): said in planner words, never as the raw
+ * issues, which stay behind "Details for support" (walk W1).
+ */
+export const isUnreadableAnswer = (error: unknown): error is Error => error instanceof z.ZodError
+export const unreadableAnswerWords = 'This screen could not read the plan\'s answer. Reload the page; if it persists, the screen and the service are from different releases.'
+/** The detail kept for support behind a disclosure, only for an answer the screen could not read. */
+export const failureDetail = (error: unknown): string | null => isUnreadableAnswer(error) ? error.message : null
 /** No earlier set of options to compare with (409 no_previous_options): Planning keeps one when the plan changes and Generate runs again. */
 export const noPreviousWords = 'There is no earlier set of options to compare with yet. Planning keeps one when you change the plan and Generate again.'
 
@@ -175,5 +184,6 @@ export const refusalText = (error: unknown, name: KeyNames = () => 'an item in t
     }
   }
   if (error instanceof DOMException && error.name === 'AbortError') return 'Cancelled.'
+  if (isUnreadableAnswer(error)) return unreadableAnswerWords
   return error instanceof Error ? error.message : 'Something went wrong.'
 }
