@@ -400,7 +400,12 @@ export const statusSchema = z.discriminatedUnion('word', [
       const issue = goalLineIssue(lead, status.run.grid)
       if (issue !== undefined && unit === undefined) context.addIssue({ code: 'custom', path: ['lead', issue.path], message: issue.message })
     }),
-  z.object({ word: z.literal(statusWordSchema.enum['proven infeasible']), cause: certificateSchema, run: runBasisSchema }).strict(),
+  // byMethod: a what-if over two or more method combinations, refused for each, with each combination's own
+  // cause as lane K verified it; `cause` is then the entry of the option's own methods (optionLeadRefinement).
+  z.object({
+    word: z.literal(statusWordSchema.enum['proven infeasible']), cause: certificateSchema, run: runBasisSchema,
+    byMethod: z.array(z.object({ methods: z.array(z.object({ choice: keySchema, option: keySchema }).strict()), purchases: z.array(keySchema), cause: certificateSchema }).strict()).min(2).max(8).optional(),
+  }).strict(),
   z.object({ word: z.literal(statusWordSchema.enum['invalid input']), problems: z.array(problemSchema).min(1).max(16) }).strict(),
   z.object({ word: z.literal(statusWordSchema.enum['unsupported feature']), problems: z.array(problemSchema).min(1).max(16) }).strict(),   // an unmodelled rule only
   z.object({ word: z.literal(statusWordSchema.enum.cancelled), run: runBasisSchema }).strict(),   // nothing found before the stop
@@ -481,10 +486,25 @@ export const optionLeadIssue = (option: OptionShape): string | undefined => {
   const same = 'goal' in asked ? 'goal' in solved && solved.goal === asked.goal : 'group' in solved && solved.group === asked.group
   return same ? undefined : 'The status names another leading goal than the what-if'
 }
-/** The option-level lead rule; every schema of an option applies it. */
+/**
+ * A refusal over several method combinations names each once, and its `cause` is the entry of the option's
+ * own methods.
+ */
+export const optionByMethodIssue = (option: OptionShape): string | undefined => {
+  if (option.status.word !== 'proven infeasible' || option.status.byMethod === undefined) return undefined
+  const picks = (methods: ReadonlyArray<{ readonly choice: string; readonly option: string }>) => JSON.stringify([...methods].sort((x, y) => (x.choice < y.choice ? -1 : x.choice > y.choice ? 1 : 0)))
+  const names = option.status.byMethod.map(entry => picks(entry.methods))
+  if (new Set(names).size !== names.length) return 'Each method combination of a refusal is named once'
+  const own = option.status.byMethod.find(entry => picks(entry.methods) === picks(option.variant.methods))
+  if (own === undefined) return 'A refusal over several methods names the option\'s own methods'
+  return JSON.stringify(own.cause) === JSON.stringify(option.status.cause) ? undefined : 'The cause is the one of the option\'s own methods'
+}
+/** The option-level rules (its lead, a refusal's causes by method); every schema of an option applies them. */
 export const optionLeadRefinement = (option: OptionShape, context: z.core.$RefinementCtx): void => {
   const issue = optionLeadIssue(option)
   if (issue !== undefined) context.addIssue({ code: 'custom', path: ['status', 'lead'], message: issue })
+  const byMethod = optionByMethodIssue(option)
+  if (byMethod !== undefined) context.addIssue({ code: 'custom', path: ['status', 'cause'], message: byMethod })
 }
 export const optionSchema = optionObjectSchema.superRefine(optionLeadRefinement)
 /** An option without its rows, for the options read section, which extends it and applies optionLeadRefinement. */

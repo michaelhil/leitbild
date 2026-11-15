@@ -1,6 +1,6 @@
 // The real solver (lane S, solve/) and checker (lane K, check/) behind the operations' ports. index.ts
 // wires these; tests use the doubles in api/fixtures. Nothing here touches World.
-import { verifyCertificate } from '../check/certificate.ts'
+import { verifyCertificate, verifySpanRefusal } from '../check/certificate.ts'
 import { verifyBound } from '../check/optimal.ts'
 import { checkForSolver } from '../solve/lane-k-ports.ts'
 import { bounds } from '../solve/bounds.ts'
@@ -82,8 +82,10 @@ export const createRealSolver = (pool: SolverPool): SolverPort => {
           return { lines: [attempt === undefined ? 'No proof either way: the search found no plan in the time allowed. That is not proof that none exists.'
             : `No proof either way: the best attempt finishes ${nameOf(inputs, attempt.job)} ${attempt.pastWindowHours} h past the window. That is not proof that none exists.`], items: [] }
         }
-        // The second (energy) proof is worded only when lane K re-verifies it too.
-        const span = bounds(problem, index, prep).span
+        // The span sentence is worded only when lane K proves its figures against the rule it names (V1), and
+        // the second (energy) proof only when lane K re-verifies it too. Without them the verified cause stands.
+        const found = bounds(problem, index, prep).span
+        const span = found === undefined || !verifySpanRefusal(inputs, option.variant, found).proves ? undefined : found
         const shown = span?.alsoProven === undefined || verifyCertificate(inputs, option.variant, span.alsoProven).proves ? span : (({ alsoProven: _also, ...rest }) => rest)(span)
         return bounded({ lines: refusalLines(option.status.cause, inputs, shown, option.variant.purchases, option.variant.methods), items: [] })
       }
