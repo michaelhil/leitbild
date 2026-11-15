@@ -3,7 +3,8 @@
 // fixture's rules and checked runs, never typed.
 import { describe, expect, test } from 'bun:test'
 import { checkPlan } from '../check/check.ts'
-import { generate, optionKey, solveInputsOf, type AlsoRule, type GenerateDeps } from './generate.ts'
+import { generate, solveInputsOf, type AlsoRule, type GenerateDeps } from './generate.ts'
+import { optionKey } from './keys.ts'
 import { searchEngine } from './search.ts'
 import { laneKCheck, laneKVerify, laneKVerifyBound } from './fixtures/lane-k.ts'
 import { trainAInputs } from './fixtures/train-a-case.ts'
@@ -73,4 +74,27 @@ describe('an option keeps its extra rule, or is refused', () => {
       expect(['proven infeasible', 'unresolved']).toContain(option.status.word)
     }
   }, 60_000)
+})
+
+describe('G2: a what-if is never ranked or recommended', () => {
+  test('"at most 50 h" beside the plan\'s own option: the star stays on the plan\'s option, even when the what-if ranks better', async () => {
+    // A sub-solver that answers every request with a validated feasible plan: the plan's own option out longer
+    // (one step under the plan's 72 h limit, from the fixture) than the what-if, which keeps its 50 h.
+    const plain = coolLimit.limit.value - 1, kept = 50
+    const run = { grid: '30min' as const, engine: 'test', formulation: 'test', seed: 1, budget: { evals: 0, cpuMs: 0, wallMs: 0 }, stoppedBy: 'done' as const, evals: 0, cpuMs: 0 }
+    const answering: GenerateDeps['subSolver'] = async task => {
+      const hours = task.variant.also === undefined ? plain : kept
+      const goals = flagship.goals.map((goal, k) => ({ word: 'best found under budget' as const, goal: k, value: k === 0 ? Math.max(0, hours - goal.threshold!.value) : 0, unit: goal.tolerance.unit }))
+      return {
+        option: { key: task.variant.key, label: task.variant.label, inputsRevision: task.revision, variant: { methods: [...task.combo], purchases: [], ...(task.variant.also === undefined ? {} : { also: [...task.variant.also] }) },
+          status: { word: 'validated feasible', goals, run }, rows: [], metrics: [{ id: 'goal:0:COOL-A', value: hours, unit: 'h' }, { id: 'goal:1', value: 0, unit: 'NOK' }, { id: 'goal:2', value: 0, unit: 'h' }] },
+        rounded: [], dropped: [],
+      }
+    }
+    const result = await generate({ ...deps, subSolver: answering }, { inputs: flagship, revision: 1, previous: null, input: { variants: [{ label: 'At most 50 h out', methods: swap, also: [shorter(coolLimit.limit.value - kept)] }, { label: 'Swap', methods: swap }] }, by, signal: new AbortController().signal })
+    const [first, second] = result.optionSet.options
+    expect(result.optionSet.recommended).toBe(first!.key)
+    expect(first!.variant.also).toBeUndefined()
+    expect(second!.variant.also).toBeDefined()
+  })
 })

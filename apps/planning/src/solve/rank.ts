@@ -71,8 +71,8 @@ export const recommend = <T extends Rankable>(options: readonly T[]): T | undefi
 /**
  * Dominance (design §4.1): the feasible options that another feasible option is no worse than on every goal
  * key and better on one, in input order, each with `by`, the best-ranked option that dominates it (the
- * options section's `dominated: {by}`). They are folded on the screen, never deleted. Callers leave lead
- * what-ifs out: they are cards, never folded.
+ * options section's `dominated: {by}`). They are folded on the screen, never deleted. Callers leave
+ * what-ifs out (an extra rule or a lead): they are cards, never folded.
  */
 export const dominatedBy = (options: readonly Rankable[]): Array<{ readonly key: string; readonly by: string }> => {
   const feasible = options.filter(option => option.feasible)
@@ -98,7 +98,7 @@ export interface RankFacts extends Rankable { readonly excess: readonly number[]
  * Why the recommended option ranks first (design §4.2): against the best other feasible option, the first
  * goal on which their keys differ, and the differences in the goals' units (recommended minus other, so
  * negative is better) on that goal and every later one. `tie`: equal on every key, first by option key only.
- * Undefined when no other option is feasible. Callers leave lead what-ifs out.
+ * Undefined when no other option is feasible. Callers leave what-ifs (an extra rule or a lead) out.
  */
 export const recommendedBecause = (options: readonly RankFacts[], recommended: string):
   { readonly versus: string; readonly goal: number; readonly differences: ReadonlyArray<{ readonly goal: number; readonly by: number }> } | { readonly versus: string; readonly tie: true } | undefined => {

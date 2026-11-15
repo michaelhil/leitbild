@@ -1,6 +1,7 @@
 import { describe, expect, test } from 'bun:test'
 import { CHECKER_VERSION } from '../check/check.ts'
-import { formulationOf, methodCombinations } from './compile.ts'
+import { formulationOf } from './compile.ts'
+import { methodCombinations } from './keys.ts'
 import { CERTIFIED_SIZE, generate } from './generate.ts'
 import { planInputsSchema } from '../plan/schema.ts'
 import { jobsPerSolve, sizeBand, sizeCautionWords, withinCertifiedSize } from '../plan/summary.ts'

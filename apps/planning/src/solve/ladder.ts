@@ -4,12 +4,15 @@
 // priced per person-hour; then all of it. A plan with one price form has rungs 0 and 1, one with none only
 // rung 0: rungs are numbered in the order offered, from 0 with no gaps. Every rung keeps the allowed
 // purchases that add no crew time (rebookings, tool days) and every ordered purchase.
-// Each rung is one Generate with its explicit `buy` list and `keep: true`, every method combination, called
-// by the screen or an Assistant, lowest rung first: each sub-solve then starts from the rung below's option,
-// so results never get worse as crew time is added. The top rung's options are the default options.
+// Each rung is one Generate with `keep: true` (rungRequest), sent by the screen or an Assistant, lowest rung
+// first: one what-if per method combination with the rung's explicit `buy` list, and for the top rung a plain
+// kept Generate (the default options, their keys and labels). Each sub-solve starts from the rung below's
+// option, so results never get worse as crew time is added. This is the one rung definition (plan/buys.ts
+// reads it); it imports nothing heavy, so the screen builds its requests from it, with its own labels.
 import type { PlanInputs } from '../plan/schema.ts'
-import { methodCombinations, type MethodPick } from './compile.ts'
-import { optionKey, type GenerateInput } from './generate.ts'
+import type { MethodPick } from './compile.ts'
+import type { GenerateInput } from './generate.ts'
+import { methodCombinations, optionKey } from './keys.ts'
 
 type Purchase = PlanInputs['purchases'][number]
 
@@ -42,22 +45,16 @@ export const ladderRungs = (inputs: PlanInputs): Rung[] => {
   return [rung(0, []), ...steps.map((bought, k) => rung(k + 1, bought))]
 }
 
-const methodLabel = (inputs: PlanInputs, combo: readonly MethodPick[]): string =>
-  combo.map(pick => inputs.methods.find(choice => choice.key === pick.choice)?.options.find(option => option.key === pick.option)?.label ?? pick.option).join(', ')
-
-/** A rung's name, by what it buys: "no bought crew time", or "with" and the purchases' own labels. */
-export const rungName = (inputs: PlanInputs, rung: Rung): string =>
-  rung.crewTime.length === 0 ? 'no bought crew time' : `with ${rung.crewTime.map(key => inputs.purchases.find(purchase => purchase.key === key)!.label).join(', ')}`
-
-/** The Generate request for a rung: one what-if per method combination, its explicit buy list, `keep: true`. */
-export const rungRequest = (inputs: PlanInputs, rung: Rung): GenerateInput & { readonly variants: NonNullable<GenerateInput['variants']> } => ({
-  variants: methodCombinations(inputs).map(combo => {
-    const methods = methodLabel(inputs, combo)
-    const name = rungName(inputs, rung)
-    return { label: (methods === '' ? `${name[0]!.toUpperCase()}${name.slice(1)}` : `${methods}, ${name}`).slice(0, 160), methods: combo.map(pick => ({ ...pick })), buy: [...rung.buy] }
-  }),
-  keep: true,
-})
+/**
+ * The Generate request for a rung, `keep: true`. The top rung is a plain kept Generate: the default options,
+ * with their keys and the methods' own labels. Below it, one what-if per method combination with the rung's
+ * buy list and the label `label` gives it: rung labels are the screen's words, and the solver stores the label
+ * it is given.
+ */
+export const rungRequest = (inputs: PlanInputs, rung: Rung, label: (combo: readonly MethodPick[]) => string): GenerateInput => {
+  if (rung.rung === ladderRungs(inputs).at(-1)!.rung) return { keep: true }
+  return { variants: methodCombinations(inputs).map(combo => ({ label: label(combo), methods: combo.map(pick => ({ ...pick })), buy: [...rung.buy] })), keep: true }
+}
 
 /** The option keys a rung's Generate produces, one per method combination, in combination order. */
 export const rungOptionKeys = (inputs: PlanInputs, rung: Rung): string[] =>

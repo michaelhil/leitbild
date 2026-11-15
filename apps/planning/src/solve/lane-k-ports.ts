@@ -16,7 +16,8 @@ export const checkForSolver: CheckPlan = ({ inputs, variant, rows }) => {
   return {
     violations: result.violations.map(violation => ({ code: violation.code, about: violation.about })),
     goals: result.goals.map(goal => goal.metric === 'span-over' ? goal.spans.map(span => span.value) : goal.value),
-    metrics: result.metrics.filter(metric => metric.id.startsWith('bought:') || metric.id.startsWith('span:')),
+    spanGroups: result.goals.map(goal => (goal.metric === 'span-over' ? goal.spans.map(span => span.group) : undefined)),
+    metrics: result.metrics.filter(metric => metric.id.startsWith('bought:') || metric.id.startsWith('span:') || metric.id === 'extra-cost'),
   }
 }
 export const verifyForSolver: VerifyCertificate = (inputs, variant, cause) => verifyCertificate(inputs, variant, cause)

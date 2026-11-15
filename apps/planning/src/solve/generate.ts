@@ -13,7 +13,8 @@ import { optionSetSchema, type CertifiedSize, type PlanInputs, type Status } fro
 import { jobsPerSolve, sizeBand, sizeRefusalWords } from '../plan/summary.ts'
 import { timeUnitMs } from '../time/units.ts'
 import { bounds } from './bounds.ts'
-import { compile, formulationOf, methodCombinations, permittedPurchases, withExtraRules, type Buy, type CompileIndex, type MethodPick } from './compile.ts'
+import { compile, formulationOf, type Buy, type CompileIndex, type MethodPick } from './compile.ts'
+import { methodCombinations, methodLabel, optionKey, permittedPurchases, withExtraRules } from './keys.ts'
 import { dateSchedule, slotInstant, undate, type DatedRow } from './date.ts'
 import { finishOf, prepare } from './decode.ts'
 import { totalFloat, withFloat } from './float.ts'
@@ -112,42 +113,9 @@ export interface GenerateResult {
 export interface WhatIf { readonly buy: Buy; readonly also?: readonly AlsoRule[]; readonly lead?: Lead }
 interface Variant extends WhatIf { readonly key: string; readonly label: string; readonly combos: MethodPick[][] }
 
-const slug = (text: string): string => text.normalize('NFKD').replace(/[^A-Za-z0-9._-]+/g, '-').replace(/^[^A-Za-z0-9]+/, '').slice(0, 64).replace(/-+$/, '') || 'option'
-
-/** FNV-1a over the text, 32 bits as 8 hex digits: the same short name in every process. */
-const digest = (text: string): string => {
-  let hash = 0x811c9dc5
-  for (let i = 0; i < text.length; i++) hash = Math.imul(hash ^ text.charCodeAt(i), 0x01000193) >>> 0
-  return hash.toString(16).padStart(8, '0')
-}
-/** What an extra rule asks, without its key, words or source: two rules that ask the same are one what-if. */
-const ruleContent = (rule: AlsoRule) => (rule.kind === 'span-limit'
-  ? { kind: rule.kind, group: rule.group, limitMs: rule.limit.value * timeUnitMs[rule.limit.unit], singleEntry: rule.singleEntry }
-  : { kind: rule.kind, job: rule.job, finishBy: Date.parse(rule.finishBy) })
-
-/**
- * An option's key (design §4.1): a function of its method picks (as asked, in the plan's method order), the
- * purchases it may use, its extra rule and its lead. The plain options (every allowed purchase, no rule, no
- * lead) keep their method key, so the default options are the top rung; anything else adds a digest of what
- * it asks. The same what-if asked again has the same key and replaces itself. At most 49 characters, so the
- * service's set suffix fits.
- */
-export const optionKey = (inputs: PlanInputs, variant: WhatIf & { readonly methods: readonly MethodPick[] }): string => {
-  const picks = inputs.methods.flatMap(choice => variant.methods.filter(pick => pick.choice === choice.key).map(pick => pick.option))
-  const base = slug(picks.join('+') || 'plan').slice(0, 40).replace(/[-.]+$/, '')
-  const permitted = permittedPurchases(inputs, variant.buy).toSorted()
-  const standard = permittedPurchases(inputs, 'allowed').toSorted()
-  const asked = {
-    ...(permitted.join(' ') === standard.join(' ') ? {} : { buy: permitted }),
-    ...(variant.also === undefined ? {} : { also: variant.also.map(ruleContent) }),
-    ...(variant.lead === undefined ? {} : { lead: variant.lead }),
-  }
-  return Object.keys(asked).length === 0 ? base : `${base}-${digest(JSON.stringify(asked))}`
-}
-
 /** The variants of a request: given what-ifs, or one per method combination. */
 export const variantsOf = (inputs: PlanInputs, input: GenerateInput): Variant[] => {
-  const label = (combo: readonly MethodPick[]) => combo.map(pick => inputs.methods.find(choice => choice.key === pick.choice)?.options.find(option => option.key === pick.option)?.label ?? pick.option).join(', ') || inputs.settings.title
+  const label = (combo: readonly MethodPick[]) => methodLabel(inputs, combo) || inputs.settings.title
   const raw = input.variants === undefined
     ? methodCombinations(inputs).map(combo => ({ key: optionKey(inputs, { methods: combo, buy: 'allowed' }), label: label(combo), combos: [combo], buy: 'allowed' as Buy }))
     : input.variants.map((variant, i) => {
@@ -185,16 +153,26 @@ export const solveInputsOf = (inputs: PlanInputs, whatIf: Pick<WhatIf, 'also' | 
   return { ruled, solving: { ...ruled, goals: order.map(k => inputs.goals[k]!) }, planGoalOf: position => order[position] }
 }
 
-/** The goal metrics stored on an option, by the plan's goal ids (a group lead's value is in its status), then lane K's 'bought:' measures. */
-const metricsOf = (problem: NormalizedProblem, index: CompileIndex, raw: readonly RawMetric[], planGoalOf: (position: number) => number | undefined, measures: CheckReport['metrics'] = []): Option['metrics'] => {
-  const goals = raw.flatMap((value, p) => {
-    const k = planGoalOf(p)
-    if (k === undefined) return []
-    const unit = index.goals[p]!.unit
-    if (typeof value === 'number') return [{ k, metric: { id: `goal:${k}`, value, unit } }]
-    return value.map((span, i) => ({ k, metric: { id: `goal:${k}:${index.spans[problem.goals[p]!.spans![i]!]!.group}`, value: span, unit } }))
+/**
+ * The figures stored on an option, all lane K's: each plan goal's value by the plan's goal id, a span-over
+ * goal's spans by the checker's own group keys (never by position: fix round F4); with no extra-cost goal, the
+ * checker's 'extra-cost'; its 'span:<group>' for every group a span rule names (the plan's or the what-if's),
+ * for the comparison and the outage floor (a group never out has none); then its 'bought:' measures. At most
+ * 96 in all (plan/schema.ts). A group lead's value is in its status too.
+ */
+const metricsOf = (inputs: PlanInputs, report: CheckReport, also: readonly AlsoRule[] = []): Option['metrics'] => {
+  const goals = report.goals.flatMap((value, k) => {
+    const unit = inputs.goals[k]!.tolerance.unit
+    if (typeof value === 'number') return [{ id: `goal:${k}`, value, unit }]
+    const groups = report.spanGroups?.[k]
+    if (groups === undefined || groups.length !== value.length) throw new Error(`The checker named no group for each span of goal ${k}`)
+    return value.map((span, i) => ({ id: `goal:${k}:${groups[i]!}`, value: span, unit }))
   })
-  return [...goals.toSorted((x, y) => x.k - y.k).map(entry => entry.metric).slice(0, 32), ...measures.filter(metric => metric.id.startsWith('bought:')).map(metric => ({ ...metric })).slice(0, 64)]
+  const measures = report.metrics ?? []
+  const cost = inputs.goals.some(goal => goal.metric === 'extra-cost') ? [] : measures.filter(metric => metric.id === 'extra-cost')
+  const ruled = new Set([...inputs.rules, ...also].flatMap(rule => (rule.kind === 'span-limit' ? [`span:${rule.group}`] : [])))
+  const spans = measures.filter(metric => ruled.has(metric.id))
+  return [...goals.slice(0, 32), ...cost, ...spans, ...measures.filter(metric => metric.id.startsWith('bought:'))].slice(0, 96).map(metric => ({ ...metric }))
 }
 
 /** The raw goal metrics stored on an option, back in goal order. */
@@ -340,7 +318,8 @@ export const subSolve = (deps: SubSolveDeps): SubSolver => async (task, signal, 
   const by = Math.min(task.answerBy ?? Infinity, task.deadlineAt ?? Infinity)
   const retimings = deps.judgeRetimed === undefined ? 0 : retimingCount(inputs, index.jobs.flatMap(job => (job === null ? [] : [job])))
   const after = 1 + (task.start === undefined ? 0 : 1) + retimings
-  const searchBudget = searchBudgetBy(budget, by, SEARCH_STOP_LATENCY_MS + (performance.now() - started) * after)
+  const beforeSearchMs = performance.now() - started
+  const searchBudget = searchBudgetBy(budget, by, SEARCH_STOP_LATENCY_MS + beforeSearchMs * after)
   // No time left to search: no plan, said as a search stopped by its time.
   if (searchBudget.wallMs <= 0) return outcome({ ...base, variant: stored(variantOut.purchases), status: unresolvedStatus(runBasis({ stoppedBy: 'wall', evals: 0, cpuMs: 0 }, searchBudget)), rows: [], metrics: [] })
   const startSchedule = task.start === undefined ? undefined : undate(prep, index, task.start.rows)
@@ -366,10 +345,12 @@ export const subSolve = (deps: SubSolveDeps): SubSolver => async (task, signal, 
     const solved = feasibleStatus(solving.goals, run, raw, found.goals).status
     const lead = variant.lead
     const group = lead !== undefined && 'group' in lead ? lead.group : undefined
+    // Every proof is re-derived on the purchases this sub-solve may use (variantOut), as refusals are: fewer
+    // purchases give a higher bound, so the rows' own purchases would confirm what the rung cannot (blocker 2).
     const status = verifiedGoals(onPlanGoals(solved, lead, planGoalOf),
-      (goal, bound) => deps.verifyBound(inputs, planned, goal, bound),
-      group === undefined ? undefined : bound => deps.verifyBound(inputs, planned, { group, unit: groupLeadGoal(group).tolerance.unit }, bound))
-    return { ...base, variant: stored(planned.purchases), status, rows, metrics: metricsOf(problem, index, raw, planGoalOf, report.metrics) }
+      (goal, bound) => deps.verifyBound(inputs, variantOut, goal, bound),
+      group === undefined ? undefined : bound => deps.verifyBound(inputs, variantOut, { group, unit: groupLeadGoal(group).tolerance.unit }, bound))
+    return { ...base, variant: stored(planned.purchases), status, rows, metrics: metricsOf(inputs, report, variant.also) }
   }
   const usedBy = (rows: ReadonlyArray<Pick<DatedRow, 'uses'>>): string[] => [...new Set([...rows.flatMap(row => row.uses.flatMap(use => (use.purchase === undefined ? [] : [use.purchase]))), ...index.purchases.filter(purchase => purchase.committed).map(purchase => purchase.key)])]
 
@@ -421,7 +402,7 @@ export const subSolve = (deps: SubSolveDeps): SubSolver => async (task, signal, 
   // Unless the search beats the starting option, the starting option stands (re-checked above).
   const best = kept !== undefined && (own.status.word !== 'validated feasible' || compareOptions(rankable(kept, inputs), rankable(own, inputs)) <= 0) ? kept : own
   if (best.status.word !== 'validated feasible' || deps.judgeRetimed === undefined) return outcome(best)
-  const robust = robustOf(inputs, best, deps.judgeRetimed, by - SEARCH_STOP_LATENCY_MS)
+  const robust = robustOf(inputs, best, deps.judgeRetimed, by - SEARCH_STOP_LATENCY_MS, Date.now, beforeSearchMs)
   return outcome(robust === undefined ? best : { ...best, robust })
 }
 
@@ -497,6 +478,25 @@ export const generate = async (deps: GenerateDeps, request: GenerateRequest): Pr
     return outcome.option
   }
 
+  /**
+   * A variant's option from its method combinations (adversary server review, blocker 1), whatever their
+   * order: the best feasible one; with none, "proven infeasible" only when every combination is proven
+   * infeasible. When some are and another is unresolved or stopped, no plan was ruled out for that one, so
+   * the option carries no proof: it is unresolved, with that combination's run and attempt. An input finding
+   * stands as it is: the inputs need fixing whatever is searched.
+   */
+  const variantOption = (attempts: readonly Option[]): Option => {
+    const picks = (option: Option): string => JSON.stringify(option.variant.methods)
+    const ordered = [...attempts].sort((x, y) => compareOptions(rankable(x, inputs), rankable(y, inputs)) || (picks(x) < picks(y) ? -1 : picks(x) > picks(y) ? 1 : 0))
+    const first = ordered[0]!
+    if (first.status.word === 'validated feasible' || ordered.every(option => option.status.word === 'proven infeasible')) return first
+    const input = ordered.find(option => option.status.word === 'invalid input') ?? ordered.find(option => option.status.word === 'unsupported feature')
+    if (input !== undefined) return input
+    if (!ordered.some(option => option.status.word === 'proven infeasible')) return first
+    const open = ordered.find(option => option.status.word === 'unresolved' && option.status.attempt !== undefined)
+      ?? ordered.find(option => option.status.word === 'unresolved') ?? ordered.find(option => option.status.word === 'cancelled')!
+    return open.status.word === 'cancelled' ? { ...open, status: unresolvedStatus(open.status.run) } : open
+  }
   const fresh: Option[] = []
   for (const variant of variants) {
     const attempts: Option[] = []
@@ -505,8 +505,7 @@ export const generate = async (deps: GenerateDeps, request: GenerateRequest): Pr
       if (request.signal.aborted) break
     }
     if (attempts.length === 0) continue
-    // A variant's option is its best method combination.
-    fresh.push(attempts.sort((x, y) => compareOptions(rankable(x, inputs), rankable(y, inputs)))[0]!)
+    fresh.push(variantOption(attempts))
     if (request.signal.aborted) break
   }
 
@@ -529,10 +528,11 @@ export const generate = async (deps: GenerateDeps, request: GenerateRequest): Pr
   const whatIf = (option: Option): boolean => option.variant.also !== undefined || option.variant.lead !== undefined
   for (const old of [...extra.filter(option => !whatIf(option)), ...extra.filter(whatIf)]) { merged.push(old); kept.push(old.key) }
   const set = merged.slice(0, 8)
-  // A lead what-if is a card, never ranked among the options or recommended (design §0.3): it comes last.
-  const plain = set.filter(option => option.variant.lead === undefined).sort((x, y) => compareOptions(rankableOf(x, inputs), rankableOf(y, inputs)))
-  const led = set.filter(option => option.variant.lead !== undefined).sort((x, y) => (x.key < y.key ? -1 : x.key > y.key ? 1 : 0))
-  const ranked = [...plain, ...led]
+  // A what-if with an extra rule or a leading goal is a card, never ranked among the options or recommended
+  // (design §0.3, fix round G2): they come last, by key.
+  const plain = set.filter(option => !whatIf(option)).sort((x, y) => compareOptions(rankableOf(x, inputs), rankableOf(y, inputs)))
+  const cards = set.filter(whatIf).sort((x, y) => (x.key < y.key ? -1 : x.key > y.key ? 1 : 0))
+  const ranked = [...plain, ...cards]
   const recommended = plain.find(option => option.status.word === 'validated feasible')
   const optionSet = optionSetSchema.parse({
     at: deps.now?.() ?? new Date().toISOString(), by: request.by, options: ranked,

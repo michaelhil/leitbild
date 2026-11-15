@@ -46,11 +46,11 @@ describe('a sub-solve runs whole in a solver child', () => {
   test('the child gives the same option as the same sub-solve in this process; a second Generate is refused, never queued', async () => {
     const { subSolve } = await import('./generate.ts')
     const { searchEngine } = await import('./search.ts')
-    const { checkForSolver, verifyBoundForSolver, verifyForSolver } = await import('./lane-k-ports.ts')
+    const { checkForSolver, judgeRetimedForSolver, verifyBoundForSolver, verifyForSolver } = await import('./lane-k-ports.ts')
     const { createRealSolver } = await import('../api/wiring.ts')
     const { SOLVER_BUSY_WORDS } = await import('./pool.ts')
     const task = { inputs: flagship, revision: 1, variant: { key: 'swap', label: 'Swap', buy: 'allowed' as const }, combo: [{ choice: 'SWA-method', option: 'swap' }], budget: { evals: 1_500, cpuMs: 20_000, wallMs: 40_000 }, seed: 1 }
-    const here = await subSolve({ engine: searchEngine({ pace: true }), check: checkForSolver, verify: verifyForSolver, verifyBound: verifyBoundForSolver })(task, new AbortController().signal)
+    const here = await subSolve({ engine: searchEngine({ pace: true }), check: checkForSolver, verify: verifyForSolver, verifyBound: verifyBoundForSolver, judgeRetimed: judgeRetimedForSolver })(task, new AbortController().signal)
     const pool = createSolverPool()
     try {
       const there = await pool.subSolver(task, new AbortController().signal)

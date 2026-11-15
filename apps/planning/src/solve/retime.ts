@@ -6,7 +6,8 @@
 // Pure apart from the clock; the solver child runs it after a sub-solve's search.
 import type { PlanInputs, Robust } from '../plan/schema.ts'
 import { timeUnitMs } from '../time/units.ts'
-import { compile, withExtraRules } from './compile.ts'
+import { compile } from './compile.ts'
+import { withExtraRules } from './keys.ts'
 import { dateSchedule, undate, type DatedRow, type UndatedFloat } from './date.ts'
 import { prepare, repair } from './decode.ts'
 import type { CheckedVariant } from './status.ts'
@@ -80,20 +81,21 @@ export const retimedRows = (planned: PlanInputs, pessimistic: PlanInputs, option
  * The option's robust record on the plan's `inputs`: every ranged job high together, then each alone, each
  * judged by lane K, a job that could not be placed included. Undefined (not
  * computed, never partly) when a re-timing cannot be made or is refused by lane K, or when the next one would
- * not end by `until` (epoch ms), judged by the longest re-timing so far.
+ * not end by `until` (epoch ms), judged by the longest re-timing so far, and before the first by `estimateMs`
+ * (the sub-solve passes its own work before the search, which a re-timing does not exceed).
  */
-export const robustOf = (inputs: PlanInputs, option: Planned, judge: JudgeRetimed, until = Infinity, now: () => number = Date.now): Robust | undefined => {
+export const robustOf = (inputs: PlanInputs, option: Planned, judge: JudgeRetimed, until = Infinity, now: () => number = Date.now, estimateMs = 0): Robust | undefined => {
   const jobs = rangedJobs(inputs, option.rows)
   // Nothing ranged: re-timing changes nothing, and the planned schedule is the one lane K validated.
   if (jobs.length === 0) return { allPessimistic: { holds: true }, single: [] }
   const planned = withExtraRules(inputs, option.variant.also)
-  let longest = 0
+  let longest = estimateMs
   const once = (high: readonly string[]): Retimed | undefined => {
     const started = now()
     if (started + longest > until) return undefined
     const retimed = retimedRows(planned, withExtraRules(atHigh(inputs, new Set(high)), option.variant.also), option)
     const judged = retimed === undefined ? undefined : judge({ inputs, variant: option.variant, planned: option.rows, retimed: retimed.rows, high })
-    longest = Math.max(longest, now() - started)
+    longest = Math.max(longest, now() - started)   // never below the first estimate
     return judged?.ok === true ? judged.outcome : undefined
   }
   const allPessimistic = once(jobs)

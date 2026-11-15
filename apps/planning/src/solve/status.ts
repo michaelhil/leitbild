@@ -23,9 +23,12 @@ export interface CheckReport {
   readonly violations: ReadonlyArray<{ readonly code: string; readonly about: readonly string[] }>
   /** One raw value per goal, in the goal's unit; span-over gives one span per group in scope. */
   readonly goals: readonly RawMetric[]
+  /** Per goal, for span-over: the group of each span in `goals`, as the checker lists them (only groups out, without a scope). */
+  readonly spanGroups?: ReadonlyArray<readonly string[] | undefined>
   /**
-   * The checker's own measures Generate reads beside the goals: 'bought:<purchase>' (person-h or periods used),
-   * stored on the option, and 'span:<group>' (h), a group lead's value. A group never out has no span entry.
+   * The checker's own measures Generate reads beside the goals: 'bought:<purchase>' (person-h or periods used)
+   * and 'extra-cost', stored on the option (the cost only when no goal is the extra cost), and 'span:<group>'
+   * (h), a group lead's value. A group never out has no span entry.
    */
   readonly metrics?: ReadonlyArray<{ readonly id: string; readonly value: number; readonly unit: string }>
 }
