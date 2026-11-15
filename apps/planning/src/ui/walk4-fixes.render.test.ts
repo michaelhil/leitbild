@@ -85,22 +85,33 @@ describe("maint's fourth walk, screen items", () => {
     expect(source).toContain('applied += 1')
   })
 
-  test('T7-01, T0s-10 (R4-1): the "Most limiting" line gives lane S\'s checked hours, or else what the finish waits for', () => {
+  test('T7-01, T0s-10 (R4-1): the "Most limiting" line says hours only when checked, "no gain" only when checked, and neither when not computed', () => {
     const model = trainAPlanned()
     const context = contextOf(model)
     const rows = model.rows['opt-1']!
-    const chain = [
-      { job: 'SWA-RTS', start: rows[2]!.start, finish: rows[2]!.finish, floatHours: 0, joint: false, because: [{ kind: 'link' as const, about: [{ kind: 'job' as const, key: 'SWA-PUMP-OUT' }] }] },
-      { job: 'SWA-PUMP-OUT', start: rows[1]!.start, finish: rows[1]!.finish, floatHours: 0, joint: false, because: [{ kind: 'shift' as const, about: [{ kind: 'resource' as const, key: 'ect-team' }], until: rows[1]!.start }] },
+    const items: ExplainResult['items'] = [
+      { job: 'SWA-RTS', start: rows[2]!.start, finish: rows[2]!.finish, floatHours: 0, joint: false, because: [{ kind: 'link', about: [{ kind: 'job', key: 'SWA-PUMP-OUT' }] }] },
+      { job: 'SWA-PUMP-OUT', start: rows[1]!.start, finish: rows[1]!.finish, floatHours: 0, joint: false, because: [{ kind: 'shift', about: [{ kind: 'resource', key: 'ect-team' }], until: rows[1]!.start }] },
     ]
-    // With the field: the resource lane S checked and its hours (a hand value standing in for its answer).
-    const withHours = readableText(renderHtml(AttentionColumn, { cards: [], finish: finishChain({ lines: [], items: chain, limiting: { about: { kind: 'resource', key: 'mech-station' }, hoursEarlier: 1 } }, context), limiting: mostLimiting({ lines: [], items: chain, limiting: { about: { kind: 'resource', key: 'mech-station' }, hoursEarlier: 1 } }, context), onAction: none, onPick: none }))
-    expect(partsText(mostLimiting({ lines: [], items: chain, limiting: { about: { kind: 'resource', key: 'mech-station' }, hoursEarlier: 1 } }, context)!.parts)).toBe('Most limiting: Station mechanical crew. One more Station mechanical crew would allow a finish at least 1 h earlier.')
-    expect(withHours).toContain('would allow a finish at least 1 h earlier.')
-    // Without it (the flagship): the first cause along the chain that is not just a link, and no claim beyond this plan.
-    const without = readableText(renderHtml(AttentionColumn, { cards: [], finish: finishChain({ lines: [], items: chain }, context), limiting: mostLimiting({ lines: [], items: chain }, context), onAction: none, onPick: none }))
-    expect(partsText(mostLimiting({ lines: [], items: chain }, context)!.parts)).toBe('Most limiting: the finish waits on Pull SW A pump assembly: no working time for Eddy-current test contractor until Tue 07:00; one more crew alone does not bring it earlier in this plan.')
-    expect(without).toContain('one more crew alone does not bring it earlier in this plan.')
-    expect(without).not.toMatch(/never|could not/)
+    const about = { kind: 'resource' as const, key: 'mech-station' }
+    const line = (result: ExplainResult) => {
+      const limiting = mostLimiting(result, context)
+      const rendered = readableText(renderHtml(AttentionColumn, { cards: [], finish: finishChain(result, context), limiting, onAction: none, onPick: none }))
+      return { words: partsText(limiting!.parts), rendered }
+    }
+    const waits = 'Most limiting: the finish waits on Pull SW A pump assembly: no working time for Eddy-current test contractor until Tue 07:00'
+    // Checked, with a gain (a hand value standing in for lane S's answer): the resource and the hours.
+    const gain = line({ lines: [], items, limiting: { result: 'gain', about, hoursEarlier: 1 } })
+    expect(gain.words).toBe('Most limiting: Station mechanical crew. One more Station mechanical crew would allow a finish at least 1 h earlier.')
+    expect(gain.rendered).toContain('would allow a finish at least 1 h earlier.')
+    // Checked, no gain (the flagship): what the finish waits for, and only this plan is spoken of.
+    const noGain = line({ lines: [], items, limiting: { result: 'no-gain', about } })
+    expect(noGain.words).toBe(`${waits}; one more Station mechanical crew alone does not bring it earlier in this plan.`)
+    expect(noGain.rendered).toContain('alone does not bring it earlier in this plan.')
+    expect(noGain.words).not.toMatch(/never|could not|earlier\./)
+    // Not computed (the solver was busy, or nothing to check): the binding cause, and nothing more.
+    const notComputed = line({ lines: [], items })
+    expect(notComputed.words).toBe(`${waits}.`)
+    for (const text of [notComputed.words, notComputed.rendered]) expect(text).not.toMatch(/one more|h earlier|does not bring/)
   })
 })

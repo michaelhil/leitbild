@@ -121,24 +121,25 @@ export const finishChain = (result: ExplainResult, context: Context): readonly F
   })
 
 /**
- * The one line on what limits the finish most. With lane S's `limiting` (one more unit of that resource,
- * decoded in the option's own order and checked by lane K), it names the resource and the hours it gains.
- * Without it, it says what the finish waits for: the first cause along the chain that is not just a link,
- * and that one more crew alone does not bring it earlier in this plan (never that it could not in any plan).
+ * The one line on what limits the finish most, from lane S's `limiting` (one more unit of that resource,
+ * decoded in the option's own order and checked by lane K):
+ * - gain: the resource and the hours one more of it gains;
+ * - no-gain: what the finish waits for, and that one more of that resource alone does not bring it earlier
+ *   in this plan (never that it could not in any plan);
+ * - absent (not computed): what the finish waits for, and nothing about hours or one more of anything.
+ * "What the finish waits for" is the first cause along the chain that is not just a link.
  */
 export const mostLimiting = (result: ExplainResult, context: Context): { readonly parts: readonly Part[] } | null => {
-  if (result.limiting !== undefined) {
-    const { key } = result.limiting.about
-    const name = { name: context.names.resource(key), kind: 'resource' as const, key }
-    return { parts: ['Most limiting: ', name, '. One more ', name, ` would allow a finish at least ${hoursText(result.limiting.hoursEarlier)} earlier.`] }
+  const limiting = result.limiting
+  const named = limiting === undefined ? null : { name: context.names.resource(limiting.about.key), kind: 'resource' as const, key: limiting.about.key }
+  if (limiting?.result === 'gain' && named !== null) {
+    return { parts: ['Most limiting: ', named, '. One more ', named, ` would allow a finish at least ${hoursText(limiting.hoursEarlier)} earlier.`] }
   }
   for (const item of result.items) {
     const binding = item.because.find(because => because.kind !== 'link')
     if (binding === undefined) continue
-    return { parts: [
-      'Most limiting: the finish waits on ', { name: context.names.job(item.job), kind: 'job', key: item.job }, ': ',
-      ...causeParts(binding, context), '; one more crew alone does not bring it earlier in this plan.',
-    ] }
+    const waits: Part[] = ['Most limiting: the finish waits on ', { name: context.names.job(item.job), kind: 'job', key: item.job }, ': ', ...causeParts(binding, context)]
+    return { parts: named === null ? [...waits, '.'] : [...waits, '; one more ', named, ' alone does not bring it earlier in this plan.'] }
   }
-  return null
+  return named === null ? null : { parts: ['Most limiting: one more ', named, ' alone does not bring the finish earlier in this plan.'] }
 }

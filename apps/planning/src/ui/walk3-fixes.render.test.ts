@@ -95,7 +95,7 @@ describe("maint's third walk, screen defects", () => {
     const html = renderHtml(AttentionColumn, { cards: [], finish: finishChain(result, context), limiting: mostLimiting(result, context), onAction: none, onPick: none })
     const names = [...html.matchAll(/<a class="name" href="[^"]*"[^>]*>([^<]*)<\/a>/g)].map(match => match[1])
     expect(names).toEqual(expect.arrayContaining(['Station mechanical crew', 'Pull SW A pump assembly', '60 t mobile crane with operator and rigger', 'Restore SW A, fill and vent, pump test']))
-    expect(partsText(mostLimiting(result, context)!.parts)).toBe('Most limiting: the finish waits on Restore SW A, fill and vent, pump test: Station mechanical crew is busy with Pull SW A pump assembly; one more crew alone does not bring it earlier in this plan.')
+    expect(partsText(mostLimiting(result, context)!.parts)).toBe('Most limiting: the finish waits on Restore SW A, fill and vent, pump test: Station mechanical crew is busy with Pull SW A pump assembly.')
     expect(readableText(html)).toContain('Most limiting: the finish waits on')
     const why = whyStart(result.items[0]!, context, rows[2])
     expect(why.parts.filter(part => typeof part !== 'string').map(part => typeof part === 'string' ? '' : part.kind)).toEqual(['resource', 'job'])
