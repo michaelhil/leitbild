@@ -115,8 +115,8 @@ describe('Einsatz UI declarations', () => {
     expect(railStartsCollapsed([einsatzPackView])).toBe(true)
   })
 
-  test('the descriptor declares every contribution the Pack makes, targeting and its wiki page included, so registering it is not refused', () => {
-    expect(einsatzPackView.descriptor.contributions.map(contribution => contribution.kind).sort()).toEqual(['knowledge', 'presentation', 'runtime', 'scenario', 'targeting'])
+  test('the descriptor declares every contribution the Pack makes, targeting, its interaction handlers and its wiki page included, so registering it is not refused', () => {
+    expect(einsatzPackView.descriptor.contributions.map(contribution => contribution.kind).sort()).toEqual(['interactions', 'knowledge', 'presentation', 'runtime', 'scenario', 'targeting'])
     expect(() => assertContributionDescriptor(einsatzPack)).not.toThrow()
   })
 
