@@ -2,7 +2,7 @@
   {
     "scenarioId": "halden-offsite-power-restoration",
     "summary": "Follow a guided loss of grid power at four fictional nuclear units, then inspect the evidence and restore their external supply.",
-    "about": "Start paused with a guide that finds Unit 1, opens its live display and offers an editable Assistant prompt. Advance two minutes when ready, inspect the actual plant and grid response, then restore offsite power. Choose Explore for direct control. It shows Leitbild connecting plant, grid and guidance based on observations.",
+    "about": "The guide finds Unit 1, opens its live display and offers an editable Assistant prompt. When the fault occurs at two simulation minutes, inspect the plant and grid response and restore offsite power. Choose Explore for direct control. It shows Leitbild connecting plant, grid and guidance based on observations.",
     "tags": [
       "Plant + grid",
       "Paced guide",
@@ -30,7 +30,7 @@
   {
     "scenarioId": "nordland-corridor-security",
     "summary": "Inspect a weakness in northern Norway’s grid, change one independent copy and compare both futures with a paced guide.",
-    "about": "Start paused and inspect the northern grid with the guide. Create an independent copy, make the preventive change in one simulation, then advance both to the same time and compare their actual state. Choose Explore to investigate freely. It shows Leitbild supporting guided what-if comparisons while preserving the original.",
+    "about": "Inspect the northern grid with the guide and pause the clock to prepare the comparison. Create an independent copy, make the preventive change in one simulation, then advance both to the same time and compare their actual state. Choose Explore to investigate freely. It shows Leitbild supporting guided what-if comparisons while preserving the original.",
     "tags": [
       "Power grid",
       "Paced guide",
@@ -58,7 +58,7 @@
   {
     "scenarioId": "halden-emergency",
     "summary": "Learn a fictional Halden dispatch desk with a paced guide, then send ambulances, patrol cars and fire engines to incoming calls.",
-    "about": "Choose a desk or controller role and use the guide to find calls and dispatch an eligible unit. Shared time starts paused; agree readiness before starting it. Follow the actual unit to arrival, then continue the 30-minute exercise alone or with a colleague. It shows Leitbild configuring roles, units and calls through Einsatz, its general dispatch engine.",
+    "about": "Choose a desk or controller role and use the guide to find calls and dispatch an eligible unit. The clock starts when the first player joins in a role, and you can pause it if the desks need time to coordinate. Follow the actual unit to arrival, then continue the 30-minute exercise alone or with a colleague. It shows Leitbild configuring roles, units and calls through Einsatz, its general dispatch engine.",
     "tags": [
       "Emergency dispatch",
       "Paced guide",

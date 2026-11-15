@@ -8,6 +8,7 @@ export interface MapPopupController {
   /** Shows a card for a map feature that is not an operational object. */
   readonly showCard: (card: { readonly lngLat: readonly [number, number]; readonly title: string; readonly fields: ReadonlyArray<PackObjectField> }) => void
   readonly hide: () => void
+  readonly dismiss: () => boolean
   readonly refresh: (sourceObjects: ReadonlyArray<OperationalObject>) => void
   readonly hoveredObjectId: () => string | null
 }
@@ -22,6 +23,8 @@ export const createMapPopupController = (config: {
 }): MapPopupController => {
   let markerPopup: Popup | null = null
   let hoveredObjectId: string | null = null
+  let hoverKey: string | null = null
+  let dismissedKey: string | null = null
 
   const hoverCardHtml = (object: OperationalObject): string =>
     objectHoverCardHtml({
@@ -45,15 +48,25 @@ export const createMapPopupController = (config: {
       closeButton: false,
       closeOnClick: false,
       offset: 26,
+      focusAfterOpen: false,
       className: 'object-popup',
     })
     return markerPopup
+  }
+
+  const remove = (): void => {
+    hoveredObjectId = null
+    markerPopup?.remove()
+    markerPopup = null
   }
 
   return {
     showCard: (card) => {
       const current = config.getMap()
       if (!current) return
+      hoverKey = JSON.stringify([card.title, card.lngLat])
+      if (dismissedKey === hoverKey) return
+      dismissedKey = null
       hoveredObjectId = null
       popup()
         .setLngLat([card.lngLat[0], card.lngLat[1]])
@@ -64,23 +77,26 @@ export const createMapPopupController = (config: {
       const current = config.getMap()
       const point = config.drawnAt(object)
       if (!current || !point) return
+      hoverKey = object.id
+      if (dismissedKey === hoverKey) return
+      dismissedKey = null
       hoveredObjectId = object.id
       const [lon, lat] = point
-      markerPopup = markerPopup ?? new Popup({
-        closeButton: false,
-        closeOnClick: false,
-        offset: 26,
-        className: 'object-popup',
-      })
-      markerPopup
+      popup()
         .setLngLat([lon, lat])
         .setHTML(hoverCardHtml(object))
         .addTo(current)
     },
     hide: () => {
-      hoveredObjectId = null
-      markerPopup?.remove()
-      markerPopup = null
+      hoverKey = null
+      dismissedKey = null
+      remove()
+    },
+    dismiss: () => {
+      if (!markerPopup) return false
+      dismissedKey = hoverKey
+      remove()
+      return true
     },
     refresh: (sourceObjects) => {
       const object = objectById(hoveredObjectId, sourceObjects)

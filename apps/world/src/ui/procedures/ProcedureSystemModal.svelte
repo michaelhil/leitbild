@@ -453,6 +453,11 @@
     label: 'Unit status unavailable',
     indicator: { shape: 'dot' },
   } satisfies PackObjectStatusPresentation)
+  let dismissedCsf = $state<string | null>(null)
+  const dismissCsf = (shell: HTMLElement, csf: string): void => {
+    shell.querySelector<HTMLButtonElement>('.procedure-csf')?.focus()
+    dismissedCsf = csf
+  }
   const csfIds = $derived([...new Set(catalog?.procedures.flatMap(item => item.csfsMonitored) ?? [])])
 
   const procedureRunVisualStateFor = (procedureId: string): ProcedureRunVisualState => {
@@ -2129,14 +2134,25 @@
         {#each csfIds as csf}
           {@const evaluation = csfEvaluations.get(csf)}
           {@const chip = procedureCsfChip(csf, evaluation, csfStale)}
-          <div class="procedure-csf-shell">
-            <button type="button" class="procedure-csf {chip.tone}" class:stale={chip.stale} class:names-procedure={chip.procedure !== undefined} onclick={() => { const target = procedureChipTarget(chip, catalog?.procedures ?? [], document?.procedureId); if (target) void chooseProcedure(target as ProcedureId) }} aria-label="{chip.label}: {evaluation ? evaluation.status.replace('-', ' ') : 'not read yet'}{chip.procedure ? `, go to ${chip.procedure}` : ''}{chip.stale ? ', stale' : ''}">
+          <div class="procedure-csf-shell" class:dismissed-popover={dismissedCsf === csf}>
+            <button type="button" class="procedure-csf {chip.tone}"
+              onpointerenter={() => { if (dismissedCsf === csf) dismissedCsf = null }}
+              onkeydown={event => {
+                if (event.key !== 'Escape' || dismissedCsf === csf || !event.currentTarget.parentElement) return
+                event.preventDefault()
+                event.stopPropagation()
+                dismissCsf(event.currentTarget.parentElement, csf)
+              }}
+              onblur={() => { if (dismissedCsf === csf) dismissedCsf = null }} class:stale={chip.stale} class:names-procedure={chip.procedure !== undefined} onclick={() => { const target = procedureChipTarget(chip, catalog?.procedures ?? [], document?.procedureId); if (target) void chooseProcedure(target as ProcedureId) }} aria-label="{chip.label}: {evaluation ? evaluation.status.replace('-', ' ') : 'not read yet'}{chip.procedure ? `, go to ${chip.procedure}` : ''}{chip.stale ? ', stale' : ''}">
               <span class="procedure-csf-glyph" aria-hidden="true">{chip.glyph}</span>
               <span>{chip.label}</span>
               {#if chip.procedure}<b class="procedure-csf-procedure">{chip.procedure}</b>{/if}
               {#if chip.stale}<span class="procedure-csf-stale">Stale</span>{/if}
             </button>
-            <div class="procedure-csf-popover" role="tooltip">
+            <div class="procedure-csf-popover" role="group" aria-label={`${chip.label} details`}>
+              <button class="close-csf" type="button" aria-label={`Dismiss ${chip.label} details`}
+                onclick={event => { const shell = event.currentTarget.closest<HTMLElement>('.procedure-csf-shell'); if (shell) dismissCsf(shell, csf) }}
+                onkeydown={event => { if (event.key === 'Escape') { event.preventDefault(); event.stopPropagation(); event.currentTarget.click() } }}>×</button>
               {#if evaluation}
                 <strong>
                   {evaluation.label}:
@@ -2542,6 +2558,7 @@
 </div>
 
 <style>
+  .close-csf { position: sticky; top: 0; justify-self: end; }
   .procedure-input-band { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex: 0 0 auto; padding: 10px 16px; border-bottom: 1px solid #cbd5e1; background: #fffbeb; color: #713f12; font-size: 13px; }
   .procedure-input-band p { margin: 6px 0 0; overflow-wrap: anywhere; }
   .procedure-input-band details { margin-top: 3px; }

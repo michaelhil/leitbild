@@ -1,7 +1,7 @@
 [
   {
     "scenarioId": "halden-normal-operation",
-    "summary": "Start paused with four simulated nuclear units and a calm orientation guide; inspect live displays and try the Assistant before adding faults yourself.",
+    "summary": "Explore four simulated nuclear units with an orientation guide; inspect live displays and try the Assistant before adding faults yourself.",
     "tags": [
       "Plant + grid",
       "First-use guide"

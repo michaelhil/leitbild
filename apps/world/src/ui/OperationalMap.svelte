@@ -725,7 +725,16 @@
         interactionRevision += 1
       }
       const onPointerEnd = () => clearHold()
-      const onKeyDown = (event: KeyboardEvent) => { if (event.key === 'Escape' && assignmentActive) onAssignmentCancelled() }
+      const onKeyDown = (event: KeyboardEvent) => {
+        if (event.key !== 'Escape' || event.defaultPrevented) return
+        if (event.target instanceof Element && event.target.closest('[role="dialog"], dialog, input, textarea, select, [contenteditable="true"]')) return
+        if (stackChooser.shown()) stackChooser.hide()
+        else if (!promptController.dismiss() && !popupController.dismiss()) {
+          if (!assignmentActive) return
+          onAssignmentCancelled()
+        }
+        event.preventDefault()
+      }
       canvas.addEventListener('pointerdown', onPointerDown)
       canvas.addEventListener('pointermove', onPointerMove)
       canvas.addEventListener('pointerup', onPointerEnd)
@@ -989,7 +998,29 @@
     left: var(--map-cover-left);
   }
 
-  /* A panel's prompt at a point: one button, large enough to tap. */
+  .map :global(.map-prompt-actions) {
+    display: flex;
+    border-radius: 10px;
+    background: var(--panel);
+  }
+
+  .map :global(.map-popup-dismiss) {
+    justify-self: end;
+    min-width: 44px;
+    min-height: 44px;
+    border: 0;
+    border-radius: 8px;
+    background: var(--panel);
+    color: var(--text);
+    font: inherit;
+    cursor: pointer;
+  }
+
+  .map :global(.map-popup-dismiss:hover) {
+    background: var(--panel-strong);
+  }
+
+  /* A panel's prompt at a point. */
   .map :global(.map-prompt .maplibregl-popup-content) {
     padding: 0;
     border-radius: 10px;
@@ -1008,6 +1039,14 @@
   .map :global(.map-stack-list) {
     display: grid;
     gap: 4px;
+    max-height: min(45dvh, 360px);
+    overflow-y: auto;
+    overscroll-behavior: contain;
+  }
+
+  .map :global(.map-stack-list .map-popup-dismiss) {
+    position: sticky;
+    top: 0;
   }
 
   .map :global(.map-stack-button) {

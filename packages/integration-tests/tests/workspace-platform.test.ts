@@ -12,6 +12,7 @@ import {
   workspaceResourceCatalogSchema,
   workspaceSchema,
 } from '@leitbild/contracts'
+import { simulationRunIdSchema } from '../../../apps/world/src/core/model/index.ts'
 import { createServer as createWorldServer } from '../../../apps/world/src/core/api/server.ts'
 import { createWorldModuleState } from '../../../apps/world/src/core/workspaces/module-state.ts'
 import { createWorldWorkspaceRuntimeRegistry } from '../../../apps/world/src/core/workspaces/runtime-registry.ts'
@@ -626,12 +627,21 @@ describe('Workspace Host with real Modules', () => {
       const invoked = await fetch(`${baseUrl}/api/workspaces/${workspace.id}/capabilities/${primary!.id}/invoke`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ definition: { ...descriptor!.ref, revisionId: featured.revisionId }, input: {}, actor: { kind: 'human' } }),
+        body: JSON.stringify({ definition: { ...descriptor!.ref, revisionId: featured.revisionId }, input: { playback: 'playing' }, actor: { kind: 'human' } }),
       })
       expect(invoked.status).toBe(200)
       const runId = (await invoked.json() as { result: { id: string } }).result.id
 
-      // 5. The Run exists in that Workspace.
+      // 5. The Run plays immediately or as soon as its first player takes a role.
+      const { simulationRuns: registry } = await worldRegistry.getOrLoad(workspace.id)
+      const runtime = await registry.load(simulationRunIdSchema.parse(runId))
+      if (registry.loadedCompiledScenario(runtime.id).roles?.length) {
+        expect(runtime.snapshot().clock?.paused).toBe(true)
+        await registry.screenJoined(runtime.id)
+      }
+      expect(runtime.snapshot().clock?.paused, featured.definition.id).toBe(false)
+
+      // 6. The Run exists in that Workspace.
       const resources = workspaceResourceCatalogSchema.parse(await (await fetch(`${baseUrl}/api/workspaces/${workspace.id}/resources?moduleId=${moduleId}`)).json())
       expect(resources.resources.some(resource => resource.ref.type === 'world.simulation-run' && resource.ref.id === runId)).toBe(true)
     }

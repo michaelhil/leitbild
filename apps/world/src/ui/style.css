@@ -888,13 +888,12 @@ body.rail-resizing {
   width: min(260px, calc(var(--rail-width, 360px) - 64px));
   max-width: calc(100vw - 24px);
   max-height: 70vh;
-  overflow: auto;
-  pointer-events: auto;
+  overflow: hidden;
   text-align: left;
 }
 
-.row-title-text:hover .row-tooltip,
-.row-title-text:focus-visible .row-tooltip {
+.object-row:not(.dismissed-tooltip) .row-title-text:hover .row-tooltip,
+.object-row:not(.dismissed-tooltip):focus-visible .row-tooltip {
   display: block;
 }
 
@@ -1056,6 +1055,12 @@ body.rail-resizing {
   top: 66px;
 }
 
+.scenario-guidance-copy {
+  max-height: 32dvh;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
 .scenario-guidance strong {
   display: block;
   font-size: 13px;
@@ -1150,6 +1155,7 @@ body.rail-resizing {
 }
 
 .object-popup .maplibregl-popup-content {
+  pointer-events: none;
   min-width: 230px;
   max-width: 310px;
   border: 1px solid var(--border);
@@ -3188,7 +3194,7 @@ body.rail-resizing {
 
 .procedure-csf-popover {
   position: absolute;
-  top: calc(100% + 8px);
+  top: 100%;
   left: 0;
   z-index: 6;
   width: max-content;
@@ -3204,8 +3210,8 @@ body.rail-resizing {
   text-transform: none;
 }
 
-.procedure-csf-shell:hover .procedure-csf-popover,
-.procedure-csf-shell:focus-within .procedure-csf-popover {
+.procedure-csf-shell:not(.dismissed-popover):hover .procedure-csf-popover,
+.procedure-csf-shell:not(.dismissed-popover):focus-within .procedure-csf-popover {
   display: grid;
 }
 

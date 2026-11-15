@@ -89,7 +89,10 @@
   const key = (event: KeyboardEvent): void => {
     if (open && event.key === 'Escape' && !event.defaultPrevented) { event.preventDefault(); event.stopPropagation(); close(true) }
   }
-  const ownKeys = (event: KeyboardEvent): void => { key(event); event.stopPropagation() }
+  const ownKeys = (event: KeyboardEvent): void => {
+    key(event)
+    if (event.key !== 'Escape') event.stopPropagation()
+  }
   const focusout = (event: FocusEvent): void => { if (open === 'view' && event.relatedTarget instanceof Node && !root?.contains(event.relatedTarget)) close() }
   $effect(() => { void clear; void ready; void guidance; void foregroundProcedure; remeasure?.() })
 
@@ -226,8 +229,9 @@
             <small>Map update controls are available when you return to the map.</small>
           {:else}
             <button type="button" onclick={() => {
-              setGuidance(guidance.visible ? 'paused' : 'running')
-              if (!guidance.visible) close(true)
+              const showOnMap = !guidance.visible
+              setGuidance(showOnMap ? 'running' : 'paused')
+              if (showOnMap) close(true)
             }}>{guidance.visible ? 'Pause map updates' : 'Show on map'}</button>
           {/if}
         </details>
