@@ -43,12 +43,15 @@ export interface MapPromptOption {
  * …)" for a busy unit: one or two buttons, in the order given. The map draws
  * them offset above or beside the point, never under it, so the finger or
  * pointer that made the tap does not land on one; a tap on a button confirms
- * it, and a tap anywhere else on the map dismisses the prompt without
- * confirming.
+ * it. A tap anywhere else on the map, the prompt's × or Esc dismisses it
+ * without confirming: the surface drops the prompt and calls `onDismiss`
+ * once, and the panel forgets it, so it never shows that prompt again. A
+ * prompt the panel replaces or clears itself is not dismissed.
  */
 export interface MapPrompt {
   readonly point: GeoJsonPoint
   readonly options: ReadonlyArray<MapPromptOption>
+  readonly onDismiss: () => void
 }
 
 /** A panel's prompt, refused unless it has one or two options, each with a label. */
@@ -165,7 +168,8 @@ export interface SurfacePanelProps {
   /**
    * Shows a prompt at a point on the map, or clears it with null. Only the
    * open map-target panel's latest prompt is shown; a panel clears its own
-   * when it unmounts.
+   * when it unmounts. When the operator dismisses it, the surface drops it
+   * and calls its `onDismiss`.
    */
   readonly onMapPrompt: (prompt: MapPrompt | null) => void
   /**

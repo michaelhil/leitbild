@@ -380,6 +380,13 @@
   // Each panel's latest map prompt; only the open map-target panel's is drawn.
   let panelMapPrompts = $state.raw<Readonly<Record<string, MapPrompt | null>>>({})
   const mapPrompt = $derived(mapTargetPanelContribution ? panelMapPrompts[mapTargetPanelContribution.id] ?? null : null)
+  // The operator dismissed the drawn prompt: it goes, and its panel is told. One the panel already replaced is past news.
+  const dismissMapPrompt = (prompt: MapPrompt): void => {
+    const panel = mapTargetPanelContribution
+    if (panel === null || panelMapPrompts[panel.id] !== prompt) return
+    panelMapPrompts = { ...panelMapPrompts, [panel.id]: null }
+    prompt.onDismiss()
+  }
   // Each panel's latest armed order; only the open map-target panel's is drawn.
   let panelMapTargetings = $state.raw<Readonly<Record<string, MapTargeting | null>>>({})
   const mapTargeting = $derived(mapTargetPanelContribution ? panelMapTargetings[mapTargetPanelContribution.id] ?? null : null)
@@ -2354,6 +2361,7 @@
           highlightedObjectIds={mapHighlightedObjectIds}
           mutedObjectIds={mapMutedObjectIds}
           prompt={mapPrompt}
+          onPromptDismissed={dismissMapPrompt}
           targeting={mapTargeting}
           {hiddenObjectCategoryIds}
           {hasNewInfo}

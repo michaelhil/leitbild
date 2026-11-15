@@ -82,6 +82,8 @@
     readonly mutedObjectIds?: ReadonlyArray<string>
     /** The open map-target panel's prompt of one or two buttons by a point, e.g. "Move here"; any map click dismisses it. */
     readonly prompt?: MapPrompt | null
+    /** The operator dismissed the prompt without confirming: a map click elsewhere, its × or Esc. Once per prompt. */
+    readonly onPromptDismissed: (prompt: MapPrompt) => void
     /**
      * The open map-target panel's armed order: halos with tags on its
      * targets, every other object dimmed, and a line from its object to a
@@ -185,6 +187,7 @@
     highlightedObjectIds = [],
     mutedObjectIds = [],
     prompt = null,
+    onPromptDismissed,
     targeting = null,
     hiddenObjectCategoryIds = [],
     hasNewInfo,
@@ -319,7 +322,7 @@
     mapInputDebugController = createNoopMapInputDebugController()
   }
 
-  const promptController = createMapPromptController({ getMap: () => runtime?.map ?? null })
+  const promptController = createMapPromptController({ getMap: () => runtime?.map ?? null, onDismiss: prompt => onPromptDismissed(prompt) })
   let physicalLayoutInteraction: PhysicalLayoutMapInteraction | null = null
   let detailedLayoutOwnerIds = $state.raw<ReadonlySet<string>>(new Set())
   const physicalMapPresentation = (object: OperationalObject): PackObjectPresentation => {
