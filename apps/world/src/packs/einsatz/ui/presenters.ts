@@ -83,7 +83,11 @@ export const clockText = (seconds: number): string => {
 /** Seconds as whole minutes, at least one. */
 export const minutesText = (seconds: number): string => `${Math.max(1, Math.round(Math.max(0, seconds) / 60))} min`
 
-/** The message of a `<code>: <message>` refusal; any other text as it is. */
+/**
+ * A refusal's message without its `<code>: ` prefix; any other text as it
+ * is. The one place a refusal's reason is read: the code itself is only
+ * ever taken from the result's own `code`, never from this text.
+ */
 export const refusalText = (reason: string): string => /^[a-z][a-z0-9_]*: (.+)$/s.exec(reason)?.[1] ?? reason
 
 /** An ETA, run on by `elapsedS`; an unavailable one says why. */

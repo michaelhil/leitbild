@@ -5,6 +5,7 @@ import type { CapabilityInvocationResponse } from '../../../ui/types.ts'
 import type { EinsatzCommandId, einsatzQueryIds } from '../capabilities.ts'
 import { unitOrderInputSchema, unitRecallInputSchema, unitStopRemoveInputSchema, unitUndoInputSchema, type UnitOrderInput } from '../order-schema.ts'
 import { recommendAnswerSchema, type RecommendAnswer } from '../recommendation-schema.ts'
+import { refusalText } from './presenters.ts'
 import { situationInputSchema, situationSchema, unitOptionsInputSchema, unitOptionsSchema, type Situation, type UnitOptions } from '../situation/schema.ts'
 
 /**
@@ -44,7 +45,7 @@ export type DispatchCommandId = typeof dispatchCommandIds[keyof typeof dispatchC
 
 export type CommandOutcome =
   | { readonly ok: true; readonly commandId: string }
-  /** `code` is the refusal's code, from the result or its `<code>: <message>` reason; null for a refusal outside the convention (a core gate's). */
+  /** `code` is the code the refused result sets; null for one that sets none (a core gate's). */
   | { readonly ok: false; readonly code: string | null; readonly text: string }
 
 export interface EinsatzClient {
@@ -64,13 +65,9 @@ export interface EinsatzClientPorts {
   readonly invoke: (capabilityId: DispatchCommandId, input: unknown) => Promise<CapabilityInvocationResponse>
 }
 
-const refusalPattern = /^([a-z][a-z0-9_]*): (.+)$/s
-
-/** A refused result's code and message. */
-export const refusalOf = (result: { readonly reason: string; readonly code?: string }): { readonly code: string | null; readonly text: string } => {
-  const match = refusalPattern.exec(result.reason)
-  return { code: result.code ?? match?.[1] ?? null, text: match?.[2] ?? result.reason }
-}
+/** A refused result's code, which the result itself sets (null for a refusal that sets none, a core gate's), and its message without the code. */
+export const refusalOf = (result: { readonly reason: string; readonly code?: string }): { readonly code: string | null; readonly text: string } =>
+  ({ code: result.code ?? null, text: refusalText(result.reason) })
 
 export const createEinsatzClient = (ports: EinsatzClientPorts): EinsatzClient => {
   const command = async (capabilityId: DispatchCommandId, input: unknown): Promise<CommandOutcome> => {

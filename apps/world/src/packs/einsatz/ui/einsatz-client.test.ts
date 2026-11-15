@@ -10,7 +10,7 @@ const refused = (reason: string, code?: string): CapabilityInvocationResponse =>
 describe('Einsatz client', () => {
   test('commands go to the plan Capabilities with validated inputs and come back accepted with their commandId or refused with code and message', async () => {
     const sent: Array<[string, unknown]> = []
-    const answers = [accepted('cmd-1'), refused('when_required: R1 is busy on J-2 until about 5 min'), refused('Run is stopped')]
+    const answers = [accepted('cmd-1'), refused('when_required: R1 is busy on J-2 until about 5 min', 'when_required'), refused('Run is stopped')]
     const client = createEinsatzClient({
       query: async () => { throw new Error('no query expected') },
       invoke: async (capabilityId, input) => {
@@ -27,8 +27,9 @@ describe('Einsatz client', () => {
     await expect(client.undo('r1', '')).rejects.toThrow()
   })
 
-  test('a refusal\'s code is the result\'s when it sets one', () => {
+  test('a refusal\'s code is the one the result sets, never read out of its text', () => {
     expect(refusalOf({ reason: 'drops_mismatch: R1 works for J-3', code: 'drops_mismatch' })).toEqual({ code: 'drops_mismatch', text: 'R1 works for J-3' })
+    expect(refusalOf({ reason: 'drops_mismatch: R1 works for J-3' })).toEqual({ code: null, text: 'R1 works for J-3' })
   })
 
   test('answers are validated: a malformed situation or options answer rejects', async () => {
