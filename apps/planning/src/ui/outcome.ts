@@ -50,7 +50,7 @@ export const outcomeBanner = (model: PlanModel, context: Context): { readonly ti
   const title = recommended !== undefined
     ? `Recommended: ${recommended.label}, ${recommended.word}.`
     : found.every(outcome => outcome.word === 'proven infeasible')
-      ? `No option can be recommended: ${found.length === 1 ? 'it is' : `all ${found.length} are`} proven infeasible.`
+      ? `No option can be recommended: ${found.length === 1 ? 'it is' : found.length === 2 ? 'both are' : `all ${found.length} are`} proven infeasible.`
       : 'No option can be recommended: none is validated feasible.'
   const lines = found.filter(outcome => outcome.word !== 'validated feasible').map(outcome => `${outcome.label}: ${outcome.word}. ${outcome.cause}`)
   // A search that stopped early may have missed a better plan: said where the planner looks first.

@@ -167,6 +167,9 @@
     .facts dt { color: var(--ink-3); }
     .facts dd { margin: 0; }
     .panel-heading { display: flex; justify-content: space-between; gap: 8px; align-items: start; }
+    .panel-heading h2 { min-width: 0; }
+    /* A short button never wraps or shrinks beside a long title (the Close button at 1440 px). */
+    .panel-heading button, button.quiet { white-space: nowrap; flex: none; }
     .why { margin-top: 8px; padding: 8px; background: var(--estimate-bg); border-radius: 6px; font-size: 13px; }
     .mini-form { border-top: 1px solid var(--line-2); padding-top: 10px; margin-top: 10px; }
     .authority { padding: 8px; background: var(--rule-bg); border-radius: 6px; margin: 8px 0; }

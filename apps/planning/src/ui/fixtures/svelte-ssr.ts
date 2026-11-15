@@ -63,6 +63,7 @@ export const routineBreaches = (text: string, identifiers: readonly string[], la
   if (/\b[a-z]+(?:[-_][a-z]+)+:\s/.test(text) || /\b(?:link|bracket|tag-before-test|support-order)\s?:\s/.test(text)) breaches.push('raw kind prefix')
   if (/\b[a-z]+(?:_[a-z]+)+\b/.test(text)) breaches.push('snake_case code')
   if (/no longer in this plan/.test(text)) breaches.push('unresolved name')
+  if (/\b\d+\.\d+\s?s\b/.test(text)) breaches.push('fractional seconds')
   // A count of seconds of a minute or more, unless it is the planner's own words quoted from the plan.
   for (const match of text.matchAll(/(\d[\d,]*)\s?s\b/g)) {
     if (Number(match[1]!.replaceAll(',', '')) >= 60 && !words.includes(match[0])) breaches.push(`seconds count ${match[0]}`)

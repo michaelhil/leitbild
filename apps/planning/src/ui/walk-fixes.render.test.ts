@@ -49,7 +49,7 @@ describe('maint walk defects on the plan screen', () => {
   test('T5-01, T5-02: every refused option says its cause in hours in the banner and the attention column', () => {
     const model = daysOnly()
     const banner = outcomeBanner(model, contextOf(model))!
-    expect(banner.title).toBe('No option can be recommended: all 2 are proven infeasible.')
+    expect(banner.title).toBe('No option can be recommended: both are proven infeasible.')
     expect(banner.lines).toEqual([
       'Rebuild in place, days only: proven infeasible. 3 jobs must run one after another and need 37 h of work, but from Mon 07:00 to Fri 15:00 their crews and tools are on duty together for only 32 h.',
       'Swap in refurbished spare, days only: proven infeasible. the cooling chain must be back within 72 h.',
@@ -58,7 +58,7 @@ describe('maint walk defects on the plan screen', () => {
     expect(cards.some(card => card.startsWith('Rebuild in place, days only: proven infeasible.') && card.includes('37 h of work') && card.includes('only 32 h'))).toBe(true)
     expect(cards.some(card => card.startsWith('Swap in refurbished spare, days only: proven infeasible.'))).toBe(true)
     const text = screen(model)
-    expect(text).toContain('No option can be recommended: all 2 are proven infeasible.')
+    expect(text).toContain('No option can be recommended: both are proven infeasible.')
     expect(text.indexOf('only 32 h')).toBeLessThan(text.indexOf('Needs your attention'))
   })
 

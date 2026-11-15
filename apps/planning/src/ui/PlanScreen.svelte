@@ -24,6 +24,7 @@
   import { alignWindowEdit, simulationNow } from './edit-forms.ts'
   import { createPlanActions, type Shown } from './plan-actions.ts'
   import { createPreviewGate } from './preview-gate.ts'
+  import { requestText } from './request.ts'
   import { revealPanel } from './reveal.ts'
   import { shiftList } from './shift-list.ts'
   import ShiftList from './ShiftList.svelte'
@@ -258,6 +259,7 @@
           {#if shown}
             <section class="shown-option" aria-labelledby="shown-title">
               <h2 id="shown-title">{shown.label}</h2>
+              {#if requestText(shown, model.inputs)}<p class="hint">{requestText(shown, model.inputs)}</p>{/if}
               <StatusBlock view={statusView(shown.status, context)} warnings={shown.warnings.map(warning => warning.text)} stale={!shown.fresh} />
             </section>
           {/if}
@@ -267,7 +269,8 @@
           <!-- Each applied change starts the forms afresh (maint's walk 4): nothing stays filled in from it. -->
           {#key applied}<JobForm {context} busy={busy || generating !== null} onPreview={previewEdits} />{/key}
         {:else if view === 'equipment'}
-          {#key applied}<EquipmentPicker {context} {runs} {linkedRun} busy={busy || generating !== null} onLink={link} onRefresh={refresh} {onOpenWorkspace} onFindRuns={findRuns} onSearch={search} onDetail={detail} onPreview={previewEdits} />{/key}
+          <!-- The World picker keeps its search and results across an Apply, so several items take one search. -->
+          <EquipmentPicker {context} {runs} {linkedRun} busy={busy || generating !== null} onLink={link} onRefresh={refresh} {onOpenWorkspace} onFindRuns={findRuns} onSearch={search} onDetail={detail} onPreview={previewEdits} />
         {:else if view === 'crews'}
           {#key applied}<CrewForm {context} busy={busy || generating !== null} onPreview={previewEdits} />{/key}
         {:else if view === 'rules'}

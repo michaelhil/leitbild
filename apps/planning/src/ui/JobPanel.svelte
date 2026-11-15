@@ -100,7 +100,6 @@
       {#if why}
         <div class="why">
           <p><Said parts={why.parts} {onPick} /></p>
-          {#if why.joint}<p class="hint">These are joint causes: easing only one of them does not move the job.</p>{/if}
         </div>
       {/if}
     {:else}

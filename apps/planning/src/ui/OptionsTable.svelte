@@ -1,6 +1,7 @@
 <script lang="ts">
   import MarkTag from './MarkTag.svelte'
   import type { OptionView } from './model.ts'
+  import { requestText } from './request.ts'
   import StatusBlock from './StatusBlock.svelte'
   import { goalOrderText, statusView, type Context } from './status-text.ts'
 
@@ -39,6 +40,7 @@
             <button type="button" disabled={busy} onclick={() => { baselineFor = option.key; name = option.label }}>Set as baseline</button>
           {/if}
         </div>
+        {#if requestText(option, context.inputs)}<p class="hint">{requestText(option, context.inputs)}</p>{/if}
         <StatusBlock {view} warnings={option.warnings.map(warning => warning.text)} stale={!option.fresh} />
         {#if baselineFor === option.key}
           <form class="mini-form" onsubmit={(event) => { event.preventDefault(); onBaseline(option.key, name.trim(), note.trim()); baselineFor = null }}>

@@ -1,6 +1,7 @@
 <script lang="ts">
   import Choice from './Choice.svelte'
   import type { GenerateInput } from './api.ts'
+  import { crewHourPurchases, requestLabel } from './request.ts'
   import type { Context } from './status-text.ts'
 
   // The plan's decision context and the one action: Generate, with "days only" and a fixed method as
@@ -25,15 +26,14 @@
     const methods = context.inputs.methods
     const chosen = methods.flatMap(method => fixed[method.key] ? [{ choice: method.key, option: fixed[method.key]! }] : [])
     const buy = daysOnly ? { buy: 'no-extra-crew-hours' as const } : {}
-    const daysWords = daysOnly ? ', days only' : ''
     if (chosen.length > 0) {
-      const label = chosen.map(item => methods.find(method => method.key === item.choice)?.options.find(option => option.key === item.option)?.label ?? 'Chosen method').join(', ')
-      onGenerate({ variants: [{ label: `${label}${daysWords}`, methods: chosen, ...buy }] })
+      const labels = chosen.map(item => methods.find(method => method.key === item.choice)?.options.find(option => option.key === item.option)?.label ?? 'Chosen method')
+      onGenerate({ variants: [{ label: requestLabel(labels, daysOnly), methods: chosen, ...buy }] })
     } else if (daysOnly && methods.length > 0) {
       const method = methods[0]!
-      onGenerate({ variants: method.options.map(option => ({ label: `${option.label}${daysWords}`, methods: [{ choice: method.key, option: option.key }], ...buy })) })
+      onGenerate({ variants: method.options.map(option => ({ label: requestLabel([option.label], true), methods: [{ choice: method.key, option: option.key }], ...buy })) })
     } else if (daysOnly) {
-      onGenerate({ variants: [{ label: 'Days only', ...buy }] })
+      onGenerate({ variants: [{ label: requestLabel([], true), ...buy }] })
     } else onGenerate({})
   }
 </script>
@@ -49,7 +49,10 @@
     </p>
   </div>
   <div class="generate">
-    <label class="inline"><input type="checkbox" bind:checked={daysOnly} disabled={generating} /> Days only: no overtime or night crews (rebookings and tool days stay allowed)</label>
+    <!-- Offered only when the plan has crew hours that can be bought, which "days only" would exclude. -->
+    {#if crewHourPurchases(context.inputs).length > 0}
+      <label class="inline"><input type="checkbox" bind:checked={daysOnly} disabled={generating} /> Days only: no overtime or night crews (rebookings and tool days stay allowed)</label>
+    {/if}
     {#each context.inputs.methods as method (method.key)}
       <Choice label={method.label} bind:value={() => fixed[method.key] ?? '', next => { fixed[method.key] = next }} disabled={generating} options={[{ value: '', label: 'Let Generate choose' }, ...method.options.map(option => ({ value: option.key, label: option.label }))]} />
     {/each}

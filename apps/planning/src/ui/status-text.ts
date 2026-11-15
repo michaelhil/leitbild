@@ -188,7 +188,9 @@ export const statusView = (status: Status, context: Context): StatusView => {
         const goal = context.inputs.goals[line.goal]
         const name = goal === undefined ? `goal ${line.goal + 1}` : goalName(goal, context)
         const value = valueText(line.value, line.unit)
-        const gap = line.word === 'proven optimal' || line.bound === undefined ? 0 : line.value - line.bound.value
+        // A bound that says nothing (the trivial zero bound: the gap is the whole value) gives no gap line.
+        const informative = line.bound !== undefined && line.bound.certificate?.kind !== 'zero' && line.bound.value > 0
+        const gap = line.word === 'proven optimal' || line.bound === undefined || !informative ? 0 : line.value - line.bound.value
         const distance = gap > 0 ? `could be up to ${valueText(gap, line.unit)} better` : ''
         return { name, value, mark: goalMark(line.word), distance }
       })

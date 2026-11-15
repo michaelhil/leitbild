@@ -29,7 +29,7 @@ describe("maint's fourth walk, screen items", () => {
     const run = runBasis(model.inputs.settings.grid)
     // A best-found goal with its bound equal to the value (the goal-order rule keeps it from "proven optimal").
     const view = statusView(status({ word: 'validated feasible', run, goals: [
-      { word: 'best found under budget', goal: 0, value: 0.5, unit: 'min', bound: { value: 0, source: 'logic+calendars', certificate: { kind: 'zero' } } },
+      { word: 'best found under budget', goal: 0, value: 2, unit: 'min', bound: { value: 1.5, source: 'logic+calendars' } },
       { word: 'best found under budget', goal: 1, value: 0, unit: 'min', bound: { value: 0, source: 'logic+calendars', certificate: { kind: 'zero' } } },
     ] }), contextOf(model))
     expect(view.goals.map(goal => [goal.mark.word, goal.distance])).toEqual([['best found', 'could be up to 30 s better'], ['best found', '']])
@@ -81,7 +81,9 @@ describe("maint's fourth walk, screen items", () => {
 
   test('R4-4: every form starts empty after an applied change (the forms are keyed on the count of applied changes)', () => {
     const source = readFileSync(join(import.meta.dir, 'PlanScreen.svelte'), 'utf8')
-    for (const form of ['JobForm', 'EquipmentPicker', 'CrewForm', 'RulesPanel', 'JobPanel']) expect(source).toMatch(new RegExp(`\\{#key applied\\}\\s*<${form} `))
+    for (const form of ['JobForm', 'CrewForm', 'RulesPanel', 'JobPanel']) expect(source).toMatch(new RegExp(`\\{#key applied\\}\\s*<${form} `))
+    // The World picker is not reset: it keeps its search and results, so three trucks take one search (walk 5, R4-4-03).
+    expect(source).not.toMatch(/\{#key applied\}\s*<EquipmentPicker /)
     expect(source).toContain('applied += 1')
   })
 

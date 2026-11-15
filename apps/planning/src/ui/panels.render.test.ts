@@ -39,7 +39,8 @@ describe('panels', () => {
     expect(text).toContain('Restore SW A, fill and vent, pump test')
     expect(text).toContain('Shortest allowed')
     expect(text).toContain('Going below it needs someone\'s agreement.')
-    expect(text).toContain('These are joint causes: easing only one of them does not move the job.')
+    // The joint-cause sentence is said once (maint's walk 5).
+    expect(text.match(/easing only one/g)?.length).toBe(1)
     expect(text).toContain('it follows Pull SW A pump assembly; Test team (one return-to-service test at a time) is busy until Tue 12:00.')
     expect(text).toContain('limited by: the window end (crew availability is not counted)')
     expect(text).toContain('Fix its start')
