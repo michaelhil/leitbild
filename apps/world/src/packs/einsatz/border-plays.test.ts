@@ -149,7 +149,7 @@ describe('halden-border plays', () => {
     expect(best.log.refusals.filter(refusal => !refusal.reason.startsWith('unit_unavailable'))).toEqual([])
   }, 60_000)
 
-  test('passive Blue sees an engagement and a step-loss task between 12 and 16 minutes', async () => {
+  test('passive Blue sees an engagement and a step-loss task between 12 and 16 minutes, the casualty ranked top priority', async () => {
     const { log } = await outcomeOf('passive')
     const firstFire = log.transitions.find(transition => transition.kind === 'unit' && transition.record.target !== undefined)
     const firstLoss = [...log.state.tasks.values()].filter(task => task.lastAction?.by === 'standing-order:onStepLost').sort((a, b) => a.createdAtMs - b.createdAtMs)[0]
@@ -160,5 +160,7 @@ describe('halden-border plays', () => {
       expect(minutes(at)).toBeLessThanOrEqual(16)
     }
     expect(firstLoss!.side).toBe(blue)
+    // A combat casualty is acute: its template ranks it first, so an ambulance may be diverted to it from any lesser call.
+    expect(firstLoss).toMatchObject({ template: 'casualty', priority: borderConfig(definition).priorities[0]!.id })
   }, 60_000)
 })
