@@ -196,7 +196,7 @@ export const createPlanActions = (client: PlanningClient, planId: string, progre
      */
     whyRecommended: async (against: string | null): Promise<ExplainResult> => client.explain(planId, { ask: 'recommended', ...(against === null ? {} : { option: against }) }),
     /** What differs between an option and an option of the set made before the latest change. */
-    versus: async (option: string, previous: string): Promise<ExplainResult> => client.explain(planId, { ask: 'versus', option, versus: { previous } }),
+    versus: async (option: string, previous: string, cursor: string | null = null): Promise<ExplainResult> => client.explain(planId, { ask: 'versus', option, versus: { previous }, ...(cursor === null ? {} : { cursor }) }),
     /** The set made before the latest change, every page: what compare weighs against. */
     previous: async (): Promise<{ readonly at: string | null; readonly recommended: string | null; readonly items: readonly OptionView[] }> => {
       const pages = await readAll(client, planId, 'previous')

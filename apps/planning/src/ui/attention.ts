@@ -6,7 +6,8 @@ import { sizeBand, sizeRefusalWords } from '../plan/summary.ts'
 import type { Robust } from '../plan/schema.ts'
 import { hoursText, quantityText, sourceMark, type Mark } from './format.ts'
 import { planOptions, type AttentionKind, type OptionView, type PlanModel } from './model.ts'
-import { outcomes, stoppedEarly } from './outcome.ts'
+import { outcomes, stoppedEarlyLines } from './outcome.ts'
+import { crewHourPurchases } from './request.ts'
 import { goalResult, statusView, type Context } from './status-text.ts'
 
 export type CardAction = 'open-workspace' | 'link-run' | 'refresh' | 'add-work' | 'generate' | 'why-finish' | 'why-recommended' | 'align-window'
@@ -99,6 +100,18 @@ export const pessimisticCard = (option: OptionView, context: Context): Card | nu
   }
 }
 
+/**
+ * A refused option asked with less crew time than the plan allows: a lower ladder rung, or "days only". A refused
+ * option stores the purchases it was allowed (lane S), so a crew-time purchase the plan allows and the option
+ * lacks marks it.
+ */
+export const lowerRungRefusal = (option: OptionView, inputs: PlanModel['inputs']): boolean => {
+  if (option.status.word !== 'proven infeasible') return false
+  const dataDate = inputs.settings.dataDate
+  const lapsed = (purchase: PlanModel['inputs']['purchases'][number]) => purchase.ordered === undefined && purchase.orderBy !== undefined && dataDate !== null && Date.parse(dataDate) > Date.parse(purchase.orderBy)
+  return crewHourPurchases(inputs).some(purchase => purchase.allowed && purchase.ordered === undefined && !lapsed(purchase) && !option.variant.purchases.includes(purchase.key))
+}
+
 export const attentionCards = (model: PlanModel, context: Context, wallNowMs: number = Date.now()): readonly Card[] => {
   const { inputs } = model
   const cards: Card[] = []
@@ -157,13 +170,17 @@ export const attentionCards = (model: PlanModel, context: Context, wallNowMs: nu
   for (const item of items) cards.push({ mark: kindMarks[item.kind], title: item.text, text: '', steps: [], actions: [] })
 
   // Every current option that is not validated feasible says why, here, not only in the Options view.
-  for (const outcome of outcomes(model, context).filter(item => item.word !== 'validated feasible')) {
+  // A lower ladder rung's refusal is an answer inside the ladder and the options table, not a problem of the plan (walk V6).
+  // Only beside another option of the same method: a "days only" Generate's own refusals stay (walk T5).
+  const pickKey = (option: OptionView) => option.variant.methods.map(pick => `${pick.choice}=${pick.option}`).sort().join('|')
+  const rungs = new Set(planOptions(model).filter(option => lowerRungRefusal(option, inputs) && planOptions(model).some(other => other.key !== option.key && other.fresh && pickKey(other) === pickKey(option) && !lowerRungRefusal(other, inputs))).map(option => option.key))
+  for (const outcome of outcomes(model, context).filter(item => item.word !== 'validated feasible' && !rungs.has(item.key))) {
     // A refused option's cause is said in the options table and, in full, in its detail: not a third time here.
     cards.push({ mark: outcome.mark, title: `${outcome.label}: ${outcome.word}.`, text: outcome.word === 'proven infeasible' ? 'Not possible. The options table says why.' : outcome.cause, steps: [], actions: [] })
   }
-  const early = planOptions(model).filter(option => option.fresh).map(stoppedEarly).find(reason => reason !== null)
-  if (early !== undefined) {
-    cards.push({ mark: { shape: '!', word: 'Stopped early' }, title: `The search stopped early, ${early}.`, text: 'The options shown may not be the best possible. Generate again.', steps: [], actions: ['generate'] })
+  const early = stoppedEarlyLines(model)
+  if (early.length > 0) {
+    cards.push({ mark: { shape: '!', word: 'Stopped early' }, title: early.join(' '), text: 'The options shown may not be the best possible. Generate again.', steps: [], actions: ['generate'] })
   }
   const recommended = model.options?.items.find(option => option.key === model.options?.recommended)
   // A stale option gets no card here: the Module sends the one stale item (maint's walk 3, R2-4-03).

@@ -50,16 +50,16 @@
         {@const row = rowInto(rung.rung)}
         {#if row}
           <li class="ladder-step">
-            <span class="ladder-word">{row.word}{#if row.differences}:{/if}</span>{#if row.differences} <span class="ladder-difference">{row.differences}</span>{/if}
+            <span class="ladder-word">{row.word}{#if row.differences}:{/if}</span>{#if row.differences}{' '}<span class="ladder-difference">{row.differences}</span>{/if}
             {#if row.finish}<span class="ladder-finish">What sets the finish: <Said parts={row.finish} {onPick} quiet /></span>{/if}
           </li>
         {/if}
         <li class="rung" class:selected={rung.option !== null && rung.option === selected}>
           <span class="rung-number" aria-hidden="true">{rung.step}</span>
           <div class="rung-body">
-            <p class="rung-name"><span class="sr-only">Rung {rung.step}: </span>{rung.name}</p>
+            <p class="rung-name"><span class="sr-only">{`Rung ${rung.step}: `}</span>{rung.name}</p>
             {#if rung.option !== null && rung.mark}
-              <p class="chips"><MarkTag mark={rung.mark} tone={rung.tone} />{#if rung.stale} <MarkTag mark={{ shape: '↻', word: 'Out of date' }} tone="warning" />{/if}</p>
+              <p class="chips"><MarkTag mark={rung.mark} tone={rung.tone} />{#if rung.stale}{' '}<MarkTag mark={{ shape: '↻', word: 'Out of date' }} tone="warning" />{/if}</p>
               {#if rung.outcome}<p class="rung-outcome">{rung.outcome}</p>{/if}
               {#each rung.uses as use (use)}<p class="rung-use">{use}</p>{/each}
               <button type="button" class="quiet" disabled={busy || rung.option === selected} onclick={() => { if (rung.option !== null) onSelect(rung.option) }}>{rung.option === selected ? 'Shown on the timeline' : 'Show on the timeline'}</button>

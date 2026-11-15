@@ -111,7 +111,7 @@
     {#if plans.length === 0}<p class="hint">No plans yet.</p>{/if}
     <ul class="plan-list">
       {#each plans as plan (plan.ref.id)}
-        <li><button type="button" class="link" onclick={() => onOpen(plan.ref.id)}><strong>{plan.title}</strong>{#if updated(plan)}<span class="hint"> · {updated(plan)}</span>{/if}</button></li>
+        <li><button type="button" class="link" onclick={() => onOpen(plan.ref.id)}><strong>{plan.title}</strong>{#if updated(plan)}<span class="hint">{` · ${updated(plan)}`}</span>{/if}</button></li>
       {/each}
     </ul>
   {/if}

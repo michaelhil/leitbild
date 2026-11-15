@@ -25,6 +25,7 @@
   <p class="what-if-apart">{whatIfApart}</p>
   <StatusBlock view={card.status} warnings={card.warnings} caution={card.caution} stale={card.stale} {proof} {onPick} />
   {#if card.outage}<p class="what-if-outage">{card.outage}</p>{/if}
+  {#if card.against}<p class="what-if-against">{card.against}</p>{/if}
   {#each card.unpriced as item, index (index)}
     <p class="beside"><MarkTag mark={unpricedMark} tone="assumption" title={item.words} /> {unpricedLine(item)}</p>
   {/each}

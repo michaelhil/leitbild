@@ -48,7 +48,7 @@
         <tbody>
           {#each view.goals as goal (goal.name)}
             <tr class:deciding={goal.deciding}>
-              <th scope="row">{goal.name}{#if goal.deciding} <MarkTag mark={{ shape: '◆', word: 'Decided here' }} tone="good" />{/if}</th>
+              <th scope="row">{goal.name}{#if goal.deciding}{' '}<MarkTag mark={{ shape: '◆', word: 'Decided here' }} tone="good" />{/if}</th>
               <td class="number">{goal.value}</td>
               {#if view.againstLabel}<td class="number">{goal.against ?? ''}</td>{/if}
             </tr>
@@ -63,7 +63,7 @@
     {/if}
     {#each view.caveats as caveat, index (index)}
       <div class="unpriced">
-        <p><MarkTag mark={unpricedMark} tone="assumption" /> <strong>{caveat.line}</strong>{#if caveat.against} <span class="hint">against {caveat.against}</span>{/if}</p>
+        <p><MarkTag mark={unpricedMark} tone="assumption" /> <strong>{caveat.line}</strong>{#if caveat.against}{' '}<span class="hint">against {caveat.against}</span>{/if}</p>
         <p class="hint">{caveat.method}{#if caveat.words}: {caveat.words}{/if}</p>
       </div>
     {/each}
