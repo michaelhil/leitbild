@@ -185,16 +185,22 @@ export const solveInputsOf = (inputs: PlanInputs, whatIf: Pick<WhatIf, 'also' | 
   return { ruled, solving: { ...ruled, goals: order.map(k => inputs.goals[k]!) }, planGoalOf: position => order[position] }
 }
 
-/** The goal metrics stored on an option, by the plan's goal ids (a group lead's value is in its status), then lane K's 'bought:' measures. */
-const metricsOf = (problem: NormalizedProblem, index: CompileIndex, raw: readonly RawMetric[], planGoalOf: (position: number) => number | undefined, measures: CheckReport['metrics'] = []): Option['metrics'] => {
-  const goals = raw.flatMap((value, p) => {
-    const k = planGoalOf(p)
-    if (k === undefined) return []
-    const unit = index.goals[p]!.unit
-    if (typeof value === 'number') return [{ k, metric: { id: `goal:${k}`, value, unit } }]
-    return value.map((span, i) => ({ k, metric: { id: `goal:${k}:${index.spans[problem.goals[p]!.spans![i]!]!.group}`, value: span, unit } }))
+/**
+ * The figures stored on an option, all lane K's: each plan goal's value by the plan's goal id, a span-over
+ * goal's spans by the checker's own group keys (never by position: fix round F4); with no extra-cost goal, the
+ * checker's 'extra-cost'; then its 'bought:' measures. A group lead's value is in its status.
+ */
+const metricsOf = (inputs: PlanInputs, report: CheckReport): Option['metrics'] => {
+  const goals = report.goals.flatMap((value, k) => {
+    const unit = inputs.goals[k]!.tolerance.unit
+    if (typeof value === 'number') return [{ id: `goal:${k}`, value, unit }]
+    const groups = report.spanGroups?.[k]
+    if (groups === undefined || groups.length !== value.length) throw new Error(`The checker named no group for each span of goal ${k}`)
+    return value.map((span, i) => ({ id: `goal:${k}:${groups[i]!}`, value: span, unit }))
   })
-  return [...goals.toSorted((x, y) => x.k - y.k).map(entry => entry.metric).slice(0, 32), ...measures.filter(metric => metric.id.startsWith('bought:')).map(metric => ({ ...metric })).slice(0, 64)]
+  const measures = report.metrics ?? []
+  const cost = inputs.goals.some(goal => goal.metric === 'extra-cost') ? [] : measures.filter(metric => metric.id === 'extra-cost')
+  return [...goals.slice(0, 32), ...cost.map(metric => ({ ...metric })), ...measures.filter(metric => metric.id.startsWith('bought:')).map(metric => ({ ...metric })).slice(0, 63)]
 }
 
 /** The raw goal metrics stored on an option, back in goal order. */
@@ -371,7 +377,7 @@ export const subSolve = (deps: SubSolveDeps): SubSolver => async (task, signal, 
     const status = verifiedGoals(onPlanGoals(solved, lead, planGoalOf),
       (goal, bound) => deps.verifyBound(inputs, variantOut, goal, bound),
       group === undefined ? undefined : bound => deps.verifyBound(inputs, variantOut, { group, unit: groupLeadGoal(group).tolerance.unit }, bound))
-    return { ...base, variant: stored(planned.purchases), status, rows, metrics: metricsOf(problem, index, raw, planGoalOf, report.metrics) }
+    return { ...base, variant: stored(planned.purchases), status, rows, metrics: metricsOf(inputs, report) }
   }
   const usedBy = (rows: ReadonlyArray<Pick<DatedRow, 'uses'>>): string[] => [...new Set([...rows.flatMap(row => row.uses.flatMap(use => (use.purchase === undefined ? [] : [use.purchase]))), ...index.purchases.filter(purchase => purchase.committed).map(purchase => purchase.key)])]
 
