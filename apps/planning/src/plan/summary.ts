@@ -366,7 +366,7 @@ export interface OptionState {
   readonly stale: boolean
   readonly reason?: 'revision' | 'formulation'
   readonly warnings: readonly OptionWarning[]
-  /** The status to show: the stored one, checked by lane K inside Generate, only on its revision and formulation. */
+  /** The stored status, checked by lane K inside Generate: a current claim only when not `stale`, else a fact about its own revision. */
   readonly shown: Status
   readonly baselineAllowed: boolean
 }

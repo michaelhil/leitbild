@@ -18,7 +18,6 @@ import { buysItems, methodLadders, type FinishCause } from '../plan/buys.ts'
 import { rungStanding } from '../check/buys.ts'
 import { changesSince, versus } from '../plan/versus.ts'
 import { dominatedWithin, optionName, outageFloor, whyRecommended } from '../plan/why.ts'
-import { withoutProof } from '../solve/status.ts'
 import {
   certificateSchema, certifiedSizeSchema, optionSetSchema, planInputsSchema,
   type CertifiedSize, type Plan, type PlanInputs, type Status, type WorldFactCopy,
@@ -246,16 +245,18 @@ export const createPlanningOperations = (ports: PlanningOperationsPorts) => {
   /**
    * A stored status stands only on the plan revision and the solver formulation it was generated on: lane
    * K checked it then, inside Generate's solver child, and nothing it rests on has changed. Otherwise the
-   * option is out of date: shown without proof (lane S's withoutProof), never baselined. No checker runs
-   * on a read (coordinator's memory decision, 11 Nov).
+   * option is out of date (`stale`, with its reason): its stored status is kept unchanged, as a fact about
+   * the plan it was made on, never relabelled ("unresolved", "best found") nor re-derived on the current
+   * inputs (walk V2). It is never baselined, recommended, compared or used as a current proof, and no
+   * checker runs on a read (coordinator's memory decision, 11 Nov).
    */
   const optionState = (plan: Plan, option: Option): OptionState => {
     const stored = option.status
     const reason = option.inputsRevision !== plan.revision ? 'revision' as const
       : 'run' in stored && stored.run.formulation !== solver.formulation(plan.inputs.settings.grid) ? 'formulation' as const : undefined
-    const shown: Status = reason === undefined ? stored : withoutProof(stored)
-    // The function-key rule; lane S's redundancyWarning fires on one train's series chain until it adopts it.
-    const warning = shown.word === 'validated feasible' ? outTogether(plan.inputs, option.rows) : undefined
+    const shown: Status = stored
+    // The function-key rule, judged on the current inputs, so only for a fresh option: nothing is re-derived on a stale one.
+    const warning = reason === undefined && shown.word === 'validated feasible' ? outTogether(plan.inputs, option.rows) : undefined
     // An option solved above the certified size says so beside its status (lane S's sizeCaution).
     const warnings = [...(shown.word === 'validated feasible' && option.sizeCaution === true ? [sizeCautionWarning(certifiedSize)] : []), ...(warning === undefined ? [] : [optionWarning(warning, plan.inputs)])]
     return { stale: reason !== undefined, ...(reason === undefined ? {} : { reason }), warnings, shown, baselineAllowed: reason === undefined && stored.word === 'validated feasible' }
@@ -654,8 +655,12 @@ export const createPlanningOperations = (ports: PlanningOperationsPorts) => {
         const wanted = input.versus!.previous
         const previous = plan.previousOptions.options.find(entry => entry.key === wanted)
         if (previous === undefined) throw planningError(400, 'unknown_reference', `No option ${wanted} in the previous options`, { about: [wanted] })
-        const compared = versus({ inputs: plan.inputs, option, previous, plan })
-        return resultOf(explainResultSchema, withinResult({ lines: compared.lines, items: [], versus: compared.facts }))
+        // The moved jobs come in pages (walk V10): `cursor` is the first one to give, `more` the next page's.
+        const from = sliceCursor(input.cursor)
+        const compared = versus({ inputs: plan.inputs, option, previous, plan, movedFrom: from })
+        const result = withinResult({ lines: compared.lines, items: [], versus: compared.facts })
+        const next = result.versus!.movedMore > 0 ? String(from + result.versus!.moved.length) : undefined
+        return resultOf(explainResultSchema, next === undefined ? result : { ...result, more: next })
       }
       const option = findOption(plan, input.option)
       requireFresh(plan, option)

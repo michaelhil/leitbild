@@ -100,3 +100,59 @@ describe('V11: "N options no longer match the plan" counts the plan\'s own optio
   })
 })
 
+describe('V2: an out-of-date option keeps its stored status as a fact about its own revision, never relabelled', () => {
+  /** Every item of a paged options-shaped section. */
+  const items = async (id: string, section: 'options' | 'previous') => {
+    const pages = []
+    let cursor: string | undefined
+    do {
+      const data = sectionDataSchemas[section].parse((await double.call('planning.plan.read', { resource: id, input: { section, ...(cursor === undefined ? {} : { cursor }) } })).body.result.sections[0].data)
+      pages.push(data)
+      cursor = data.more
+    } while (cursor !== undefined)
+    return pages.flatMap(data => data.items)
+  }
+  test('after the 30 h rebuild estimate the refused ladder rungs read "proven infeasible", out of date; the earlier set too', async () => {
+    // The walk: each method's ladder solved (its days-only rung refused with its certificate), then the 30 h estimate.
+    const plan = await double.store.create(double.workspaceId, planWith(double.workspaceId, [...ladderFor(rebuild), ...ladderFor(swap)]))
+    const job = trainAInputs.jobs.find(entry => entry.title === 'Rebuild SW A bowl assembly in workshop')!
+    const saved = await double.call('planning.plan.edit', { resource: plan.id, input: { edits: [{ edit: 'job', key: job.key, duration: { value: 30, unit: 'h' } }] }, expectedRevision: plan.revision })
+    expect(saved.body.result.plan.revision).toBe(plan.revision + 1)
+    const stored = new Map(plan.options!.options.map(option => [option.key, option.status.word]))
+    const now = await items(plan.id, 'options')
+    // Every option keeps its stored word, marked out of date; none reads "unresolved".
+    expect(now.map(item => [item.key, item.status.word, item.fresh])).toEqual(plan.options!.options.map(option => [option.key, stored.get(option.key)!, false]))
+    expect(now.filter(item => item.status.word === 'proven infeasible')).toHaveLength(2)
+    // A stored proof on a goal stays a fact about its revision too (Swap's top rung: proven optimal at 0 h over 54 h).
+    expect(JSON.stringify(now.find(item => item.key === ladderFor(swap)[2]!.key)!.status)).toContain('proven optimal')
+    // Generate on the new revision: the earlier set shows its stored statuses as they were.
+    expect((await double.call('planning.plan.generate', { resource: plan.id, input: {}, expectedRevision: plan.revision + 1 })).status).toBe(200)
+    const before = await items(plan.id, 'previous')
+    expect(before.map(item => [item.key, item.status.word, item.fresh])).toEqual(plan.options!.options.map(option => [option.key, stored.get(option.key)!, false]))
+    expect(JSON.stringify(before)).not.toContain('unresolved')
+  })
+})
+
+describe('V10: every moved job of the comparison is reachable, page by page', () => {
+  test('versus pages its moved jobs by cursor: each once, in the same order, until no more', async () => {
+    const previous = { at: planWith(double.workspaceId, [swap]).options!.at, by: { kind: 'human' as const }, options: [variantOf(swap, { revision: 2 })] }
+    const plan = await double.store.create(double.workspaceId, planWith(double.workspaceId, [swap, rebuild], 3, { previousOptions: previous }))
+    const before = new Map(swap.rows.map(row => [row.job, row]))
+    const moved = rebuild.rows.filter(row => before.has(row.job) && (before.get(row.job)!.start !== row.start || before.get(row.job)!.finish !== row.finish)).map(row => row.job)
+    const seen: string[] = []
+    let cursor: string | undefined
+    let pages = 0
+    do {
+      const answer = await double.call('planning.plan.explain', { resource: plan.id, input: { ask: 'versus', option: rebuild.key, versus: { previous: swap.key }, ...(cursor === undefined ? {} : { cursor }) } })
+      expect([answer.status, answer.bytes <= 4_096]).toEqual([200, true])
+      const facts = answer.body.result.versus
+      seen.push(...facts.moved.map((entry: { job: string }) => entry.job))
+      expect(facts.movedMore).toBe(moved.length - seen.length)
+      cursor = answer.body.result.more
+      pages += 1
+    } while (cursor !== undefined && pages < 20)
+    expect(pages).toBeGreaterThan(1)
+    expect([...seen].sort()).toEqual([...moved].sort())
+    expect(new Set(seen).size).toBe(seen.length)
+  })
+})
