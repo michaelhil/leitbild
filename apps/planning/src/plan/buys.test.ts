@@ -14,7 +14,7 @@ const rungs = rungsOf(trainAInputs)
 const cause: FinishCause = { kind: 'shift', about: [{ kind: 'resource', key: 'crane' }] }
 const solvedAt = (end: 'proven' | 'found', outage: number, cost: number): Standing => ({ end, outage, cost, bought: [] })
 const ladder = (standings: ReadonlyArray<Standing | undefined>, finish: ReadonlyMap<string, FinishCause> = new Map()) =>
-  buysItems(ladderOf(rungs.map((rung, index) => ({ ...rung, ...(standings[index] === undefined ? {} : { option: { key: `r${index}`, standing: standings[index]! } }) }))), finish)
+  buysItems(ladderOf(rungs.map((rung, index) => ({ ...rung, ...(standings[index] === undefined ? {} : { option: { key: `r${index}`, standing: standings[index]! } }) })), []), finish)
 const rows = (items: ReturnType<typeof ladder>) => items.flatMap(item => 'row' in item ? [item.row] : [])
 const refusedEnd: Standing = { end: 'refused', bought: [] }
 const unsolvedEnd: Standing = { end: 'unsolved', bought: [] }
@@ -46,14 +46,14 @@ describe('the rungs come from plan data: crew time by price form, everything els
 describe('a row\'s word stands on the two ends it is given', () => {
   test('a rung not solved on this revision lists its buy list and gives no row', () => {
     const items = ladder([solvedAt('found', 60, 1_000), undefined, undefined])
-    expect(items).toEqual(rungs.map((rung, index) => ({ rung: { rung: rung.rung, buy: [...rung.buy], ...(index === 0 ? { option: 'r0' } : {}), bought: [] } })))
+    expect(items).toEqual(rungs.map((rung, index) => ({ rung: { rung: rung.rung, methods: [], buy: [...rung.buy], ...(index === 0 ? { option: 'r0' } : {}), bought: [] } })))
     expect(sectionDataSchemas.buys.parse({ items }).items).toHaveLength(3)
   })
 
   test('a refused lower rung: "makes it possible", without differences; an unsolved end: "not solved"; no word fits a solved rung below a refused one', () => {
     expect(rows(ladder([refusedEnd, solvedAt('found', 60, 1_000), unsolvedEnd]))).toEqual([
-      { from: 0, to: 1, ends: { from: 'refused', to: 'found' }, word: 'makes it possible' },
-      { from: 1, to: 2, ends: { from: 'found', to: 'unsolved' }, word: 'not solved' },
+      { methods: [], from: 0, to: 1, ends: { from: 'refused', to: 'found' }, word: 'makes it possible' },
+      { methods: [], from: 1, to: 2, ends: { from: 'found', to: 'unsolved' }, word: 'not solved' },
     ])
     expect(rows(ladder([refusedEnd, refusedEnd, refusedEnd]))).toEqual([])
     expect(rows(ladder([solvedAt('found', 60, 1_000), refusedEnd, undefined]))).toEqual([])
@@ -61,19 +61,19 @@ describe('a row\'s word stands on the two ends it is given', () => {
   })
 
   test('a shorter outage above reads "proven" only with both ends proven, else "found"; the differences are the higher rung minus the lower', () => {
-    expect(rows(ladder([solvedAt('proven', 65, 200_000), solvedAt('proven', 59.5, 260_000), undefined]))).toEqual([{ from: 0, to: 1, ends: { from: 'proven', to: 'proven' }, word: 'proven', outage: 59.5 - 65, cost: 260_000 - 200_000 }])
+    expect(rows(ladder([solvedAt('proven', 65, 200_000), solvedAt('proven', 59.5, 260_000), undefined]))).toEqual([{ methods: [], from: 0, to: 1, ends: { from: 'proven', to: 'proven' }, word: 'proven', outage: 59.5 - 65, cost: 260_000 - 200_000 }])
     expect(rows(ladder([solvedAt('proven', 65, 200_000), solvedAt('found', 59.5, 260_000), undefined]))[0]!.word).toBe('found')
     expect(rows(ladder([solvedAt('found', 65, 200_000), solvedAt('found', 65, 260_000), undefined]))[0]!.word).toBe('not found better')
   })
 
   test('"proven: no gain" needs both ends proven, equal outages and the higher rung\'s cause of the finish; without that cause, the weaker "not found better" (F6)', () => {
     const [lower, upper] = [solvedAt('proven', 65, 200_000), solvedAt('proven', 65, 200_000)]
-    expect(rows(ladder([lower, upper, undefined], new Map([['r1', cause]])))).toEqual([{ from: 0, to: 1, ends: { from: 'proven', to: 'proven' }, word: 'proven: no gain', outage: 0, cost: 0, finish: cause }])
+    expect(rows(ladder([lower, upper, undefined], new Map([['r1', cause]])))).toEqual([{ methods: [], from: 0, to: 1, ends: { from: 'proven', to: 'proven' }, word: 'proven: no gain', outage: 0, cost: 0, finish: cause }])
     // No cause: never dropped. The higher end is stated "found", no more than it is, so the row claims no proof.
     const weaker = rows(ladder([lower, upper, undefined], new Map([['r0', cause]])))
-    expect(weaker).toEqual([{ from: 0, to: 1, ends: { from: 'proven', to: 'found' }, word: 'not found better', outage: 0, cost: 0 }])
+    expect(weaker).toEqual([{ methods: [], from: 0, to: 1, ends: { from: 'proven', to: 'found' }, word: 'not found better', outage: 0, cost: 0 }])
     expect(buysRowSchema.safeParse(weaker[0]).success).toBe(true)
-    expect(rows(ladder([lower, solvedAt('found', 65, 200_000), undefined]))).toEqual([{ from: 0, to: 1, ends: { from: 'proven', to: 'found' }, word: 'not found better', outage: 0, cost: 0 }])
+    expect(rows(ladder([lower, solvedAt('found', 65, 200_000), undefined]))).toEqual([{ methods: [], from: 0, to: 1, ends: { from: 'proven', to: 'found' }, word: 'not found better', outage: 0, cost: 0 }])
   })
 
   test('every row with both rungs solved names the higher rung\'s cause of the finish when it has one (G3)', () => {
@@ -96,7 +96,7 @@ describe('on increment 1\'s real Train A options, lane K finds every word honest
   // Rung 0 days only, refused with the bounds' certificate; rungs 1 and 2 the stored Rebuild and Swap.
   const options = [refusedWith(variantOf(rebuild, { key: 'rung-0' }), rungs[0]!.buy), variantOf(rebuild, { key: 'rung-1' }), variantOf(swap, { key: 'rung-2' })]
   const plan = planWith(crypto.randomUUID(), options)
-  const items = buysItems(ladderOf(rungs.map((rung, index) => ({ ...rung, option: { key: options[index]!.key, standing: rungStanding(plan, options[index], formulation) } }))), new Map())
+  const items = buysItems(ladderOf(rungs.map((rung, index) => ({ ...rung, option: { key: options[index]!.key, standing: rungStanding(plan, options[index], formulation) } })), []), new Map())
 
   test('the ends, figures and bought time are lane K\'s, and buysHonesty has no finding', () => {
     expect(buysHonesty(plan, items, formulation)).toEqual([])
@@ -114,7 +114,7 @@ describe('on increment 1\'s real Train A options, lane K finds every word honest
 
   test('an option of another revision is never a rung\'s: lane K calls a rung naming it a finding', () => {
     const older = planWith(crypto.randomUUID(), [options[0]!, variantOf(rebuild, { key: 'rung-1', revision: 2 }), options[2]!])
-    const named = buysItems(ladderOf(rungs.map((rung, index) => ({ ...rung, option: { key: older.options!.options[index]!.key, standing: rungStanding(older, older.options!.options[index], formulation) } }))), new Map())
+    const named = buysItems(ladderOf(rungs.map((rung, index) => ({ ...rung, option: { key: older.options!.options[index]!.key, standing: rungStanding(older, older.options!.options[index], formulation) } })), []), new Map())
     expect(buysHonesty(older, named, formulation).map(finding => finding.kind)).toContain('rung')
   })
 })

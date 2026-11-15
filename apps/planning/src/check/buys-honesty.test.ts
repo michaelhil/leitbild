@@ -73,10 +73,10 @@ const pinned = stored(inputs(8), [
   { key: 'rung-1', purchases: ['ot'], status: { word: 'validated feasible', run, goals: [proven(0, 3, 'h', leastSpan(11)), found(1, 200, 'NOK')] }, rows: rung1Rows, metrics: figures(11, 200, 2) },
 ])
 const rungs: BuysItem[] = [
-  { rung: { rung: 0, buy: [], option: 'rung-0', bought: [] } },
-  { rung: { rung: 1, buy: ['ot'], option: 'rung-1', bought: [{ id: 'bought:ot', value: 2, unit: 'person-h' }] } },
+  { rung: { rung: 0, methods: [], buy: [], option: 'rung-0', bought: [] } },
+  { rung: { rung: 1, methods: [], buy: ['ot'], option: 'rung-1', bought: [{ id: 'bought:ot', value: 2, unit: 'person-h' }] } },
 ]
-const row = (word: z.infer<typeof buysWordSchema>, ends: Ends, figures?: { outage: number; cost: number }): BuysItem => ({ row: { from: 0, to: 1, ends, word, ...figures } })
+const row = (word: z.infer<typeof buysWordSchema>, ends: Ends, figures?: { outage: number; cost: number }): BuysItem => ({ row: { methods: [], from: 0, to: 1, ends, word, ...figures } })
 const kinds = (findings: ReturnType<typeof buysHonesty>) => findings.map(finding => finding.kind).sort()
 
 describe('the ends are lane K\'s', () => {
@@ -94,7 +94,7 @@ describe('the ends are lane K\'s', () => {
   })
   test('a figure that is not the checker\'s own is a finding', () => {
     expect(kinds(buysHonesty(pinned, [...rungs, row('proven', { from: 'proven', to: 'proven' }, { outage: -15, cost: 200 })], 'f'))).toEqual(['figure'])
-    expect(kinds(buysHonesty(pinned, [rungs[0]!, { rung: { rung: 1, buy: ['ot'], option: 'rung-1', bought: [] } }, row('proven', { from: 'proven', to: 'proven' }, { outage: -16, cost: 200 })], 'f'))).toEqual(['bought'])
+    expect(kinds(buysHonesty(pinned, [rungs[0]!, { rung: { rung: 1, methods: [], buy: ['ot'], option: 'rung-1', bought: [] } }, row('proven', { from: 'proven', to: 'proven' }, { outage: -16, cost: 200 })], 'f'))).toEqual(['bought'])
   })
 })
 
@@ -147,7 +147,7 @@ describe('no word is stronger than the proofs', () => {
       { key: 'rung-1', purchases: ['ot'], status: { word: 'validated feasible', run, goals: [proven(0, 3, 'h', leastSpan(11)), found(1, 200, 'NOK')] }, rows: rung1Rows, metrics: figures(11, 200, 2), inputsRevision: 1 },
     ])
     // rung 1 is still to solve on this revision, so it names no option
-    const toSolve: BuysItem[] = [rungs[0]!, { rung: { rung: 1, buy: ['ot'], bought: [] } }]
+    const toSolve: BuysItem[] = [rungs[0]!, { rung: { rung: 1, methods: [], buy: ['ot'], bought: [] } }]
     expect(kinds(buysHonesty(old, [...toSolve, row('found', { from: 'proven', to: 'found' }, { outage: -16, cost: 200 })], 'f'))).toEqual(['ends', 'figure', 'word'])
     expect(buysHonesty(old, [...toSolve, row('not solved', { from: 'proven', to: 'unsolved' })], 'f')).toEqual([])
     // naming the stale option as the rung's is itself a finding
@@ -162,7 +162,7 @@ describe('the contract never accepts a word its stated ends do not carry', () =>
   const finish = { kind: 'crew' as const, about: [{ kind: 'resource' as const, key: 'fitter' }] }
   const accepted: string[] = []
   for (const word of buysWordSchema.options) for (const from of ends) for (const to of ends) for (const outage of outages) {
-    const candidate = { from: 0, to: 1, ends: { from, to }, word, ...(outage === undefined ? {} : { outage, cost: 0 }), ...(word === 'proven: no gain' ? { finish } : {}) }
+    const candidate = { methods: [], from: 0, to: 1, ends: { from, to }, word, ...(outage === undefined ? {} : { outage, cost: 0 }), ...(word === 'proven: no gain' ? { finish } : {}) }
     if (buysRowSchema.safeParse(candidate).success) accepted.push(`${word}|${from}|${to}|${outage}`)
   }
   test('some rows parse, so the sweep sees the contract', () => {

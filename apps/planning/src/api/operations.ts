@@ -418,7 +418,8 @@ export const createPlanningOperations = (ports: PlanningOperationsPorts) => {
       const option = plan.options?.options.find(entry => variantKey(entry.key) === key && states.get(entry.key)?.stale === false && entry.variant.lead === undefined && entry.variant.also === undefined)
       return { ...rung, ...(option === undefined ? {} : { option: { key: option.key, standing: rungStanding(plan, option, solver.formulation(plan.inputs.settings.grid)) } }) }
     })
-    const ladder = ladderOf(rungs)
+    // These rung requests fix no method (`buy` only), so the ladder's picks are none; one ladder per method is U3.
+    const ladder = ladderOf(rungs, [])
     const causes = await Promise.all(ladder.rows.flatMap(({ finishFrom }) => finishFrom === undefined ? [] : [finishFrom]).map(async key => {
       const cause = await solver.finishCause({ inputs: plan.inputs, option: plan.options!.options.find(entry => entry.key === key)! })
       return cause === undefined ? [] : [[key, cause] as const]

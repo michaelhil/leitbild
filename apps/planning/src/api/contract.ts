@@ -263,15 +263,23 @@ const paged = <T extends z.ZodType>(item: T) => z.object({ items: z.array(item),
  * option, fresh on the current revision and formulation (absent: still to solve there); `bought` are that
  * option's own 'bought:<purchase>' metrics. A row's word comes from this list, never "buys nothing".
  *
- * Rungs are numbered in the order they are offered, from 0, with no gaps: rung 0 buys no crew time, and each
- * next rung adds the crew-time purchases of one more price form (per person-hour first, then the rest). A plan
- * with crew time in one price form only offers rungs 0 and 1, and its rung 1 buys all of it. A row compares
- * two adjacent offered rungs, so `to` is always `from + 1`.
+ * One ladder per method (U3): a rung's `methods` are the method picks it was solved for, and a row names the
+ * picks its two rungs share, so it never compares rungs of two methods. Rungs are numbered within each method,
+ * in the order they are offered, from 0, with no gaps: rung 0 buys no crew time, and each next rung adds the
+ * crew-time purchases of one more price form (per person-hour first, then the rest). A plan with crew time in
+ * one price form only offers rungs 0 and 1, and its rung 1 buys all of it. A row compares two adjacent
+ * offered rungs of its method, so `to` is always `from + 1`.
  */
 export const buysWordSchema = z.enum(['makes it possible', 'not solved', 'proven: no gain', 'found', 'proven', 'not found better'])
 const rungSchema = z.number().int().min(0).max(2)
+/** Method picks, each choice once; empty when the request fixes no method (or the plan has no method choice). */
+const rungMethodsSchema = z.array(z.object({ choice: keySchema, option: keySchema }).strict()).max(8)
+  .refine(picks => distinct(picks.map(pick => pick.choice)), 'Each method choice is picked once')
+/** The ladder a rung or row belongs to: its picks, in choice order, so equal picks give an equal key. */
+const ladderKey = (picks: ReadonlyArray<{ readonly choice: string; readonly option: string }>): string =>
+  JSON.stringify(picks.toSorted((left, right) => left.choice.localeCompare(right.choice)).map(pick => [pick.choice, pick.option]))
 export const buysRungSchema = z.object({
-  rung: rungSchema, buy: z.array(keySchema).max(64), option: keySchema.optional(), bought: z.array(metricSchema).max(64),
+  rung: rungSchema, methods: rungMethodsSchema, buy: z.array(keySchema).max(64), option: keySchema.optional(), bought: z.array(metricSchema).max(64),
 }).strict()
 /**
  * Where a row's rung stands: proven, found (validated feasible, not proven), refused (proven infeasible, with
@@ -295,7 +303,7 @@ const solved = (end: BuysEnd): boolean => end === 'proven' || end === 'found'
  * round G3). A "no gain" without its cause reads "not found better".
  */
 export const buysRowSchema = z.object({
-  from: rungSchema, to: rungSchema, ends: z.object({ from: buysEndSchema, to: buysEndSchema }).strict(), word: buysWordSchema,
+  methods: rungMethodsSchema, from: rungSchema, to: rungSchema, ends: z.object({ from: buysEndSchema, to: buysEndSchema }).strict(), word: buysWordSchema,
   outage: z.number().finite().optional(), cost: z.number().finite().optional(), finish: becauseSchema.optional(),
 }).strict().superRefine((row, context) => {
   const issue = (path: string, message: string) => context.addIssue({ code: 'custom', path: [path], message })
@@ -352,7 +360,16 @@ export const sectionDataSchemas = {
   options: optionsPage,
   schedule: paged(datedRowSchema).extend({ option: keySchema }).strict(),
   history: paged(changeSchema),
-  buys: paged(z.union([z.object({ rung: buysRungSchema }).strict(), z.object({ row: buysRowSchema }).strict()])),
+  // A rung is listed once in its method's ladder.
+  buys: paged(z.union([z.object({ rung: buysRungSchema }).strict(), z.object({ row: buysRowSchema }).strict()])).superRefine((page, context) => {
+    const rungs = new Map<string, number>()
+    page.items.forEach((item, index) => {
+      if (!('rung' in item)) return
+      const key = `${ladderKey(item.rung.methods)}#${item.rung.rung}`
+      if (rungs.has(key)) context.addIssue({ code: 'custom', path: ['items', index, 'rung'], message: 'A rung is listed once in its method\'s ladder' })
+      rungs.set(key, index)
+    })
+  }),
   previous: optionsPage,
 } as const satisfies Record<NonNullable<z.infer<typeof readInputSchema>['section']>, z.ZodType>
 export type SectionName = keyof typeof sectionDataSchemas
