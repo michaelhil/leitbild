@@ -439,6 +439,13 @@ const retimedSchema = z.union([
 /** allPessimistic: every ranged job at its high estimate together; single: each ranged job alone at its high estimate. */
 export const robustSchema = z.object({ allPessimistic: retimedSchema, single: z.array(z.object({ job: keySchema, outcome: retimedSchema }).strict()).max(12) }).strict()
 export type Robust = z.infer<typeof robustSchema>
+/**
+ * The re-timings were not worked out because the sub-solve's time ran out before they could all be made: said
+ * so, never left out silently, and never a part of the record.
+ */
+export const robustNotWorkedOutSchema = z.object({ notWorkedOut: z.literal('time') }).strict()
+/** option.robust: the record, or why there is none. */
+export type RobustField = Robust | z.infer<typeof robustNotWorkedOutSchema>
 export const metricSchema = z.object({ id: z.string(), value: z.number(), unit: z.string() }).strict()
 const optionObjectSchema = z.object({
   key: keySchema, label: labelSchema,
@@ -456,7 +463,7 @@ const optionObjectSchema = z.object({
   // Solved above the certified size (more jobs in its solve than `certifiedSize.maxJobs`): it keeps every
   // hard rule, but may not be near the best. Shown beside its status as a caution.
   sizeCaution: z.literal(true).optional(),
-  robust: robustSchema.optional(),
+  robust: z.union([robustSchema, robustNotWorkedOutSchema]).optional(),
 }).strict()
 type OptionShape = Pick<z.infer<typeof optionObjectSchema>, 'variant' | 'status'>
 /** A what-if's lead and its status's lead name the same thing, and only a what-if with a lead records one. */

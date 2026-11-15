@@ -24,6 +24,11 @@ const placeable = ranged.filter(placesAll)
 const unplaced = ranged.filter(job => retime(flagship, [job]) !== undefined && !placesAll(job))
 /** The flagship with the ranges that leave a job unplaced taken off, so every re-timing has rows. */
 const trimmed: PlanInputs = { ...flagship, jobs: flagship.jobs.map(job => (unplaced.includes(job.key) ? { ...job, duration: (({ range: _range, ...rest }) => rest)(job.duration) } : job)) }
+/** The robust record itself, not the word that it was not worked out. */
+const record = (field: ReturnType<typeof robustOf>) => {
+  if (field === undefined || 'notWorkedOut' in field) throw new Error('a robust record')
+  return field
+}
 const crewsOf = (rows: ReadonlyArray<{ readonly job: string; readonly uses: ReadonlyArray<{ readonly resource: string }> }>) => new Map(rows.map(row => [row.job, [...new Set(row.uses.map(use => use.resource))].toSorted()]))
 
 describe('the ranged jobs', () => {
@@ -73,7 +78,7 @@ describe('re-timed by the repair path', () => {
     // The job is the one that needs the eddy-current team, and the crew is that team (from the fixture).
     const job = flagship.jobs.find(entry => entry.key === outcome.unplaced.job)!
     expect(job.needs.map(need => need.anyOf)).toEqual([[outcome.unplaced.resource]])
-    const robust = robustOf(flagship, option, laneKJudgeRetimed)!
+    const robust = record(robustOf(flagship, option, laneKJudgeRetimed))
     expect(robustSchema.safeParse(robust).success).toBe(true)
     expect(robust.single.map(entry => entry.job)).toEqual(ranged)
     expect(robust.single.find(entry => entry.job === 'CCWHXA-CLEAN')!.outcome).toEqual(outcome)
@@ -91,7 +96,7 @@ describe('the robust record', () => {
   test('every ranged job together, then each alone, each outcome lane K\'s own', () => {
     judged.length = 0
     const jobs = rangedJobs(trimmed, option.rows)
-    const robust = robustOf(trimmed, option, recording)!
+    const robust = record(robustOf(trimmed, option, recording))
     expect(robustSchema.safeParse(robust).success).toBe(true)
     expect(judged).toEqual([jobs, ...jobs.map(job => [job])])
     const own = (high: readonly string[]) => {
@@ -104,8 +109,8 @@ describe('the robust record', () => {
     expect(robust.single).toEqual(jobs.map(job => ({ job, outcome: own([job]) })))
   })
 
-  test('not computed rather than partly: past its time, or refused by lane K, nothing', () => {
-    expect(robustOf(trimmed, option, laneKJudgeRetimed, Date.now() - 1)).toBeUndefined()
+  test('never partly: past its time it says so ("not worked out: the time ran out"); refused by lane K, nothing', () => {
+    expect(robustOf(trimmed, option, laneKJudgeRetimed, Date.now() - 1)).toEqual({ notWorkedOut: 'time' })
     expect(robustOf(trimmed, option, () => ({ ok: false, problems: ['refused'] }))).toBeUndefined()
   })
 
@@ -131,7 +136,7 @@ describe('re-timings within the sub-solve\'s time (fix round F3, lane S\'s part)
     let calls = 0
     const counting: JudgeRetimed = plan => { calls++; return laneKJudgeRetimed(plan) }
     // An estimate longer than the time left: not even the first re-timing starts.
-    expect(robustOf(trimmed, option, counting, Date.now() + 60_000, Date.now, 120_000)).toBeUndefined()
+    expect(robustOf(trimmed, option, counting, Date.now() + 60_000, Date.now, 120_000)).toEqual({ notWorkedOut: 'time' })
     expect(calls).toBe(0)
     expect(robustOf(trimmed, option, counting, Date.now() + 60_000, Date.now, 1)).toBeDefined()
     expect(calls).toBe(1 + rangedJobs(trimmed, option.rows).length)

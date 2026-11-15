@@ -62,8 +62,17 @@ const windowLength = (context: Context): string => {
  * nothing about a schedule searched again at those estimates.
  */
 export const pessimisticCard = (option: OptionView, context: Context): Card | null => {
-  const robust = option.robust
-  if (robust === undefined || !option.fresh || option.status.word !== 'validated feasible') return null
+  const field = option.robust
+  if (field === undefined || !option.fresh || option.status.word !== 'validated feasible') return null
+  // The time ran out before the re-timings could be made: said so, never a card that is silently missing.
+  if ('notWorkedOut' in field) {
+    return {
+      mark: { shape: '?', word: 'Pessimistic estimates' },
+      title: `For ${option.label}, the pessimistic estimates were not worked out: the time ran out.`,
+      text: 'Nothing is said about how this option holds at the high estimates.', steps: [], actions: [],
+    }
+  }
+  const robust = field
   const { names, format } = context
   // The first thing the re-timed schedule breaks: a hard rule, by how much, or the window, by when.
   const breaks = (outcome: Robust['allPessimistic']): string | null => {

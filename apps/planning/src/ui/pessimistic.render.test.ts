@@ -4,7 +4,7 @@
 // unplaced job is tested on the real stored Train A case in fix-round-u.render.test.ts.
 import { describe, expect, test } from 'bun:test'
 import type { Component } from 'svelte'
-import { robustSchema } from '../plan/schema.ts'
+import { robustNotWorkedOutSchema, robustSchema } from '../plan/schema.ts'
 import { attentionCards, pessimisticCard } from './attention.ts'
 import { identifiers, trainAPlanned } from './fixtures/plans.ts'
 import { readableText, registerSvelte, renderHtml, routineBreaches } from './fixtures/svelte-ssr.ts'
@@ -26,6 +26,14 @@ const withRobust = (robust: unknown): PlanModel => {
 const name = (model: PlanModel, key: string) => model.inputs.jobs.find(job => job.key === key)?.title ?? model.inputs.rules.find(rule => rule.key === key)!.words
 
 describe('the pessimistic card', () => {
+  test('when the time ran out before the re-timings, it says so; it never disappears in silence', () => {
+    const planned = trainAPlanned()
+    const model: PlanModel = { ...planned, options: { ...planned.options!, items: planned.options!.items.map(option => ({ ...option, robust: robustNotWorkedOutSchema.parse({ notWorkedOut: 'time' }) })) } }
+    const card = pessimisticCard(model.options!.items[0]!, contextOf(model))!
+    expect(card.title).toBe('For Option 1, the pessimistic estimates were not worked out: the time ran out.')
+    expect(card.mark.word).toBe('Pessimistic estimates')
+  })
+
   test('when every re-timing holds, it says so, and how the re-timing was done', () => {
     const model = withRobust({ allPessimistic: { holds: true }, single: [{ job: 'SWA-PUMP-OUT', outcome: { holds: true } }] })
     const card = pessimisticCard(model.options!.items[0]!, contextOf(model))!

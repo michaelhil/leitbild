@@ -289,7 +289,9 @@ export const subSolve = (deps: SubSolveDeps): SubSolver => async (task, signal, 
   const { ruled, solving, planGoalOf } = solveInputsOf(inputs, variant)
   const asked = { ...(variant.also === undefined ? {} : { also: [...variant.also] }), ...(variant.lead === undefined ? {} : { lead: variant.lead }) }
   const base = { key: variant.key, label: variant.label.slice(0, 160), inputsRevision: task.revision }
+  const compileStarted = performance.now()
   const compiled = compile(solving, { methods: [...combo], buy: variant.buy })
+  const compileMs = performance.now() - compileStarted
   if (!compiled.ok) return { option: { ...base, variant: { methods: [...combo], purchases: [], ...asked }, status: refusedStatus(compiled.word, compiled.problems), rows: [], metrics: [] }, rounded: [], dropped: [] }
   const { problem, index } = compiled
   const outcome = (option: Option): SubSolveOutcome => ({ option, rounded: index.rounded, dropped: index.dropped })
@@ -303,7 +305,9 @@ export const subSolve = (deps: SubSolveDeps): SubSolver => async (task, signal, 
   }
   // Readiness blocks before any search: an input finding (a precondition not read from World, say) is
   // "invalid input" with the checker's cause, whatever a schedule would look like.
+  const checkStarted = performance.now()
   const blockers = inputProblems(deps.check({ inputs, variant: variantOut, rows: [] }).violations)
+  const checkMs = performance.now() - checkStarted
   if (blockers.length > 0) return outcome({ ...base, variant: stored(variantOut.purchases), status: refusedStatus('invalid input', blockers), rows: [], metrics: [] })
   const prep = prepare(problem)
   const found = bounds(problem, index, prep)
@@ -312,14 +316,17 @@ export const subSolve = (deps: SubSolveDeps): SubSolver => async (task, signal, 
     return outcome({ ...base, variant: stored(variantOut.purchases), status: infeasibleStatus(found.certificate, runBasis({ stoppedBy: 'done', evals: 0, cpuMs: 0 })), rows: [], metrics: [] })
   }
   if (estimateMemoryMb(problem) > MEMORY_BUDGET_MB) throw planningError(413, 'above_certified_size', 'This plan is too large for the certified size', { estimateMb: Math.ceil(estimateMemoryMb(problem)) })
-  // The search ends in time for the work after it, which takes no longer than the work before it took, once
-  // for the plan found and once more for each re-check of a starting option and each re-timing: the
-  // sub-solve answers by its time with its best checked result, never killed for running past it.
+  // The search ends in time for the work after it, measured here, on this machine and under its throttle:
+  // for the plan found, no longer than the work before the search took (the hotfix's rule); for the starting
+  // option's re-check and each re-timing, two compiles and one lane K check each, as long as this sub-solve's
+  // own compile and check took. The sub-solve answers by its time with its best checked result, never killed
+  // for running past it; a re-timing that would not end in time is not started (robustOf), and says so.
   const by = Math.min(task.answerBy ?? Infinity, task.deadlineAt ?? Infinity)
   const retimings = deps.judgeRetimed === undefined ? 0 : retimingCount(inputs, index.jobs.flatMap(job => (job === null ? [] : [job])))
-  const after = 1 + (task.start === undefined ? 0 : 1) + retimings
+  const extraChecks = (task.start === undefined ? 0 : 1) + retimings
+  const perCheckMs = 2 * compileMs + checkMs
   const beforeSearchMs = performance.now() - started
-  const searchBudget = searchBudgetBy(budget, by, SEARCH_STOP_LATENCY_MS + beforeSearchMs * after)
+  const searchBudget = searchBudgetBy(budget, by, SEARCH_STOP_LATENCY_MS + beforeSearchMs + extraChecks * perCheckMs)
   // No time left to search: no plan, said as a search stopped by its time.
   if (searchBudget.wallMs <= 0) return outcome({ ...base, variant: stored(variantOut.purchases), status: unresolvedStatus(runBasis({ stoppedBy: 'wall', evals: 0, cpuMs: 0 }, searchBudget)), rows: [], metrics: [] })
   const startSchedule = task.start === undefined ? undefined : undate(prep, index, task.start.rows)
@@ -402,7 +409,7 @@ export const subSolve = (deps: SubSolveDeps): SubSolver => async (task, signal, 
   // Unless the search beats the starting option, the starting option stands (re-checked above).
   const best = kept !== undefined && (own.status.word !== 'validated feasible' || compareOptions(rankable(kept, inputs), rankable(own, inputs)) <= 0) ? kept : own
   if (best.status.word !== 'validated feasible' || deps.judgeRetimed === undefined) return outcome(best)
-  const robust = robustOf(inputs, best, deps.judgeRetimed, by - SEARCH_STOP_LATENCY_MS, Date.now, beforeSearchMs)
+  const robust = robustOf(inputs, best, deps.judgeRetimed, by - SEARCH_STOP_LATENCY_MS, Date.now, perCheckMs)
   return outcome(robust === undefined ? best : { ...best, robust })
 }
 

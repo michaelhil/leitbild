@@ -4,7 +4,7 @@
 // re-timing (check/retime.ts judgeRetiming): it holds, or the first rule it breaks, the job and by how much,
 // the job that would run past the window end, or the job that could not be placed. Every figure is lane K's.
 // Pure apart from the clock; the solver child runs it after a sub-solve's search.
-import type { PlanInputs, Robust } from '../plan/schema.ts'
+import type { PlanInputs, Robust, RobustField } from '../plan/schema.ts'
 import { timeUnitMs } from '../time/units.ts'
 import { compile } from './compile.ts'
 import { withExtraRules } from './keys.ts'
@@ -79,31 +79,32 @@ export const retimedRows = (planned: PlanInputs, pessimistic: PlanInputs, option
 
 /**
  * The option's robust record on the plan's `inputs`: every ranged job high together, then each alone, each
- * judged by lane K, a job that could not be placed included. Undefined (not
- * computed, never partly) when a re-timing cannot be made or is refused by lane K, or when the next one would
- * not end by `until` (epoch ms), judged by the longest re-timing so far, and before the first by `estimateMs`
- * (the sub-solve passes its own work before the search, which a re-timing does not exceed).
+ * judged by lane K, a job that could not be placed included. Never a part of one: `{notWorkedOut: 'time'}`
+ * when the next re-timing would not end by `until` (epoch ms), judged by the longest so far and before the
+ * first by `estimateMs` (the sub-solve's own measured compile and check time); undefined when a re-timing
+ * cannot be made or is refused by lane K.
  */
-export const robustOf = (inputs: PlanInputs, option: Planned, judge: JudgeRetimed, until = Infinity, now: () => number = Date.now, estimateMs = 0): Robust | undefined => {
+export const robustOf = (inputs: PlanInputs, option: Planned, judge: JudgeRetimed, until = Infinity, now: () => number = Date.now, estimateMs = 0): RobustField | undefined => {
   const jobs = rangedJobs(inputs, option.rows)
   // Nothing ranged: re-timing changes nothing, and the planned schedule is the one lane K validated.
   if (jobs.length === 0) return { allPessimistic: { holds: true }, single: [] }
   const planned = withExtraRules(inputs, option.variant.also)
   let longest = estimateMs
+  let late = false
   const once = (high: readonly string[]): Retimed | undefined => {
     const started = now()
-    if (started + longest > until) return undefined
+    if (started + longest > until) { late = true; return undefined }
     const retimed = retimedRows(planned, withExtraRules(atHigh(inputs, new Set(high)), option.variant.also), option)
     const judged = retimed === undefined ? undefined : judge({ inputs, variant: option.variant, planned: option.rows, retimed: retimed.rows, high })
     longest = Math.max(longest, now() - started)   // never below the first estimate
     return judged?.ok === true ? judged.outcome : undefined
   }
   const allPessimistic = once(jobs)
-  if (allPessimistic === undefined) return undefined
+  if (allPessimistic === undefined) return late ? { notWorkedOut: 'time' } : undefined
   const single: Array<Robust['single'][number]> = []
   for (const job of jobs) {
     const outcome = once([job])
-    if (outcome === undefined) return undefined
+    if (outcome === undefined) return late ? { notWorkedOut: 'time' } : undefined
     single.push({ job, outcome })
   }
   return { allPessimistic, single }
