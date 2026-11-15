@@ -1,4 +1,4 @@
-// The goals editor (T12, design §7 GoalsEditor) and "Restore the goal order" (goals review 5): goals move up
+// The goals editor (T12, design §7 GoalsEditor) and "Undo goal changes made since you opened this plan" (goals review 5): goals move up
 // and down, their threshold and step change, and the change goes through the preview as one goals edit.
 import { describe, expect, test } from 'bun:test'
 import type { Component } from 'svelte'
@@ -40,15 +40,15 @@ describe('the goals editor', () => {
     expect(sameGoals(goalsFromDraft(draftOf(inputs.goals), inputs.goals, context).ok ? inputs.goals : [], inputs.goals)).toBe(true)
   })
 
-  test('"Restore the goal order" is offered once the goals differ from the order before the first change, and previews it', () => {
+  test('"Undo goal changes made since you opened this plan" is offered once the goals differ from the order before the first change, and previews it', () => {
     const plain = readableText(renderHtml(GoalsEditor, { context, onPreview: none }))
-    expect(plain).not.toContain('Restore the goal order')
+    expect(plain).not.toContain('Undo goal changes made since you opened this plan')
     for (const word of ['Goals, in order', 'Move Extra cost up', 'Threshold (h)', 'Step (NOK)', 'Preview the goal change']) expect(plain).toContain(word)
     const earlier = [inputs.goals[1]!, inputs.goals[0]!, inputs.goals[2]!]
     const offered = readableText(renderHtml(GoalsEditor, { context, earlier, onPreview: none }))
-    expect(offered).toContain('Restore the goal order')
-    expect(offered).toContain('Restore puts back the goals as they were before your first goal change in this session, through the preview.')
+    expect(offered).toContain('Undo goal changes made since you opened this plan')
+    expect(offered).toContain('This puts the goals back as they were when you opened this plan, through the preview.')
     // Once restored, the goals equal the earlier ones and nothing is offered.
-    expect(readableText(renderHtml(GoalsEditor, { context: { ...context, inputs: { ...inputs, goals: earlier } }, earlier, onPreview: none }))).not.toContain('Restore the goal order')
+    expect(readableText(renderHtml(GoalsEditor, { context: { ...context, inputs: { ...inputs, goals: earlier } }, earlier, onPreview: none }))).not.toContain('Undo goal changes made since you opened this plan')
   })
 })

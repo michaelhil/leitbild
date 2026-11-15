@@ -22,7 +22,7 @@
   import { planSizeLine } from './size-text.ts'
   import JobForm from './JobForm.svelte'
   import JobPanel from './JobPanel.svelte'
-  import { createNames, isWhatIf, otherWarnings, planOptions, sizeCautionOf, whatIfOptions, type Goal, type PlanModel, type PlanView, type RunChoice } from './model.ts'
+  import { createNames, isWhatIf, otherWarnings, planOptions, sizeCautionOf, whatIfOptions, type Goal, type OptionView, type PlanModel, type PlanView, type RunChoice } from './model.ts'
   import OptionsTable from './OptionsTable.svelte'
   import PlanHeader from './PlanHeader.svelte'
   import type { Preview } from './preview.ts'
@@ -42,7 +42,8 @@
   import WhatIfPanel from './WhatIfPanel.svelte'
   import { whatIfCard, whatIfChoices, type WhatIfKind, type WhatIfVariant } from './what-if.ts'
   import WhyRecommended from './WhyRecommended.svelte'
-  import { answered, compareView, whyView, type Answer } from './why-text.ts'
+  import type { RecommendedFacts, VersusFacts } from '../api/contract.ts'
+  import { compareView, policyText, previousFor, previousRows, recommendedAnswer, versusAnswer, whyView, type Answer, type CompareView, type WhyView } from './why-text.ts'
   import WorkList from './WorkList.svelte'
 
   /**
@@ -97,10 +98,15 @@
   let whatIfMissing = $state<string | null>(null)
   /** The what-if asked last: its card comes first. */
   let askedLast = $state<string | null>(null)
-  let whyAnswer = $state<Answer>({ state: 'loading' })
-  let compareAnswer = $state<Answer>({ state: 'loading' })
+  let whyAnswer = $state<Answer<RecommendedFacts>>({ state: 'loading' })
+  /** The option why recommended weighs against: '' for the next in rank. */
+  let whyAgainst = $state('')
+  let compareAnswer = $state<Answer<VersusFacts>>({ state: 'loading' })
+  /** The set made before the latest change, from the previous read section, and the option of it compared with. */
+  let previousSet = $state<{ readonly at: string | null; readonly recommended: string | null; readonly items: readonly OptionView[] } | null>(null)
+  let compareAgainst = $state<string | null>(null)
   let compareFor = $state<string | null>(null)
-  /** The goals before the first goal change saved in this session, for "Restore the goal order". */
+  /** The goals before the first goal change saved in this session, for "Undo goal changes made since you opened this plan". */
   let earlierGoals = $state<readonly Goal[] | null>(null)
   /**
    * At 1280 px and wider the screen has a detail column on the right: the shown option's status sits there
@@ -165,6 +171,23 @@
   const recommendedOption = $derived(planOptions(model ?? { options: null }).find(option => option.key === model?.options?.recommended && option.fresh) ?? null)
   const shownIsWhatIf = $derived(shown !== null && isWhatIf(shown))
   const compareOption = $derived(model?.options?.items.find(option => option.key === compareFor) ?? null)
+  // Why recommended and what differs, written from the Module's facts, never from its lines.
+  const whyShown = $derived.by((): Answer<WhyView> => {
+    const answer = whyAnswer
+    if (answer.state !== 'answered') return answer
+    return model === null || context === null ? { state: 'loading' } : { state: 'answered', facts: whyView(answer.facts, model, context, whyAgainst !== '') }
+  })
+  const whyChoices = $derived(recommendedOption === null || model === null ? [] : [
+    { value: '', label: 'The next in rank' },
+    ...planOptions(model).filter(option => option.fresh && option.key !== recommendedOption.key).map(option => ({ value: option.key, label: option.label })),
+  ])
+  const compareShown = $derived.by((): Answer<CompareView> => {
+    const answer = compareAnswer
+    if (answer.state !== 'answered') return answer
+    if (compareOption === null || context === null) return { state: 'loading' }
+    const earlier = previousSet?.items.find(item => item.key === answer.facts.previous)?.label ?? 'an option of the earlier set'
+    return { state: 'answered', facts: compareView(answer.facts, compareOption, earlier, context) }
+  })
   /** The questions under the options table, each offered only where this plan can ask it. */
   const choices = $derived(context === null ? [] : [
     ...crewHourPurchases(context.inputs).length > 0 ? [{ panel: 'ladder' as const, word: 'What overtime buys' }] : [],
@@ -191,22 +214,31 @@
 
   /** Asks the Module the open question; a part of Planning not built yet is said as "not available yet". */
   const ask = (question: ChoosePanel): void => {
-    const missing = (cause: unknown): Answer => isNotBuilt(cause) ? { state: 'not-built' } : { state: 'refused', text: refusalText(cause, context?.names.any) }
+    const missing = <T,>(cause: unknown): Answer<T> => isNotBuilt(cause) ? { state: 'not-built' }
+      : isRequestError(cause) && cause.code === 'no_previous_options' ? { state: 'none' }
+        : { state: 'refused', text: refusalText(cause, context?.names.any) }
     if (question === 'ladder') {
       buys = { state: 'loading', pages: [], text: null }
       actions.buys().then(pages => { buys = { state: 'ready', pages, text: null } }, cause => {
         buys = isNotBuilt(cause) ? { state: 'not-built', pages: [], text: null } : { state: 'refused', pages: [], text: refusalText(cause, context?.names.any) }
       })
     } else if (question === 'why') {
-      const option = model?.options?.recommended
       whyAnswer = { state: 'loading' }
-      if (option === null || option === undefined) whyAnswer = { state: 'refused', text: 'No option is recommended yet. Generate first.' }
-      else actions.whyRecommended(option).then(result => { whyAnswer = answered(result) }, cause => { whyAnswer = missing(cause) })
+      if (model?.options?.recommended == null) whyAnswer = { state: 'refused', text: 'No option is recommended yet. Generate first.' }
+      else actions.whyRecommended(whyAgainst === '' ? null : whyAgainst).then(result => { whyAnswer = recommendedAnswer(result) }, cause => { whyAnswer = missing(cause) })
     } else if (question === 'compare') {
-      compareFor = selectedOption
+      const option = selectedOption
+      compareFor = option
       compareAnswer = { state: 'loading' }
-      if (selectedOption === null) compareAnswer = { state: 'refused', text: 'Show an option on the timeline first.' }
-      else actions.versus(selectedOption).then(result => { compareAnswer = answered(result) }, cause => { compareAnswer = missing(cause) })
+      if (option === null) { compareAnswer = { state: 'refused', text: 'Show an option on the timeline first.' }; return }
+      // The earlier set comes first: it says whether there is one, and which of its options to compare with.
+      actions.previous().then(async page => {
+        previousSet = page
+        const against = previousFor(option, page, compareAgainst)
+        compareAgainst = against
+        if (page.at === null || against === null) { compareAnswer = { state: 'none' }; return }
+        compareAnswer = versusAnswer(await actions.versus(option, against))
+      }).catch(cause => { compareAnswer = missing(cause) })
     }
   }
   /** Opens a question beside the timeline, on top of the detail column; a second click on its button closes it. */
@@ -262,7 +294,7 @@
   })
   const apply = (authority: { name: string; reason: string } | null): void => withModel(async current => {
     const shown = await actions.apply(current, pending, authority, selectedOption, preview?.label ?? 'the change')
-    // The goals as they were before the first goal change saved here, for "Restore the goal order".
+    // The goals as they were before the first goal change saved here, for "Undo goal changes made since you opened this plan".
     if (earlierGoals === null && pending.some(edit => edit.edit === 'goals')) earlierGoals = current.inputs.goals
     preview = null
     applied += 1
@@ -342,7 +374,7 @@
     why = null
     view = 'schedule'
     // What differs is asked of the option on the timeline, so it follows the one shown.
-    if (choosing === 'compare') ask('compare')
+    if (choosing === 'compare') { compareAgainst = null; ask('compare') }
   })
   const explainFinish = (): void => {
     const shownContext = context
@@ -417,12 +449,12 @@
         {/key}
       {:else if choosing === 'why'}
         {#if recommendedOption}
-          <WhyRecommended view={whyView(recommendedOption, model, context)} answer={whyAnswer} onClose={() => { choosing = null }} />
+          <WhyRecommended title={`Why “${recommendedOption.label}” is recommended`} policy={policyText(context)} answer={whyShown} choices={whyChoices} against={whyAgainst} onAgainst={option => { whyAgainst = option; ask('why') }} onClose={() => { choosing = null }} />
         {:else}
           <section class="why-panel"><div class="panel-heading"><h2 tabindex="-1">Why recommended</h2><button type="button" class="quiet" onclick={() => { choosing = null }}>Close</button></div><p class="hint">No option is recommended on the plan as it is now. Generate first.</p></section>
         {/if}
       {:else if compareOption}
-        <ComparePanel view={compareView(compareOption)} answer={compareAnswer} onClose={() => { choosing = null }} />
+        <ComparePanel answer={compareShown} previous={previousSet === null ? [] : previousRows(previousSet)} against={compareAgainst} onAgainst={option => { compareAgainst = option; ask('compare') }} onClose={() => { choosing = null }} />
       {/if}
     </div>
   {/if}

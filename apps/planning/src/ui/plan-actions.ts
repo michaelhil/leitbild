@@ -8,7 +8,7 @@ import { rungRequest, type BuysPage, type RungView } from './ladder.ts'
 import { whatIfRequest, type WhatIfVariant } from './what-if.ts'
 import { finishChain, mostLimiting, whyStart, type FinishStep, type Part, type WhyStart } from './explain-text.ts'
 import { createTimeFormat } from './format.ts'
-import { createNames, namesInEdits, type DatedRow, type PlanModel, type RunChoice } from './model.ts'
+import { createNames, namesInEdits, type DatedRow, type OptionView, type PlanModel, type RunChoice } from './model.ts'
 import type { Preview } from './preview.ts'
 import { loadPlan, loadRows, readAll } from './read-plan.ts'
 import type { Context } from './status-text.ts'
@@ -189,10 +189,18 @@ export const createPlanActions = (client: PlanningClient, planId: string, progre
       const asked = result.options.find(option => option.label === label)?.key ?? null
       return { ...await load(keep), asked }
     },
-    /** Why the recommended option is recommended, in the Module's words. */
-    whyRecommended: async (option: string): Promise<ExplainResult> => client.explain(planId, { ask: 'recommended', option }),
-    /** What differs between an option and the same option in the set made before the latest change. */
-    versus: async (option: string): Promise<ExplainResult> => client.explain(planId, { ask: 'versus', option, versus: { previous: option } }),
+    /**
+     * Why the recommended option is recommended, as the Module's facts: against the next in rank, or against
+     * the option named.
+     */
+    whyRecommended: async (against: string | null): Promise<ExplainResult> => client.explain(planId, { ask: 'recommended', ...(against === null ? {} : { option: against }) }),
+    /** What differs between an option and an option of the set made before the latest change. */
+    versus: async (option: string, previous: string): Promise<ExplainResult> => client.explain(planId, { ask: 'versus', option, versus: { previous } }),
+    /** The set made before the latest change, every page: what compare weighs against. */
+    previous: async (): Promise<{ readonly at: string | null; readonly recommended: string | null; readonly items: readonly OptionView[] }> => {
+      const pages = await readAll(client, planId, 'previous')
+      return { at: pages[0]?.at ?? null, recommended: pages[0]?.recommended ?? null, items: pages.flatMap(page => page.items) }
+    },
     baseline: async (model: PlanModel, option: string, name: string, note: string): Promise<Shown> => {
       await client.baseline(planId, model.revision, { option, name, ...(note === '' ? {} : { note }) })
       return load(option, `Baseline “${name}” saved.`)

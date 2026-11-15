@@ -6,7 +6,7 @@
 
   // The goals, in order, as the planner sets them: move a goal up or down, change its threshold or its step,
   // then preview the change like any other edit. Hard rules are not goals and are never traded here.
-  // "Restore the goal order" puts back the goals as they were before the first change saved this session.
+  // "Undo goal changes made since you opened this plan" puts back the goals as they were before the first change saved this session.
   let { context, earlier = null, busy = false, onPreview }: {
     context: Context
     /** The goals before the first goal change saved this session; null when there was none. */
@@ -61,10 +61,10 @@
     <button type="button" disabled={busy || !changed} onclick={preview}>Preview the goal change</button>
     {#if changed}<button type="button" class="quiet" disabled={busy} onclick={() => { draft = draftOf(saved); problems = [] }}>Discard these changes</button>{/if}
     {#if restorable && earlier !== null}
-      <button type="button" disabled={busy} onclick={() => onPreview(goalsEditOf(earlier), goalsLabel(earlier, context, 'Restore the goal order'))}>Restore the goal order</button>
+      <button type="button" disabled={busy} onclick={() => onPreview(goalsEditOf(earlier), goalsLabel(earlier, context, 'Goals as you opened this plan'))}>Undo goal changes made since you opened this plan</button>
     {/if}
   </div>
-  {#if restorable}<p class="hint">Restore puts back the goals as they were before your first goal change in this session, through the preview.</p>{/if}
+  {#if restorable}<p class="hint">This puts the goals back as they were when you opened this plan, through the preview.</p>{/if}
   {#if problems.length > 0}<ul class="problems">{#each problems as problem (problem)}<li>{problem}</li>{/each}</ul>{/if}
   <p class="hint">After a change, Generate again; “Compare with the earlier options” then says what differs.</p>
 </section>

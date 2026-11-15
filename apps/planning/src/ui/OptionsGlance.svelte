@@ -21,6 +21,12 @@
     onSelect: (option: string) => void
     onChoose?: ((panel: ChoosePanel) => void) | undefined
   } = $props()
+
+  // A dominated option is folded: under the table, one line says how many, and opens them. The option shown on
+  // the timeline is never hidden.
+  let unfolded = $state(false)
+  const dominated = $derived(glance.rows.filter(row => row.dominatedBy !== null))
+  const rows = $derived(glance.rows.filter(row => row.dominatedBy === null || unfolded || row.key === selected))
 </script>
 
 <section class="options-glance" aria-labelledby="glance-options-title">
@@ -33,7 +39,7 @@
           {#each glance.columns as column (column)}<th scope="col" class="number">{column}</th>{/each}
         </tr>
       </thead>
-      {#each glance.rows as row (row.key)}
+      {#each rows as row (row.key)}
         <!-- The option's name is the button; a click anywhere on its rows does the same. -->
         <!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_noninteractive_element_interactions -->
         <tbody class:selected={row.key === selected} class:refused={row.cells === null} onclick={() => { if (!busy && row.key !== selected) onSelect(row.key) }}>
@@ -41,6 +47,7 @@
             <th scope="row">
               <button type="button" class="link option-name" disabled={busy} aria-pressed={row.key === selected} title={row.key === selected ? 'Shown on the timeline' : 'Show on the timeline'} onclick={(event) => { event.stopPropagation(); if (row.key !== selected) onSelect(row.key) }}>{row.label}</button>
               {#if row.recommended}<MarkTag mark={{ shape: '★', word: 'Recommended' }} tone="good" />{/if}
+              {#if row.dominatedBy}<small class="dominated-by">Dominated by “{row.dominatedBy}”</small>{/if}
             </th>
             {#if row.cells === null}
               <td colspan={glance.columns.length} class="cause">{row.cause}</td>
@@ -65,6 +72,12 @@
       {/each}
     </table>
   </div>
+  {#if dominated.length > 0}
+    <p class="dominated-line">
+      <button type="button" class="link" aria-expanded={unfolded} onclick={() => { unfolded = !unfolded }}>{unfolded ? `Fold the dominated ${dominated.length === 1 ? 'option' : 'options'}` : `Show ${dominated.length} dominated ${dominated.length === 1 ? 'option' : 'options'}`}</button>
+      <span class="hint"> Dominated: another option is no worse on every goal and better on one.</span>
+    </p>
+  {/if}
   {#if shownWhatIf}<p class="shown-what-if"><MarkTag mark={{ shape: '◇', word: 'What-if' }} tone="estimate" /> Shown on the timeline: {shownWhatIf}, a what-if, not one of the plan's options.</p>{/if}
   <p class="legend">
     {#each statusLegend as entry, index (entry.word)}{index === 0 ? '' : ' · '}<span class="legend-word">{entry.word}</span>: {entry.means}{/each}

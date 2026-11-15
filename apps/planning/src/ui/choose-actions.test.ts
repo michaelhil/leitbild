@@ -24,6 +24,7 @@ const host = (plan: PlanModel, script: Answer[] = []) => {
     sources: [...plan.inputs.equipment.map(equipment => ({ equipment })), ...plan.inputs.groups.map(group => ({ group }))],
     options: plan.options?.items ?? [], schedule: Object.values(plan.rows)[0] ?? [],
     buys: [{ rung: { rung: 0, buy: ['crane-fri'], bought: [] } }],
+    previous: [],
   }
   const client = createPlanningClient(workspace, async (path, init) => {
     if (init?.method !== 'POST') return Response.json({ workspaceId: workspace, modules: [], resources: [] })
@@ -34,7 +35,7 @@ const host = (plan: PlanModel, script: Answer[] = []) => {
       const section = String(body.input.section)
       const data = section === 'summary'
         ? { plan: { id: plan.id, title: plan.title, revision: plan.revision, updatedAt: plan.updatedAt }, settings: plan.inputs.settings, goals: plan.inputs.goals, refreshedAt: plan.inputs.world.refreshedAt, attention: [], certifiedSize: null }
-        : { items: lists[section], ...(section === 'options' ? { at: plan.options?.at ?? null, recommended: plan.options?.recommended ?? null } : {}), ...(section === 'schedule' ? { option: body.input.option } : {}) }
+        : { items: lists[section], ...(section === 'options' ? { at: plan.options?.at ?? null, recommended: plan.options?.recommended ?? null } : section === 'previous' ? { at: null, recommended: null } : {}), ...(section === 'schedule' ? { option: body.input.option } : {}) }
       return Response.json({ result: { target: { kind: 'resource', resource: { workspaceId: workspace, moduleId: 'planning', type: 'planning.plan', id: plan.id } }, title: plan.title, observedAt: '2026-11-12T09:00:00.000Z', sections: [{ id: section, title: section, data }] } })
     }
     const next = script.shift() ?? { status: 200, body: { result: capability === 'planning.plan.generate' ? { plan: { id: plan.id, revision: plan.revision }, options: [], text: 'Done.' } : { lines: [], items: [] } } }
@@ -101,16 +102,20 @@ describe('what-ifs and explanations', () => {
     expect(generates(calls).map(call => call.input)).toEqual([{ variants: [{ label: built.label, lead: { group: 'AFW-A' } }], keep: true }])
   })
 
-  test('why recommended asks about the recommended option; versus compares an option with the same one in the earlier set', async () => {
+  test('why recommended weighs against the next in rank, or a named option; versus names an option of the earlier set; the earlier set is read', async () => {
     const model = trainAPlanned()
     const { client, calls } = host(model, [notBuilt('Explaining why an option is recommended is not built in this version of Planning')])
     const actions = createPlanActions(client, model.id)
-    const refused = await actions.whyRecommended('opt-1').then(() => null, cause => cause)
+    const refused = await actions.whyRecommended(null).then(() => null, cause => cause)
     expect(isNotBuilt(refused)).toBe(true)
-    await actions.versus('opt-1')
+    await actions.whyRecommended('opt-2')
+    await actions.versus('opt-1', 'old-1')
     expect(calls.filter(call => call.capability === 'planning.plan.explain').map(call => call.input)).toEqual([
-      { ask: 'recommended', option: 'opt-1' },
-      { ask: 'versus', option: 'opt-1', versus: { previous: 'opt-1' } },
+      { ask: 'recommended' },
+      { ask: 'recommended', option: 'opt-2' },
+      { ask: 'versus', option: 'opt-1', versus: { previous: 'old-1' } },
     ])
+    expect(await actions.previous()).toEqual({ at: null, recommended: null, items: [] })
+    expect(calls.at(-1)).toEqual({ capability: 'planning.plan.read', input: { section: 'previous' } })
   })
 })

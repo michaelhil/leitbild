@@ -5,7 +5,7 @@ import { describe, expect, test } from 'bun:test'
 import type { Component } from 'svelte'
 import { robustSchema } from '../plan/schema.ts'
 import { attentionCards, pessimisticCard } from './attention.ts'
-import { identifiers, trainAPlanned } from './fixtures/plans.ts'
+import { identifiers, modelOf, trainACaseInputs, trainAPlanned } from './fixtures/plans.ts'
 import { readableText, registerSvelte, renderHtml, routineBreaches } from './fixtures/svelte-ssr.ts'
 import { createTimeFormat } from './format.ts'
 import { createNames, type PlanModel } from './model.ts'
@@ -64,5 +64,30 @@ describe('the pessimistic card', () => {
     expect(pessimisticCard(model.options!.items[0]!, contextOf(model))).toBeNull()
     const stale = withRobust({ allPessimistic: { holds: true }, single: [] })
     expect(pessimisticCard({ ...stale.options!.items[0]!, fresh: false }, contextOf(stale))).toBeNull()
+  })
+})
+
+describe('a re-timed job that cannot be placed (the stored Train A case)', () => {
+  test('"<job> could not be done: <crew> has no time left after <instant>", from the frozen case', () => {
+    // Lane S's checked run on the flagship (solve/retime.test.ts): with the tube cleaning at its high estimate,
+    // the eddy-current test has no team time left. The team's only time is its booked Wednesday period, so the
+    // instant after which none remains is that period's end, read here from the case.
+    const inputs = trainACaseInputs()
+    const team = inputs.resources.find(resource => resource.key === 'ect-team')!
+    const after = inputs.calendars.find(calendar => calendar.key === team.calendar)!.periods.at(-1)!.end
+    const unplaced = { holds: false, unplaced: { job: 'CCWHXA-ECT', resource: team.key, after } }
+    const planned = trainAPlanned()
+    const option = { ...planned.options!.items[0]!, robust: robustSchema.parse({ allPessimistic: unplaced, single: [{ job: 'CCWHXA-CLEAN', outcome: unplaced }] }) }
+    const model: PlanModel = modelOf(inputs, { options: { ...planned.options!, items: [option] } })
+    const context = contextOf(model)
+    const card = pessimisticCard(option, context)!
+    const job = (key: string) => inputs.jobs.find(entry => entry.key === key)!.title
+    const words = `${job('CCWHXA-ECT')} could not be done: ${team.label} has no time left after ${context.format.when(after)}`
+    expect(context.format.when(after)).toBe('Wed 18 Nov 19:00')
+    expect(card.title).toBe(`With every ranged job at its high estimate, Option 1 does not hold: ${words}.`)
+    expect(card.steps).toEqual([`${job('CCWHXA-CLEAN')} alone at its high estimate: ${words}.`])
+    const text = readableText(renderHtml(AttentionColumn, { cards: attentionCards(model, context), onAction: none }))
+    expect(text).toContain(words)
+    expect(routineBreaches(text, identifiers(inputs), [])).toEqual([])
   })
 })

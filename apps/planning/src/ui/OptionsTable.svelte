@@ -27,7 +27,11 @@
   let baselineFor = $state<string | null>(null)
   let name = $state('')
   let note = $state('')
-  const views = $derived(options.map(option => ({ option, view: statusView(option.status, context) })))
+  // A dominated option is folded under the list, and opens; the option shown on the timeline always shows.
+  let unfolded = $state(false)
+  const dominatedBy = (option: OptionView): string | null => option.dominated === undefined ? null : options.find(item => item.key === option.dominated?.by)?.label ?? 'another option'
+  const folded = $derived(options.filter(option => dominatedBy(option) !== null && option.key !== selected))
+  const views = $derived(options.filter(option => unfolded || !folded.includes(option)).map(option => ({ option, view: statusView(option.status, context) })))
 </script>
 
 <section class="options" aria-labelledby="options-title">
@@ -42,6 +46,7 @@
       <li class:selected={option.key === selected}>
         <div class="option-head">
           <strong>{option.label}</strong>
+          {#if dominatedBy(option)}<small class="dominated-by">Dominated by “{dominatedBy(option)}”</small>{/if}
           {#if option.key === recommended}<MarkTag mark={{ shape: '★', word: 'Recommended' }} tone="good" />{/if}
           <button type="button" disabled={busy || option.key === selected} onclick={() => onSelect(option.key)}>{option.key === selected ? 'Shown on the timeline' : 'Show on the timeline'}</button>
           {#if option.fresh && option.status.word === 'validated feasible'}
@@ -61,4 +66,7 @@
       </li>
     {/each}
   </ol>
+  {#if folded.length > 0}
+    <p class="dominated-line"><button type="button" class="link" aria-expanded={unfolded} onclick={() => { unfolded = !unfolded }}>{unfolded ? `Fold the dominated ${folded.length === 1 ? 'option' : 'options'}` : `Show ${folded.length} dominated ${folded.length === 1 ? 'option' : 'options'}`}</button><span class="hint"> Dominated: another option is no worse on every goal and better on one.</span></p>
+  {/if}
 </section>

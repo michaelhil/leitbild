@@ -30,6 +30,8 @@ export interface OptionView {
   readonly warnings: readonly OptionWarning[]
   /** The schedule re-timed at pessimistic estimates and checked; absent when it was not re-timed. */
   readonly robust?: Robust | undefined
+  /** Another option of the same set is no worse on every goal and better on one; folded under the table. */
+  readonly dominated?: { readonly by: string } | undefined
 }
 
 /**

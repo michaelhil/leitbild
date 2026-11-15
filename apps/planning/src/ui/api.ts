@@ -110,6 +110,8 @@ export const refusalAuthority = (error: PlanningRequestError): string | null => 
 /** A part of Planning this version does not have yet (501 not_built): said as "not available yet", never as a fault. */
 export const isNotBuilt = (error: unknown): boolean => isRequestError(error) && error.code === 'not_built'
 export const notBuiltWords = 'This is not available yet in this version of Planning.'
+/** No earlier set of options to compare with (409 no_previous_options): Planning keeps one when the plan changes and Generate runs again. */
+export const noPreviousWords = 'There is no earlier set of options to compare with yet. Planning keeps one when you change the plan and Generate again.'
 
 /** The nearest allowed time a refusal names, if any. */
 export const refusalNearest = (error: PlanningRequestError): string | null =>
@@ -168,6 +170,7 @@ export const refusalText = (error: unknown, name: KeyNames = () => 'an item in t
       }
       case 'plan_not_found': return 'This plan is no longer in this Workspace.'
       case 'not_built': return notBuiltWords
+      case 'no_previous_options': return noPreviousWords
       default: return error.message
     }
   }

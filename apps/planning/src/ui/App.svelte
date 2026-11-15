@@ -195,6 +195,20 @@
     .what-if-apart { font-size: 12px; color: var(--estimate); margin-bottom: 6px; }
     .what-if-outage { font-size: 13px; margin: 4px 0; }
     .why-policy { font-size: 13px; }
+    .why-decided { font-size: 13px; margin-bottom: 4px; }
+    .why-trade { font-size: 13px; padding: 6px 8px; background: var(--accent-2); border-radius: 6px; }
+    /* Goals side by side in the right column: the names wrap, the values stay whole. */
+    .why-goals, .compare-goals { width: 100%; border-collapse: collapse; font-size: 12px; margin: 6px 0 8px; table-layout: fixed; }
+    .why-goals th, .why-goals td, .compare-goals th, .compare-goals td { padding: 4px 4px; text-align: left; vertical-align: top; border-top: 1px solid var(--line-2); font-weight: 400; overflow-wrap: anywhere; }
+    .why-goals thead th, .compare-goals thead th { border-top: 0; font-weight: 600; color: var(--ink-3); font-size: 11px; }
+    .why-goals .number, .compare-goals .number { text-align: right; }
+    .why-goals tr.deciding th, .why-goals tr.deciding td, .compare-goals tr.changed td { font-weight: 600; }
+    .previous-set { list-style: none; padding: 0; margin: 0 0 8px; font-size: 13px; }
+    .previous-set li { padding: 3px 0; }
+    .compare-line { font-size: 13px; margin: 4px 0; }
+    /* A dominated option is folded under the table; its name says which option dominates it. */
+    .dominated-by { display: block; margin-top: 2px; }
+    .dominated-line { margin: 6px 0 0; padding: 0 8px; font-size: 12px; }
     .why-lines { padding-left: 18px; font-size: 13px; margin: 0 0 8px; }
     .unpriced p { margin: 0 0 2px; }
     .unpriced { margin-bottom: 8px; }

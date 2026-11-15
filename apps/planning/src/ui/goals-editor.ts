@@ -1,7 +1,7 @@
 // The goals editor (T12, design §7): the plan's goals reordered, with a threshold and a step per goal, sent as
 // one `goals` edit through the preview like every other edit. Goals are the planner's to set; a goal never
 // weakens a hard rule. With no undo in this version, the screen keeps the order the goals had before the
-// first change it saved this session, so "Restore the goal order" can put it back, through the preview again.
+// first change it saved this session, so "Undo goal changes made since you opened this plan" can put it back, through the preview again.
 import type { Edit } from '../plan/edit-schema.ts'
 import type { Goal } from './model.ts'
 import { goalOrderText, goalShort, type Context } from './status-text.ts'

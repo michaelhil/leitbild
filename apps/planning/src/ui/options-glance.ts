@@ -30,6 +30,8 @@ export interface GlanceRow {
   /** The size caution in the Module's words, shown as a chip beside the status; null when the option has none. */
   readonly caution: string | null
   readonly warnings: readonly string[]
+  /** The option that dominates it, by name: it is folded under the table, and can be opened. */
+  readonly dominatedBy: string | null
   /** What its method leaves unpriced, one short line each: "Weeks without a ready SW spare: 10 weeks". */
   readonly unpriced: readonly string[]
 }
@@ -72,6 +74,7 @@ export const optionsGlance = (model: PlanModel, context: Context): OptionsGlance
       tone: view.word === 'validated feasible' ? 'good' as const : view.word === 'proven infeasible' ? 'refusal' as const : view.word === 'unresolved' ? 'unknown' as const : 'warning' as const,
       stale: !option.fresh, caution: sizeCautionOf(option), warnings: otherWarnings(option),
       unpriced: unpricedOf(option, context.inputs, model.rows[option.key]).map(unpricedLine),
+      dominatedBy: option.dominated === undefined ? null : model.options?.items.find(item => item.key === option.dominated?.by)?.label ?? 'another option',
     }
     if (option.status.word !== 'validated feasible') {
       const cause = option.status.word === 'proven infeasible'
