@@ -5,7 +5,8 @@
 // Pure: the solver child runs it (pool.ts), so the service keeps none of its memory.
 import { checkPlan } from '../check/check.ts'
 import type { Plan, PlanInputs } from '../plan/schema.ts'
-import { compile, withExtraRules } from './compile.ts'
+import { compile } from './compile.ts'
+import { withExtraRules } from './keys.ts'
 import { dateSchedule } from './date.ts'
 import { makeDecoder, precedenceOrder, prepare } from './decode.ts'
 import { compiled, scheduleOf } from './preview.ts'

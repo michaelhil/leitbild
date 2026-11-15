@@ -3,7 +3,8 @@
 // fixture's rules and checked runs, never typed.
 import { describe, expect, test } from 'bun:test'
 import { checkPlan } from '../check/check.ts'
-import { generate, optionKey, solveInputsOf, type AlsoRule, type GenerateDeps } from './generate.ts'
+import { generate, solveInputsOf, type AlsoRule, type GenerateDeps } from './generate.ts'
+import { optionKey } from './keys.ts'
 import { searchEngine } from './search.ts'
 import { laneKCheck, laneKVerify, laneKVerifyBound } from './fixtures/lane-k.ts'
 import { trainAInputs } from './fixtures/train-a-case.ts'

@@ -4,6 +4,7 @@
 // module only words a row on the two ends it is given, and words nothing a standing does not support.
 import type { z } from 'zod'
 import type { buysRowSchema, buysRungSchema, sectionDataSchemas } from '../api/contract.ts'
+import { ladderRungs } from '../solve/ladder.ts'
 import type { metricSchema, PlanInputs } from './schema.ts'
 
 type Metric = z.infer<typeof metricSchema>
@@ -25,25 +26,12 @@ export interface Standing {
   readonly bought: readonly Metric[]
 }
 
-/** Not ordered, past its order-by at the plan's now: compile drops it, so no rung can buy it. */
-const lapsed = (inputs: PlanInputs, purchase: PlanInputs['purchases'][number]): boolean =>
-  purchase.ordered === undefined && purchase.orderBy !== undefined && inputs.settings.dataDate !== null && Date.parse(inputs.settings.dataDate) > Date.parse(purchase.orderBy)
-
 /**
- * The rungs offered, numbered from 0 with no gaps (api/contract.ts). Crew time is what "days only" removes: a
- * planner-allowed purchase on a crew that replaces nothing (solve/compile.ts), not yet ordered. Every other
- * allowed purchase (rebookings, tool days) and every ordered one is on every rung. Rung 1 adds the crew time
- * priced per person-hour, rung 2 all of it; with one price form only, rung 1 buys all of it. Each `buy` is
- * the list that rung's Generate sends, in the plan's order.
+ * The rungs offered, numbered from 0 with no gaps (api/contract.ts), each `buy` the list its Generate sends:
+ * solve/ladder.ts's ladderRungs, the one rung definition (fix round F7).
  */
-export const rungsOf = (inputs: PlanInputs): Array<{ readonly rung: number; readonly buy: readonly string[] }> => {
-  const crews = new Set(inputs.resources.filter(resource => resource.kind === 'crew').map(resource => resource.key))
-  const usable = inputs.purchases.filter(purchase => !lapsed(inputs, purchase) && (purchase.allowed || purchase.ordered !== undefined))
-  const time = usable.filter(purchase => purchase.ordered === undefined && crews.has(purchase.resource) && purchase.replaces.length === 0)
-  const perHour = time.filter(purchase => purchase.price.perPersonHour !== undefined)
-  const steps = [[], ...(perHour.length > 0 && perHour.length < time.length ? [perHour] : []), ...(time.length > 0 ? [time] : [])]
-  return steps.map((step, rung) => ({ rung, buy: usable.filter(purchase => !time.includes(purchase) || step.includes(purchase)).map(purchase => purchase.key) }))
-}
+export const rungsOf = (inputs: PlanInputs): Array<{ readonly rung: number; readonly buy: readonly string[] }> =>
+  ladderRungs(inputs).map(rung => ({ rung: rung.rung, buy: rung.buy }))
 
 /** A rung with its stored option, fresh on the plan's revision and formulation, and that option's standing. */
 export interface LadderRung {

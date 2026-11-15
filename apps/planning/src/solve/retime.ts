@@ -6,7 +6,8 @@
 // Pure apart from the clock; the solver child runs it after a sub-solve's search.
 import type { PlanInputs, Robust } from '../plan/schema.ts'
 import { timeUnitMs } from '../time/units.ts'
-import { compile, withExtraRules } from './compile.ts'
+import { compile } from './compile.ts'
+import { withExtraRules } from './keys.ts'
 import { dateSchedule, undate, type DatedRow, type UndatedFloat } from './date.ts'
 import { prepare, repair } from './decode.ts'
 import type { CheckedVariant } from './status.ts'

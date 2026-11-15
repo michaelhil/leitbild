@@ -13,7 +13,8 @@ import { optionSetSchema, type CertifiedSize, type PlanInputs, type Status } fro
 import { jobsPerSolve, sizeBand, sizeRefusalWords } from '../plan/summary.ts'
 import { timeUnitMs } from '../time/units.ts'
 import { bounds } from './bounds.ts'
-import { compile, formulationOf, methodCombinations, permittedPurchases, withExtraRules, type Buy, type CompileIndex, type MethodPick } from './compile.ts'
+import { compile, formulationOf, type Buy, type CompileIndex, type MethodPick } from './compile.ts'
+import { methodCombinations, methodLabel, optionKey, permittedPurchases, withExtraRules } from './keys.ts'
 import { dateSchedule, slotInstant, undate, type DatedRow } from './date.ts'
 import { finishOf, prepare } from './decode.ts'
 import { totalFloat, withFloat } from './float.ts'
@@ -112,42 +113,9 @@ export interface GenerateResult {
 export interface WhatIf { readonly buy: Buy; readonly also?: readonly AlsoRule[]; readonly lead?: Lead }
 interface Variant extends WhatIf { readonly key: string; readonly label: string; readonly combos: MethodPick[][] }
 
-const slug = (text: string): string => text.normalize('NFKD').replace(/[^A-Za-z0-9._-]+/g, '-').replace(/^[^A-Za-z0-9]+/, '').slice(0, 64).replace(/-+$/, '') || 'option'
-
-/** FNV-1a over the text, 32 bits as 8 hex digits: the same short name in every process. */
-const digest = (text: string): string => {
-  let hash = 0x811c9dc5
-  for (let i = 0; i < text.length; i++) hash = Math.imul(hash ^ text.charCodeAt(i), 0x01000193) >>> 0
-  return hash.toString(16).padStart(8, '0')
-}
-/** What an extra rule asks, without its key, words or source: two rules that ask the same are one what-if. */
-const ruleContent = (rule: AlsoRule) => (rule.kind === 'span-limit'
-  ? { kind: rule.kind, group: rule.group, limitMs: rule.limit.value * timeUnitMs[rule.limit.unit], singleEntry: rule.singleEntry }
-  : { kind: rule.kind, job: rule.job, finishBy: Date.parse(rule.finishBy) })
-
-/**
- * An option's key (design §4.1): a function of its method picks (as asked, in the plan's method order), the
- * purchases it may use, its extra rule and its lead. The plain options (every allowed purchase, no rule, no
- * lead) keep their method key, so the default options are the top rung; anything else adds a digest of what
- * it asks. The same what-if asked again has the same key and replaces itself. At most 49 characters, so the
- * service's set suffix fits.
- */
-export const optionKey = (inputs: PlanInputs, variant: WhatIf & { readonly methods: readonly MethodPick[] }): string => {
-  const picks = inputs.methods.flatMap(choice => variant.methods.filter(pick => pick.choice === choice.key).map(pick => pick.option))
-  const base = slug(picks.join('+') || 'plan').slice(0, 40).replace(/[-.]+$/, '')
-  const permitted = permittedPurchases(inputs, variant.buy).toSorted()
-  const standard = permittedPurchases(inputs, 'allowed').toSorted()
-  const asked = {
-    ...(permitted.join(' ') === standard.join(' ') ? {} : { buy: permitted }),
-    ...(variant.also === undefined ? {} : { also: variant.also.map(ruleContent) }),
-    ...(variant.lead === undefined ? {} : { lead: variant.lead }),
-  }
-  return Object.keys(asked).length === 0 ? base : `${base}-${digest(JSON.stringify(asked))}`
-}
-
 /** The variants of a request: given what-ifs, or one per method combination. */
 export const variantsOf = (inputs: PlanInputs, input: GenerateInput): Variant[] => {
-  const label = (combo: readonly MethodPick[]) => combo.map(pick => inputs.methods.find(choice => choice.key === pick.choice)?.options.find(option => option.key === pick.option)?.label ?? pick.option).join(', ') || inputs.settings.title
+  const label = (combo: readonly MethodPick[]) => methodLabel(inputs, combo) || inputs.settings.title
   const raw = input.variants === undefined
     ? methodCombinations(inputs).map(combo => ({ key: optionKey(inputs, { methods: combo, buy: 'allowed' }), label: label(combo), combos: [combo], buy: 'allowed' as Buy }))
     : input.variants.map((variant, i) => {

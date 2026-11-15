@@ -55,15 +55,19 @@ describe('the rungs, from plan data', () => {
     expect(ladderRungs(none).map(rung => rung.rung)).toEqual([0])
   })
 
-  test('a rung is named by what it buys, in the plan\'s own labels', () => {
-    const [bottom, middle] = ladderRungs(flagship)
+  test('U1: a lower rung is "<method>: <what it allows>"; the top rung is the default options, keys and labels', () => {
+    const [bottom, middle, top] = ladderRungs(flagship)
+    const methodLabels = flagship.methods[0]!.options.map(option => option.label)
+    expect(rungRequest(flagship, bottom!).variants.map(variant => variant.label)).toEqual(methodLabels.map(label => `${label}: days only`))
     const request = rungRequest(flagship, middle!)
     expect(request.keep).toBe(true)
-    for (const variant of request.variants) {
+    request.variants.forEach((variant, m) => {
       expect(variant.buy).toEqual([...middle!.buy])
-      for (const key of middle!.crewTime) expect(variant.label).toContain(purchase(flagship, key).label)
-    }
-    for (const variant of rungRequest(flagship, bottom!).variants) expect(variant.label).toContain('no bought crew time')
+      expect(variant.label).toBe(`${methodLabels[m]}: with ${middle!.crewTime.map(key => purchase(flagship, key).label).join(', ')}`)
+    })
+    // The top rung asks what a plain Generate asks: the same option keys and the methods' own labels.
+    const plain = variantsOf(flagship, {})
+    expect(variantsOf(flagship, rungRequest(flagship, top!)).map(variant => [variant.key, variant.label])).toEqual(plain.map(variant => [variant.key, variant.label]))
   })
 })
 

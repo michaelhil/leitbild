@@ -6,6 +6,7 @@ import { CHECKER_VERSION } from '../check/check.ts'
 import { expandCalendar, isOnGrid } from '../time/calendar.ts'
 import { convertUnit, gridSlotMs, isTimeUnit, timeUnitMs, type TimeUnit } from '../time/units.ts'
 import { zoneDataFingerprint, zoneOffGridOffset } from '../time/zone.ts'
+import { purchaseStanding } from './keys.ts'
 import type { NormalizedProblem } from './problem.ts'
 import { SOLVER_VERSIONS } from './search.ts'
 
@@ -73,45 +74,6 @@ export type Compiled = { readonly ok: true; readonly problem: NormalizedProblem;
  */
 export const formulationOf = (grid: PlanInputs['settings']['grid']): string =>
   `planning solver: compile ${SOLVER_VERSIONS.compile}, bounds ${SOLVER_VERSIONS.bounds}, engine ${SOLVER_VERSIONS.engine}; ${CHECKER_VERSION}; grid ${grid}; ${zoneDataFingerprint()}`
-
-/** Every combination of method options, each a full pick list; `fixed` narrows the choices. */
-export const methodCombinations = (inputs: PlanInputs, fixed: readonly MethodPick[] = []): MethodPick[][] =>
-  inputs.methods.reduce<MethodPick[][]>((combos, choice) => {
-    const pinned = fixed.find(pick => pick.choice === choice.key)
-    const options = pinned === undefined ? choice.options.map(option => option.key) : [pinned.option]
-    return combos.flatMap(combo => options.map(option => [...combo, { choice: choice.key, option }]))
-  }, [[]])
-
-/**
- * Whether a sub-solve may use a purchase: unordered past its order deadline at the data date, never; under
- * "days only", never one that adds crew time without replacing booked time (even when ordered); an ordered one
- * always otherwise; else as `buy` says. The one rule, for compile and for an option's key.
- */
-export const purchaseStanding = (purchase: PlanInputs['purchases'][number], resource: PlanInputs['resources'][number], buy: Buy, dataDate: number | undefined):
-  { readonly ok: true } | { readonly ok: false; readonly code: CompileIndex['dropped'][number]['code'] } => {
-  if (purchase.ordered === undefined && purchase.orderBy !== undefined && dataDate !== undefined && dataDate > Date.parse(purchase.orderBy)) return { ok: false, code: 'order_deadline_passed' }
-  const addsCrewHours = resource.kind === 'crew' && purchase.replaces.length === 0
-  if (buy === 'no-extra-crew-hours' && addsCrewHours) return { ok: false, code: 'adds_crew_hours' }
-  if (purchase.ordered !== undefined) return { ok: true }
-  const permitted = buy === 'allowed' ? purchase.allowed : buy === 'none' ? false : buy === 'no-extra-crew-hours' ? true : buy.includes(purchase.key)
-  return permitted ? { ok: true } : { ok: false, code: 'not_in_variant' }
-}
-
-/**
- * The inputs a what-if is compiled on: the plan's rules with its extra rules (option.variant.also) after
- * them, never replacing one. Compile reads only these inputs; lane K reads `variant.also` itself.
- */
-export const withExtraRules = (inputs: PlanInputs, also: ReadonlyArray<PlanInputs['rules'][number]> | undefined): PlanInputs =>
-  also === undefined || also.length === 0 ? inputs : { ...inputs, rules: [...inputs.rules, ...also] }
-
-/** The purchase keys a sub-solve under `buy` may use (purchaseStanding), in plan order. */
-export const permittedPurchases = (inputs: PlanInputs, buy: Buy): string[] => {
-  const dataDate = inputs.settings.dataDate === null ? undefined : Date.parse(inputs.settings.dataDate)
-  return inputs.purchases.flatMap(purchase => {
-    const resource = inputs.resources.find(candidate => candidate.key === purchase.resource)
-    return resource !== undefined && purchaseStanding(purchase, resource, buy, dataDate).ok ? [purchase.key] : []
-  })
-}
 
 const fail = (word: CompileFailure['word'], problems: Problem[]): CompileFailure => ({ ok: false, word, problems: problems.slice(0, 16) })
 const runKey = (mask: Uint8Array): string => {
