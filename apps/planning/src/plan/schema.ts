@@ -426,12 +426,15 @@ export const datedRowSchema = z.object({
  * An option's schedule re-timed at pessimistic durations (the same order and crews, nothing earlier), then
  * checked: it holds; or the first rule it breaks, the job that breaks it and by how much; or, when the window
  * is the first thing broken, the job that runs past it and `window.by`, the instant the re-timed work would
- * end ("would run past the window end"). The window is no rule, so it has its own form.
+ * end ("would run past the window end"). The window is no rule, so it has its own form. Or a job could not be
+ * placed at all: `unplaced` names it, the crew or tool with no time left, and `after`, the instant from which
+ * none of that resource's time remains ("<job> could not be done: <crew> has no time left after <instant>").
  */
 const retimedSchema = z.union([
   z.object({ holds: z.literal(true) }).strict(),
   z.object({ holds: z.literal(false), rule: keySchema, job: keySchema, by: z.object({ value: z.number().positive(), unit: timeUnitSchema }).strict() }).strict(),
   z.object({ holds: z.literal(false), window: z.object({ by: instantSchema }).strict(), job: keySchema }).strict(),
+  z.object({ holds: z.literal(false), unplaced: z.object({ job: keySchema, resource: keySchema, after: instantSchema }).strict() }).strict(),
 ])
 /** allPessimistic: every ranged job at its high estimate together; single: each ranged job alone at its high estimate. */
 export const robustSchema = z.object({ allPessimistic: retimedSchema, single: z.array(z.object({ job: keySchema, outcome: retimedSchema }).strict()).max(12) }).strict()
