@@ -5,7 +5,8 @@
 //
 // Re-derived: a chain (precedence, least work, the hours any job of it could work, its interval); a
 // temporal contradiction; energy in a fixed interval, or in every window of a single-entry span limit, with
-// the work forced into it; an availability rule broken by outages every schedule must contain.
+// the work forced into it; an availability rule broken by outages every schedule must contain. A what-if's
+// extra rules (variant.also) are rules here like the plan's own (check.ts prepare).
 import type { Certificate, PlanInputs } from '../plan/schema.ts'
 import { prepare, type CheckVariant, type Context } from './check.ts'
 import { jobSlots, leastWork, propagate, resourceSlots, worldsOf, type JobWindow, type World } from './propagate.ts'
@@ -167,7 +168,7 @@ export const verifyCertificate = (inputs: PlanInputs, variant: CheckVariant, cer
       }
       const amountOf = (job: Job): number => job.needs.filter(need => need.anyOf.some(key => pool.has(key))).reduce((total, need) => total + need.amount, 0)
       const capacityIn = (world: World, from: number, to: number): number => [...pool].reduce((sum, key) => sum + (context.resources.get(key)?.count ?? 0) * countIn(resourceSlots(context, key, world), from, to), 0)
-      const spanRule = certificate.span === undefined ? undefined : inputs.rules.find(rule => rule.kind === 'span-limit' && (rule.key === certificate.span || rule.group === certificate.span))
+      const spanRule = certificate.span === undefined ? undefined : context.inputs.rules.find(rule => rule.kind === 'span-limit' && (rule.key === certificate.span || rule.group === certificate.span))
       if (certificate.span !== undefined && (spanRule === undefined || spanRule.kind !== 'span-limit' || !spanRule.singleEntry)) { problems.push(`The certificate names '${certificate.span}', which is not a single-entry span limit.`); break }
       everyCase('the energy count', (world, windows) => {
         if (spanRule === undefined || spanRule.kind !== 'span-limit') {
@@ -217,7 +218,7 @@ export const verifyCertificate = (inputs: PlanInputs, variant: CheckVariant, cer
       break
     }
     case 'availability': {
-      const rule = inputs.rules.find(candidate => candidate.key === certificate.rule)
+      const rule = context.inputs.rules.find(candidate => candidate.key === certificate.rule)
       if (rule === undefined || rule.kind !== 'keep-in-service') { problems.push(`The certificate names '${certificate.rule}', which is not a keep-in-service rule.`); break }
       const members = rule.members.map(member => 'equipment' in member ? member.equipment : member.resource)
       for (const item of certificate.items) if (!members.includes(item)) problems.push(`'${item}' is not a member of the rule.`)

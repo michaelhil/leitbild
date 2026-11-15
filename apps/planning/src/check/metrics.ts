@@ -1,6 +1,7 @@
 // Plan measures recomputed by the checker from the dated rows and the plan inputs: span per group, extra
-// cost (purchases charged by use, ordered purchases always, method costs), unavailable hours, lateness,
-// finish and last test. Goal values are raw: solve/rank.ts alone applies a goal's threshold.
+// cost (purchases charged by use, ordered purchases always, method costs), the crew time bought per purchase
+// (`bought:<purchase>`, person-hours or periods used), unavailable hours, lateness, finish and last test.
+// Goal values are raw: solve/rank.ts alone applies a goal's threshold.
 import type { PlanInputs } from '../plan/schema.ts'
 import type { Context, Interval, Placed } from './check.ts'
 
@@ -44,6 +45,15 @@ export const computeMetrics = (input: MetricInput): { readonly metrics: Metric[]
   const { inputs, windowStart, windowEnd, grid } = context
   const currency = inputs.settings.currency
   const metrics: Metric[] = []
+  /** A purchase's periods as slot ranges: its own periods, or the runs of the calendar it adds. */
+  const periodsOf = (purchase: PlanInputs['purchases'][number]): Array<[number, number]> => 'periods' in purchase.adds
+    ? purchase.adds.periods.map(period => [Math.max(0, Math.ceil((Date.parse(period.start) - windowStart) / grid.slotMs)), Math.min(grid.slots, Math.floor((Date.parse(period.end) - windowStart) / grid.slotMs))] as [number, number])
+    : runs(context.added.get(purchase.key)!)
+  /** Its periods in which the rows use it. */
+  const usedPeriods = (purchase: PlanInputs['purchases'][number]): number => {
+    const bought = usedPurchaseSlots.get(purchase.key)
+    return periodsOf(purchase).filter(([from, to]) => { for (let slot = from; slot < to; slot++) if (bought?.[slot] === 1) return true; return false }).length
+  }
 
   // extra cost
   let cost = 0
@@ -60,11 +70,7 @@ export const computeMetrics = (input: MetricInput): { readonly metrics: Metric[]
       cost += (ordered ?? personHours.get(purchase.key) ?? 0) * price.perPersonHour
     }
     if (price.perPeriodUsed !== undefined) {
-      const periods = 'periods' in purchase.adds
-        ? purchase.adds.periods.map(period => [Math.max(0, Math.ceil((Date.parse(period.start) - windowStart) / grid.slotMs)), Math.min(grid.slots, Math.floor((Date.parse(period.end) - windowStart) / grid.slotMs))] as [number, number])
-        : runs(context.added.get(purchase.key)!)
-      const bought = usedPurchaseSlots.get(purchase.key)
-      const charged = ordered ? periods.length : periods.filter(([from, to]) => { for (let slot = from; slot < to; slot++) if (bought?.[slot] === 1) return true; return false }).length
+      const charged = ordered ? periodsOf(purchase).length : usedPeriods(purchase)
       cost += charged * price.perPeriodUsed
     }
     if (price.once !== undefined) cost += price.once
@@ -75,6 +81,18 @@ export const computeMetrics = (input: MetricInput): { readonly metrics: Metric[]
   }
   cost = Math.round(cost * 100) / 100
   metrics.push({ id: 'extra-cost', value: cost, unit: currency })
+
+  // bought crew time, one figure per purchase the rows use: person-hours for one priced per person-hour,
+  // else the periods (its own periods, or runs of its calendar) in which it is used. Ordered time not used
+  // is charged (above) but not bought by this schedule, so it has no figure here.
+  for (const purchase of inputs.purchases) {
+    if (!usedPurchases.has(purchase.key)) continue
+    if (purchase.price.perPersonHour !== undefined) {
+      metrics.push({ id: `bought:${purchase.key}`, value: personHours.get(purchase.key) ?? 0, unit: 'person-h' })
+      continue
+    }
+    metrics.push({ id: `bought:${purchase.key}`, value: usedPeriods(purchase), unit: 'periods' })
+  }
 
   // spans per group
   const spanHours = new Map<string, number>()
