@@ -2,11 +2,11 @@
 // Host and the Assistant is stripForPublication(exact).
 import { z } from 'zod'
 import { workspaceResourceReferenceSchema } from '@leitbild/contracts'
-import { editSchema } from '../plan/edit-schema.ts'
+import { editSchema, sourceInputSchema } from '../plan/edit-schema.ts'
 import {
-  calendarSchema, certifiedSizeSchema, changeSchema, datedRowSchema, equipmentSchema, goalOrderBreaks, goalWordSchema, gridSchema, groupSchema, instantSchema, jobSchema,
-  keySchema, labelSchema, linkSchema, methodChoiceSchema, optionSchema, planInputsSchema, purchaseSchema, resourceSchema, ruleSchema, statusWordSchema,
-  wordsSchema, worldFactCopySchema,
+  calendarSchema, certifiedSizeSchema, changeSchema, datedRowSchema, dueRuleSchema, equipmentSchema, goalProofBreaks, goalWordSchema, gridSchema, groupSchema, instantSchema, jobSchema,
+  keySchema, labelSchema, leadSchema, linkSchema, methodChoiceSchema, metricSchema, optionLeadRefinement, optionWithoutRowsShape, planInputsSchema, purchaseSchema, resourceSchema, ruleSchema,
+  spanLimitRuleSchema, statusWordSchema, timeUnitSchema, wordsSchema, worldFactCopySchema,
 } from '../plan/schema.ts'
 
 // ───────────── inputs ─────────────
@@ -22,23 +22,44 @@ export const editInputSchema = z.object({
   authority: z.object({ name: labelSchema.describe('The named person who agreed, as they gave their name in this conversation'), reason: wordsSchema.describe('Their reason, in their words') }).strict().optional()
     .describe('A named person\'s agreement to remove or weaken a hard rule, a support, a group membership, a tag-out or test, a precondition or a test minimum, given by that person in the plan screen. An Assistant\'s edit that needs it is refused. Ask them; never fill this in yourself'),
 }).strict()
+/** A what-if's extra hard rule as Generate takes it: the stored alsoRuleSchema, every field described. */
+const ruleWords = wordsSchema.describe('The rule in plain words')
+const alsoInputSchema = z.discriminatedUnion('kind', [
+  spanLimitRuleSchema.extend({
+    kind: spanLimitRuleSchema.shape.kind.describe('span-limit: a shorter outage limit'), key: keySchema.describe('A key no plan rule has'),
+    group: keySchema.describe('Function group'),
+    limit: z.object({ value: z.number().positive().describe('Value'), unit: timeUnitSchema.describe('Unit') }).strict().describe('Longest outage'),
+    singleEntry: z.boolean().describe('One continuous outage'), words: ruleWords, source: sourceInputSchema,
+  }),
+  dueRuleSchema.extend({
+    kind: dueRuleSchema.shape.kind.describe('due: back by a time'), key: keySchema.describe('A key no plan rule has'),
+    job: keySchema.describe('The job that must finish'), finishBy: instantSchema.describe('Latest finish, inside the window'), words: ruleWords, source: sourceInputSchema,
+  }),
+])
 export const generateInputSchema = z.object({
   variants: z.array(z.object({
     label: labelSchema.optional().describe('Name for this what-if'),
     methods: z.array(z.object({ choice: keySchema.describe('Method key'), option: keySchema.describe('Option key') }).strict()).max(8).optional().describe('Fix these method choices; others are searched'),
     buy: z.union([z.enum(['allowed', 'none', 'no-extra-crew-hours']), z.array(keySchema)]).optional()
       .describe('Purchases Generate may use. no-extra-crew-hours = "days only": no purchase that adds working time to a crew; rebookings and tool days stay allowed'),
+    also: z.array(alsoInputSchema).min(1).max(1).optional().describe('One extra hard rule for this what-if only: a shorter outage limit, or a due time'),
+    lead: z.union([
+      leadSchema.options[0].extend({ goal: leadSchema.options[0].shape.goal.describe('One of the plan\'s goals, by its id: 0 is the first') }),
+      leadSchema.options[1].extend({ group: keySchema.describe('A function group: its outage as short as possible') }),
+    ]).optional().describe('Solve this first, for this what-if only; the plan\'s goals are not changed'),
   }).strict()).max(8).optional().describe('What-ifs, without changing the plan; default one per method option'),
   seconds: z.number().int().min(1).max(20).optional().describe('Time budget; default 20'),
+  keep: z.literal(true).optional().describe('Add these what-ifs to the options already there, each starting from the best stored option that buys no more'),
 }).strict()
 export const explainInputSchema = z.object({
-  ask: z.enum(['why-start', 'finish', 'refusal']).describe('What to explain'),
+  ask: z.enum(['why-start', 'finish', 'refusal', 'recommended', 'versus']).describe('What to explain; versus: what differs from an option of the previous set'),
   option: keySchema.optional().describe('Default: the recommended option'),
   job: keySchema.optional().describe('why-start: the job; finish: the job whose finish (default the last)'),
+  versus: z.object({ previous: keySchema.describe('Option key in the previous set') }).strict().optional().describe('versus: the option to compare with'),
   cursor: z.string().max(256).optional().describe('From a previous answer'),
-}).strict()
+}).strict().refine(input => (input.ask === 'versus') === (input.versus !== undefined), { message: 'versus names the option to compare with, and only for ask versus', path: ['versus'] })
 export const readInputSchema = z.object({
-  section: z.enum(['summary', 'jobs', 'rules', 'crews', 'sources', 'options', 'schedule', 'history']).optional().describe('Default summary'),
+  section: z.enum(['summary', 'jobs', 'rules', 'crews', 'sources', 'options', 'schedule', 'history', 'buys']).optional().describe('Default summary; buys: what bought crew time gains'),
   option: keySchema.optional().describe('schedule: which option; default recommended'),
   cursor: z.string().max(256).optional().describe('From a previous page'),
 }).strict()
@@ -51,27 +72,35 @@ export const refreshInputSchema = z.object({ plan: z.uuid().describe('The plan w
 export const deleteInputSchema = z.object({}).strict()
 
 // ───────────── outputs ─────────────
+const lineOut = { word: goalWordSchema, value: z.number().finite(), unit: z.string(), bound: z.number().finite().optional(), gap: z.number().finite().optional() }
 /**
- * The status as the Assistant sees it: the plan's own status and goal words, in goal order, with the same
- * order rule as the stored status. Prose is generated beside it, never stored.
+ * The status as the Assistant sees it: the plan's own status and goal words, each goal named by the plan's id,
+ * in goal order, under the same proof rule as the stored status. A what-if's `lead` is what it solved first: a
+ * plan goal by id, or a group's own goal line. Prose is generated beside it, never stored.
  */
 export const statusOutSchema = z.object({
   word: statusWordSchema,
-  goals: z.array(z.object({
-    word: goalWordSchema, value: z.number().finite(), unit: z.string(),
-    bound: z.number().finite().optional(), gap: z.number().finite().optional(),
-  }).strict()).max(6),
+  goals: z.array(z.object({ goal: z.number().int().nonnegative(), ...lineOut }).strict()).max(6),
+  lead: z.union([z.object({ goal: z.number().int().nonnegative() }).strict(), z.object({ group: keySchema, ...lineOut }).strict()]).optional(),
   cause: z.object({ kind: z.string(), requiredHours: z.number().optional(), availableHours: z.number().optional(), about: z.array(keySchema).max(4) }).strict().optional(),
 }).strict().superRefine((status, context) => {
   if (status.word !== 'validated feasible' && status.goals.length > 0) context.addIssue({ code: 'custom', path: ['goals'], message: 'Only a validated feasible option has goal values' })
+  if (status.word !== 'validated feasible' && status.lead !== undefined) context.addIssue({ code: 'custom', path: ['lead'], message: 'Only a validated feasible what-if has a leading goal' })
   if ((status.word === 'proven infeasible') !== (status.cause !== undefined)) context.addIssue({ code: 'custom', path: ['cause'], message: 'A cause is given exactly when the option is proven infeasible' })
-  for (const index of goalOrderBreaks(status.goals.map(goal => goal.word))) {
-    context.addIssue({ code: 'custom', path: ['goals', index, 'word'], message: 'A later goal is proven only when every earlier goal is' })
+  const lead = status.lead
+  // With a lead this rule replaces the goal-order rule (adversary part 2 check, fix C).
+  for (const index of goalProofBreaks(status.goals.map(goal => goal.word), lead)) {
+    context.addIssue({ code: 'custom', path: ['goals', index, 'word'], message: lead === undefined ? 'A later goal is proven only when every earlier goal is' : 'With a leading goal, only that goal may be proven' })
   }
+  if (lead !== undefined && 'goal' in lead && lead.goal >= status.goals.length) context.addIssue({ code: 'custom', path: ['lead', 'goal'], message: 'The leading goal is one of the plan\'s goals' })
+  const lines = [...status.goals.map((goal, index) => ({ line: goal, path: ['goals', index] })), ...(lead !== undefined && 'group' in lead ? [{ line: lead, path: ['lead'] }] : [])]
   status.goals.forEach((goal, index) => {
-    if (goal.word === 'proven optimal' && goal.bound === undefined) context.addIssue({ code: 'custom', path: ['goals', index, 'bound'], message: 'Proven optimal names its bound' })
-    if ((goal.bound === undefined) !== (goal.gap === undefined)) context.addIssue({ code: 'custom', path: ['goals', index, 'gap'], message: 'A bound comes with its gap' })
+    if (goal.goal !== index) context.addIssue({ code: 'custom', path: ['goals', index, 'goal'], message: 'Goals are listed in order, by the plan\'s ids' })
   })
+  for (const { line, path } of lines) {
+    if (line.word === 'proven optimal' && line.bound === undefined) context.addIssue({ code: 'custom', path: [...path, 'bound'], message: 'Proven optimal names its bound' })
+    if ((line.bound === undefined) !== (line.gap === undefined)) context.addIssue({ code: 'custom', path: [...path, 'gap'], message: 'A bound comes with its gap' })
+  }
 })
 export type StatusOut = z.infer<typeof statusOutSchema>
 
@@ -115,15 +144,17 @@ export const generateResultSchema = z.object({
   recommended: keySchema.optional(),
   text: z.string().max(300),   // one generated sentence for the recommended option
 }).strict().refine(result => byteLength(result) <= resultLimitBytes, `A generate result fits ${resultLimitBytes} B; read the options section for the rest`)
+/** One cause of a job's time, as explain names it. */
+const becauseSchema = z.object({
+  kind: z.enum(['link', 'crew', 'tool', 'shift', 'availability', 'span-limit', 'window', 'release', 'lock', 'data-date', 'late-as-possible', 'purchase-not-allowed']),
+  // Every name says what it names, so no reader guesses: the screen and the Assistant look it up as that kind.
+  about: z.array(z.object({ kind: z.enum(['job', 'resource', 'calendar', 'rule', 'equipment', 'purchase']), key: keySchema }).strict()).max(6), until: instantSchema.optional(),
+}).strict()
 export const explainResultSchema = z.object({
   lines: z.array(z.string().max(240)).max(20),
   items: z.array(z.object({
     job: keySchema, start: instantSchema, finish: instantSchema, floatHours: z.number().nonnegative(),
-    because: z.array(z.object({
-      kind: z.enum(['link', 'crew', 'tool', 'shift', 'availability', 'span-limit', 'window', 'release', 'lock', 'data-date', 'late-as-possible', 'purchase-not-allowed']),
-      // Every name says what it names, so no reader guesses: the screen and the Assistant look it up as that kind.
-      about: z.array(z.object({ kind: z.enum(['job', 'resource', 'calendar', 'rule', 'equipment', 'purchase']), key: keySchema }).strict()).max(6), until: instantSchema.optional(),
-    }).strict()).min(1).max(4),
+    because: z.array(becauseSchema).min(1).max(4),
     joint: z.boolean(),
   }).strict()).max(20),
   // 'finish' only: what one more unit of the most limiting resource does, checked by lane K's checker on the
@@ -143,6 +174,36 @@ export const explainResultSchema = z.object({
 // section but summary pages as {items, more?} within the 4 KB result; `more` is the next read's cursor.
 const paged = <T extends z.ZodType>(item: T) => z.object({ items: z.array(item), more: z.string().min(1).max(256).optional() }).strict()
 
+/**
+ * "What overtime buys" (design §4.1): the rungs of bought crew time and the rows between two rungs solved
+ * on the same revision and formulation. A rung's `buy` is the list its Generate sends; `option` is its stored
+ * option, fresh on the current revision and formulation (absent: still to solve there); `bought` are that
+ * option's own 'bought:<purchase>' metrics. A row's word comes from this list, never "buys nothing".
+ */
+export const buysWordSchema = z.enum(['makes it possible', 'not solved', 'proven: no gain', 'found', 'proven', 'not found better'])
+const rungSchema = z.number().int().min(0).max(2)
+export const buysRungSchema = z.object({
+  rung: rungSchema, buy: z.array(keySchema).max(64), option: keySchema.optional(), bought: z.array(metricSchema).max(64),
+}).strict()
+/**
+ * outage: the higher rung's longest outage minus the lower's, in h; cost: its extra cost minus the lower's, in
+ * the plan currency. With "proven: no gain", `finish` is the higher rung's first cause of what sets the finish.
+ */
+export const buysRowSchema = z.object({
+  from: rungSchema, to: rungSchema, word: buysWordSchema,
+  outage: z.number().finite().optional(), cost: z.number().finite().optional(), finish: becauseSchema.optional(),
+}).strict().superRefine((row, context) => {
+  const issue = (path: string, message: string) => context.addIssue({ code: 'custom', path: [path], message })
+  if (row.to !== row.from + 1) issue('to', 'A row compares a rung with the one above it')
+  const compared = row.word !== 'makes it possible' && row.word !== 'not solved'
+  if (compared !== (row.outage !== undefined && row.cost !== undefined)) issue('outage', 'A row gives both differences exactly when both rungs are solved and comparable')
+  if ((row.word === 'proven: no gain') !== (row.finish !== undefined)) issue('finish', '"Proven: no gain" names what sets the finish, and only it does')
+  if (row.outage === undefined) return
+  if (row.word === 'proven: no gain' && row.outage !== 0) issue('outage', '"Proven: no gain" means both outages are equal')
+  if ((row.word === 'found' || row.word === 'proven') && !(row.outage < 0)) issue('outage', 'A gain is a shorter outage on the higher rung')
+  if (row.word === 'not found better' && row.outage < 0) issue('outage', 'A shorter outage on the higher rung is a gain')
+})
+
 export const summaryDataSchema = z.object({
   plan: z.object({ id: z.uuid(), title: labelSchema, revision: z.number().int().positive(), updatedAt: instantSchema }).strict(),
   settings: planInputsSchema.shape.settings,
@@ -159,10 +220,11 @@ export const sectionDataSchemas = {
   crews: paged(z.union([z.object({ calendar: calendarSchema }).strict(), z.object({ resource: resourceSchema }).strict(), z.object({ purchase: purchaseSchema }).strict()])),
   sources: paged(z.union([z.object({ equipment: equipmentSchema }).strict(), z.object({ group: groupSchema }).strict(), z.object({ fact: worldFactCopySchema }).strict()])),
   // fresh: the option re-checks on the current inputs revision and formulation.
-  options: paged(optionSchema.omit({ rows: true }).extend({ fresh: z.boolean(), warnings: z.array(optionWarningSchema).max(4) }).strict())
+  options: paged(optionWithoutRowsShape.extend({ fresh: z.boolean(), warnings: z.array(optionWarningSchema).max(4) }).strict().superRefine(optionLeadRefinement))
     .extend({ at: instantSchema.nullable(), recommended: keySchema.nullable() }).strict(),
   schedule: paged(datedRowSchema).extend({ option: keySchema }).strict(),
   history: paged(changeSchema),
+  buys: paged(z.union([z.object({ rung: buysRungSchema }).strict(), z.object({ row: buysRowSchema }).strict()])),
 } as const satisfies Record<NonNullable<z.infer<typeof readInputSchema>['section']>, z.ZodType>
 export type SectionName = keyof typeof sectionDataSchemas
 export type PagedSectionName = Exclude<SectionName, 'summary'>

@@ -309,15 +309,15 @@ const editPurchase = (state: Working, edit: EditOf<'purchase'>, index: number, c
 const editMethod = (state: Working, edit: EditOf<'method'>, index: number): void => {
   const existing = state.next.methods.find(entry => entry.key === edit.key)
   const fields: string[] = []
-  const method = existing ?? { key: edit.key, label: needField(edit.label, index, 'method', 'label', edit.key), options: needField(edit.options, index, 'method', 'options', edit.key) }
+  // An option keeps its words; its caveats are as given, kept when omitted, and cleared by null.
+  const optionsOf = (given: NonNullable<EditOf<'method'>['options']>) => given.map(option => {
+    const old = existing?.options.find(entry => entry.key === option.key)
+    const caveats = option.caveats === undefined ? old?.caveats : option.caveats ?? undefined
+    return { key: option.key, label: option.label, fixedCost: option.fixedCost, ...(old?.words === undefined ? {} : { words: old.words }), ...(caveats === undefined ? {} : { caveats }) }
+  })
+  const method = existing ?? { key: edit.key, label: needField(edit.label, index, 'method', 'label', edit.key), options: optionsOf(needField(edit.options, index, 'method', 'options', edit.key)) }
   assign(method, 'label', edit.label, fields)
-  if (edit.options !== undefined) {
-    const options = edit.options.map(option => {
-      const words = existing?.options.find(old => old.key === option.key)?.words
-      return { key: option.key, label: option.label, fixedCost: option.fixedCost, ...(words === undefined ? {} : { words }) }
-    })
-    assign(method, 'options', options, fields)
-  }
+  if (edit.options !== undefined) assign(method, 'options', optionsOf(edit.options), fields)
   if (existing === undefined) { state.next.methods.push(method); record(state, 'added', 'method', edit.key, []) }
   else record(state, 'changed', 'method', edit.key, fields)
 }

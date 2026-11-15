@@ -1,9 +1,16 @@
 import { describe, expect, test } from 'bun:test'
+import { mkdir, mkdtemp, rm } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
+import { workspaceIdSchema } from '@leitbild/contracts'
 import {
-  attributeSchema, calendarSchema, certificateSchema, changeSchema, combineWorldFacts, datedRowSchema, durationSchema, durationWithSchema, editKindSchema, equipmentSchema, goalSchema,
-  jobSchema, planInputsSchema, planSchema, purchaseSchema, resourceSchema, ruleSchema, statusSchema, type WorldFactCopy,
+  alsoRuleSchema, attributeSchema, calendarSchema, caveatSchema, certificateSchema, changeSchema, combineWorldFacts, datedRowSchema, durationSchema, durationWithSchema, editKindSchema,
+  equipmentSchema, goalProofBreaks, goalSchema, jobSchema, leadSchema, methodChoiceSchema, optionLeadIssue, optionSchema, planInputsSchema, planSchema, purchaseSchema, resourceSchema,
+  robustSchema, ruleSchema, statusSchema, type WorldFactCopy,
 } from './schema.ts'
 import { editSchema } from './edit-schema.ts'
+import { applyEdits } from './edits.ts'
+import { createPlanStore } from './store.ts'
 import { editInputSchema, generateResultSchema } from '../api/contract.ts'
 import { checkPlan, inputCodes } from '../check/check.ts'
 import { shownNotes } from './fixtures/train-a-case.convert.ts'
@@ -96,16 +103,17 @@ describe('adversary r2 check (coordinator-adopted)', () => {
     expect(accepted({ word: 'validated feasible', run: fine, goals: [{ word: 'proven optimal', goal: 0, value: 1, unit: 'min', bound: { value: 0.9999999, source: 'logic+calendars', certificate: { kind: 'earliest-finish', jobs: [{ job: 'last', finish: '2026-11-16T09:00:00Z' }] } } }] })).toBe(true)
   })
 
+  // Increment 2: every goal line names the plan's goal id (design §0.3), so each line here carries its id.
   test('3. the Assistant-facing status uses the status words and the goal order rule', () => {
     const result = (status: object) => generateResultSchema.safeParse({ plan: { id: '0c4008f3-ffac-47ce-9be0-a0c71e68a781', revision: 3 }, options: [{ key: 'o1', label: 'Swap', status, warnings: [] }], text: 'x' }).success
-    expect(result({ word: 'validated feasible', goals: [{ word: 'best found under budget', value: 2.5, unit: 'h' }, { word: 'proven optimal', value: 398800, unit: 'NOK', bound: 398800, gap: 0 }] })).toBe(false)
+    expect(result({ word: 'validated feasible', goals: [{ goal: 0, word: 'best found under budget', value: 2.5, unit: 'h' }, { goal: 1, word: 'proven optimal', value: 398800, unit: 'NOK', bound: 398800, gap: 0 }] })).toBe(false)
     expect(result({ word: 'optimal', goals: [] })).toBe(false)
-    expect(result({ word: 'validated feasible', goals: [{ word: 'optimal', value: 2.5, unit: 'h' }] })).toBe(false)
-    expect(result({ word: 'unresolved', goals: [{ word: 'best found under budget', value: 2.5, unit: 'h' }] })).toBe(false)
+    expect(result({ word: 'validated feasible', goals: [{ goal: 0, word: 'optimal', value: 2.5, unit: 'h' }] })).toBe(false)
+    expect(result({ word: 'unresolved', goals: [{ goal: 0, word: 'best found under budget', value: 2.5, unit: 'h' }] })).toBe(false)
     expect(result({ word: 'proven infeasible', goals: [] })).toBe(false)
-    expect(result({ word: 'validated feasible', goals: [{ word: 'proven optimal', value: 0, unit: 'h' }] })).toBe(false)
-    expect(result({ word: 'validated feasible', goals: [{ word: 'best found under budget', value: 2.5, unit: 'h', bound: 1 }] })).toBe(false)
-    expect(result({ word: 'validated feasible', goals: [{ word: 'proven optimal', value: 0, unit: 'h', bound: 0, gap: 0 }, { word: 'best found under budget', value: 464250, unit: 'NOK', bound: 340000, gap: 124250 }] })).toBe(true)
+    expect(result({ word: 'validated feasible', goals: [{ goal: 0, word: 'proven optimal', value: 0, unit: 'h' }] })).toBe(false)
+    expect(result({ word: 'validated feasible', goals: [{ goal: 0, word: 'best found under budget', value: 2.5, unit: 'h', bound: 1 }] })).toBe(false)
+    expect(result({ word: 'validated feasible', goals: [{ goal: 0, word: 'proven optimal', value: 0, unit: 'h', bound: 0, gap: 0 }, { goal: 1, word: 'best found under budget', value: 464250, unit: 'NOK', bound: 340000, gap: 124250 }] })).toBe(true)
     expect(result({ word: 'proven infeasible', goals: [], cause: { kind: 'chain', requiredHours: 38, availableHours: 32, about: ['SWA-REBUILD'] } })).toBe(true)
   })
 
@@ -474,5 +482,209 @@ describe('whole-window calendars follow the plan window (walk 3, R3-1)', () => {
   test('Train A has no whole-window calendar: its shifts are weekly and its bookings are fixed dates', async () => {
     const full = await fixture('train-a.case.json')
     for (const inputs of [trainA, full]) expect(inputs.calendars.filter((calendar: any) => isWholeWindow(inputs, calendar))).toEqual([])
+  })
+})
+
+// ═══════════ Increment 2 "Choose": schema part 2 (design r3 §0.3, §2.2; adversary part 2 check, fixes A and C) ═══════════
+// Every part 2 example of R/impl/inc23/schema-draft.ts, against the real schema, and design §8's part 2 rows for lane A.
+
+type Word = 'proven optimal' | 'best found under budget'
+const earliest = { value: 10, source: 'logic+calendars', certificate: { kind: 'earliest-finish', jobs: [{ job: 'AFWA-RTS', finish: '2026-11-17T10:00:00Z' }] } }
+const lineOf = (word: Word, goal: number) => ({ word, goal, value: 10, unit: 'h', ...(word === 'proven optimal' ? { bound: earliest } : {}) })
+const feasible = (words: readonly Word[], lead?: object, ids: readonly number[] = words.map((_, index) => index)) =>
+  ({ word: 'validated feasible', run, goals: words.map((word, index) => lineOf(word, ids[index]!)), ...(lead === undefined ? {} : { lead }) })
+const leastSpan = { value: 7.5, source: 'logic+calendars', certificate: { kind: 'least-span', spans: [{ group: 'AFW-A', hours: 7.5 }] } }
+const afwFirst = (word: Word, extra: object = {}) => ({ group: 'AFW-A', word, value: 7.5, unit: 'h', ...extra })
+const found: Word = 'best found under budget', proof: Word = 'proven optimal'
+const issues = (value: unknown) => statusSchema.safeParse(value).error?.issues.map(issue => issue.path.join('.')) ?? []
+
+describe('increment 2: method caveats', () => {
+  test('the spare exposure caveat parses, with who must agree; a value comes with its unit (draft)', () => {
+    const exposure = { label: 'Weeks without a ready SW spare', value: 10, unit: 'weeks', words: 'Vendor turnaround, planner estimate 8–14 weeks; not priced', agreement: 'Spares owner' }
+    expect(caveatSchema.safeParse(exposure).success).toBe(true)
+    const { value: _value, unit: _unit, ...unvalued } = exposure
+    expect(caveatSchema.safeParse(unvalued).success).toBe(true)
+    expect(caveatSchema.safeParse({ ...unvalued, value: 10 }).error?.issues.map(issue => issue.path)).toEqual([['unit']])
+    expect(caveatSchema.safeParse({ ...unvalued, unit: 'weeks' }).success).toBe(false)
+    const { words: _words, ...wordless } = exposure
+    expect(caveatSchema.safeParse(wordless).success).toBe(false)
+  })
+
+  const caveat = { label: 'Depends on a delivery', words: 'The spare is promised for Monday 12:00.' }
+
+  test('a stored method option holds one to four caveats; an empty list is refused', () => {
+    const method = trainA.methods[0]
+    const withCaveats = (caveats: unknown[]) => methodChoiceSchema.safeParse({ ...method, options: [{ ...method.options[0], caveats }, method.options[1]] }).success
+    expect(withCaveats([caveat])).toBe(true)
+    expect(withCaveats(Array.from({ length: 4 }, () => caveat))).toBe(true)
+    expect(withCaveats(Array.from({ length: 5 }, () => caveat))).toBe(false)
+    expect(withCaveats([])).toBe(false)
+  })
+
+  test('the method edit gives caveats; omitted keeps them, null clears them, and words stay', async () => {
+    const inputs = planInputsSchema.parse(await fixture('train-a.case.json'))
+    const context = { now: '2026-11-12T10:02:00+01:00', by: { kind: 'human' as const } }
+    const option = (key: string, extra: object = {}) => ({ key, label: key, fixedCost: 1, ...extra })
+    const method = (options: unknown[]) => editSchema.parse({ edit: 'method', key: 'SWA-method', options })
+    const worded = { ...inputs, methods: [{ ...inputs.methods[0]!, options: inputs.methods[0]!.options.map(entry => ({ ...entry, words: `${entry.label}, as planned` })) }] }
+    const given = applyEdits(worded, [method([option('rebuild', { caveats: [caveat] }), option('swap', { caveats: [caveat, caveat] })])], context).inputs
+    expect(given.methods[0]!.options.map(entry => [entry.words, entry.caveats?.length])).toEqual([['Rebuild in place, as planned', 1], ['Swap in refurbished spare, as planned', 2]])
+    const kept = applyEdits(given, [method([option('rebuild'), option('swap', { caveats: null })])], context).inputs.methods[0]!.options
+    expect(kept.map(entry => entry.caveats)).toEqual([[caveat], undefined])
+    expect(planInputsSchema.safeParse({ ...inputs, methods: [{ ...inputs.methods[0]!, options: kept }] }).success).toBe(true)
+    const added = applyEdits(inputs, [editSchema.parse({ edit: 'method', key: 'CCW-method', label: 'CCW seal', options: [option('a', { caveats: [caveat] }), option('b')] })], context).inputs.methods[1]!.options
+    expect(added.map(entry => entry.caveats)).toEqual([[caveat], undefined])
+    expect(editSchema.safeParse({ edit: 'method', key: 'SWA-method', options: [option('rebuild', { caveats: [] }), option('swap')] }).success).toBe(false)
+    expect(editSchema.safeParse({ edit: 'method', key: 'SWA-method', options: [option('rebuild', { caveats: [{ ...caveat, value: 3 }] }), option('swap')] }).success).toBe(false)
+  })
+})
+
+describe('increment 2: what-if variants (also, lead)', () => {
+  const r2 = { kind: 'span-limit', key: 'W48', group: 'COOL-A', limit: { value: 48, unit: 'h' }, singleEntry: true, words: 'Train A cooling chain back within 48 h', source: { by: 'planner' } }
+  const due = { kind: 'due', key: 'W-AFW', job: 'AFWA-RTS', finishBy: '2026-11-18T12:00:00Z', words: 'AFW A back by Wed 13:00', source: { by: 'planner' } }
+
+  test('also holds exactly one span-limit or due rule, and never another kind', () => {
+    expect(alsoRuleSchema.safeParse(r2).success).toBe(true)
+    expect(alsoRuleSchema.safeParse(due).success).toBe(true)
+    for (const rule of trainA.rules.filter((entry: { kind: string }) => entry.kind === 'protected')) expect(alsoRuleSchema.safeParse(rule).success).toBe(false)
+    expect(alsoRuleSchema.safeParse({ kind: 'keep-in-service', key: 'k', members: [{ equipment: 'A' }, { equipment: 'B' }], atLeast: 1, words: 'x', source: { by: 'planner' } }).success).toBe(false)
+    const option = (variant: object) => optionSchema.safeParse({ key: 'w48', label: 'At most 48 h out', variant: { methods: [], purchases: [], ...variant }, status: { word: 'unresolved', run }, rows: [], metrics: [], inputsRevision: 1 }).success
+    expect(option({ also: [r2] })).toBe(true)
+    expect(option({ also: [] })).toBe(false)
+    expect(option({ also: [r2, due] })).toBe(false)
+    expect(option({ also: [{ ...r2, source: undefined }] })).toBe(false)
+  })
+
+  test('lead is a plan goal by id or a group, never a bare index (draft)', () => {
+    expect(leadSchema.safeParse({ goal: 1 }).success).toBe(true)
+    expect(leadSchema.safeParse({ group: 'AFW-A' }).success).toBe(true)
+    expect(leadSchema.safeParse(1).success).toBe(false)
+    expect(leadSchema.safeParse({ goal: 6 }).success).toBe(false)
+    expect(leadSchema.safeParse({ goal: 1, group: 'AFW-A' }).success).toBe(false)
+    expect(leadSchema.safeParse({ group: 'AFW A' }).success).toBe(false)
+  })
+})
+
+describe('increment 2: the lead status keeps the plan\'s goal ids; only the lead is proven (adversary r2 decision 1)', () => {
+  test('fix C: a lead-first status with cost (goal 1) proven parses; the same words without a lead break the order rule (draft)', () => {
+    expect(issues(feasible([found, proof, found], { goal: 1 }))).toEqual([])
+    expect(issues(feasible([found, proof, found]))).toEqual(['goals.1.word'])
+    expect(issues(feasible([found, found, proof], { goal: 2 }))).toEqual([])
+    expect(issues(feasible([proof, found, found], { goal: 0 }))).toEqual([])
+  })
+
+  test('a proof out of place, a renumbered goal or a lead beyond the plan\'s goals is refused (draft)', () => {
+    expect(issues(feasible([proof, proof, found], { goal: 1 }))).toEqual(['goals.0.word'])
+    expect(issues(feasible([found, found, proof], { goal: 1 }))).toEqual(['goals.2.word'])
+    expect(issues(feasible([proof, found, found], { goal: 1 }, [1, 0, 2]))).toContain('goals.0.goal')
+    expect(issues(feasible([found, found, found], { goal: 3 }))).toEqual(['lead.goal'])
+    expect(issues({ word: 'unresolved', run, lead: { goal: 0 } }).length).toBeGreaterThan(0)
+  })
+
+  test('"finish AFW A first": the group\'s own proven line, every plan goal best found (draft)', () => {
+    expect(issues(feasible([found, found, found], afwFirst(proof, { bound: leastSpan })))).toEqual([])
+    expect(issues(feasible([found, found, found], afwFirst(found)))).toEqual([])
+    expect(issues(feasible([found, found, found], afwFirst(found, { bound: { ...leastSpan, value: 7, certificate: undefined } })))).toEqual([])
+    expect(issues(feasible([proof, found], afwFirst(found)))).toEqual(['goals.0.word'])
+  })
+
+  test('fix A: a group lead "proven optimal" names its bound and certificate and equals the bound (draft)', () => {
+    // Without a bound or its certificate the line is no line of the union: refused at the lead.
+    expect(issues(feasible([found, found], afwFirst(proof)))).toEqual(['lead'])
+    expect(issues(feasible([found, found], afwFirst(proof, { bound: { value: 7.5, source: 'logic+calendars' } })))).toEqual(['lead'])
+    expect(issues(feasible([found, found], afwFirst(proof, { value: 9, bound: leastSpan })))).toEqual(['lead.bound'])
+    expect(issues(feasible([found, found], afwFirst(found, { value: 7, bound: leastSpan })))).toEqual(['lead.bound'])
+    expect(issues(feasible([found, found], afwFirst(proof, { unit: 'NOK', bound: leastSpan })))).toEqual(['lead.unit'])
+    expect(issues(feasible([found, found], { group: 'AFW-A' })).length).toBeGreaterThan(0)
+  })
+
+  test('goalProofBreaks is the one proof rule: goal order without a lead, the lead alone with one', () => {
+    expect(goalProofBreaks([found, proof, proof])).toEqual([1, 2])
+    expect(goalProofBreaks([proof, proof, found])).toEqual([])
+    expect(goalProofBreaks([found, proof, proof], { goal: 1 })).toEqual([2])
+    expect(goalProofBreaks([proof, found], { group: 'AFW-A' })).toEqual([0])
+  })
+})
+
+describe('increment 2: an option\'s lead and its status\'s lead name the same thing', () => {
+  const withLead = (asked: object | undefined, solved: object | undefined) => ({
+    key: 'afw-first', label: 'Finish AFW A first', variant: { methods: [], purchases: [], ...(asked === undefined ? {} : { lead: asked }) },
+    status: feasible([found, found, found], solved), rows: [], metrics: [], inputsRevision: 1,
+  })
+
+  test('another lead, or a lead on one side only, is refused (draft)', () => {
+    expect(optionLeadIssue({ variant: { methods: [], purchases: [], lead: { goal: 1 } }, status: feasible([found, found], { goal: 0 }) as never })).toBe('The status names another leading goal than the what-if')
+    expect(optionSchema.safeParse(withLead({ goal: 1 }, { goal: 1 })).success).toBe(true)
+    expect(optionSchema.safeParse(withLead({ group: 'AFW-A' }, afwFirst(found))).success).toBe(true)
+    expect(optionSchema.safeParse(withLead({ group: 'CS-A' }, afwFirst(found))).success).toBe(false)
+    expect(optionSchema.safeParse(withLead({ goal: 1 }, { group: 'AFW-A', word: found, value: 1, unit: 'h' })).success).toBe(false)
+    expect(optionSchema.safeParse(withLead({ goal: 1 }, undefined)).success).toBe(false)
+    // An option that is not a what-if cannot claim a lead to carry a proof out of goal order.
+    expect(optionSchema.safeParse({ ...withLead(undefined, { goal: 1 }), status: feasible([found, proof, found], { goal: 1 }) }).error?.issues.map(issue => issue.path.join('.'))).toEqual(['status.lead'])
+    expect(optionSchema.safeParse({ ...withLead({ goal: 1 }, undefined), status: { word: 'unresolved', run } }).success).toBe(true)
+  })
+})
+
+describe('increment 2: re-timing, bought metrics and the previous option set', () => {
+  test('pessimistic re-timing: holds, or the first rule broken with its job and by how much; no stored +25 % (draft, S4)', () => {
+    const breaks = { holds: false, rule: 'R2', job: 'CCWHXA-CLEAN', by: { value: 3, unit: 'h' } }
+    expect(robustSchema.safeParse({ allPessimistic: breaks, single: [{ job: 'CCWHXA-CLEAN', outcome: breaks }] }).success).toBe(true)
+    expect(robustSchema.safeParse({ allPessimistic: { holds: true }, plus25: { holds: true }, single: [] }).success).toBe(false)
+    expect(robustSchema.safeParse({ allPessimistic: { holds: true }, single: [] }).success).toBe(true)
+    expect(robustSchema.safeParse({ allPessimistic: { ...breaks, by: { value: 0, unit: 'h' } }, single: [] }).success).toBe(false)
+    expect(robustSchema.safeParse({ allPessimistic: { holds: true, rule: 'R2' }, single: [] }).success).toBe(false)
+    expect(robustSchema.safeParse({ allPessimistic: { holds: true }, single: Array.from({ length: 13 }, () => ({ job: 'A', outcome: { holds: true } })) }).success).toBe(false)
+  })
+
+  test('an option takes one bought:<purchase> metric per purchase, beside its other measures', () => {
+    const option = (count: number) => optionSchema.safeParse({ key: 'o', label: 'o', variant: { methods: [], purchases: [] }, status: { word: 'unresolved', run }, rows: [],
+      metrics: Array.from({ length: count }, (_, index) => ({ id: `bought:p${index}`, value: 1, unit: 'h' })), inputsRevision: 1 }).success
+    expect(option(96)).toBe(true)
+    expect(option(97)).toBe(false)
+  })
+
+  test('the previous option set is an option set of the plan schema; untyped content is refused', async () => {
+    const [, line] = (await Bun.file(new URL('./fixtures/increment-1-plan.json', import.meta.url)).text()).split('\n')
+    const { frozenInputs: _frozen, baselines: _baselines, ...stored } = JSON.parse(line!)
+    const plan = { ...stored, baselines: [] }
+    expect(planSchema.safeParse({ ...plan, previousOptions: plan.options }).success).toBe(true)
+    expect(planSchema.safeParse({ ...plan, previousOptions: { ...plan.options, note: 'x' } }).success).toBe(false)
+    expect(planSchema.safeParse({ ...plan, previousOptions: { at: plan.options.at, by: plan.options.by, options: [{ key: 'x' }] } }).success).toBe(false)
+    expect(planSchema.safeParse({ ...plan, previousOptions: null }).success).toBe(false)
+  })
+})
+
+describe('no crew numbers in the dated rows (adversary r2 decision 3)', () => {
+  test('a crew use names its pool and times, never which crew of it', () => {
+    const row = { job: 'CCWA-SEAL', start: '2026-11-17T06:00:00Z', finish: '2026-11-17T16:00:00Z', float: { workingHours: 0, limitedBy: { kind: 'window-end' } } }
+    const use = { resource: 'mech-station', from: '2026-11-17T06:00:00Z', to: '2026-11-17T16:00:00Z' }
+    expect(datedRowSchema.safeParse({ ...row, uses: [use] }).success).toBe(true)
+    expect(datedRowSchema.safeParse({ ...row, uses: [{ ...use, unit: 2 }] }).success).toBe(false)
+    expect(datedRowSchema.safeParse({ ...row, uses: [use], crews: [2] }).success).toBe(false)
+  })
+})
+
+describe('an increment 1 plan file reads unchanged (design §2.1, D7, C9)', () => {
+  // increment-1-plan.json: written by fixtures/increment-1-plan.make.ts at 1212cfe0e (create, link, refresh, Generate, baseline 'Freeze').
+  test('its plan, options and saved baseline read through the store as a plan of this schema, not damaged', async () => {
+    const text = await Bun.file(new URL('./fixtures/increment-1-plan.json', import.meta.url)).text()
+    const stored = JSON.parse(text.split('\n')[1]!)
+    const root = await mkdtemp(join(tmpdir(), 'planning-inc1-'))
+    try {
+      const store = createPlanStore(root)
+      const workspaceId = workspaceIdSchema.parse(stored.workspaceId)
+      await store.provision(workspaceId)
+      await mkdir(join(root, 'workspaces', workspaceId, 'planning', 'plans'), { recursive: true })
+      await Bun.write(join(root, 'workspaces', workspaceId, 'planning', 'plans', `${stored.id}.json`), text)
+      expect((await store.list(workspaceId)).damaged).toEqual([])
+      const plan = await store.read(workspaceId, stored.id)
+      expect(planSchema.parse(plan)).toEqual(plan)
+      expect(plan.baselines.map(baseline => [baseline.name, baseline.option.key, baseline.option.status.word])).toEqual([['Freeze', stored.options.recommended, 'validated feasible']])
+      expect(plan.baselines[0]!.inputs).toEqual(plan.inputs)
+      expect(plan.options!.options.every(option => option.inputsRevision === plan.revision && option.status.word === 'validated feasible')).toBe(true)
+      // Written before increment 2: no part 2 field is in it, and nothing was migrated to read it.
+      expect([plan.previousOptions, ...plan.options!.options.map(option => option.robust ?? option.variant.lead ?? option.variant.also)]).toEqual([undefined, undefined, undefined])
+      expect(plan.inputs.methods[0]!.options.every(option => option.caveats === undefined)).toBe(true)
+    } finally { await rm(root, { recursive: true, force: true }) }
   })
 })

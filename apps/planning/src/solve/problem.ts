@@ -59,6 +59,8 @@ export interface NormalizedProblem {
    * the guideline-excess measure of the frozen cases and the gate. The engine ranks only through rank.ts.
    * Options compare by keys lexicographically; exact ties are broken by option key. `unit` is the goal's
    * unit ('h', 'min', 's' or the currency code); threshold and step are in that unit, never in grid slots.
+   * These are compiled positions: a what-if's lead (option.variant.lead) is compiled first, so a group lead
+   * makes a plan of six goals seven. Results map positions back to the plan's goal ids before they are stored.
    */
   readonly goals: ReadonlyArray<{ readonly metric: string; readonly unit: string; readonly spans?: readonly number[]; readonly tagged?: readonly number[]; readonly threshold: number; readonly step: number }>
 }
@@ -77,6 +79,7 @@ export interface EngineResult {
   readonly evals: number
   readonly cpuMs: number
   readonly wallMs: number
+  /** `goal` is the compiled position in `NormalizedProblem.goals`, not the plan's goal id. */
   readonly bounds: ReadonlyArray<{ readonly goal: number; readonly value: number; readonly source: BoundSource }>
 }
 

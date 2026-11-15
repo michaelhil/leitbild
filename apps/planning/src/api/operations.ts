@@ -189,7 +189,7 @@ const refuseAgentAuthorityField = (authority: unknown, access: AccessContext): v
 /** The structured status the Assistant reads: the stored words, goals in order, and a cause only for a proof. */
 export const statusOut = (status: Status): StatusOut => {
   if (status.word === 'validated feasible') {
-    return { word: status.word, goals: status.goals.map(goal => ({ word: goal.word, value: goal.value, unit: goal.unit, ...(goal.bound === undefined ? {} : { bound: goal.bound.value, gap: goal.value - goal.bound.value }) })) }
+    return { word: status.word, goals: status.goals.map(goal => ({ goal: goal.goal, word: goal.word, value: goal.value, unit: goal.unit, ...(goal.bound === undefined ? {} : { bound: goal.bound.value, gap: goal.value - goal.bound.value }) })) }
   }
   if (status.word !== 'proven infeasible') return { word: status.word, goals: [] }
   const cause = certificateSchema.parse(status.cause)

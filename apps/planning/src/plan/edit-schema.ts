@@ -23,7 +23,8 @@ const keys = z.array(keySchema).max(64)
 const time = instantSchema.describe('Time with offset')
 const period = z.object({ start: instantSchema.describe('Start'), end: instantSchema.describe('End') }).strict().describe('A period')
 const worldRef = z.object({ locator: planningLocatorSchema.describe('World item'), fact: z.string().max(512).describe('World fact id') }).strict()
-const source = z.object({
+/** Who says so, as an operation input gives it: sourceSchema with every field described. */
+export const sourceInputSchema = z.object({
   by: sourceSchema.shape.by.describe('assumption: unconfirmed, flagged; reference: a standard'),
   note: wordsSchema.optional().describe('Where it comes from; names the reference'),
 }).strict().refine(given => given.by !== 'reference' || given.note !== undefined, { message: 'A reference source names its reference in the note', path: ['note'] }).describe('Who says so')
@@ -52,13 +53,20 @@ const duration = z.object({
   unit: timeUnitSchema.optional().describe('s, min or h; d only for elapsed time'),
   calendar: z.enum(['working', 'elapsed']).optional().describe('working: crew hours only; elapsed: clock time'),
   range: z.object({ low: z.number().nonnegative().describe('Optimistic'), high: z.number().positive().describe('Pessimistic') }).strict().nullable().optional().describe('Estimate range'),
-  source: source.optional(),
+  source: sourceInputSchema.optional(),
   fromWorld: z.array(worldRef).max(4).nullable().optional().describe('Use these World values, summed, instead of value'),
 }).strict().superRefine((given, context) => {
   oneValue(given, context, false)
   if (given.unit === 'd' && given.calendar === 'working') issue(context, ['unit'], 'Working time is given in s, min or h; d is for elapsed time')
 })
 const choice = z.object({ choice: keySchema.describe('Method key'), option: keySchema.describe('Option key') }).strict()
+const caveat = z.object({
+  label: labelSchema.describe('What, e.g. Weeks without a ready spare'),
+  value: z.number().optional().describe('How much'),
+  unit: z.string().min(1).max(16).optional().describe('Its unit'),
+  words: wordsSchema.describe('Why it is not priced'),
+  agreement: labelSchema.optional().describe('Who must agree'),
+}).strict().refine(given => (given.value === undefined) === (given.unit === undefined), { message: 'A caveat value comes with its unit', path: ['unit'] })
 
 export const editSchema = z.discriminatedUnion('edit', [
   z.object({
@@ -78,7 +86,7 @@ export const editSchema = z.discriminatedUnion('edit', [
     supportedBy: keys.optional().describe('Items whose outage makes this one unavailable'),
     locator: planningLocatorSchema.nullable().optional().describe('World item from planning-facts; values copied at refresh'),
     function: keySchema.nullable().optional().describe("Items that back each other up share one function key, for example MFW A and MFW B both 'main-feedwater'. Items of one train in series, such as a cooling chain, do not share a key."),
-    source: source.optional(),
+    source: sourceInputSchema.optional(),
   }).strict(),
   z.object({
     edit: z.literal('calendar'), key,
@@ -86,7 +94,7 @@ export const editSchema = z.discriminatedUnion('edit', [
     weekly: z.array(weekly).optional().describe('Working time by weekday'),
     periods: z.array(period).optional().describe('One-off working periods'),
     except: z.array(period).optional().describe('Holidays and other non-working periods'),
-    source: source.optional(),
+    source: sourceInputSchema.optional(),
   }).strict(),
   z.object({
     edit: z.literal('resource'), key,
@@ -101,12 +109,12 @@ export const editSchema = z.discriminatedUnion('edit', [
       value: z.number().optional().describe('Value, unless taken from World'),
       unit: z.string().max(32).describe('Unit'),
       changes: z.array(z.object({ at: time, value: z.number().describe('New value') }).strict()).optional().describe('Announced changes'),
-      source: source.optional(),
+      source: sourceInputSchema.optional(),
       fromWorld: worldRef.optional().describe('Take the value from World'),
     }).strict().superRefine((given, context) => oneValue(given, context, true))).optional().describe('Properties used by "where" needs'),
     maxJobs: z.number().int().min(1).nullable().optional().describe('Plan at most this many jobs ahead for it'),
     locator: planningLocatorSchema.nullable().optional().describe('World item for this crew or tool'),
-    source: source.optional(),
+    source: sourceInputSchema.optional(),
   }).strict(),
   z.object({
     edit: z.literal('purchase'), key,
@@ -125,7 +133,10 @@ export const editSchema = z.discriminatedUnion('edit', [
   z.object({
     edit: z.literal('method'), key,
     label: labelSchema.optional().describe('What is being chosen'),
-    options: z.array(z.object({ key, label: labelSchema.describe('Option name'), fixedCost: amountSchema.describe('Parts or fixed cost') }).strict()).min(2).max(4).optional().describe('Real alternatives'),
+    options: z.array(z.object({
+      key, label: labelSchema.describe('Option name'), fixedCost: amountSchema.describe('Parts or fixed cost'),
+      caveats: z.array(caveat).min(1).max(4).nullable().optional().describe('What it leaves unpriced; omitted keeps, null clears'),
+    }).strict()).min(2).max(4).optional().describe('Real alternatives'),
   }).strict(),
   z.object({
     edit: z.literal('job'), key,
@@ -145,14 +156,14 @@ export const editSchema = z.discriminatedUnion('edit', [
       resource: keySchema.describe('Crew or tool'),
       value: z.number().nonnegative().optional().describe('Its duration, in the job\'s unit'),
       fromWorld: z.array(worldRef).max(4).optional().describe('Or these World values, summed'),
-      source: source.optional(),
+      source: sourceInputSchema.optional(),
     }).strict().superRefine((given, context) => {
       const world = given.fromWorld !== undefined
       if (world === (given.value !== undefined)) issue(context, ['value'], 'Give exactly one of value and World values')
     })).max(16).nullable().optional().describe('A different duration per crew or tool'),
     continuous: z.boolean().optional().describe('Never paused over a break, e.g. a lift'),
     method: choice.nullable().optional().describe('Exists only if that option is chosen'),
-    notBefore: z.object({ at: time, words: wordsSchema.describe('Why'), source }).strict().nullable().optional().describe('Cannot start earlier'),
+    notBefore: z.object({ at: time, words: wordsSchema.describe('Why'), source: sourceInputSchema }).strict().nullable().optional().describe('Cannot start earlier'),
     target: z.object({ finishBy: time, words: wordsSchema.describe('Why') }).strict().nullable().optional().describe('Wanted finish (a goal, not a rule)'),
     checks: z.array(z.object({
       equipment: keySchema.describe('Equipment key'),
@@ -176,7 +187,7 @@ export const editSchema = z.discriminatedUnion('edit', [
     edit: z.literal('rule'), key,
     kind: z.enum(['protected', 'keep-in-service', 'span-limit', 'due']).optional().describe('Rule kind'),
     words: wordsSchema.optional().describe('The rule in plain words'),
-    source: source.optional(),
+    source: sourceInputSchema.optional(),
     equipment: keys.optional().describe('protected: equipment never touched'),
     members: keys.optional().describe('keep-in-service: equipment or crews'),
     atLeast: z.number().int().min(1).optional().describe('keep-in-service: how many'),

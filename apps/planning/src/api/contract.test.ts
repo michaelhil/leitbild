@@ -3,8 +3,8 @@ import { z } from 'zod'
 import { planningFactsInputSchema } from '@leitbild/contracts'
 import {
   baselineInputSchema, createInputSchema, deleteInputSchema, editInputSchema, explainInputSchema, generateInputSchema, publishedInputSchema,
-  generateResultSchema, readInputSchema, refreshInputSchema, resultLimitBytes, schemaMapKeywords, sectionDataSchemas, stripForPublication, strippedKeywords,
-  summaryDataSchema,
+  buysRowSchema, generateResultSchema, readInputSchema, refreshInputSchema, resultLimitBytes, schemaMapKeywords, sectionDataSchemas, statusOutSchema, stripForPublication,
+  strippedKeywords, summaryDataSchema,
 } from './contract.ts'
 
 const inputs: Record<string, z.ZodType> = {
@@ -73,6 +73,9 @@ describe('published operation inputs', () => {
   // coordinator-adopted `source` on eight edit fields, the due rule, the per-type lag description, the
   // edit envelope's revision, the equipment `function` key and create's grid, create is 18,731 B and edit 19,211 B.
   // 20,000 B is the increment 1 ceiling. Any further growth must remove or merge something; raising this needs a coordinator decision.
+  // Re-measured for increment 2 (lane A, 15 Nov): edit was 19,298 B before part 2; the method option's caveats
+  // make create 19,240 B and edit 19,807 B, 193 B under the ceiling. generate grows from 965 B to 3,613 B with
+  // also, lead and keep; explain is 727 B and read 397 B.
   test('create and edit stay within 20,000 B; every other input within 4,096 B', () => {
     for (const [id, schema] of Object.entries(inputs)) {
       const bytes = new TextEncoder().encode(JSON.stringify(publishedInputSchema(schema))).length
@@ -177,5 +180,91 @@ describe('read section data and option warnings', () => {
     expect(JSON.stringify(full).length).toBeGreaterThan(resultLimitBytes)
     expect(result(full).success).toBe(false)
     expect(result(full.slice(0, 3)).success).toBe(true)
+  })
+})
+
+// ═══════════ Increment 2 "Choose": the operation contract, part 2 (design r3 §0.3, §2.2, §3) ═══════════
+
+describe('increment 2: the Assistant-facing status names goals by id and carries a what-if\'s lead', () => {
+  const line = (goal: number, word: 'proven optimal' | 'best found under budget') => ({ goal, word, value: 10, unit: 'h', ...(word === 'proven optimal' ? { bound: 10, gap: 0 } : {}) })
+  const out = (goals: object[], lead?: object) => statusOutSchema.safeParse({ word: 'validated feasible', goals, ...(lead === undefined ? {} : { lead }) })
+  const paths = (goals: object[], lead?: object) => out(goals, lead).error?.issues.map(issue => issue.path.join('.')) ?? []
+
+  test('fix C: a valid proof on lead {goal: 1} is accepted; without the lead it breaks the order rule', () => {
+    expect(paths([line(0, 'best found under budget'), line(1, 'proven optimal'), line(2, 'best found under budget')], { goal: 1 })).toEqual([])
+    expect(paths([line(0, 'best found under budget'), line(1, 'proven optimal'), line(2, 'best found under budget')])).toEqual(['goals.1.word'])
+  })
+
+  test('a proof out of place, a renumbered or missing goal id, or a lead beyond the goals is refused', () => {
+    expect(paths([line(0, 'proven optimal'), line(1, 'proven optimal')], { goal: 1 })).toEqual(['goals.0.word'])
+    expect(paths([line(1, 'best found under budget'), line(0, 'proven optimal')], { goal: 1 })).toContain('goals.0.goal')
+    expect(paths([line(0, 'best found under budget')], { goal: 1 })).toEqual(['lead.goal'])
+    const { goal: _goal, ...unnamed } = line(0, 'best found under budget')
+    expect(out([unnamed]).success).toBe(false)
+    expect(statusOutSchema.safeParse({ word: 'unresolved', goals: [], lead: { goal: 0 } }).success).toBe(false)
+  })
+
+  test('fix A: a group lead "proven optimal" names its bound, a bound comes with its gap, and no plan goal is proven (draft)', () => {
+    const afw = { group: 'AFW-A', word: 'proven optimal', value: 7.5, unit: 'h' }
+    const plain = [line(0, 'best found under budget'), line(1, 'best found under budget')]
+    expect(paths(plain, afw)).toEqual(['lead.bound'])
+    expect(paths(plain, { ...afw, bound: 7.5, gap: 0 })).toEqual([])
+    expect(paths(plain, { ...afw, bound: 7.5 })).toEqual(['lead.gap'])
+    expect(paths(plain, { ...afw, word: 'best found under budget' })).toEqual([])
+    expect(paths([line(0, 'proven optimal'), line(1, 'best found under budget')], { ...afw, bound: 7.5, gap: 0 })).toEqual(['goals.0.word'])
+  })
+})
+
+describe('increment 2: Generate takes what-ifs with an extra rule or a lead, and keep', () => {
+  const rule = { kind: 'span-limit', key: 'W48', group: 'COOL-A', limit: { value: 48, unit: 'h' }, singleEntry: true, words: 'Train A cooling chain back within 48 h', source: { by: 'planner' } }
+  const ok = (input: unknown) => generateInputSchema.safeParse(input).success
+
+  test('also takes exactly one span-limit or due rule in the stored form', () => {
+    expect(ok({ variants: [{ label: 'At most 48 h out', also: [rule] }], keep: true })).toBe(true)
+    expect(ok({ variants: [{ also: [{ kind: 'due', key: 'W-AFW', job: 'AFWA-RTS', finishBy: '2026-11-18T12:00:00Z', words: 'AFW A back by Wed 13:00', source: { by: 'planner' } }] }] })).toBe(true)
+    expect(ok({ variants: [{ also: [] }] })).toBe(false)
+    expect(ok({ variants: [{ also: [rule, rule] }] })).toBe(false)
+    expect(ok({ variants: [{ also: [{ ...rule, kind: 'protected' }] }] })).toBe(false)
+    expect(ok({ variants: [{ also: [{ ...rule, source: { by: 'reference' } }] }] })).toBe(false)
+    expect(ok({ variants: [{ also: [{ ...rule, extra: 1 }] }] })).toBe(false)
+  })
+
+  test('lead is {goal} or {group}, never a bare index; keep is true or absent', () => {
+    expect(ok({ variants: [{ label: 'Cheapest that keeps every rule', lead: { goal: 1 } }], keep: true })).toBe(true)
+    expect(ok({ variants: [{ label: 'Finish AFW A first', lead: { group: 'AFW-A' } }] })).toBe(true)
+    expect(ok({ variants: [{ lead: 1 }] })).toBe(false)
+    expect(ok({ variants: [{ lead: { goal: 6 } }] })).toBe(false)
+    expect(ok({ keep: false })).toBe(false)
+  })
+})
+
+describe('increment 2: explain recommended and versus {previous}; read buys', () => {
+  test('versus names the option of the previous set, and only for ask versus', () => {
+    const ok = (input: unknown) => explainInputSchema.safeParse(input).success
+    expect(ok({ ask: 'recommended' })).toBe(true)
+    expect(ok({ ask: 'versus', option: 'swap.b1', versus: { previous: 'swap.a1' } })).toBe(true)
+    expect(ok({ ask: 'versus' })).toBe(false)
+    expect(ok({ ask: 'finish', versus: { previous: 'swap.a1' } })).toBe(false)
+    expect(ok({ ask: 'versus', versus: { option: 'swap.a1' } })).toBe(false)
+    expect(ok({ ask: 'versus', versus: { baseline: 'B1' } })).toBe(false)
+  })
+
+  test('the buys section pages rungs and rows; a row says one ladder word, never "buys nothing"', () => {
+    expect(readInputSchema.safeParse({ section: 'buys' }).success).toBe(true)
+    const rung = (number: number, option?: string) => ({ rung: { rung: number, buy: number === 0 ? ['ect-friday', 'crane-fri'] : ['ect-friday', 'crane-fri', 'ot-mech'], ...(option === undefined ? {} : { option }), bought: [] } })
+    const page = (items: unknown[]) => sectionDataSchemas.buys.safeParse({ items }).success
+    expect(page([rung(0, 'r0'), rung(1, 'r1'), rung(2), { row: { from: 0, to: 1, word: 'found', outage: -6, cost: 41_000 } }])).toBe(true)
+    expect(page([{ row: { from: 0, to: 1, word: 'buys nothing', outage: 0, cost: 0 } }])).toBe(false)
+    const row = (value: object) => buysRowSchema.safeParse(value).error?.issues.map(issue => issue.path.join('.')) ?? []
+    const finish = { kind: 'crew', about: [{ kind: 'resource', key: 'crane' }] }
+    expect(row({ from: 0, to: 1, word: 'makes it possible' })).toEqual([])
+    expect(row({ from: 1, to: 2, word: 'not solved' })).toEqual([])
+    expect(row({ from: 1, to: 2, word: 'proven: no gain', outage: 0, cost: 0, finish })).toEqual([])
+    expect(row({ from: 1, to: 2, word: 'proven: no gain', outage: 0, cost: 0 })).toEqual(['finish'])
+    expect(row({ from: 1, to: 2, word: 'proven: no gain', outage: -1, cost: 0, finish })).toEqual(['outage'])
+    expect(row({ from: 1, to: 2, word: 'found', outage: 0, cost: 0, finish })).toEqual(['finish', 'outage'])
+    expect(row({ from: 1, to: 2, word: 'not found better', outage: -2, cost: 0 })).toEqual(['outage'])
+    expect(row({ from: 0, to: 1, word: 'makes it possible', outage: -2, cost: 0 })).toEqual(['outage'])
+    expect(row({ from: 0, to: 2, word: 'not solved' })).toEqual(['to'])
   })
 })
