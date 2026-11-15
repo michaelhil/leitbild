@@ -1,10 +1,13 @@
 // Test support for increment 2 ("Choose"), not shipped. A Train A plan with the two options the real solver
 // and checker made in increment 1 (plan/fixtures/increment-1-plan.json: Swap and Rebuild, their rows, metrics
 // and statuses as stored), on that plan's own inputs (World values read) with the method caveats the bundled
-// Definition now has. Their rows re-check feasible under today's checker, so they carry today's formulation.
+// Definition now has. Their rows re-check feasible under today's checker, so they carry today's formulation,
+// and the bought crew time Generate now stores from the child's checker ('bought:<purchase>'), counted here
+// by lane K's checker on their own rows.
 // Nothing here is a typed schedule: tests vary only status words, keys and revisions, and compute every
 // expected figure from these options or lane K's checker.
 import { verifyCertificate } from '../../check/certificate.ts'
+import { checkPlan } from '../../check/check.ts'
 import { bundledPlanDefinitions } from '../../definitions/index.ts'
 import { optionSchema, planInputsSchema, planSchema, type Plan, type PlanInputs, type Status } from '../../plan/schema.ts'
 import { formulationOf } from '../../solve/compile.ts'
@@ -21,7 +24,10 @@ export const trainAInputs: PlanInputs = planInputsSchema.parse({ ...stored.input
 /** Today's formulation on the Train A grid. */
 export const formulation = formulationOf(trainAInputs.settings.grid)
 /** Increment 1's two Train A options: swap (recommended there) and rebuild. */
-export const [swap, rebuild] = stored.options.options.map(option => optionSchema.parse({ ...option, status: { ...option.status, run: { ...(option.status as Feasible).run, formulation } } })) as [Option, Option]
+export const [swap, rebuild] = stored.options.options.map(option => optionSchema.parse({
+  ...option, status: { ...option.status, run: { ...(option.status as Feasible).run, formulation } },
+  metrics: [...option.metrics, ...checkPlan(trainAInputs, option.variant, option.rows).metrics.filter(metric => metric.id.startsWith('bought:'))],
+})) as [Option, Option]
 export const setAt = stored.options.at
 
 /** The option at another key, label and revision, its status as given. */

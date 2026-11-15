@@ -7,7 +7,7 @@ import { byteLength, clip, goalName, goalUnit, nameOf, names, valueWords } from 
 import { goalResolution, type BoundCertificate, type Plan, type PlanInputs } from './schema.ts'
 import { resultLimitBytes, type RecommendedFacts } from '../api/contract.ts'
 import { rankableOf } from '../solve/generate.ts'
-import { dominatedKeys } from '../solve/rank.ts'
+import { dominatedBy } from '../solve/rank.ts'
 
 type Option = NonNullable<Plan['options']>['options'][number]
 type Feasible = Extract<Option['status'], { word: 'validated feasible' }>
@@ -29,17 +29,11 @@ export const fitLines = (lines: readonly string[]): string[] => {
 const keysOf = (inputs: PlanInputs, option: Option): readonly number[] => rankableOf(option, inputs).keys
 
 /**
- * Dominance within one option set (design §4.1, lane S's dominatedKeys): each dominated option's key, and the
- * first option of `options` that dominates it. Lead what-ifs are left out: they are cards, never folded.
+ * Dominance within one option set (design §4.1, lane S's dominatedBy): each dominated option's key, and the
+ * best-ranked option of the set that dominates it. Lead what-ifs are left out: they are cards, never folded.
  */
-export const dominatedBy = (inputs: PlanInputs, options: readonly Option[]): ReadonlyMap<string, string> => {
-  const ranked = options.filter(option => option.variant.lead === undefined).map(option => rankableOf(option, inputs))
-  return new Map(dominatedKeys(ranked).flatMap(key => {
-    const option = ranked.find(entry => entry.key === key)!
-    const by = ranked.find(other => other.key !== key && dominatedKeys([other, option]).includes(key))
-    return by === undefined ? [] : [[key, by.key] as const]
-  }))
-}
+export const dominatedWithin = (inputs: PlanInputs, options: readonly Option[]): ReadonlyMap<string, string> =>
+  new Map(dominatedBy(options.filter(option => option.variant.lead === undefined).map(option => rankableOf(option, inputs))).map(entry => [entry.key, entry.by] as const))
 const differ = (left: number, right: number): boolean => Math.abs(left - right) > EPSILON
 const goalsOf = (option: Option): readonly GoalLine[] => option.status.word === 'validated feasible' ? option.status.goals : []
 const ranked = (option: Option): boolean => option.status.word === 'validated feasible' && option.variant.lead === undefined

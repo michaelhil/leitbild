@@ -11,7 +11,6 @@ import { totalFloat } from '../solve/float.ts'
 import { CERTIFIED_SIZE, generate, variantsOf } from '../solve/generate.ts'
 import { SOLVER_BUSY_WORDS, type SolverPool } from '../solve/pool.ts'
 import type { Plan, PlanInputs } from '../plan/schema.ts'
-import { rungStanding } from '../../tests/harness/buys-honesty.ts'
 import { clip, nameOf, timeWords } from '../plan/summary.ts'
 import { isPlanningError, planningError } from '../errors.ts'
 import { byteLength } from '../plan/summary.ts'
@@ -108,8 +107,6 @@ export const createRealSolver = (pool: SolverPool): SolverPort => {
     variantKey: (inputs, variant) => variantsOf(inputs, { variants: [variant] })[0]!.key,
     // The first cause on the finish chain of the option's own schedule; no solver child.
     finishCause: async ({ inputs, option }) => explainerOf(inputs, option).explainer.finishChain()[0]?.because[0],
-    // Lane K's re-check of the stored option on this plan, revision and formulation.
-    standing: (plan, option) => rungStanding(plan, option, formulationOf(plan.inputs.settings.grid)),
     // In a solver child, like Generate: one child at a time across the service, so a preview while a Generate
     // runs is refused 'solver_busy'.
     preview: async ({ inputs, option, signal }) => {

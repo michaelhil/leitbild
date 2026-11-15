@@ -8,7 +8,6 @@ import {
 import { planningError } from '../../errors.ts'
 import { combineWorldFacts, type Plan, type PlanInputs } from '../../plan/schema.ts'
 import { durationMs } from '../../time/units.ts'
-import { rungStanding } from '../../../tests/harness/buys-honesty.ts'
 import type { CheckViolation, GenerateVariant, SolverPort, WorldFactsPort } from '../operations.ts'
 
 type Option = NonNullable<Plan['options']>['options'][number]
@@ -88,8 +87,6 @@ export const createSolverDouble = (options: { readonly calls?: Array<{ readonly 
     const row = request.option.rows.at(-1)
     return row === undefined ? undefined : { kind: 'link', about: [{ kind: 'job', key: row.job }] }
   },
-  // Lane K's own standing, on the double's formulation.
-  standing: (plan, option) => rungStanding(plan, option, formulation(plan.inputs.settings.grid)),
   preview: async request => {
     options.calls?.push({ kind: 'preview' })
     const locked = request.inputs.jobs.filter(job => job.lock !== undefined)

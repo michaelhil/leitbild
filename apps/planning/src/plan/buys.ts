@@ -1,6 +1,6 @@
 // "What overtime buys" (design §4.1, C7): the rungs of bought crew time, from plan data, and the rows
 // between two adjacent rungs, from stored options only. Where each rung stands (proven, found, refused or
-// unsolved) and its figures are lane K's own (rungStanding, coordinator's decision on lane K batch 2): this
+// unsolved) and its figures are lane K's own (check/buys.ts rungStanding, over stored figures): this
 // module only words a row on the two ends it is given, and words nothing a standing does not support.
 import type { z } from 'zod'
 import type { buysRowSchema, buysRungSchema, sectionDataSchemas } from '../api/contract.ts'
@@ -15,8 +15,8 @@ export type BuysEnd = BuysRow['ends']['from']
 export type FinishCause = NonNullable<BuysRow['finish']>
 
 /**
- * Where a rung's stored option stands, by lane K's checker alone (tests/harness/buys-honesty.ts rungStanding):
- * its end, and when solved, its longest outage (h), extra cost and bought crew time, the checker's own figures.
+ * Where a rung's stored option stands, by lane K alone (check/buys.ts rungStanding, from stored figures): its
+ * end, and when solved, its longest outage (h), extra cost and bought crew time, as the checker stored them.
  */
 export interface Standing {
   readonly end: BuysEnd

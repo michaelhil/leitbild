@@ -2,9 +2,8 @@
 // reach these only through Host and module-api.ts, so both take one path. Planning writes nothing in World:
 // its only World call is the facts read in refresh. Generate, explain and preview run on the solver port
 // (lane S). Lane K's checker and its re-verifications run inside Generate's solver child, once; the service
-// stores their result, validated against the plan schema. On a read, lane K's code runs only where its proof
-// must be re-derived: "what overtime buys", where rungStanding re-checks each rung's stored option
-// (coordinator, lane K batch 2), and explain's refusal, which re-verifies a second proof before wording it.
+// stores their result, validated against the plan schema, and never runs the checker on a read: "what overtime
+// buys" reads each rung's stored figures through lane K's rungStanding (check/buys.ts), which runs no checker.
 import { z } from 'zod'
 import {
   inspectionViewSchema, planningFactsOutputSchema, workspaceResourceReferenceSchema,
@@ -15,9 +14,10 @@ import { applyEdits, requireAuthority, type ChangeRecord, type EditOutcome, type
 import { definitionRevision, startPlan } from '../definitions/start.ts'
 import type { PlanDefinitionsPort } from '../definitions/index.ts'
 import { outTogether, readiness, worldSubjects, type ReadinessItem } from '../plan/readiness.ts'
-import { buysItems, ladderOf, rungsOf, type FinishCause, type Standing } from '../plan/buys.ts'
+import { buysItems, ladderOf, rungsOf, type FinishCause } from '../plan/buys.ts'
+import { rungStanding } from '../check/buys.ts'
 import { versus } from '../plan/versus.ts'
-import { dominatedBy, whyRecommended } from '../plan/why.ts'
+import { dominatedWithin, whyRecommended } from '../plan/why.ts'
 import { withoutProof } from '../solve/status.ts'
 import {
   certificateSchema, certifiedSizeSchema, optionSetSchema, planInputsSchema,
@@ -91,8 +91,6 @@ export interface SolverPort {
    * undefined when its chain names none. On the option's own compile, in this process: no solver child.
    */
   readonly finishCause: (request: { readonly inputs: PlanInputs; readonly option: Option }) => Promise<FinishCause | undefined>
-  /** Where a stored option stands as a rung of "what overtime buys", by lane K's checker alone (rungStanding). */
-  readonly standing: (plan: Plan, option: Option) => Standing
   /** Repairs `option`'s own schedule on the edited inputs (only what the edit forces moves), then checks it. */
   /** `signal`: the request's own; a preview it aborts is stopped and its solver child killed. */
   readonly preview: (request: { readonly inputs: PlanInputs; readonly option: Option; readonly signal?: AbortSignal }) => Promise<{
@@ -412,13 +410,13 @@ export const createPlanningOperations = (ports: PlanningOperationsPorts) => {
   /**
    * "What overtime buys" from stored options only (design §4.1): each rung's option is the one Generate keyed
    * for its buy list, and only when fresh on this revision and formulation (else still to solve); where it
-   * stands is lane K's. A "proven: no gain" row names the higher rung's cause of the finish.
+   * stands is lane K's, from stored figures. A "proven: no gain" row names the higher rung's cause of the finish.
    */
   const buysOf = async (plan: Plan, states: ReadonlyMap<string, OptionState>) => {
     const rungs = rungsOf(plan.inputs).map(rung => {
       const key = solver.variantKey(plan.inputs, { buy: [...rung.buy] })
       const option = plan.options?.options.find(entry => variantKey(entry.key) === key && states.get(entry.key)?.stale === false && entry.variant.lead === undefined && entry.variant.also === undefined)
-      return { ...rung, ...(option === undefined ? {} : { option: { key: option.key, standing: solver.standing(plan, option) } }) }
+      return { ...rung, ...(option === undefined ? {} : { option: { key: option.key, standing: rungStanding(plan, option, solver.formulation(plan.inputs.settings.grid)) } }) }
     })
     const ladder = ladderOf(rungs)
     const causes = await Promise.all(ladder.rows.flatMap(({ finishFrom }) => finishFrom === undefined ? [] : [finishFrom]).map(async key => {
@@ -662,10 +660,10 @@ export const createPlanningOperations = (ports: PlanningOperationsPorts) => {
         plan, readiness: readinessOf(plan, states), options: states, certifiedSize,
         ...(section === 'buys' ? { buys: await buysOf(plan, states) } : {}),
         // Dominance within the set the section pages: the current set's fresh options, or the previous set as stored.
-        ...(section === 'options' ? { dominated: dominatedBy(plan.inputs, (plan.options?.options ?? []).filter(option => states.get(option.key)?.stale === false)) } : {}),
+        ...(section === 'options' ? { dominated: dominatedWithin(plan.inputs, (plan.options?.options ?? []).filter(option => states.get(option.key)?.stale === false)) } : {}),
         ...(section === 'previous' ? (() => {
           const previous = plan.previousOptions?.options ?? []
-          return { previous: new Map(previous.map(option => [option.key, optionState(plan, option)])), dominated: dominatedBy(plan.inputs, previous) }
+          return { previous: new Map(previous.map(option => [option.key, optionState(plan, option)])), dominated: dominatedWithin(plan.inputs, previous) }
         })() : {}),
       }
       const option = section === 'schedule' ? findOption(plan, input.option) : undefined

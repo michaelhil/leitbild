@@ -3,7 +3,7 @@ import type { PlanningSubject } from '@leitbild/contracts'
 import { planInputsSchema, planSchema } from '../plan/schema.ts'
 import { rungsOf } from '../plan/buys.ts'
 import { buysPointer } from '../plan/summary.ts'
-import { buysHonesty, rungStanding } from '../../tests/harness/buys-honesty.ts'
+import { buysHonesty } from '../../tests/harness/buys-honesty.ts'
 import { recommendedFactsSchema, sectionDataSchemas, versusFactsSchema } from './contract.ts'
 import { versus } from '../plan/versus.ts'
 import { whyRecommended } from '../plan/why.ts'
@@ -574,7 +574,7 @@ describe('increment 2: keep, the previous set, why recommended, versus and what 
   })
 
   test('read buys: each rung names its fresh option by the key Generate gives its buy list; lane K finds every word honest', async () => {
-    const local = await createHarness({ solver: { ...createSolverDouble(), formulation: () => formulation, standing: (plan, option) => rungStanding(plan, option, formulation) } })
+    const local = await createHarness({ solver: { ...createSolverDouble(), formulation: () => formulation } })
     try {
       const rungs = rungsOf(trainAInputs)
       const keyOf = (rung: number) => `${doubleVariantKey({ buy: [...rungs[rung]!.buy] })}.0a1b2c3d`
