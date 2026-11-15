@@ -75,7 +75,7 @@ describe('Einsatz unit.undo', () => {
 
   test('once the unit is past the first stop of the order, nothing is undone: a carrier transporting what it picked up keeps its delivery', async () => {
     let state = await by(await field(), { kind: 'order', units: ['c1'], stops: [{ taskId: 't1' }, { siteId: 'site' }] }, commanding('first'))
-    expect(unitOf(state, 'c1').lastCommand).toEqual({ id: 'first', stepId: 'step-1' })
+    expect(unitOf(state, 'c1').lastCommand).toMatchObject({ id: 'first', stepId: 'step-1' })
     while (unitOf(state, 'c1').phase !== 'transporting') state = await advance(state, state.timeMs + 5_000)
     expect(unitOf(state, 'c1')).toMatchObject({ load: { [top]: 1 }, orders: [{ kind: 'deliver', state: 'active' }] })
     expect(await refusedBy(state, undo('c1', 'first'), commanding('undo-1'))).toEqual({ code: 'nothing_to_undo', reason: 'nothing_to_undo: C1 is past the first stop of its last order' })

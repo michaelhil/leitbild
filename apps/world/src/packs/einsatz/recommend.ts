@@ -1,9 +1,10 @@
 import { capabilityRejection } from '../../simulation/capability-rejection.ts'
 import type { Eta, RecommendAnswer } from './recommendation-schema.ts'
-import { assignedTo, contributionOf, countedFor, coverageOf, loadAllocation, roleViewFor, stillNeeds, type RoleView } from './engine/coverage.ts'
+import { assignedTo, contributionOf, countedFor, coverageOf, freeToHelp, loadAllocation, roleViewFor, stillNeeds, type RoleView } from './engine/coverage.ts'
 import { committedText, loadedText } from './engine/intent-support.ts'
 import { templateOf, unitTypeOf, type EngineState, type TaskCoverage, type TaskRecord, type UnitRecord } from './engine/model.ts'
-import { conditionReasons, isDestroyed, isFree, isSite, linksToSite, linksToTask, providesFor } from './engine/rules.ts'
+import { acceptingSitesFor } from './engine/delivery.ts'
+import { conditionReasons, hasLoad, isDestroyed, linksToTask, providesFor } from './engine/rules.ts'
 import { byId, countOf, total } from './engine/values.ts'
 import { classCode, loadText, unitWord } from './engine/wording.ts'
 import { etaSeconds, etasFrom, etasTo, type TablePort } from './eta.ts'
@@ -155,6 +156,10 @@ const survey = (state: EngineState, task: TaskRecord, commandable: (unit: UnitRe
   const whyNot: Array<RecommendAnswer['whyNot'][number]> = []
   for (const unit of [...state.units.values()].sort(byId)) {
     if (!commandable(unit) || !linksToTask(unit, task) || unit.taskId === task.id) continue
+    if (freeToHelp(state, task, assigned, unit)) {
+      free.push(unit)
+      continue
+    }
     const type = unitTypeOf(state.catalog, unit)
     const relevant = requires.some(requirement => providesFor(type, requirement))
       || (type.components.carry?.classes.some(classId => countOf(task.loads, classId) > 0) ?? false)
@@ -166,8 +171,7 @@ const survey = (state: EngineState, task: TaskRecord, commandable: (unit: UnitRe
       const contribution = contributionOf(state.catalog, task, assigned, unit)
       if (!contribution.adds) {
         if (contribution.unmet.length > 0) refuse(contribution.unmet)
-      } else if (isFree(unit)) free.push(unit)
-      else refuse([Object.keys(unit.load).length > 0 ? loadedText(state, unit) : committedText(state, unit)])
+      } else refuse([hasLoad(unit) ? loadedText(state, unit) : committedText(state, unit)])
     }
   }
   return { free, whyNot }
@@ -236,13 +240,11 @@ export const recommend = async (input: {
   ].filter(entry => entry.units.length > 0)
 
   const shares = loadAllocation(state.catalog, task, [...assigned, ...countedFor(state, task, proposed).filter(unit => inProposal.has(unit.id))])
-  const sites = [...state.units.values()].filter(site => isSite(state.catalog, site) && site.accepting === true && !isDestroyed(site))
   const deliverTo: Array<RecommendAnswer['deliverTo'][number]> = []
   for (const carrier of proposed) {
     const share = shares.get(carrier.id) ?? {}
     if (total(share) === 0) continue
-    const usable = sites.filter(site => linksToSite(state.catalog, carrier, site)
-      && Object.keys(share).every(classId => unitTypeOf(state.catalog, site).components.receiving!.accepts.includes(classId)))
+    const usable = acceptingSitesFor(state, carrier, share)
     if (usable.length === 0) continue
     const legs = await etasFrom(state, carrier, task.point, usable.map(site => ({ point: motionOf(state, site.id).point, turnoutS: 0 })), input.routing)
     const listed = usable.map((site, index) => ({ siteId: site.id, label: site.label, eta: legs[index]! }))

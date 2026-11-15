@@ -158,12 +158,13 @@ const callRowSchema = z.object({
 }).strict()
 
 const siteRowSchema = z.object({
-  id: idSchema.describe('The site id.'),
+  id: idSchema.describe('The site id, for a {siteId} stop.'),
   label: text.describe('The site\'s label.'),
   icon: text.describe('The site type\'s icon.'),
   typeLabel: text.describe('The site type\'s label.'),
-  accepting: z.boolean().describe('Whether it accepts arrivals.'),
-  slots: z.object({ used: count.describe('Slots in use.'), total: count.describe('All slots.') }).strict().describe('Handover slots.'),
+  accepting: z.boolean().nullable().describe('Whether it takes arrivals now: accepting and not destroyed; null for a place that receives no load.'),
+  slots: z.object({ used: count.describe('Slots in use.'), total: count.describe('All slots.') }).strict().nullable()
+    .describe('Handover slots; null for a place that receives no load.'),
   inbound: z.array(z.object({
     unitId: idSchema.describe('The unit id.'),
     label: text.describe('The unit\'s label.'),
@@ -186,14 +187,14 @@ export const situationSchema = z.object({
       count: count.describe('Open tasks of this priority.'),
     }).strict()).describe('Open tasks per priority, highest first.'),
     oldestWaitingS: seconds.nullable().describe('Seconds the longest-waiting open task has waited; null when none is open.'),
-    freeUnits: count.describe('Units free to send.'),
+    freeUnits: count.describe('Units listed that are free to send: no task and no load.'),
     units: count.describe('All units listed.'),
-    acceptingSites: count.describe('Sites accepting arrivals.'),
-    sites: count.describe('All sites.'),
+    acceptingSites: count.describe('Sites taking arrivals now.'),
+    sites: count.describe('Sites that receive load.'),
   }).strict().describe('The counts line.'),
   calls: z.array(callRowSchema).describe('Open tasks, by priority rank, then creation time.'),
-  units: z.array(unitRowSchema).describe('Units that move, by group, else by type.'),
-  sites: z.array(siteRowSchema).describe('Sites: units that do not move and receive load.'),
+  units: z.array(unitRowSchema).describe('Units: every unit whose type moves, by group, else by type.'),
+  sites: z.array(siteRowSchema).describe('Sites: every unit whose type does not move, a place units go to; one that receives load takes deliveries there.'),
   words: z.object(Object.fromEntries(situationWordKeys.map(key => [key, text.describe(wordMeanings[key])])) as Record<SituationWordKey, typeof text>).strict()
     .describe('The configuration\'s words for the surface: headings, verbs and empty lists.'),
   features: z.object({

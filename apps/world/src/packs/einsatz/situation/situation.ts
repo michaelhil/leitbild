@@ -4,9 +4,10 @@ import { wordFor, surfaceLexiconKeys } from '../lexicon.ts'
 import { refusal } from '../refusal.ts'
 import type { PriorityRef } from '../recommendation-schema.ts'
 import type { Step } from '../steps.ts'
-import { assignedTo, contributionOf } from '../engine/coverage.ts'
+import { assignedTo, freeToHelp } from '../engine/coverage.ts'
 import { priorityOf, priorityRankOf, templateOf, unitTypeOf, type EngineState, type TaskRecord, type UnitRecord } from '../engine/model.ts'
-import { committedPhases, isDestroyed, isFree, isSite } from '../engine/rules.ts'
+import { committedPhases, isDestroyed, isFree } from '../engine/rules.ts'
+import { takesArrivals } from '../engine/delivery.ts'
 import { byId, countOf } from '../engine/values.ts'
 import { loadText, propertyValueText } from '../engine/wording.ts'
 import { targetLabel } from '../engine/chain-steps.ts'
@@ -65,11 +66,12 @@ export const stopVerb = (state: EngineState, unit: UnitRecord, step: Step): Stop
   return picksUp ? 'pick-up' : 'serve'
 }
 
+/** Free is the engine's `isFree`, no task and no load: a unit going to a point or a place is free to send, as recommend proposes it. */
 const toneOf = (unit: UnitRecord): UnitTone => {
   if (isDestroyed(unit)) return 'out'
   if (unit.alerts.length > 0) return 'attention'
   if (unit.phase === 'returning') return 'returning'
-  return isFree(unit) && unit.orders.length === 0 ? 'free' : 'busy'
+  return isFree(unit) ? 'free' : 'busy'
 }
 
 const statusOf = (state: EngineState, unit: UnitRecord) => ({ word: wordFor(state.catalog.config.lexicon, unit.phase, unitTypeOf(state.catalog, unit).lexicon), tone: toneOf(unit) })
@@ -140,8 +142,8 @@ const callRow = (state: EngineState, viewer: EinsatzViewer, task: TaskRecord, ro
   const needs = task.coverage.requirements.some(entry => entry.enRoute + entry.onTask + entry.completed < entry.count)
     || task.coverage.loads.some(entry => entry.covered < entry.waiting)
   const assignedNow = assignedTo(state.units.values(), task)
-  const freeCanHelp = [...state.units.values()].some(unit => commandable(unit) && isFree(unit) && unit.orders.length === 0
-    && unitTypeOf(state.catalog, unit).components.mobility !== undefined && contributionOf(state.catalog, task, assignedNow, unit).adds)
+  // The units recommend would propose from: free, on the task's side, adding to it.
+  const freeCanHelp = [...state.units.values()].some(unit => commandable(unit) && freeToHelp(state, task, assignedNow, unit))
   return {
     id: task.id,
     label: task.label,
@@ -197,9 +199,15 @@ const callRow = (state: EngineState, viewer: EinsatzViewer, task: TaskRecord, ro
   }
 }
 
+/**
+ * A site: a unit of a type that does not move, which units go to (`{siteId}`
+ * in an order). One that receives load takes deliveries in its slots while
+ * it takes arrivals (`takesArrivals`); any other, such as a depot, an
+ * objective or a sensor post, is a place units only go to.
+ */
 const siteRow = (state: EngineState, site: UnitRecord, units: ReadonlyArray<UnitRecord>, rows: ReadonlyMap<string, SituationUnit>): SituationSite => {
   const type = unitTypeOf(state.catalog, site)
-  const receiving = type.components.receiving!
+  const receiving = type.components.receiving
   const inbound = units.flatMap(unit => {
     const row = rows.get(unit.id)
     if (row === undefined) return []
@@ -213,8 +221,8 @@ const siteRow = (state: EngineState, site: UnitRecord, units: ReadonlyArray<Unit
     label: site.label,
     icon: type.icon,
     typeLabel: type.label,
-    accepting: site.accepting === true,
-    slots: { used: units.filter(unit => unit.siteId === site.id && unit.phase === 'at-site' && unit.phaseDueMs !== undefined).length, total: receiving.slots },
+    accepting: receiving === undefined ? null : takesArrivals(state, site),
+    slots: receiving === undefined ? null : { used: units.filter(unit => unit.siteId === site.id && unit.phase === 'at-site' && unit.phaseDueMs !== undefined).length, total: receiving.slots },
     inbound: inbound.sort((a, b) => seconds(a.eta) - seconds(b.eta) || (a.unitId < b.unitId ? -1 : 1)),
     states: site.alerts.map(alert => ({ code: alert.code, text: alert.message })),
   }
@@ -238,8 +246,10 @@ export const readSituation = (input: {
     return index < 0 ? config.groups.length : index
   }
   const typeIndex = (unit: UnitRecord): number => config.unitTypes.findIndex(type => type.id === unit.unitType)
+  // Every unit record is listed once: a unit when its type moves, else a site.
   const allUnits = [...state.units.values()].filter(seen)
-  const movers = allUnits.filter(unit => unitTypeOf(state.catalog, unit).components.mobility !== undefined)
+  const moves = (unit: UnitRecord): boolean => unitTypeOf(state.catalog, unit).components.mobility !== undefined
+  const movers = allUnits.filter(moves)
   const listed = movers
     .filter(unit => input.group === undefined || unit.group === input.group)
     .sort((a, b) => (config.groups.length > 0 ? groupIndex(a) - groupIndex(b) : typeIndex(a) - typeIndex(b)) || typeIndex(a) - typeIndex(b) || naturalOrder(a, b))
@@ -249,17 +259,18 @@ export const readSituation = (input: {
     .filter(task => task.closedAtMs === undefined && seen(task))
     .sort((a, b) => priorityRankOf(state.catalog, a.priority) - priorityRankOf(state.catalog, b.priority) || a.createdAtMs - b.createdAtMs || byId(a, b))
     .map(task => callRow(state, viewer, task, rows))
-  const sites = allUnits.filter(unit => isSite(state.catalog, unit) && !isDestroyed(unit)).sort(naturalOrder).map(site => siteRow(state, site, movers, rows))
+  const sites = allUnits.filter(unit => !moves(unit)).sort(naturalOrder).map(site => siteRow(state, site, movers, rows))
+  const receiving = sites.filter(site => site.accepting !== null)
   const types = config.unitTypes
   const shown = types.flatMap(type => type.properties.filter(property => property.show))
   return {
     counts: {
       calls: state.catalog.priorities.map(priority => ({ priorityId: priority.id, code: priority.code, count: calls.filter(call => call.priority.id === priority.id).length })),
       oldestWaitingS: calls.length === 0 ? null : Math.max(...calls.map(call => call.waitingS)),
-      freeUnits: units.filter(unit => unit.status.tone === 'free').length,
+      freeUnits: listed.filter(isFree).length,
       units: units.length,
-      acceptingSites: sites.filter(site => site.accepting).length,
-      sites: sites.length,
+      acceptingSites: receiving.filter(site => site.accepting === true).length,
+      sites: receiving.length,
     },
     calls,
     units,

@@ -1,6 +1,6 @@
 import type { UnitType } from '../config-schema.ts'
 import { templateOf, unitTypeOf, type Catalog, type EngineState, type TaskCoverage, type TaskRecord, type UnitRecord } from './model.ts'
-import { committedPhases, conditionReasons, isDestroyed, linksToTask, meetsRequirement, providesFor } from './rules.ts'
+import { committedPhases, conditionReasons, isDestroyed, isFree, linksToTask, meetsRequirement, providesFor } from './rules.ts'
 import { byId, countOf, countsOf, total, type Counts } from './values.ts'
 
 /** What a role can serve on a task's side: the services its commandable units provide and the load classes they carry. */
@@ -173,3 +173,13 @@ export const contributionOf = (catalog: Catalog, task: TaskRecord, counted: Read
     covered: matched.some(entry => !entry.open) || loads.some(entry => entry.covered >= entry.waiting),
   }
 }
+
+/**
+ * A unit free to help a task now: free (no task, no load, not destroyed),
+ * able to move, on the task's side, and adding to what the task still lacks
+ * beside `assigned`. `recommend` proposes only such units, and the
+ * situation's `no_free_unit` state holds while the caller commands none.
+ */
+export const freeToHelp = (state: EngineState, task: TaskRecord, assigned: ReadonlyArray<UnitRecord>, unit: UnitRecord): boolean =>
+  isFree(unit) && linksToTask(unit, task) && unitTypeOf(state.catalog, unit).components.mobility !== undefined
+    && contributionOf(state.catalog, task, assigned, unit).adds
