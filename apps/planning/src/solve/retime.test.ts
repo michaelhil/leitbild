@@ -125,3 +125,15 @@ describe('the robust record', () => {
     expect(judgedOption.robust).toBeDefined()
   }, 60_000)
 })
+
+describe('re-timings within the sub-solve\'s time (fix round F3, lane S\'s part)', () => {
+  test('the first re-timing is checked against the time left too, from the estimate it is given', () => {
+    let calls = 0
+    const counting: JudgeRetimed = plan => { calls++; return laneKJudgeRetimed(plan) }
+    // An estimate longer than the time left: not even the first re-timing starts.
+    expect(robustOf(trimmed, option, counting, Date.now() + 60_000, Date.now, 120_000)).toBeUndefined()
+    expect(calls).toBe(0)
+    expect(robustOf(trimmed, option, counting, Date.now() + 60_000, Date.now, 1)).toBeDefined()
+    expect(calls).toBe(1 + rangedJobs(trimmed, option.rows).length)
+  })
+})

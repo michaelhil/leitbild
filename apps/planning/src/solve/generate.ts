@@ -318,7 +318,8 @@ export const subSolve = (deps: SubSolveDeps): SubSolver => async (task, signal, 
   const by = Math.min(task.answerBy ?? Infinity, task.deadlineAt ?? Infinity)
   const retimings = deps.judgeRetimed === undefined ? 0 : retimingCount(inputs, index.jobs.flatMap(job => (job === null ? [] : [job])))
   const after = 1 + (task.start === undefined ? 0 : 1) + retimings
-  const searchBudget = searchBudgetBy(budget, by, SEARCH_STOP_LATENCY_MS + (performance.now() - started) * after)
+  const beforeSearchMs = performance.now() - started
+  const searchBudget = searchBudgetBy(budget, by, SEARCH_STOP_LATENCY_MS + beforeSearchMs * after)
   // No time left to search: no plan, said as a search stopped by its time.
   if (searchBudget.wallMs <= 0) return outcome({ ...base, variant: stored(variantOut.purchases), status: unresolvedStatus(runBasis({ stoppedBy: 'wall', evals: 0, cpuMs: 0 }, searchBudget)), rows: [], metrics: [] })
   const startSchedule = task.start === undefined ? undefined : undate(prep, index, task.start.rows)
@@ -401,7 +402,7 @@ export const subSolve = (deps: SubSolveDeps): SubSolver => async (task, signal, 
   // Unless the search beats the starting option, the starting option stands (re-checked above).
   const best = kept !== undefined && (own.status.word !== 'validated feasible' || compareOptions(rankable(kept, inputs), rankable(own, inputs)) <= 0) ? kept : own
   if (best.status.word !== 'validated feasible' || deps.judgeRetimed === undefined) return outcome(best)
-  const robust = robustOf(inputs, best, deps.judgeRetimed, by - SEARCH_STOP_LATENCY_MS)
+  const robust = robustOf(inputs, best, deps.judgeRetimed, by - SEARCH_STOP_LATENCY_MS, Date.now, beforeSearchMs)
   return outcome(robust === undefined ? best : { ...best, robust })
 }
 
