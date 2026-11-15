@@ -167,8 +167,10 @@ describe('Einsatz UI declarations', () => {
       expect(present(committed)).toMatchObject({ mapLabel: 'U1 · ER', status: { tone: 'working' } })
       const closed = { ...objectOf('h1'), packData: { ...(objectOf('h1').packData as object), accepting: false } } as OperationalObject
       expect(present(closed).mapLabel).toBe('H1 · closed')
-      // A call no unit is assigned to pulses "Waiting" (B.2, B.7); once a unit takes it, it stops.
-      expect(present(objectOf('t1')).status).toEqual({ tone: 'idle', label: dispatchWords.waiting, indicator: { shape: 'dot', pulse: true } })
+      // A call no unit is assigned to pulses (B.2, B.7); once a unit takes it, it stops.
+      // Its word stays the call's own status, so a display's status filter finds every open call by one word.
+      expect(present(objectOf('t1')).status).toEqual({ tone: 'idle', label: objectOf('t1').operational.status, indicator: { shape: 'dot', pulse: true } })
+      expect(objectOf('t1').operational.status).toBe('open')
       const taken = objects.map(object => object.id === 'u1' ? committed : object)
       expect(presentObject(objectOf('t1'), { objects: taken }).status).toBeUndefined()
       expect(presentObject({ ...objectOf('t1'), lifecycle: 'resolved' } as OperationalObject, { objects }).status).toBeUndefined()

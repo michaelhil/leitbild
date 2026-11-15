@@ -31,8 +31,9 @@ import { dispatchWords, einsatzRecordOf, tierWord, trackAgeText, type EinsatzRec
  * a receiving site, its name and whether it is
  * closed; a task, its label; a track, its serial and the age of its last
  * detection. A unit's status tone says whether it is free, committed or out
- * of action. A call no unit is assigned to yet carries a pulsing "Waiting"
- * status: with no coach line (plan B.2, B.7), it is the novice's cue.
+ * of action. A call no unit is assigned to yet carries a pulsing status
+ * under its own status word: with no coach line (plan B.2, B.7), the pulse
+ * is the novice's cue.
  *
  * The Dispatch panel is the Pack's one surface panel and its only list, so
  * no category takes a rail section. Open by default, it takes every map
@@ -135,8 +136,12 @@ const assignedTasksOf = (() => {
   }
 })()
 
-/** An open call no unit is assigned to pulses until one is. */
-const waitingStatus: PackObjectStatusPresentation = { tone: 'idle', label: dispatchWords.waiting, indicator: { shape: 'dot', pulse: true } }
+/**
+ * An open call no unit is assigned to pulses until one is. Its word stays
+ * the call's own status ("open"), as for an assigned call, so a display's
+ * status filter finds every open call by one word.
+ */
+const waitingStatus = (object: OperationalObject): PackObjectStatusPresentation => ({ tone: 'idle', label: object.operational.status, indicator: { shape: 'dot', pulse: true } })
 
 const presentEinsatzObject = (object: OperationalObject, context: PackObjectPresentationContext): PackObjectPresentation => {
   const data = einsatzRecordOf(object)
@@ -163,7 +168,7 @@ const presentEinsatzObject = (object: OperationalObject, context: PackObjectPres
         muted: object.lifecycle !== 'active',
         fields: [],
         mapLabel: object.label,
-        ...(object.lifecycle === 'active' && !assignedTasksOf(context.objects).has(object.id) ? { status: waitingStatus } : {}),
+        ...(object.lifecycle === 'active' && !assignedTasksOf(context.objects).has(object.id) ? { status: waitingStatus(object) } : {}),
       }
     case 'track':
       return presentTrack(object, data, context)
