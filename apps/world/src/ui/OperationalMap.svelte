@@ -38,7 +38,7 @@
   import { composeSymbolAtlas, loadMapSymbols, rasterizeSymbol } from './map-runtime/map-symbols.ts'
   import { createCatalogueSymbolAtlas } from './map-runtime/catalogue-symbol-atlas.ts'
   import type { Map as MapLibreMap } from 'maplibre-gl'
-  import { startingZoomFor, type CameraInteraction } from './map/map-camera.ts'
+  import { clearCentreFor, panIntoClear, startingZoomFor, type CameraInteraction, type CameraPadding } from './map/map-camera.ts'
   import { mapClickOutcome } from './map-target-routing.ts'
   import { noMapCover, type MapPrompt, type MapTargeting } from './surface-panel-interaction.ts'
   import type { MapCover } from './surface-panel-contract.ts'
@@ -249,7 +249,7 @@
   let cameraMoveStarted: { at: number; user: boolean } | null = null
   let pendingFocus: number | null = null
   let appliedCameraKey: string | null = null
-  /** The camera still shows the Starting View: neither the operator nor a focus request has moved it. */
+  /** The camera still shows the Starting View: the operator has neither moved the camera nor clicked the map, nor has a focus request moved it. */
   let startingCamera = true
   let appliedFocusRevision = -1
   let mapReadyNotified = false
@@ -621,6 +621,30 @@
     })
   }
 
+  /** How far inside the clear part of the map the selected object stays when a panel's cover grows over it. */
+  const selectionClearPx = 48
+
+  /**
+   * A panel's cover changed once the operator has taken the camera: the drawn
+   * map stays where it is, so nothing under the pointer moves (plan B.1.3,
+   * HF9), and the camera only pans, just far enough, when the selected object
+   * would end up under the cover. It never re-fits.
+   */
+  const followCover = (current: MapLibreMap, padding: CameraPadding): void => {
+    const applied = current.getPadding()
+    if (applied.top === padding.top && applied.right === padding.right && applied.bottom === padding.bottom && applied.left === padding.left) return
+    const container = current.getContainer()
+    const size = { width: container.clientWidth, height: container.clientHeight }
+    // The new padding centres the camera on what is drawn at the new clear centre now, so every pixel stays put.
+    current.jumpTo({ center: current.unproject([...clearCentreFor(size, padding)]), padding: { ...padding } })
+    const position = selectedControllerId === null ? undefined : operationalRenderController.points().find(point => point.id === selectedControllerId)?.position
+    if (position === undefined) return
+    const drawn = current.project([position[0], position[1]])
+    const [x, y] = panIntoClear([drawn.x, drawn.y], size, padding, selectionClearPx)
+    if (x === 0 && y === 0) return
+    current.panBy([x, y], { duration: window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 0 : 250 })
+  }
+
   const applyScenarioCameraDefault = (): void => {
     const current = runtime?.map
     if (!current) return
@@ -663,6 +687,8 @@
           clickHandled = false
           objectTookClick = false
           featureSelection = null
+          // After a click the camera stays where the operator saw it: a panel the click opens never re-fits the Starting View.
+          startingCamera = false
           // Any click lets a stack's chooser go; an object click on a stack shows a new one.
           stackChooser.hide()
           // A click anywhere on the map dismisses the panel's prompt without confirming; its buttons stop their own clicks.
@@ -951,14 +977,12 @@
     const current = runtime?.map
     if (!current) return
     untrack(() => {
-      // Until the operator moves the camera, it shows the whole Starting View clear of the panels.
+      // Until the operator moves the camera or clicks the map, it shows the whole Starting View clear of the panels.
       if (startingCamera) {
         jumpToStartingView(current)
         return
       }
-      const applied = current.getPadding()
-      if (applied.top === top && applied.right === right && applied.bottom === bottom && applied.left === left) return
-      current.easeTo({ padding: { top, right, bottom, left }, duration: 250 })
+      followCover(current, { top, right, bottom, left })
     })
   })
 
