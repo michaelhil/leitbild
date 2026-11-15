@@ -25,7 +25,7 @@ const sorted = (issues: ReadonlyArray<ExpectedIssue>): string[] => issues.map(is
 
 describe('Einsatz configuration', () => {
   test('an empty configuration declares nothing and has a JSON Schema for authoring', () => {
-    expect(einsatzConfigSchema.parse({})).toEqual({ hostility: {}, lexicon: {}, loadClasses: [], unitTypes: [], taskTemplates: [], authority: [], groups: [] })
+    expect(einsatzConfigSchema.parse({})).toEqual({ hostility: {}, lexicon: {}, loadClasses: [], unitTypes: [], taskTemplates: [], priorities: [], groups: [] })
     expect(z.toJSONSchema(einsatzConfigSchema)).toMatchObject({ type: 'object', additionalProperties: false })
   })
 
@@ -35,7 +35,7 @@ describe('Einsatz configuration', () => {
     const [requirement] = config.taskTemplates.flatMap(template => template.requires)
     expect(requirement?.where).toEqual([{ property: 'payloadKg', atLeast: 500 }])
     const provider = config.unitTypes.find(type => type.components.service?.provides.includes(requirement!.provides))
-    expect(provider?.properties).toEqual([{ id: 'payloadKg', label: 'Payload', kind: 'number', unit: 'kg', min: 0, max: 20000, default: 1000, board: true }])
+    expect(provider?.properties).toEqual([{ id: 'payloadKg', label: 'Payload', kind: 'number', unit: 'kg', min: 0, max: 20000, default: 1000, show: true }])
     expect(provider?.components.mobility).toEqual({ mode: 'road', speedFactor: 1, mobilizeS: 0 })
   })
 
@@ -90,8 +90,32 @@ describe('Einsatz configuration', () => {
   })
 
   test('the unknown icon reason points to the map symbol catalogue', () => {
-    const result = einsatzConfigSchema.safeParse({ taskTemplates: [{ id: 'job', label: 'Job', icon: 'nor-this-one' }] })
+    const result = einsatzConfigSchema.safeParse({ priorities: [{ id: 'p', label: 'Routine', code: 'P' }], taskTemplates: [{ id: 'job', label: 'Job', icon: 'nor-this-one' }] })
     expect(result.error?.issues[0]?.message).toBe('unknown_icon: Unknown icon "nor-this-one"; discover names with world.map.symbols')
+  })
+})
+
+describe('Einsatz priorities', () => {
+  test('priorities are declared highest first, with an optional response target, and a template names one', () => {
+    const config = einsatzConfigSchema.parse({
+      priorities: [{ id: 'p1', label: 'Emergency', code: 'P1', responseTargetS: 480 }, { id: 'p2', label: 'Routine', code: 'P2' }],
+      taskTemplates: [{ id: 'job', label: 'Job', icon: 'flag', priority: 'p1' }, { id: 'chore', label: 'Chore', icon: 'flag' }],
+    })
+    expect(config.priorities.map(priority => [priority.code, priority.responseTargetS])).toEqual([['P1', 480], ['P2', undefined]])
+    expect(config.taskTemplates.map(template => template.priority)).toEqual(['p1', undefined])
+  })
+
+  test('a load class carries no priority and the configuration has no authority section', () => {
+    expect(einsatzConfigSchema.safeParse({ loadClasses: [{ id: 'l', label: 'L', code: 'L', noun: { one: 'item', other: 'items' }, priority: 'p1' }] }).success).toBe(false)
+    expect(einsatzConfigSchema.safeParse({ authority: [] }).success).toBe(false)
+  })
+
+  test('a type that does not move is a site; a public place and a combat object are allowed', () => {
+    expect(issuesOf({
+      loadClasses: [{ id: 'l', label: 'L', code: 'L', noun: { one: 'item', other: 'items' } }],
+      unitTypes: [{ id: 'site', label: 'Site', icon: 'house-plus', components: { receiving: { accepts: ['l'], slots: 1, handoverS: 0, accepting: true } } }],
+    })).toEqual([])
+    expect(issuesOf({ unitTypes: [{ id: 'place', label: 'Place', icon: 'flag', public: true, components: {} }] })).toEqual([])
   })
 })
 
@@ -99,10 +123,9 @@ describe('Einsatz wording', () => {
   test('a unit type word wins over the configuration word, which wins over the neutral word', () => {
     const config = einsatzConfigSchema.parse(combinations)
     const [ownWords] = config.unitTypes.flatMap(type => type.lexicon === undefined ? [] : [type.lexicon])
-    expect(wordFor({}, 'workList')).toBe(neutralLexicon.workList)
+    expect(wordFor({}, 'calls')).toBe(neutralLexicon.calls)
+    expect(wordFor({}, 'send')).toBe('Dispatch')
     expect(wordFor(config.lexicon, 'tracks')).toBe('Sightings')
-    expect(wordFor(config.lexicon, 'hold')).toBe('Stop')
-    expect(wordFor(config.lexicon, 'hold', ownWords)).toBe('Halt')
     expect(wordFor(config.lexicon, 'on-task', ownWords)).toBe('Screening')
     expect(wordFor(config.lexicon, 'returning', ownWords)).toBe(neutralLexicon.returning)
   })

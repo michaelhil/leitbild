@@ -1,8 +1,8 @@
 /**
  * Test-only renaming for the generality test: a copy of a Definition in which
- * every unit type, tag, task template, load class, property, enum value,
- * service, group, role and side id, every label, category and lexicon word
- * is replaced
+ * every unit type, tag, task template, load class, priority, property, enum
+ * value, service, group, role and side id, every label, code, category and
+ * lexicon word is replaced
  * by an opaque token. Icons, positions, instance ids and timings stay. The
  * renaming also maps what a Run of the original wrote into the copy's words,
  * so the two Runs can be compared record by record. Production code never
@@ -11,7 +11,7 @@
 
 type Json = null | boolean | number | string | Json[] | { [key: string]: Json }
 type JsonObject = { [key: string]: Json }
-export type Namespace = 'type' | 'template' | 'class' | 'property' | 'value' | 'tag' | 'service' | 'group' | 'role' | 'side'
+export type Namespace = 'type' | 'template' | 'class' | 'priority' | 'property' | 'value' | 'tag' | 'service' | 'group' | 'role' | 'side'
 
 export interface Renaming {
   readonly definition: unknown
@@ -80,6 +80,11 @@ export const renameDefinition = (original: unknown): Renaming => {
   if (isObject(config.hostility)) {
     config.hostility = Object.fromEntries(Object.entries(config.hostility).map(([side, hostile]) => [id('side', side), strings(hostile).map(value => id('side', value))]))
   }
+  for (const priority of objects(config.priorities)) {
+    set(priority, 'id', value => id('priority', value))
+    set(priority, 'label', value => word(value))
+    set(priority, 'code', value => word(value))
+  }
   for (const loadClass of objects(config.loadClasses)) {
     set(loadClass, 'id', value => id('class', value))
     set(loadClass, 'label', value => word(value))
@@ -121,7 +126,7 @@ export const renameDefinition = (original: unknown): Renaming => {
   for (const template of objects(config.taskTemplates)) {
     set(template, 'id', value => id('template', value))
     set(template, 'label', value => word(value))
-    set(template, 'priorityClass', value => id('class', value))
+    set(template, 'priority', value => id('priority', value))
     for (const requirement of objects(template.requires)) {
       set(requirement, 'provides', value => id('service', value))
       if (isObject(requirement.label)) for (const key of ['one', 'other']) set(requirement.label, key, value => word(value))
@@ -138,15 +143,6 @@ export const renameDefinition = (original: unknown): Renaming => {
     set(group, 'category', value => word(value))
     set(group, 'side', value => id('side', value))
   }
-  for (const entry of objects(config.authority)) {
-    set(entry, 'roleId', value => id('role', value))
-    setList(entry, 'taskTemplates', value => id('template', value))
-    if (isObject(entry.units)) {
-      setList(entry.units, 'types', value => id('type', value))
-      setList(entry.units, 'tags', value => id('tag', value))
-    }
-  }
-
   /** Items and cue inputs name types, templates, classes and properties, and carry labels. */
   const renameRecordInput = (input: JsonObject): void => {
     set(input, 'label', value => word(value))
@@ -156,6 +152,7 @@ export const renameDefinition = (original: unknown): Renaming => {
     if (input.type !== 'unit' && input.type !== 'task') set(input, 'type', value => id('type', value))
     set(input, 'unitType', value => id('type', value))
     set(input, 'template', value => id('template', value))
+    set(input, 'priority', value => id('priority', value))
     if (input.loads !== undefined) input.loads = renameKeys(input.loads, 'class') ?? null
     if (input.properties !== undefined) input.properties = renameProperties(input.properties) ?? null
   }

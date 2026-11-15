@@ -4,10 +4,11 @@ import { createActivePackViews } from '../src/core/packs/active-views.ts'
 import type { Component } from 'svelte'
 import { createWorldPackDescriptor, type PackSurfacePanelContribution, type PackUiContribution, type PackWindowToolsProps, type WorldPackView } from '../src/core/packs/protocol.ts'
 import { assertCameraInteractionContract } from '../src/ui/map/map-camera.ts'
+import { mapPromptOffsets } from '../src/ui/map/map-prompt.ts'
 import { knownUiPackIds, loadUiPack } from '../src/ui/pack-loader.ts'
 import { geoPointFromLonLat, type IsoTimestamp, type ObjectId, type OperationalObject, type PackId, type SimulationRunId } from '../src/core/model/index.ts'
 import { groundClicksWanted, mapClickOutcome, targetPreviewsWanted } from '../src/ui/map-target-routing.ts'
-import { assertMapCover, assertPanelInteraction, cameraPaddingFor, mapCameraInteractionFor, noMapCover, openPanelDeclaring, railStartsCollapsed, startingControllerId, surfacePanelPackId } from '../src/ui/surface-panel-interaction.ts'
+import { assertMapCover, assertMapPrompt, assertMapTargeting, assertPanelInteraction, cameraPaddingFor, mapCameraInteractionFor, noMapCover, openPanelDeclaring, railStartsCollapsed, startingControllerId, surfacePanelPackId } from '../src/ui/surface-panel-interaction.ts'
 
 const panelOf = (id: string, hooks: Pick<PackSurfacePanelContribution, 'mapTargets' | 'keymap'> = {}): PackSurfacePanelContribution => ({
   id,
@@ -182,6 +183,42 @@ describe('camera padding from surface panels', () => {
     const cover = { top: 0, right: 492, bottom: 0, left: 0 }
     expect(assertMapCover('first.board', cover)).toBe(cover)
     expect(() => assertMapCover('first.board', { top: 0, right: -1, bottom: Number.NaN, left: 0 })).toThrow('Surface panel first.board reported a map cover that is no length: right -1, bottom NaN')
+  })
+})
+
+describe('map prompts', () => {
+  const point = geoPointFromLonLat(11.38, 59.12)
+  const option = (label: string) => ({ label, onConfirm: () => undefined })
+
+  test('a prompt has one or two labelled options, and any other is refused naming the panel', () => {
+    const one = { point, options: [option('Move A4 here')] }
+    const two = { point, options: [option('After current job'), { ...option('Now (drops C-3 · P3)'), tone: 'warning' as const }] }
+    expect(assertMapPrompt('fixture.panel', one)).toBe(one)
+    expect(assertMapPrompt('fixture.panel', two)).toBe(two)
+    expect(() => assertMapPrompt('fixture.panel', { point, options: [] })).toThrow('Surface panel fixture.panel showed a map prompt with 0 options; a prompt has one or two')
+    expect(() => assertMapPrompt('fixture.panel', { point, options: [option('a'), option('b'), option('c')] })).toThrow('with 3 options')
+    expect(() => assertMapPrompt('fixture.panel', { point, options: [option('a'), option(' ')] })).toThrow('option 2 has no label')
+  })
+
+  test('wherever the map anchors it, the prompt stands clear of a 44 px tap around its point, above it unless an edge leaves no room', () => {
+    for (const [anchor, [x, y]] of Object.entries(mapPromptOffsets)) expect({ anchor, clear: Math.hypot(x, y) >= 22 }).toEqual({ anchor, clear: true })
+    expect(mapPromptOffsets.bottom[1]).toBeLessThan(0)
+    expect(mapPromptOffsets.center[1]).toBeLessThan(0)
+  })
+})
+
+describe('map targeting', () => {
+  const from = 'unit:a4' as ObjectId
+  const target = (id: string, tag = '4 min') => ({ id: id as ObjectId, tag })
+
+  test('an armed order marks up to eight distinct tagged targets other than its own object, and any other is refused naming the panel', () => {
+    const eight = { from, targets: Array.from({ length: 8 }, (_, index) => target(`task:c-${index}`)) }
+    expect(assertMapTargeting('fixture.panel', eight)).toBe(eight)
+    expect(assertMapTargeting('fixture.panel', { from, targets: [] }).targets).toEqual([])
+    expect(() => assertMapTargeting('fixture.panel', { from, targets: [...eight.targets, target('task:c-9')] })).toThrow('Surface panel fixture.panel showed a map targeting from unit:a4 with 9 targets; at most 8 are marked')
+    expect(() => assertMapTargeting('fixture.panel', { from, targets: [target('unit:a4')] })).toThrow('that targets its own object')
+    expect(() => assertMapTargeting('fixture.panel', { from, targets: [target('task:c-1'), target('task:c-1')] })).toThrow('that marks task:c-1 twice')
+    expect(() => assertMapTargeting('fixture.panel', { from, targets: [target('task:c-1', '')] })).toThrow('whose target task:c-1 has no tag')
   })
 })
 

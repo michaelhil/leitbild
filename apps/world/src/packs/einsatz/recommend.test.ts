@@ -2,88 +2,60 @@ import { describe, expect, test } from 'bun:test'
 import { meters, routeDistanceMeters } from '../../core/model/index.ts'
 import { createDirectRoutingAdapter } from '../../routing/direct-adapter.ts'
 import type { RouteTableResult } from '../../routing/protocol.ts'
-import type { Recommendation } from './recommendation-schema.ts'
+import type { RecommendAnswer } from './recommendation-schema.ts'
 import type { EngineState } from './engine/model.ts'
-import { advance, at, emptyState, low, middle, newTask, newUnit, pointOf, run, runAll, send, start, templates, top, types } from './fixtures/engine-harness.ts'
+import { advance, at, emptyState, first, low, middle, newTask, newUnit, pointOf, run, runAll, send, start, templates, top, types } from './fixtures/engine-harness.ts'
 import type { TablePort } from './eta.ts'
 import { recommend } from './recommend.ts'
 import { refusalCode } from './refusal.ts'
 import { openViewer } from './viewer.ts'
 
 const direct = createDirectRoutingAdapter()
-const recommendFor = (state: EngineState, taskId: string, routing: TablePort = direct): Promise<Recommendation> =>
+const recommendFor = (state: EngineState, taskId: string, routing: TablePort = direct): Promise<RecommendAnswer> =>
   recommend({ state, viewer: openViewer, taskId, routing })
-const unitIds = (entries: ReadonlyArray<{ readonly unitId: string }>): string[] => entries.map(entry => entry.unitId)
+const unitIds = (entries: ReadonlyArray<{ readonly unitId: string }> | undefined): string[] => (entries ?? []).map(entry => entry.unitId)
+const alternativeIds = (recommendation: RecommendAnswer): string[][] => recommendation.alternatives.map(entry => unitIds(entry.units))
 const far = (index: number) => at(0.05 * (index + 1), 0.02)
 
-/**
- * The divert-protection scenario: A1 en route to a covered top-class task;
- * A2 en route to a middle-class task (C9); A3 on task at a low-class task;
- * A4 en route to C20 holding top ×1 (covered by A4) + low ×1; A6 en route to
- * a low-class task. Every unit carries one load of any class; none is free.
- */
-const protectionScenario = async (): Promise<EngineState> => {
+/** Five carriers, each en route to or on a task of its own: none is free. */
+const busyScenario = async (): Promise<EngineState> => {
   let state = await runAll(emptyState(), [
-    ...['a1', 'a2', 'a3', 'a4', 'a6'].map((id, index) => newUnit(id, types.roadCarrier, at(0.001 * index))),
+    ...['a1', 'a2', 'a3'].map((id, index) => newUnit(id, types.roadCarrier, at(0.001 * index))),
     newTask('top1', templates.load, far(0), { [top]: 1 }),
     newTask('c9', templates.load, far(1), { [middle]: 1 }),
     newTask('low3', templates.load, at(0.002), { [low]: 1 }),
-    newTask('c20', templates.load, far(2), { [top]: 1, [low]: 1 }),
-    newTask('low6', templates.load, far(3), { [low]: 1 }),
   ])
-  state = await runAll(state, [
-    send(['a1'], { taskId: 'top1' }),
-    send(['a2'], { taskId: 'c9' }),
-    send(['a3'], { taskId: 'low3' }),
-    send(['a4'], { taskId: 'c20' }),
-    send(['a6'], { taskId: 'low6' }),
-  ])
+  state = await runAll(state, [send(['a1'], { taskId: 'top1' }), send(['a2'], { taskId: 'c9' }), send(['a3'], { taskId: 'low3' })])
   return await advance(state, start + 3_000)
 }
 
-describe('Einsatz recommendations with diverts', () => {
-  test('a new middle-class task is proposed only the unit heading to lower-class work, as a divert', async () => {
-    const state = await run(await protectionScenario(), newTask('n2', templates.load, at(0.003), { [middle]: 1 }))
-    const recommendation = await recommendFor(state, 'n2')
-    expect(recommendation.proposal).toMatchObject({ covers: true, remainder: [], units: [{ unitId: 'a6', divertFrom: { taskId: 'low6', label: 'LOW6', rank: { id: low, code: 'C3' } } }] })
-    expect(recommendation.alternatives).toEqual([])
-    expect(unitIds(recommendation.committed)).toEqual(['a1', 'a2', 'a3', 'a4'])
-    expect(recommendation.committed.find(entry => entry.unitId === 'a3')?.reason).toBe('A3 now working at LOW3')
-  })
-
-  test('a new top-class task is proposed the nearer divert, from low-class work; the unit heading to middle-class work is the one alternative', async () => {
-    const state = await run(await protectionScenario(), newTask('n1', templates.load, at(0.003), { [top]: 1 }))
+describe('Einsatz recommendations propose free units only', () => {
+  test('with every unit busy nothing is proposed, and why not names what each is doing', async () => {
+    const state = await run(await busyScenario(), newTask('n1', templates.load, at(0.003), { [top]: 1 }, { priority: first }))
     const recommendation = await recommendFor(state, 'n1')
-    const divertFrom = (taskId: string, label: string, rank: string, code: string) => ({ taskId, label, rank: { id: rank, code } })
-    const straightTo = (unitId: string) => {
-      const distanceM = routeDistanceMeters(pointOf(state, unitId), at(0.003))
-      return { kind: 'straight-line' as const, seconds: distanceM / 15, distanceM }
-    }
-    expect(recommendation.proposal).toEqual({ units: [{ unitId: 'a6', label: 'A6', eta: straightTo('a6'), divertFrom: divertFrom('low6', 'LOW6', low, 'C3'), steps: 1 }], covers: true, remainder: [] })
-    expect(recommendation.alternatives).toEqual([{ unitId: 'a2', label: 'A2', eta: straightTo('a2'), divertFrom: divertFrom('c9', 'C9', middle, 'C2'), steps: 1 }])
-    expect(unitIds(recommendation.committed)).toEqual(['a1', 'a3', 'a4'])
+    expect(recommendation.proposal).toBeNull()
+    expect(recommendation.priority).toEqual({ id: first, label: 'First', code: 'Q1', rank: 0 })
+    expect(recommendation.whyNot.map(entry => [entry.unitId, entry.reasons[0]])).toEqual([['a1', 'A1 now en route to TOP1'], ['a2', 'A2 now en route to C9'], ['a3', 'A3 now working at LOW3']])
   })
 
-  test('a task whose top load is covered needs only its low load: nothing is offered and the remainder is named', async () => {
-    const recommendation = await recommendFor(await protectionScenario(), 'c20')
-    expect(recommendation).toMatchObject({ rank: { id: top, code: 'C1' }, need: { id: low, code: 'C3' }, servable: true })
-    expect(recommendation.proposal).toEqual({ units: [], covers: false, remainder: ['C3×1'] })
-    expect(recommendation.alternatives).toEqual([])
-    expect(unitIds(recommendation.committed)).toEqual(['a1', 'a2', 'a3', 'a6'])
-  })
-
-  test('with a free unit covering the top load, the low load remains and no unit is diverted for it', async () => {
-    let state = await run(await protectionScenario(), newTask('n13', templates.load, at(0.003), { [top]: 1, [low]: 1 }))
-    state = await run(state, newUnit('a5', types.roadCarrier, at(0.004)))
-    const recommendation = await recommendFor(state, 'n13')
-    expect(recommendation.proposal).toMatchObject({ units: [{ unitId: 'a5' }], covers: false, remainder: ['C3×1'] })
-    expect(recommendation.proposal.units[0]?.divertFrom).toBeUndefined()
-    expect(recommendation.alternatives).toEqual([])
+  test('the proposal\'s order is accepted unchanged, and a second recommendation never proposes the unit it sent', async () => {
+    let state = await runAll(emptyState(), [
+      newUnit('c1', types.roadCarrier, at(0.001)),
+      newUnit('c2', types.roadCarrier, at(0.002)),
+      newTask('t1', templates.load, at(0), { [top]: 1 }),
+      newTask('t2', templates.load, at(0.003), { [top]: 1 }),
+    ])
+    const first = await recommendFor(state, 't1')
+    expect(first.proposal?.order).toEqual({ units: ['c1'], stops: [{ taskId: 't1' }] })
+    state = await run(state, { kind: 'order', ...first.proposal!.order })
+    const second = await recommendFor(state, 't2')
+    expect(unitIds(second.proposal?.units)).toEqual(['c2'])
+    expect(second.whyNot.map(entry => entry.unitId)).toEqual(['c1'])
   })
 })
 
 describe('Einsatz smallest covering sets', () => {
-  test('a counted requirement is proposed the nearest units that cover it; the rest are alternatives by ETA', async () => {
+  test('a counted requirement is proposed the nearest units that cover it; the rest are alternatives for that need, by ETA', async () => {
     const state = await runAll(emptyState(), [
       newUnit('g3', types.pairServer, at(0.03)),
       newUnit('g1', types.pairServer, at(0.001)),
@@ -91,23 +63,18 @@ describe('Einsatz smallest covering sets', () => {
       newTask('pair', templates.pair, at(0)),
     ])
     const recommendation = await recommendFor(state, 'pair')
-    expect(recommendation.proposal).toMatchObject({ covers: true, remainder: [] })
-    expect(unitIds(recommendation.proposal.units)).toEqual(['g1', 'g2'])
-    expect(unitIds(recommendation.alternatives)).toEqual(['g3'])
+    expect(recommendation.proposal).toMatchObject({ covers: { covered: 2, needed: 2 }, remainder: [], order: { units: ['g1', 'g2'], stops: [{ taskId: 'pair' }] } })
+    expect(recommendation.alternatives).toEqual([{ need: { kind: 'requirement', id: 'guard', label: 'guards' }, units: [expect.objectContaining({ unitId: 'g3', order: { units: ['g3'], stops: [{ taskId: 'pair' }] } })] }])
   })
 
-  test('a free unit that holds steps says how many, so a send can ask whether to do it now or add it to the end', async () => {
+  test('a free unit on a move is free to propose', async () => {
     let state = await runAll(emptyState(), [
       newUnit('c1', types.roadCarrier, at(0.001)),
-      newUnit('c2', types.roadCarrier, at(0.01)),
       newTask('t1', templates.load, at(0), { [top]: 1 }),
       send(['c1'], { point: at(0.002) }),
-      { kind: 'queue', unitId: 'c1', to: { point: at(0.003) } },
     ])
     state = await advance(state, start + 1_000)
-    const recommendation = await recommendFor(state, 't1')
-    expect(recommendation.proposal.units).toEqual([expect.objectContaining({ unitId: 'c1', steps: 2 })])
-    expect(recommendation.alternatives.map(entry => [entry.unitId, entry.steps])).toEqual([['c2', undefined]])
+    expect(unitIds((await recommendFor(state, 't1')).proposal?.units)).toEqual(['c1'])
   })
 
   test('fewer units come first: one carrier taking both loads beats two nearer carriers taking one each', async () => {
@@ -118,34 +85,9 @@ describe('Einsatz smallest covering sets', () => {
       newTask('t1', templates.load, at(0), { [top]: 1, [middle]: 1 }),
     ])
     const recommendation = await recommendFor(state, 't1')
-    expect(unitIds(recommendation.proposal.units)).toEqual(['d1'])
-    expect(recommendation.proposal.covers).toBe(true)
-    expect(unitIds(recommendation.alternatives)).toEqual(['c1', 'c2'])
-  })
-
-  test('units holding a task as their next job are counted for what it would still need: nothing when they bring all of it, the rest by name when they bring part', async () => {
-    let state = await runAll(emptyState(), [
-      newUnit('c1', types.roadCarrier, at(0.001)),
-      newUnit('c2', types.roadCarrier, at(0.002)),
-      // T1 and T2 are as urgent as the tasks queued behind them, so neither carrier may be diverted.
-      newTask('t1', templates.load, far(0), { [top]: 1 }),
-      newTask('t2', templates.load, far(1), { [top]: 1 }),
-      newTask('both', templates.load, at(0.01), { [top]: 1, [middle]: 1 }),
-      newTask('one', templates.load, at(0.02), { [top]: 1 }),
-      send(['c1'], { taskId: 't1' }),
-      send(['c2'], { taskId: 't2' }),
-      { kind: 'queue', unitId: 'c1', to: { taskId: 'both' } },
-      { kind: 'queue', unitId: 'c2', to: { taskId: 'one' } },
-    ])
-    state = await advance(state, start + 1_000)
-    const both = await recommendFor(state, 'both')
-    expect(unitIds(both.next)).toEqual(['c1'])
-    // A queued step counts towards nothing: the remainder after the proposal is all of it, and C1 would bring the top load.
-    expect(both.nextRemainder).toEqual(['C2×1'])
-    const one = await recommendFor(state, 'one')
-    expect(unitIds(one.next)).toEqual(['c2'])
-    expect(one.nextRemainder).toEqual([])
-    expect(one.proposal.covers).toBe(false)
+    expect(unitIds(recommendation.proposal?.units)).toEqual(['d1'])
+    expect(recommendation.proposal?.covers).toEqual({ covered: 2, needed: 2 })
+    expect(alternativeIds(recommendation)).toEqual([['c1', 'c2'], ['c1', 'c2']])
   })
 
   test('without enough units the best partial set is proposed and the remainder named', async () => {
@@ -154,12 +96,24 @@ describe('Einsatz smallest covering sets', () => {
       newTask('t1', templates.load, at(0), { [top]: 3 }),
     ])
     const recommendation = await recommendFor(state, 't1')
-    expect(recommendation.proposal).toMatchObject({ units: [{ unitId: 'c1' }], covers: false, remainder: ['C1×2'] })
-    expect(recommendation.servable).toBe(true)
+    expect(recommendation.proposal).toMatchObject({ units: [{ unitId: 'c1' }], covers: { covered: 1, needed: 3 }, remainder: ['C1×2'] })
+  })
+
+  test('a carrier that will pick up load is offered the accepting sites for it, nearest first', async () => {
+    const state = await runAll(emptyState(), [
+      newUnit('c1', types.roadCarrier, at(0.001)),
+      newUnit('near', types.publicSite, at(0.004)),
+      newUnit('far', types.publicSite, at(0.03)),
+      newUnit('camp', types.sidedSite, at(0.002)),
+      newTask('t1', templates.load, at(0), { [low]: 1 }),
+    ])
+    const recommendation = await recommendFor(state, 't1')
+    // The camp accepts no low load, so only the public sites are offered.
+    expect(recommendation.deliverTo).toEqual([{ unitId: 'c1', label: 'C1', sites: [expect.objectContaining({ siteId: 'near' }), expect.objectContaining({ siteId: 'far' })] }])
   })
 })
 
-describe('Einsatz ineligible units', () => {
+describe('Einsatz units not proposed', () => {
   test('a unit failing a requirement is listed with the reason in property words; one lacking the property says so', async () => {
     let state = await runAll(emptyState(), [
       newUnit('h1', types.payloadServer, at(0.001)),
@@ -169,18 +123,17 @@ describe('Einsatz ineligible units', () => {
       newTask('lift1', templates.lift, at(0)),
     ])
     const haul = await recommendFor(state, 'haul1')
-    expect(haul.ineligible).toEqual([{ unitId: 'h1', label: 'H1', reasons: ['H1 · Payload 300 kg · needs ≥ 500 kg'] }])
-    expect(haul.proposal).toEqual({ units: [], covers: false, remainder: ['1 more hauler'] })
-    expect(haul.servable).toBe(false)
+    expect(haul.whyNot).toEqual([{ unitId: 'h1', label: 'H1', reasons: ['H1 · Payload 300 kg · needs ≥ 500 kg'] }])
+    expect(haul.proposal).toBeNull()
     const lift = await recommendFor(state, 'lift1')
-    expect(lift.ineligible).toEqual([
+    expect(lift.whyNot).toEqual([
       { unitId: 'c1', label: 'C1', reasons: ['C1 · Lift 400 kg · needs ≥ 500 kg'] },
       { unitId: 'd1', label: 'D1', reasons: ['Lift not declared on Flyer'] },
     ])
     state = await run(state, { kind: 'unit.adjust', unitId: 'h1', properties: { payloadKg: 800 }, reason: 'Loaded lighter' })
     const eligible = await recommendFor(state, 'haul1')
-    expect(eligible.ineligible).toEqual([])
-    expect(eligible.proposal).toMatchObject({ units: [{ unitId: 'h1' }], covers: true })
+    expect(eligible.whyNot).toEqual([])
+    expect(eligible.proposal).toMatchObject({ units: [{ unitId: 'h1' }], covers: { covered: 1, needed: 1 } })
   })
 })
 
@@ -207,8 +160,8 @@ describe('Einsatz ETAs', () => {
     }
     return port
   }
-  const etaOf = (recommendation: Recommendation, unitId: string) =>
-    [...recommendation.proposal.units, ...recommendation.alternatives].find(entry => entry.unitId === unitId)?.eta
+  const etaOf = (recommendation: RecommendAnswer, unitId: string) =>
+    [...recommendation.proposal?.units ?? [], ...recommendation.alternatives.flatMap(entry => entry.units)].find(entry => entry.unitId === unitId)?.eta
 
   test('road ETAs come from one router table with turnout added; a direct unit flies a straight line; the direct router says straight-line', async () => {
     const state = await twoUnits()
@@ -225,7 +178,7 @@ describe('Einsatz ETAs', () => {
     const state = await twoUnits()
     const recommendation = await recommendFor(state, 't1', table({ durationS: null, distanceM: null }))
     expect(etaOf(recommendation, 'c1')).toEqual({ kind: 'unavailable', reason: 'routing_unavailable: ETA unavailable: no route', straightDistanceM: routeDistanceMeters(pointOf(state, 'c1'), at(0)) })
-    expect(unitIds(recommendation.proposal.units)).toEqual(['d1'])
+    expect(unitIds(recommendation.proposal?.units)).toEqual(['d1'])
   })
 
   test('a unit or task more than 1 km from a road has no ETA, refused as a send of it would be', async () => {
@@ -243,7 +196,7 @@ describe('Einsatz ETAs', () => {
     const mixed = await recommendFor(await twoUnits(), 't1', failing)
     expect(etaOf(mixed, 'c1')?.kind).toBe('unavailable')
     expect(etaOf(mixed, 'd1')?.kind).toBe('straight-line')
-    expect(unitIds(mixed.proposal.units)).toEqual(['d1'])
+    expect(unitIds(mixed.proposal?.units)).toEqual(['d1'])
 
     const state = await runAll(emptyState(), [
       newUnit('c1', types.roadCarrier, at(0.02)),
@@ -251,8 +204,8 @@ describe('Einsatz ETAs', () => {
       newTask('t1', templates.load, at(0), { [top]: 1 }),
     ])
     const roadOnly = await recommendFor(state, 't1', failing)
-    expect(roadOnly.proposal).toMatchObject({ covers: true, units: [{ unitId: 'c1', eta: { kind: 'unavailable', reason: 'routing_unavailable: ETA unavailable: Router offline', straightDistanceM: routeDistanceMeters(pointOf(state, 'c1'), at(0)) } }] })
-    expect(unitIds(roadOnly.alternatives)).toEqual(['c2'])
+    expect(roadOnly.proposal).toMatchObject({ covers: { covered: 1, needed: 1 }, units: [{ unitId: 'c1', eta: { kind: 'unavailable', reason: 'routing_unavailable: ETA unavailable: Router offline', straightDistanceM: routeDistanceMeters(pointOf(state, 'c1'), at(0)) } }] })
+    expect(alternativeIds(roadOnly)).toEqual([['c2']])
   })
 })
 

@@ -1,71 +1,73 @@
-import { stepTargetId } from './steps.ts'
 import { z } from 'zod'
 import { commandResultSchema, idSchema, objectIdSchema, type ObjectId } from '../../core/model/index.ts'
 import { defineSimulationCommandCapability, defineSimulationQueryCapability } from '../../simulation/capabilities.ts'
 import type { SimulationCapability } from '../../simulation/protocol.ts'
 import { configurationOutputSchema } from './config-schema.ts'
-import { divertsNameSendUnits, divertsNameSendUnitsIssue, intentFields } from './engine/intents.ts'
-import { recommendationSchema } from './recommendation-schema.ts'
+import { intentFields } from './engine/intents.ts'
+import { unitOrderInputSchema, unitRecallInputSchema, unitStopRemoveInputSchema, unitUndoInputSchema } from './order-schema.ts'
 import { einsatzPlanningCapability } from './planning-source.ts'
+import { recommendAnswerSchema } from './recommendation-schema.ts'
+import { situationInputSchema, situationSchema, unitOptionsInputSchema, unitOptionsSchema } from './situation/schema.ts'
+import { stepTargetId } from './steps.ts'
 
 /**
- * The Einsatz Capabilities. Commands are validated against the current state
- * when they commit, never against a token: a refusal reads `<code>:
- * <message>` in the configuration's own words. Every command is schedulable
- * from the Scenario timeline; creating units and tasks and adjusting
- * property values are controller-only.
+ * The Einsatz Capabilities: five queries and eleven commands. Commands are
+ * validated against the current state when they commit, never against a
+ * token: a refusal reads `<code>: <message>` in the configuration's own
+ * words and sets `code`. Every command is schedulable from the Scenario
+ * timeline; creating units and tasks and adjusting property values are
+ * controller-only.
  *
- * Every unit carries out a job chain (`orders`, see `steps.ts`): send does
- * it now, queue adds it at the end, step.remove takes one step out, hold
- * pauses the chain and resume continues it, clear empties it and recall
- * empties it and brings the unit home. A command result carries no data, so
- * a send or queue names the step it created in the unit's
- * `lastAction.stepId`, which is how a caller undoes it.
+ * Every unit carries out a plan of stops (`orders`, see `steps.ts`):
+ * `unit.order` gives it one, all or nothing; `unit.stop.remove` takes one
+ * stop out; `unit.undo` takes an order back while none of it has been
+ * carried out; `unit.recall` empties the plan and brings the unit home. An
+ * accepted command answers with its `commandId`, which `unit.undo` names.
  */
 
 export const einsatzCommandIds = {
-  send: 'world.einsatz.unit.send',
+  order: 'world.einsatz.unit.order',
+  stopRemove: 'world.einsatz.unit.stop.remove',
+  undo: 'world.einsatz.unit.undo',
   recall: 'world.einsatz.unit.recall',
-  hold: 'world.einsatz.unit.hold',
-  unitCreate: 'world.einsatz.unit.create',
-  unitAdjust: 'world.einsatz.unit.adjust',
-  taskCreate: 'world.einsatz.task.create',
   taskClose: 'world.einsatz.task.close',
   siteSet: 'world.einsatz.site.set',
+  taskCreate: 'world.einsatz.task.create',
+  unitCreate: 'world.einsatz.unit.create',
+  unitAdjust: 'world.einsatz.unit.adjust',
   setRoe: 'world.einsatz.unit.set-roe',
   engage: 'world.einsatz.unit.engage',
-  queue: 'world.einsatz.unit.queue',
-  stepRemove: 'world.einsatz.unit.step.remove',
-  resume: 'world.einsatz.unit.resume',
-  clear: 'world.einsatz.unit.clear',
 } as const
 export const einsatzQueryIds = {
+  situation: 'world.einsatz.situation',
   recommend: 'world.einsatz.recommend',
+  unitOptions: 'world.einsatz.unit.options',
   configuration: 'world.einsatz.configuration',
+  planningBasis: einsatzPlanningCapability.id,
 } as const
 
 export const commandInputSchemas = {
-  [einsatzCommandIds.send]: z.object(intentFields.send).strict().refine(divertsNameSendUnits, divertsNameSendUnitsIssue),
-  [einsatzCommandIds.recall]: z.object(intentFields.recall).strict(),
-  [einsatzCommandIds.hold]: z.object(intentFields.hold).strict(),
-  [einsatzCommandIds.unitCreate]: z.object({ ...intentFields.unitCreate, label: intentFields.unitCreate.label.optional() }).strict(),
-  [einsatzCommandIds.unitAdjust]: z.object(intentFields.unitAdjust).strict(),
-  [einsatzCommandIds.taskCreate]: z.object(intentFields.taskCreate).strict(),
+  [einsatzCommandIds.order]: unitOrderInputSchema,
+  [einsatzCommandIds.stopRemove]: unitStopRemoveInputSchema,
+  [einsatzCommandIds.undo]: unitUndoInputSchema,
+  [einsatzCommandIds.recall]: unitRecallInputSchema,
   [einsatzCommandIds.taskClose]: z.object(intentFields.taskClose).strict(),
   [einsatzCommandIds.siteSet]: z.object(intentFields.siteSet).strict(),
+  [einsatzCommandIds.taskCreate]: z.object(intentFields.taskCreate).strict(),
+  [einsatzCommandIds.unitCreate]: z.object({ ...intentFields.unitCreate, label: intentFields.unitCreate.label.optional().describe('The unit\'s label; without one, the type\'s label and the next free number.') }).strict(),
+  [einsatzCommandIds.unitAdjust]: z.object(intentFields.unitAdjust).strict(),
   [einsatzCommandIds.setRoe]: z.object(intentFields.setRoe).strict(),
   [einsatzCommandIds.engage]: z.object(intentFields.engage).strict(),
-  [einsatzCommandIds.queue]: z.object(intentFields.queue).strict(),
-  [einsatzCommandIds.stepRemove]: z.object(intentFields.stepRemove).strict(),
-  [einsatzCommandIds.resume]: z.object(intentFields.resume).strict(),
-  [einsatzCommandIds.clear]: z.object(intentFields.clear).strict(),
 }
 export type EinsatzCommandId = keyof typeof commandInputSchemas
 export type CommandInput<K extends EinsatzCommandId> = z.output<typeof commandInputSchemas[K]>
 
 export const isEinsatzCommand = (kind: string): kind is EinsatzCommandId => Object.hasOwn(commandInputSchemas, kind)
 
-export const recommendInputSchema = z.object({ taskId: idSchema }).strict()
+export const recommendInputSchema = z.object({ taskId: idSchema.describe('The task to recommend units for, as world.einsatz.situation lists it.') }).strict()
+
+/** How an agent searching the Workspace finds the dispatch surface: Pack-owned words, never a domain's. */
+const dispatchTerms = ['dispatch', 'send', 'assign', 'respond', 'transport', 'deliver', 'status', 'what is running'] as const
 
 const objectIds = (...ids: ReadonlyArray<string>): ReadonlyArray<ObjectId> => ids.map(id => objectIdSchema.parse(id))
 
@@ -73,20 +75,23 @@ const command = <K extends EinsatzCommandId>(config: {
   readonly id: K
   readonly title: string
   readonly description: string
+  readonly searchTerms: ReadonlyArray<string>
   readonly idempotent: boolean
   readonly targets: (input: CommandInput<K>) => ReadonlyArray<ObjectId>
 }): SimulationCapability => defineSimulationCommandCapability({
   id: config.id,
   title: config.title,
   description: config.description,
+  searchTerms: config.searchTerms,
   input: commandInputSchemas[config.id],
   output: commandResultSchema,
   idempotent: config.idempotent,
   schedulable: true,
   historyObjectIds: raw => {
-    if (config.id === einsatzCommandIds.send) { const payload = commandInputSchemas[einsatzCommandIds.send].parse(raw); return objectIds(...[stepTargetId(payload.to)].filter((id): id is string => id !== undefined), ...payload.divert?.flatMap(divert => [divert.unitId, divert.fromTaskId]) ?? []) }
-    if (config.id === einsatzCommandIds.queue) { const payload = commandInputSchemas[einsatzCommandIds.queue].parse(raw); const target = stepTargetId(payload.to); return target === undefined ? [] : objectIds(target) }
-    if (config.id === einsatzCommandIds.recall) { const payload = commandInputSchemas[einsatzCommandIds.recall].parse(raw); return payload.fromTaskId === undefined ? [] : objectIds(payload.fromTaskId) }
+    if (config.id === einsatzCommandIds.order) {
+      const payload = commandInputSchemas[einsatzCommandIds.order].parse(raw)
+      return objectIds(...payload.stops.flatMap(stop => [stepTargetId(stop)].filter((id): id is string => id !== undefined)), ...(payload.drops === undefined ? [] : [payload.drops]))
+    }
     if (config.id === einsatzCommandIds.engage) return objectIds(commandInputSchemas[einsatzCommandIds.engage].parse(raw).trackId)
     return [] // The remaining commands name only their mutation target.
   },
@@ -98,119 +103,133 @@ const command = <K extends EinsatzCommandId>(config: {
 
 export const einsatzCapabilities: ReadonlyArray<SimulationCapability> = [
   einsatzPlanningCapability,
+  defineSimulationQueryCapability({
+    readScope: 'collection',
+    id: einsatzQueryIds.situation,
+    title: 'What is running in the dispatch simulation',
+    description: 'What is running now in the dispatch simulation. Open calls (called *tasks*; the configured words are in `lexicon`) are ranked by priority, with waiting time, needs, coverage and assigned units. Every unit has its type, group, status, plan with ETAs, predicted delivery and the actor of its last order. Sites have accepting state and free slots, and there are counts. Start here. For who should go, call `world.einsatz.recommend {taskId}`. Re-read after each order. Example: `{}`, or `{group:\'<group id>\'}`.',
+    searchTerms: [...dispatchTerms, 'overview', 'calls', 'units', 'sites', 'waiting', 'overdue'],
+    input: situationInputSchema,
+    output: situationSchema,
+  }),
+  defineSimulationQueryCapability({
+    readScope: 'collection',
+    id: einsatzQueryIds.recommend,
+    title: 'Recommend units for a task',
+    description: 'Who should go to a task: the smallest set of free units covering what it needs, by fit then ETA, as `proposal.order`, ready to send unchanged with world.einsatz.unit.order. Only free units are proposed, so two recommendations with an order between never propose the same unit. Also other free units per need (each with its own order), why other units are not proposed, and for carriers the sites to deliver to. ETAs include turnout. Example: `{taskId:\'task:c-1\'}`.',
+    searchTerms: [...dispatchTerms, 'recommend', 'suggest', 'who should go', 'nearest'],
+    input: recommendInputSchema,
+    output: recommendAnswerSchema,
+    inspectObjectIds: raw => objectIds(recommendInputSchema.parse(raw).taskId),
+  }),
+  defineSimulationQueryCapability({
+    readScope: 'collection',
+    id: einsatzQueryIds.unitOptions,
+    title: 'Where a unit may be ordered',
+    description: 'For one unit: every target an order may name now, nearest first, with the verb (serve, pick up, deliver, go to, engage), the ETA and, for a busy unit, the task an order with when "now" drops; and every target an order would be refused for, with its code and reason. A busy unit names its task and when it is free. Example: `{unitId:\'unit:a4\'}`.',
+    searchTerms: [...dispatchTerms, 'targets', 'options', 'where can'],
+    input: unitOptionsInputSchema,
+    output: unitOptionsSchema,
+    inspectObjectIds: raw => objectIds(unitOptionsInputSchema.parse(raw).unitId),
+  }),
+  defineSimulationQueryCapability({
+    readScope: 'catalog',
+    id: einsatzQueryIds.configuration,
+    title: 'Read the Einsatz configuration',
+    description: 'The whole configuration in force (unit types, properties, task templates, load classes, priorities, groups, wording) and its revision. Authoring material: no instances or positions. Example: `{}`.',
+    searchTerms: ['configuration', 'unit types', 'task templates', 'priorities'],
+    input: z.object({}).strict(),
+    output: configurationOutputSchema,
+  }),
   command({
-    id: einsatzCommandIds.send,
-    title: 'Send units',
-    description: 'Do it now: send one or more units, all or nothing, to a task (travel, work on task, deliver load, return), a site, any unit that does not move (deliver while carrying load where it receives load, else go there), a point (a move) or one of their own side\'s tracks (engage, armed units only). The target becomes each unit\'s active step; the steps it has queued stay behind it, except any for the task it now serves. Units not named in divert must be free; a divert names the task each unit leaves and removes only that step, and to another task it is allowed only before arrival and only from work of strictly lower priority than what the target still needs. A divert to a site, point or track releases the unit and moves it. Sending a unit to the task it already serves succeeds and changes nothing. A paused unit, or one waiting for a route, keeps its first step queued, so a send adds a step: one that would leave more than 20 is refused chain_full. Each unit\'s new step id is in its lastAction.stepId. Refusals read <code>: <message>.',
+    id: einsatzCommandIds.order,
+    title: 'Order units',
+    description: 'Give units a plan, all or nothing. Example (pick up, then deliver): `{units:[\'unit:a4\'], stops:[{taskId:\'task:c-1\'},{siteId:\'unit:clinic\'}]}`. For a busy unit, set `when`: `after` appends; `now` replaces its job and needs `drops` = its current task. A carrier with no site stop delivers to the nearest accepting site. Refusals: `when_required`, `drops_mismatch`, `requirement_unmet`, `site_not_accepting`, `divert_after_arrival`, `unit_loaded`, `chain_full`.',
+    searchTerms: [...dispatchTerms, 'order', 'move', 'plan', 'stops', 'divert'],
     idempotent: false,
     targets: input => objectIds(...input.units),
   }),
   command({
-    id: einsatzCommandIds.queue,
-    title: 'Queue a step',
-    description: 'Add to the end of a unit\'s job chain: a task (serve), a site, any unit that does not move (deliver while it will carry load where it receives load, else go there), a point (move) or one of its own side\'s tracks (engage, armed units only). A unit holding no step and not paused starts it at once, exactly as a send. A queued step counts towards no task until it is active. A task the chain already holds is taken again only as a further trip for load still waiting there (else requirement_covered). It is judged as the unit will stand when it comes up: a step a loaded unit cannot take before delivering is refused unit_loaded unless its deliver order delivers first; a chain holding 20 steps is refused chain_full (only a loaded unit\'s deliver order may put a 21st, its delivery, in front). The new step id is in the unit\'s lastAction.stepId.',
+    id: einsatzCommandIds.stopRemove,
+    title: 'Remove a stop',
+    description: 'Remove one stop from a unit\'s plan. A queued stop leaves; the active one is released as a recall releases it (load not yet picked up returns to its task), and the unit stops where it is and starts its next stop. A stop that delivers load the unit carries, or will carry, stays (unit_loaded); an unknown stop is refused step_not_found. Example: `{unitId:\'unit:a4\', stopId:\'step-3\'}`.',
+    searchTerms: ['remove stop', 'cancel stop', 'plan'],
     idempotent: false,
     targets: input => objectIds(input.unitId),
   }),
   command({
-    id: einsatzCommandIds.stepRemove,
-    title: 'Remove a step',
-    description: 'Remove one step from a unit\'s job chain. A queued step leaves; the active step is released as a recall releases it (load not yet picked up returns to its task) and the unit stops where it is and starts its next step, or, with none left, its return order applies. A unit keeps a step that delivers the load it carries, or will carry by then unless its deliver order delivers it anyway (unit_loaded). An unknown step id is refused step_not_found. Undo a send or queue by removing the step it created with undo: true: only the step the unit\'s last order created (else step_not_undoable), and an active one is released quietly, with no work-returned alert on its task; the order records cause "undo".',
+    id: einsatzCommandIds.undo,
+    title: 'Undo an order',
+    description: 'Take back a unit\'s order while none of it has been carried out: its stops leave quietly, and a task it dropped gets the unit back. Name the commandId the order answered with. Refused newer_order_exists when another command changed the unit\'s plan since, nothing_to_undo once the unit has arrived or nothing of the order is left. Example: `{unitId:\'unit:a4\', commandId:\'<commandId>\'}`.',
+    searchTerms: ['undo', 'take back', 'revert', 'cancel order'],
     idempotent: false,
     targets: input => objectIds(input.unitId),
   }),
   command({
     id: einsatzCommandIds.recall,
-    title: 'Recall unit',
-    description: 'Clear a unit\'s job chain, releasing it from its task, if any, and return it to base. Load not yet picked up returns to the task with its original age. A unit carrying load must deliver first. fromTaskId, when given, must still be the unit\'s task.',
+    title: 'Return a unit to base',
+    description: 'Empty a unit\'s plan, releasing it from its task, if any, and send it back to base. Load not yet picked up returns to the task with its original age. A unit carrying load must deliver first (unit_loaded). Example: `{unitId:\'unit:a4\'}`.',
+    searchTerms: ['return', 'recall', 'back to base', 'release'],
     idempotent: false,
     targets: input => objectIds(input.unitId),
-  }),
-  command({
-    id: einsatzCommandIds.hold,
-    title: 'Hold unit',
-    description: 'Pause a unit\'s job chain where it is. A unit under way or turning out stops and holds: its active step goes back to the queue, releasing its task, so it counts towards nothing while paused. A unit returning home stops and stands available there. A standing unit keeps its phase; work on task, a handover or an engagement under way goes on in place. A unit that cannot move pauses the engage steps it holds. No further step starts and no deliver or return order runs until resume or a new send.',
-    idempotent: true,
-    targets: input => objectIds(input.unitId),
-  }),
-  command({
-    id: einsatzCommandIds.resume,
-    title: 'Resume unit',
-    description: 'Resume a paused unit\'s job chain from the phase it was paused in: its next step starts at once, or, holding none, its deliver and return orders apply as they would have, so a unit parked at a point stays there. A unit that is not paused is left as it is.',
-    idempotent: true,
-    targets: input => objectIds(input.unitId),
-  }),
-  command({
-    id: einsatzCommandIds.clear,
-    title: 'Clear a job chain',
-    description: 'Remove every step of a unit\'s job chain, releasing the active one as a recall does. The unit stops where it is and its return order applies. A paused unit holding no step is only resumed, in the phase it idles in. A unit carrying load must deliver first.',
-    idempotent: true,
-    targets: input => objectIds(input.unitId),
-  }),
-  command({
-    id: einsatzCommandIds.unitCreate,
-    title: 'Create unit',
-    description: 'Controller only. Add a unit of a declared type at a point, with an optional base, label and property values; unnamed properties take the type\'s defaults. The runtime gives the id. A side is required exactly when the Run declares sides, and a group of that side once the configuration declares groups, unless the type is public.',
-    idempotent: false,
-    targets: () => [],
-  }),
-  command({
-    id: einsatzCommandIds.unitAdjust,
-    title: 'Adjust unit properties',
-    description: 'Controller only. Set property values of a unit, validated against its type, with a recorded reason. A committed unit may not drop below a condition of its task\'s requirement.',
-    idempotent: true,
-    targets: input => objectIds(input.unitId),
-  }),
-  command({
-    id: einsatzCommandIds.taskCreate,
-    title: 'Create task',
-    description: 'Controller only. Add a task from a declared template at a point, with counted load per load class. A template without a priority floor needs load. The runtime gives the id.',
-    idempotent: false,
-    targets: () => [],
   }),
   command({
     id: einsatzCommandIds.taskClose,
-    title: 'Close task',
-    description: 'Close a task, such as a report that needs no unit. Load not yet picked up is dropped; units still committed to it stop and are free.',
+    title: 'Close a task',
+    description: 'Close a task, such as a report that needs no unit. Load not yet picked up is dropped; units still on it stop and are free. A served task closes by itself. Example: `{taskId:\'task:c-4\', reason:\'False alarm\'}`.',
+    searchTerms: ['close', 'cancel call', 'false alarm'],
     idempotent: false,
     targets: input => objectIds(input.taskId),
   }),
   command({
     id: einsatzCommandIds.siteSet,
     title: 'Open or close a site',
-    description: 'Set whether a receiving site accepts arrivals. When it stops accepting, units under a deliver standing order heading or queued there deliver elsewhere at once; handovers under way finish.',
+    description: 'Set whether a site (a unit whose type receives load) accepts arrivals. When it stops accepting, carriers under a deliver standing order heading there deliver elsewhere at once; handovers under way finish. Example: `{siteId:\'unit:clinic\', accepting:false}`.',
+    searchTerms: ['site', 'accepting', 'close site', 'open site', 'deliver'],
     idempotent: true,
     targets: input => objectIds(input.siteId),
   }),
   command({
+    id: einsatzCommandIds.taskCreate,
+    title: 'Create a task',
+    description: 'Controller only. Add a task from a declared template at a point, with counted load per load class and an optional priority (else the template\'s, else the lowest). The runtime gives the id. Example: `{template:\'<template id>\', label:\'C-21\', at:{type:\'Point\', coordinates:[11.4, 59.12]}, loads:{\'<class>\':1}}`.',
+    searchTerms: ['create task', 'new call', 'add call', 'incident'],
+    idempotent: false,
+    targets: () => [],
+  }),
+  command({
+    id: einsatzCommandIds.unitCreate,
+    title: 'Create a unit',
+    description: 'Controller only. Add a unit of a declared type at a point, with an optional base, label and property values; unnamed properties take the type\'s defaults. The runtime gives the id. A side is required exactly when the Run declares sides, and a group once the configuration declares groups, unless the type is public. Example: `{type:\'<type id>\', at:{type:\'Point\', coordinates:[11.4, 59.12]}}`.',
+    searchTerms: ['create unit', 'add unit', 'new unit'],
+    idempotent: false,
+    targets: () => [],
+  }),
+  command({
+    id: einsatzCommandIds.unitAdjust,
+    title: 'Adjust unit properties',
+    description: 'Controller only. Set property values of a unit, validated against its type, with a recorded reason. A unit on a task may not drop below a condition of its task\'s requirement. Example: `{unitId:\'unit:e2\', properties:{\'<property>\':2500}, reason:\'Refilled\'}`.',
+    searchTerms: ['adjust', 'properties', 'set value'],
+    idempotent: true,
+    targets: input => objectIds(input.unitId),
+  }),
+  command({
     id: einsatzCommandIds.setRoe,
     title: 'Set rules of engagement',
-    description: 'Set a unit\'s rules of engagement from the next 2 s engagement step on: hold (never fire), return-fire (fire only on tracks whose unit fired in the last 60 s) or free (fire on any eligible track). Only a unit with an effector has rules of engagement.',
+    description: 'Combat configurations only: a unit with an effector. Set its rules of engagement from the next 2 s engagement step on: hold (never fire), return-fire (fire only on tracks whose unit fired in the last 60 s) or free (fire on any eligible track). Example: `{unitId:\'unit:b1\', roe:\'return-fire\'}`.',
+    searchTerms: ['rules of engagement', 'roe', 'weapons'],
     idempotent: true,
     targets: input => objectIds(input.unitId),
   }),
   command({
     id: einsatzCommandIds.engage,
     title: 'Engage a track',
-    description: 'Name one of the unit\'s own side\'s tracks as its priority target: an identified track of a hostile side whose type the unit\'s effector targets. The unit fires on it whenever the fire gate passes (a fire-control fix, in range, and the rules of engagement allow); otherwise it keeps its current or nearest eligible target. A track of another side is refused cross_side_reference; a contact, a destroyed track or one the unit cannot engage is refused track_not_engageable.',
+    description: 'Combat configurations only. Name one of the unit\'s own side\'s identified tracks of a hostile side as its priority target; it fires whenever the fire gate passes (a fix, in range, rules of engagement allow). Another side\'s track is refused cross_side_reference; a contact, a destroyed track or one it cannot engage track_not_engageable. Example: `{unitId:\'unit:b1\', trackId:\'track:blue:3\'}`.',
+    searchTerms: ['engage', 'target', 'track'],
     idempotent: true,
     targets: input => objectIds(input.unitId),
   }),
-  defineSimulationQueryCapability({
-    readScope: 'collection',
-    id: einsatzQueryIds.recommend,
-    title: 'Recommend units for a task',
-    description: 'For a task: the smallest set of free units covering what it needs, by fit then ETA; when free units cannot cover it, completed with units still on their way to strictly lower-priority work (diverts), else the best partial set with the remainder named. Also single-unit alternatives (free first, then diverts), ineligible units with the reasons, busy units, and the units that hold the task queued in their job chain (next), which count towards nothing until it is active. A proposed or alternative unit that holds steps says how many (steps): a send replaces its active step, a queue adds behind them. ETAs include turnout and say whether they are routed or straight-line. Where the router fails or finds no route, or a point lies more than 1 km from a road, the ETA is unavailable with the refusal a send would get (routing_unavailable, no_road_near_point) and the straight distance; the recommendation is still given.',
-    input: recommendInputSchema,
-    output: recommendationSchema,
-    inspectObjectIds: raw => objectIds(recommendInputSchema.parse(raw).taskId),
-  }),
-  defineSimulationQueryCapability({
-    readScope: 'catalog',
-    id: einsatzQueryIds.configuration,
-    title: 'Read the Einsatz configuration',
-    description: 'The whole configuration in force (unit types, properties, task templates, load classes, wording, authority) and its revision. Authoring material: no instances or positions.',
-    input: z.object({}).strict(),
-    output: configurationOutputSchema,
-  }),
 ]
+
+/** The Pack's one line of guidance for agents (≤ 200 characters), fenced in the Run context. */
+export const einsatzGuidance = 'Dispatch: read world.einsatz.situation, then world.einsatz.recommend {taskId} for a ready order; send it with world.einsatz.unit.order. Re-read situation after each order.'

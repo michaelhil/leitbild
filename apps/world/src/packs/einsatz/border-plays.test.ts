@@ -25,7 +25,7 @@ const scoutTypes = new Set(start.catalog.config.unitTypes.filter(isScout).map(ty
 const screenTask = [...start.tasks.values()].find(task => task.side === blue
   && start.catalog.templates.get(task.template)!.requires.some(requirement => unitTypeOf(start.catalog, start.units.get(scouts[0]!)!).components.service?.provides.includes(requirement.provides)))!
 
-const send = (atS: number, unitId: string, to: unknown): TimedOrder => ({ atS, capabilityId: ids.send, input: { units: [unitId], to } })
+const send = (atS: number, unitId: string, to: unknown): TimedOrder => ({ atS, capabilityId: ids.order, input: { units: [unitId], stops: [to] } })
 const toPoint = (lonLat: readonly [number, number]) => ({ point: pointAt(lonLat) })
 const weaponsFree = (atS: number): TimedOrder[] => guns.map(unitId => ({ atS, capabilityId: ids.setRoe, input: { unitId, roe: 'free' } }))
 
@@ -80,7 +80,6 @@ describe('halden-border plays', () => {
     expect((definition.roles ?? []).map(role => [role.class, role.sees])).toEqual([['controller', 'all']])
     const groups = borderConfig(definition).groups
     expect(groups.every(group => group.side === blue || group.side === red)).toBe(true)
-    expect(borderConfig(definition).authority).toEqual([])
     // Every unit placed or created names one group of its own side.
     const created = timelineOf(definition).filter(order => order.capabilityId === ids.unitCreate).map(order => order.input as { readonly side: string; readonly group: string })
     const units = [...unitsWhere(start, blue, () => true), ...unitsWhere(start, red, () => true)]
@@ -98,7 +97,7 @@ describe('halden-border plays', () => {
     expect(human.rolePresets?.slice(3).map(preset => preset.roles)).toEqual([sideGroups(red)])
     // Human Red gets Red's orders as its own calls, and its reinforcements, instead of the scripted moves; Blue's timeline is the same.
     const redUnits = new Set(unitsWhere(start, red, () => true).map(unit => unit.id))
-    const movesRed = (order: TimedOrder): boolean => order.capabilityId === ids.send && (order.input as { readonly units: ReadonlyArray<string> }).units.every(unitId => redUnits.has(unitId))
+    const movesRed = (order: TimedOrder): boolean => order.capabilityId === ids.order && (order.input as { readonly units: ReadonlyArray<string> }).units.every(unitId => redUnits.has(unitId))
     const redOwn = (order: TimedOrder): boolean => (order.input as { readonly side?: string }).side === red
     expect(timelineOf(human).filter(order => !redOwn(order))).toEqual(timelineOf(definition).filter(order => !movesRed(order)))
     expect(new Set(timelineOf(human).filter(redOwn).map(order => order.capabilityId))).toEqual(new Set([ids.taskCreate, ids.unitCreate]))

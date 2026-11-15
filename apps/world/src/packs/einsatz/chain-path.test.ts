@@ -10,11 +10,11 @@ import type { Step } from './steps.ts'
 import type { StepTarget } from './steps.ts'
 import { einsatzPackView } from './ui-pack.ts'
 
-const queue = (unitId: string, to: StepTarget): Intent => ({ kind: 'queue', unitId, to })
+const queue = (unitId: string, to: StepTarget): Intent => ({ kind: 'order', units: [unitId], stops: [to], when: 'after' })
 const objectsOf = (state: EngineState) => engineObjects(state, () => ({ at: new Date(state.timeMs).toISOString() as IsoTimestamp, provenance: { source: 'simulator' } }))
 
 describe('Einsatz job chain paths', () => {
-  test('the planned path is the active route, then a straight segment to each queued target; while paused it starts where the unit stands', async () => {
+  test('the planned path is the active route, then a straight segment to each queued target', async () => {
     let state = await runAll(emptyState(), [
       newUnit('c1', types.roadCarrier, at(0)),
       newUnit('far', types.publicSite, at(-0.01)),
@@ -33,11 +33,6 @@ describe('Einsatz job chain paths', () => {
       ['step-3', at(-0.01).coordinates, at(-0.008).coordinates, 'B'],
       ['step-4', at(-0.008).coordinates, at(0.02).coordinates, undefined],
     ])
-    const paused = await run(state, { kind: 'hold', unitId: 'c1' })
-    const [held] = plannedPaths(objectsOf(paused))
-    expect(held!.activeLeg).toBeUndefined()
-    expect(held!.segments.map(segment => segment.stepId)).toEqual(['step-1', 'step-2', 'step-3', 'step-4'])
-    expect(held!.segments[0]!.from).toEqual(pointOf(paused, 'c1'))
   })
 
   test('the Pack draws each queued segment as a map feature in the routes layer, keyed by unit and step; an engage step moves nothing and adds none', async () => {
@@ -63,7 +58,7 @@ describe('Einsatz job chain paths', () => {
       ['einsatz-plan:c1:step-3', { type: 'LineString', coordinates: [at(-0.01).coordinates, at(0.02).coordinates] }],
     ])
     expect(features.map(feature => feature.summary)).toEqual(['C1 · next: FAR', 'C1 · next: a map point'])
-    expect(plannedPathFeatures(objectsOf(state), 'units', () => true)).toHaveLength(2)
+    expect(plannedPathFeatures(objectsOf(state), 'units')).toHaveLength(2)
     // Queued segments are dashed and thinner than a route; the selected unit's are a little stronger, above every other path.
     const line = (selectedObjectId?: string) => presentation.mapFeatures!({ objects, ...(selectedObjectId === undefined ? {} : { selectedObjectId }) })
       .map(feature => [feature.lineWidth, feature.lineOpacity, feature.lineDashed, feature.sortKey])

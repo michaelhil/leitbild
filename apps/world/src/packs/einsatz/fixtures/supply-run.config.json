@@ -1,11 +1,15 @@
 {
   "lexicon": {
-    "workList": "Supply requests",
-    "unitBoard": "Vehicles",
-    "noWork": "No requests waiting",
+    "calls": "Supply requests",
+    "units": "Vehicles",
+    "noCalls": "No requests waiting",
     "close": "Close request",
     "on-task": "Unloading"
   },
+  "priorities": [
+    { "id": "P1", "label": "Urgent", "code": "P1" },
+    { "id": "P2", "label": "Routine", "code": "P2" }
+  ],
   "loadClasses": [
     { "id": "P1", "label": "Urgent", "code": "P1", "noun": { "one": "pallet", "other": "pallets" } },
     { "id": "P2", "label": "Routine", "code": "P2", "noun": { "one": "pallet", "other": "pallets" } }
@@ -29,7 +33,7 @@
         "service": { "provides": ["supply"], "onSceneS": 300 }
       },
       "properties": [
-        { "id": "payloadKg", "label": "Payload", "kind": "number", "unit": "kg", "min": 0, "max": 20000, "default": 1000, "board": true }
+        { "id": "payloadKg", "label": "Payload", "kind": "number", "unit": "kg", "min": 0, "max": 20000, "default": 1000, "show": true }
       ],
       "standingOrders": { "return": { "afterIdleS": 60 } }
     }
@@ -39,7 +43,7 @@
       "id": "supply",
       "label": "Supply request",
       "icon": "package",
-      "priorityClass": "P2",
+      "priority": "P2",
       "requires": [
         {
           "provides": "supply",

@@ -467,17 +467,18 @@ describe('Workspace Host with real Modules', () => {
     expect(taskId).toBeDefined()
     expect(otherTaskId).toBeDefined()
     const recommended = await onSupplyRun('world.einsatz.recommend', { taskId })
-    expect(recommended).toMatchObject({ success: true, data: { taskId, proposal: { covers: true } } })
-    const proposal = (recommended.data as { proposal: { units: Array<{ unitId: string }> } }).proposal.units.map(unit => unit.unitId)
+    expect(recommended).toMatchObject({ success: true, data: { taskId, proposal: { covers: { covered: 1, needed: 1 } } } })
+    const order = (recommended.data as { proposal: { order: { units: string[]; stops: unknown[] } } }).proposal.order
+    const proposal = order.units
     expect(proposal.length).toBeGreaterThan(0)
-    expect(await onSupplyRun('world.einsatz.unit.send', { units: proposal, to: { taskId } })).toMatchObject({ success: true, data: { ok: true } })
-    expect(await onSupplyRun('world.einsatz.recommend', { taskId })).toMatchObject({ success: true, data: { taskId, need: null } })
+    expect(await onSupplyRun('world.einsatz.unit.order', order)).toMatchObject({ success: true, data: { ok: true } })
+    expect(await onSupplyRun('world.einsatz.recommend', { taskId })).toMatchObject({ success: true, data: { taskId, proposal: null } })
     const sentUnit = (await onSupplyRun('world.simulation-run.objects.search', { packId: 'einsatz', text: proposal[0] })).data as { objects: Array<{ id: string; status: string }> }
     const committedUnit = sentUnit.objects.find(object => object.id === proposal[0])
     expect(committedUnit).toBeDefined()
     expect(['mobilizing', 'en-route']).toContain(committedUnit!.status)
-    expect(await onSupplyRun('world.einsatz.unit.send', { units: proposal, to: { taskId: otherTaskId } }))
-      .toMatchObject({ success: false, error: expect.stringContaining('unit_committed:') })
+    expect(await onSupplyRun('world.einsatz.unit.order', { units: proposal, stops: [{ taskId: otherTaskId }] }))
+      .toMatchObject({ success: false, error: expect.stringContaining('when_required:') })
 
     // Human role exercises remain available; the ordinary AI path must still
     // refuse them rather than silently acquiring another side's picture.

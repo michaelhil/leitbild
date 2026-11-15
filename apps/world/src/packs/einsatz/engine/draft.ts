@@ -7,7 +7,7 @@ import { patch, sameValue } from './values.ts'
  * never mutated; the call returns a new state built from the draft. Unit
  * changes are transitions at the draft's time as they happen. Task changes
  * are staged and recorded by the task refresh, so a recorded task always
- * carries the coverage and rank of its own moment.
+ * carries the coverage of its own moment.
  */
 export interface Draft {
   readonly catalog: Catalog

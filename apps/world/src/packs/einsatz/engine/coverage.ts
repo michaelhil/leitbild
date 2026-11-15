@@ -1,6 +1,6 @@
 import type { UnitType } from '../config-schema.ts'
-import { classRankOf, isLowerClass, templateOf, unitTypeOf, type Catalog, type EngineState, type TaskCoverage, type TaskRecord, type UnitRecord } from './model.ts'
-import { committedPhases, conditionReasons, divertablePhases, hasLoad, isDestroyed, linksToTask, meetsRequirement, providesFor } from './rules.ts'
+import { templateOf, unitTypeOf, type Catalog, type EngineState, type TaskCoverage, type TaskRecord, type UnitRecord } from './model.ts'
+import { committedPhases, conditionReasons, isDestroyed, linksToTask, meetsRequirement, providesFor } from './rules.ts'
 import { byId, countOf, countsOf, total, type Counts } from './values.ts'
 
 /** What a role can serve on a task's side: the services its commandable units provide and the load classes they carry. */
@@ -37,8 +37,8 @@ const freeCapacity = (type: UnitType, unit: UnitRecord): number => {
 }
 
 /**
- * Which waiting load each assigned unit's free carry capacity takes, most
- * urgent class first. Within a class, units carrying fewer classes take load
+ * Which waiting load each assigned unit's free carry capacity takes, class
+ * by class in declared order. Within a class, units carrying fewer classes take load
  * first, keeping a unit that could carry something else for it; ties go by
  * unit id. Coverage reports this allocation and pickup follows it, so load
  * shown as covered is the load its unit picks up.
@@ -93,23 +93,15 @@ export const coverageOf = (catalog: Catalog, task: Pick<TaskRecord, 'id' | 'temp
 })
 
 /**
- * Rank, the divert protection and the row's code: the higher of the
- * template's floor and the most urgent class among loads not yet picked up,
- * covered or not; with neither, the least urgent class. Adding load or
- * coverage never lowers it.
+ * A task's priority: the one it names (an item's or `task.create`'s), else
+ * its template's, else the lowest declared. Load never changes it.
  */
-export const rankOf = (catalog: Catalog, task: Pick<TaskRecord, 'template' | 'loads' | 'id'>): string => {
-  const template = catalog.templates.get(task.template)
-  if (template === undefined) throw new Error(`${task.id}: task template ${task.template} is not declared`)
-  const waiting = catalog.classIds.find(id => countOf(task.loads, id) > 0)
-  const candidates = [template.priorityClass, waiting].filter((id): id is string => id !== undefined)
-  const [first, ...rest] = candidates
-  if (first === undefined) {
-    const lowest = catalog.classIds.at(-1)
-    if (lowest === undefined) throw new Error(`${task.id}: no load class is declared, so the task has no rank`)
-    return lowest
-  }
-  return rest.reduce((best, id) => classRankOf(catalog, id) < classRankOf(catalog, best) ? id : best, first)
+export const taskPriorityOf = (catalog: Catalog, template: string, named: string | undefined): string => {
+  const own = named ?? catalog.templates.get(template)?.priority
+  if (own !== undefined) return own
+  const lowest = catalog.priorities.at(-1)
+  if (lowest === undefined) throw new Error(`Task template ${template}: no priority is declared, so the task has no priority`)
+  return lowest.id
 }
 
 /** A report has nothing to serve: no requirements and never any load. It closes only when closed explicitly. */
@@ -123,29 +115,23 @@ export const isDone = (catalog: Catalog, task: TaskRecord, coverage: TaskCoverag
 const short = (entry: TaskCoverage['requirements'][number]): boolean => entry.enRoute + entry.onTask + entry.completed < entry.count
 
 /**
- * Need for a role, the sort key of an unserved row: the most urgent load
- * class still uncovered that the role's units can carry; otherwise the rank
- * when a requirement the role can provide is still short, or when the task
- * is an open report. Undefined means the task is served for this role.
+ * Whether a task still needs something from a role: an uncovered load
+ * class one of the role's units carries, a requirement short that one of
+ * them provides, or, an open report, attention.
  */
-export const needFor = (catalog: Catalog, task: TaskRecord, coverage: TaskCoverage, view: RoleView): string | undefined => {
-  if (task.closedAtMs !== undefined) return undefined
-  const uncovered = coverage.loads.find(entry => entry.covered < entry.waiting && view.carries.has(entry.classId))
-  if (uncovered !== undefined) return uncovered.classId
-  const requirementShort = coverage.requirements.some(entry => view.provides.has(entry.provides) && short(entry))
-  return requirementShort || isReport(catalog, task) ? task.rank : undefined
+export const needsFrom = (catalog: Catalog, task: TaskRecord, coverage: TaskCoverage, view: RoleView): boolean => {
+  if (task.closedAtMs !== undefined) return false
+  if (coverage.loads.some(entry => entry.covered < entry.waiting && view.carries.has(entry.classId))) return true
+  return coverage.requirements.some(entry => view.provides.has(entry.provides) && short(entry)) || isReport(catalog, task)
 }
 
 /** The units a task's coverage counts with a proposal: those assigned to it, and the proposal's as if sent now. */
 export const countedFor = (state: EngineState, task: TaskRecord, proposal: ReadonlyArray<UnitRecord>): UnitRecord[] =>
   [...assignedTo(state.units.values(), task), ...asAssigned(proposal, task)]
 
-/**
- * The residual need: the task's need for the role after the proposal's units
- * are counted on their way. With no proposal it is the need itself.
- */
-export const residualNeed = (state: EngineState, task: TaskRecord, view: RoleView, proposal: ReadonlyArray<UnitRecord>): string | undefined =>
-  needFor(state.catalog, task, coverageOf(state.catalog, task, countedFor(state, task, proposal)), view)
+/** Whether the task still needs something from the role once the proposal's units are counted on their way. */
+export const stillNeeds = (state: EngineState, task: TaskRecord, view: RoleView, proposal: ReadonlyArray<UnitRecord>): boolean =>
+  needsFrom(state.catalog, task, coverageOf(state.catalog, task, countedFor(state, task, proposal)), view)
 
 export interface Contribution {
   /** Counting the unit changes how far some requirement is filled, up to its count, or how much load of some class is covered. */
@@ -186,26 +172,4 @@ export const contributionOf = (catalog: Catalog, task: TaskRecord, counted: Read
     unmet: requirements.flatMap(entry => entry.reasons),
     covered: matched.some(entry => !entry.open) || loads.some(entry => entry.covered >= entry.waiting),
   }
-}
-
-/**
- * A divert candidate for a task: a commandable, same-side, unloaded unit
- * still on its way (mobilizing or en route) to another task whose rank is
- * strictly lower than the residual need, and able to add to the task. A unit
- * on task, or heading to work of equal or higher priority, is never one.
- */
-export const isDivertCandidate = (state: EngineState, input: {
-  readonly unit: UnitRecord
-  readonly task: TaskRecord
-  /** The units the task counts with the proposal's free units, as for the residual need (`countedFor`). */
-  readonly counted: ReadonlyArray<UnitRecord>
-  readonly residual: string | undefined
-  readonly commandable: (unit: UnitRecord) => boolean
-}): boolean => {
-  const { unit, task, residual } = input
-  if (residual === undefined || unit.taskId === undefined || unit.taskId === task.id) return false
-  if (!input.commandable(unit) || !linksToTask(unit, task) || hasLoad(unit) || isDestroyed(unit) || !divertablePhases.includes(unit.phase)) return false
-  const from = state.tasks.get(unit.taskId)
-  if (from === undefined) throw new Error(`${unit.id}: committed to missing task ${unit.taskId}`)
-  return isLowerClass(state.catalog, from.rank, residual) && contributionOf(state.catalog, task, input.counted, unit).adds
 }

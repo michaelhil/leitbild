@@ -5,7 +5,8 @@ import type { PackScenarioAuthoringContribution, PackScenarioAuthoringField } fr
  * a task placed on the map. Their type, template and group come only from
  * the Selection's own configuration, so no type is built in and a new item
  * has none until the author picks one. A unit's group applies once the
- * configuration declares groups, and a side once the Scenario declares sides.
+ * configuration declares groups, and a side once the Scenario declares sides;
+ * a task's priority is typed in its JSON.
  * The side is typed, not derived from the group, so its field tells the
  * author that a grouped unit's side must equal its group's side. Compile
  * refuses an item that leaves either out or mixes them, and a type or
@@ -31,9 +32,9 @@ const side = (description: string): PackScenarioAuthoringField => ({
 
 export const einsatzAuthoring: PackScenarioAuthoringContribution = {
   configuration: {
-    beforeStart: "Declare unitTypes, taskTemplates, counted load classes, properties, groups, lexicon and authority before authoring unit/task references. Units reference unitType; tasks reference template. Durations and rates use their owning schema units. Once groups exist, non-public units require a group; side and group side must agree. Load is counted per declared load class; the configuration defines its meaning.",
-    liveChanges: "Exact world.einsatz.unit/task/site command schemas support dispatch, queue/hold/recall, readiness/property/load adjustments, task creation/closure and receiving-site changes. The selected configuration/authority constrains them. Role/sided Runs currently refuse AI callers; configuration does not override that boundary.",
-    requiresNewRevision: "Replacing unit/task type definitions, lexicon, groups, authority, sides or role declarations requires a new Scenario Revision and Run. Runtime commands do not hot-replace the configuration language or admitted role picture.",
+    beforeStart: "Declare unitTypes, taskTemplates, priorities (highest first), counted load classes, properties, groups and lexicon before authoring unit/task references. Units reference unitType; tasks reference template and may name a priority. A type that does not move is a site: give it receiving. Durations and rates use their owning schema units. Once groups exist, non-public units require a group; in a Scenario with sides, a group's side must agree with its units'. Load is counted per declared load class; the configuration defines its meaning.",
+    liveChanges: "The world.einsatz command schemas give units plans (world.einsatz.unit.order), remove a stop, undo an order, return a unit to base, adjust properties, create and close tasks and open or close sites; world.einsatz.situation shows what is running. A Scenario without sides is open: any caller, an AI agent included, commands every unit. A Scenario with sides plays roles, and AI callers are refused there.",
+    requiresNewRevision: "Replacing unit/task type definitions, priorities, lexicon, groups, sides or role declarations requires a new Scenario Revision and Run. Runtime commands do not hot-replace the configuration language or admitted role picture.",
   },
   itemTypes: [
     {

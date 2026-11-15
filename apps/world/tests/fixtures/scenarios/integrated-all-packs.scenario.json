@@ -576,14 +576,25 @@
       "id": "einsatz",
       "config": {
         "lexicon": {
-          "workList": "Supply requests",
-          "unitBoard": "Vehicles",
-          "noWork": "No requests waiting",
+          "calls": "Supply requests",
+          "units": "Vehicles",
+          "noCalls": "No requests waiting",
           "close": "Close request",
           "send": "Send",
-          "hold": "Stop",
           "on-task": "Unloading"
         },
+        "priorities": [
+          {
+            "id": "P1",
+            "label": "Urgent",
+            "code": "P1"
+          },
+          {
+            "id": "P2",
+            "label": "Routine",
+            "code": "P2"
+          }
+        ],
         "loadClasses": [
           {
             "id": "P1",
@@ -642,7 +653,7 @@
                 "min": 0,
                 "max": 20000,
                 "default": 1000,
-                "board": true
+                "show": true
               }
             ],
             "standingOrders": {
@@ -657,7 +668,6 @@
             "id": "supply",
             "label": "Supply request",
             "icon": "package",
-            "priorityClass": "P2",
             "requires": [
               {
                 "provides": "supply",
@@ -673,13 +683,13 @@
                   }
                 ]
               }
-            ]
+            ],
+            "priority": "P2"
           },
           {
             "id": "bulk",
             "label": "Bulk request",
             "icon": "container",
-            "priorityClass": "P1",
             "requires": [
               {
                 "provides": "supply",
@@ -695,7 +705,8 @@
                   }
                 ]
               }
-            ]
+            ],
+            "priority": "P1"
           }
         ]
       },
