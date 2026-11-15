@@ -1,8 +1,8 @@
 // The presenter: planner words generated from structure (never stored), and the bounded sections that
 // planning.plan.read returns. The UI's format.ts mirrors these rules. Every section fits the 4 KB result.
-import { planningError } from '../errors.ts'
 import { goalResolution, type Certificate, type CertifiedSize, type Plan, type PlanInputs, type Status } from './schema.ts'
 import { resultLimitBytes, type OptionWarning, type SectionName } from '../api/contract.ts'
+import type { BuysItem } from './buys.ts'
 import type { ChangeRecord, Weakening } from './edits.ts'
 import type { OutTogether, Precondition, ReadinessItem } from './readiness.ts'
 
@@ -71,6 +71,30 @@ export const basisWords: Readonly<Record<string, string>> = { design: 'design', 
 
 const goalWords: Readonly<Record<Inputs['goals'][number]['metric'], string>> = {
   'span-over': 'outage time over target', finish: 'finish', 'extra-cost': 'extra cost', 'unavailable-hours': 'hours out of service', lateness: 'lateness',
+}
+
+/**
+ * Plan goal `k` in planner words, from its metric, scope and threshold: "outage time of Train A cooling chain
+ * over 54 h", "extra cost". `short` leaves out the groups: "outage time over 54 h".
+ */
+export const goalName = (inputs: Inputs, k: number, short = false): string => {
+  const goal = inputs.goals[k]
+  if (goal === undefined) return `goal ${k + 1}`
+  const over = goal.threshold === undefined || goal.threshold.value === 0 ? '' : ` over ${valueWords(goal.threshold.value, goal.threshold.unit)}`
+  if (goal.metric !== 'span-over') return `${goalWords[goal.metric]}${goal.metric === 'extra-cost' ? '' : over}`
+  const groups = goal.scope?.groups ?? []
+  return `outage time${short || groups.length === 0 ? '' : ` of ${names(inputs, groups, 2)}`}${over}`
+}
+/** The unit a goal's values are in: the plan's currency for extra cost, else the goal's own time unit. */
+export const goalUnit = (inputs: Inputs, k: number): string => inputs.goals[k]?.metric === 'extra-cost' ? inputs.settings.currency : inputs.goals[k]?.tolerance.unit ?? 'h'
+
+/** The option's longest outage (from the plan's span-over goal's spans, in that goal's unit) and its extra cost, from its stored metrics. */
+export const spanAndCost = (inputs: Inputs, option: Pick<Option, 'metrics'>): { readonly span?: number; readonly cost?: number } => {
+  const k = (metric: string) => inputs.goals.findIndex(goal => goal.metric === metric)
+  const spanGoal = k('span-over'), costGoal = k('extra-cost')
+  const spans = option.metrics.filter(metric => spanGoal >= 0 && (metric.id === `goal:${spanGoal}` || metric.id.startsWith(`goal:${spanGoal}:`)))
+  const cost = costGoal < 0 ? undefined : option.metrics.find(metric => metric.id === `goal:${costGoal}`)?.value
+  return { ...(spans.length === 0 ? {} : { span: Math.max(...spans.map(metric => metric.value)) }), ...(cost === undefined ? {} : { cost }) }
 }
 
 // ───────────── names ─────────────
@@ -352,7 +376,21 @@ export interface SectionContext {
   readonly readiness: readonly ReadinessItem[]
   readonly options: ReadonlyMap<string, OptionState>
   readonly certifiedSize: CertifiedSize
+  /** The buys section's items, for that section only (plan/buys.ts buysItems). */
+  readonly buys?: readonly BuysItem[]
+  /** The previous section's option states, for that section only. */
+  readonly previous?: ReadonlyMap<string, OptionState>
+  /** For the options or previous section: each dominated option's key, and the key of an option of its set that dominates it. */
+  readonly dominated?: ReadonlyMap<string, string>
 }
+
+/** Options as the options and previous sections page them: no rows, the status to show, fresh, warnings, dominance. */
+const optionItems = (options: readonly Option[], states: ReadonlyMap<string, OptionState>, dominated: ReadonlyMap<string, string> | undefined) =>
+  options.map(({ rows: _rows, ...rest }) => {
+    const state = states.get(rest.key)
+    const by = dominated?.get(rest.key)
+    return { ...rest, status: state?.shown ?? rest.status, fresh: state !== undefined && !state.stale, warnings: [...(state?.warnings ?? []).slice(0, 4)], ...(by === undefined ? {} : { dominated: { by } }) }
+  })
 
 export interface Section { readonly id: string; readonly title: string; readonly description?: string; readonly data: unknown }
 
@@ -404,18 +442,25 @@ export const buildSection = (name: SectionName, context: SectionContext, offset:
     case 'rules': return pagedSection(name, inputs.rules.map(rule => ({ rule })), offset, budget)
     case 'crews': return pagedSection(name, [...inputs.calendars.map(calendar => ({ calendar })), ...inputs.resources.map(resource => ({ resource })), ...inputs.purchases.map(purchase => ({ purchase }))], offset, budget)
     case 'sources': return pagedSection(name, [...inputs.equipment.map(equipment => ({ equipment })), ...inputs.groups.map(group => ({ group })), ...inputs.world.facts.map(fact => ({ fact }))], offset, budget)
-    case 'options': return pagedSection(name, (plan.options?.options ?? []).map(({ rows: _rows, ...rest }) => {
-      const state = context.options.get(rest.key)
-      return { ...rest, status: state?.shown ?? rest.status, fresh: state !== undefined && !state.stale, warnings: [...(state?.warnings ?? []).slice(0, 4)] }
-    }), offset, budget, { at: plan.options?.at ?? null, recommended: plan.options?.recommended ?? null })
+    case 'options': return pagedSection(name, optionItems(plan.options?.options ?? [], context.options, context.dominated), offset, budget, { at: plan.options?.at ?? null, recommended: plan.options?.recommended ?? null })
     case 'schedule': {
       if (option === undefined) throw new RangeError('A schedule names its option')
       return pagedSection(name, [...option.rows].sort((left, right) => left.start.localeCompare(right.start) || left.job.localeCompare(right.job)), offset, budget, { option: option.key })
     }
     case 'history': return pagedSection(name, [...plan.changes].reverse(), offset, budget)
-    // The ladder rows are the service lane's (design §4.1). Until they are built the section is refused, never empty.
-    case 'buys': throw planningError(501, 'not_built', 'What overtime buys is not built in this version of Planning')
-    // The previous options page is the service lane's (decision "Lane P batch 2", 3): refused until it is built.
-    case 'previous': throw planningError(501, 'not_built', 'The previous options are not built in this version of Planning')
+    case 'buys': {
+      // Built by the service from the stored options and lane K's standing of each (plan/buys.ts).
+      if (context.buys === undefined) throw new Error('The buys section is built from its ladder')
+      return [{ ...pagedSection(name, context.buys, offset, budget)[0]!, description: buysPointer }]
+    }
+    case 'previous': {
+      // The set before the last Generate on a newer revision (plan.previousOptions): never fresh, so said without proof words.
+      const set = plan.previousOptions
+      if (context.previous === undefined) throw new Error('The previous section is built from its option states')
+      return pagedSection(name, optionItems(set?.options ?? [], context.previous, context.dominated), offset, budget, { at: set?.at ?? null, recommended: set?.recommended ?? null })
+    }
   }
 }
+
+/** Under the ladder (design §4.1): the finer trade is a what-if, not a rung. */
+export const buysPointer = 'Each row compares two rungs solved on the plan as it is now. For a finer trade, ask for \'at most … h out\'.'
