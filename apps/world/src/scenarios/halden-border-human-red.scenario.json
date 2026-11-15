@@ -831,7 +831,7 @@
             "id": "board",
             "target": {
               "kind": "panel",
-              "panelId": "einsatz.board"
+              "panelId": "einsatz.dispatch"
             },
             "action": {
               "kind": "reveal"
@@ -854,7 +854,7 @@
             "id": "board",
             "target": {
               "kind": "panel",
-              "panelId": "einsatz.board"
+              "panelId": "einsatz.dispatch"
             },
             "action": {
               "kind": "reveal"

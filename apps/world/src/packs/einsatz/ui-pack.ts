@@ -1,14 +1,12 @@
-import { z } from 'zod'
 import type { OperationalObject } from '../../core/model/index.ts'
 import { createWorldPackDescriptor, type PackObjectField, type PackObjectPresentation, type PackObjectPresentationContext, type PackObjectStatusPresentation, type WorldPackView } from '../../core/packs/protocol.ts'
 import { packField } from '../../core/packs/presentation.ts'
 import { plannedPathFeatures } from './chain-path.ts'
 import { einsatzColors } from './colors.ts'
 import { einsatzPackId, einsatzRuntimeId } from './ids.ts'
-import { neutralLexicon, unitPhases, type UnitPhase } from './lexicon.ts'
-import { groupUnseen } from './picture.ts'
-import { clockText, contactIcon } from './situation/text.ts'
-import { boardMapOrders } from './ui/map-orders.ts'
+import { neutralLexicon, type UnitPhase } from './lexicon.ts'
+import { contactIcon } from './situation/text.ts'
+import { dispatchWords, einsatzRecordOf, kindOfRecord, tierWord, trackAgeText, type EinsatzRecord } from './ui/presenters.ts'
 
 /**
  * The browser-safe Einsatz view. It reads only the presentation each object
@@ -23,15 +21,9 @@ import { boardMapOrders } from './ui/map-orders.ts'
  * which names the unit each track follows, reaches truth roles only and is
  * never drawn on the map.
  *
- * Each unit's job chain shows as its planned path: its route, then a
- * straight segment to each queued step's target (`chain-path.ts`). The path
- * of the unit the map selects, the Board's highlighted asset, is drawn
- * strongly; every other one faintly.
- *
- * In a role Run a screen chooses which roles it sees (the role dialog's See
- * boxes, `seenRoleIds`): a unit of a group whose role it does not see is not
- * drawn on the map, nor is its planned path. That is a display filter of
- * this tab only; what a side sees at all stays the Run's, per side.
+ * Each unit's plan shows as its planned path: its route, then a straight
+ * segment to each queued stop's target (`chain-path.ts`). The path of the
+ * unit the map selects is drawn strongly; every other one faintly.
  *
  * Map labels: a unit shows its callsign and a short code of its phase, and
  * whether it is damaged; a place that does not move, its name, and whether
@@ -39,18 +31,21 @@ import { boardMapOrders } from './ui/map-orders.ts'
  * a receiving site, its name and whether it is
  * closed; a task, its label; a track, its serial and the age of its last
  * detection. A unit's status tone says whether it is free, committed or out
- * of action.
+ * of action. A call no unit is assigned to yet carries a pulsing "Waiting"
+ * status: with no coach line (plan B.2, B.7), it is the novice's cue.
  *
- * The Board is the Pack's one surface panel and its only unit and task list,
- * so no category takes a rail section. Open by default, it takes every
- * map target click of an Einsatz unit and the World's keys, switches off the
- * map gestures its keys and clicks would collide with, and starts the
- * surface with the rail collapsed. Which units the map selects for orders is
- * `ordersOnMap` over the configuration the Board fetched (`ui/map-orders.ts`).
+ * The Dispatch panel is the Pack's one surface panel and its only list, so
+ * no category takes a rail section. Open by default, it takes every map
+ * target click of an Einsatz unit; the map keeps its gestures but
+ * double-click zoom, so a double-click on an object acts as one click. A
+ * unit that moves is a map controller: a click on one selects it, and with
+ * it selected every other click is the panel's to read (`ui/selection.ts`),
+ * which only ever sends from an armed unit. A site, a task and a track are
+ * never controllers.
  */
 
-/** The Board's panel id: its first segment names the Pack whose data revisions reach it. */
-export const einsatzBoardPanelId = 'einsatz.board'
+/** The Dispatch panel's id: its first segment names the Pack whose data revisions reach it. */
+export const einsatzDispatchPanelId = 'einsatz.dispatch'
 
 const unitsCategory = 'einsatz-units'
 const tasksCategory = 'einsatz-tasks'
@@ -59,7 +54,7 @@ const trackIndexesCategory = 'einsatz-track-indexes'
 const { unit: unitColor, task: taskColor, identified: identifiedColor, contact: contactColor } = einsatzColors
 const trackIndexIcon = 'network'
 
-/** Short neutral codes of the closed phase set for map labels; the Board words each phase from the configuration. */
+/** Short neutral codes of the closed phase set for map labels; the Dispatch panel words each phase from the configuration. */
 const phaseCodes: Readonly<Record<UnitPhase, string>> = {
   available: 'AV',
   mobilizing: 'MOB',
@@ -72,46 +67,13 @@ const phaseCodes: Readonly<Record<UnitPhase, string>> = {
   destroyed: 'X',
 }
 
-const presentationSchema = z.object({ icon: z.string().min(1), typeLabel: z.string().min(1) }).strict()
-const counts = z.record(z.string(), z.number())
+type UnitData = Extract<EinsatzRecord, { type: 'unit' }>
+type TrackData = Extract<EinsatzRecord, { type: 'track' }>
 
-const einsatzObjectSchema = z.discriminatedUnion('type', [
-  z.object({
-    type: z.literal('unit'),
-    presentation: presentationSchema,
-    phase: z.enum(unitPhases),
-    integrity: z.enum(['healthy', 'damaged', 'destroyed']),
-    taskId: z.string().min(1).optional(),
-    group: z.string().min(1).optional(),
-    load: counts,
-    /** Present on a receiving site only. */
-    accepting: z.boolean().optional(),
-  }).loose(),
-  z.object({ type: z.literal('task'), presentation: presentationSchema }).loose(),
-  z.object({
-    type: z.literal('track'),
-    tier: z.enum(['contact', 'identified', 'destroyed']),
-    fix: z.boolean(),
-    identity: z.object({ typeLabel: z.string().min(1), icon: z.string().min(1), side: z.string().min(1), rangeM: z.number().positive().optional() }).strict().optional(),
-  }).strict(),
-  z.object({ type: z.literal('track-index'), side: z.string().min(1), next: z.number().int().positive(), subjects: z.record(z.string(), z.string()) }).strict(),
-])
-type EinsatzObjectData = z.output<typeof einsatzObjectSchema>
-type UnitData = Extract<EinsatzObjectData, { type: 'unit' }>
-type TrackData = Extract<EinsatzObjectData, { type: 'track' }>
+const typeOf = (object: OperationalObject): EinsatzRecord['type'] | null => object.packId === einsatzPackId ? einsatzRecordOf(object).type : null
 
-const dataOf = (object: OperationalObject): EinsatzObjectData => einsatzObjectSchema.parse(object.packData)
-const typeOf = (object: OperationalObject): EinsatzObjectData['type'] | null => object.packId === einsatzPackId ? dataOf(object).type : null
-
-/** An Einsatz unit of a group whose role the screen chose not to see. */
-const unitUnseen = (object: OperationalObject, seenRoleIds: ReadonlyArray<string> | undefined): boolean => {
-  if (object.packId !== einsatzPackId) return false
-  const data = dataOf(object)
-  return data.type === 'unit' && groupUnseen(data.group, seenRoleIds)
-}
-
-const tierWord = (tier: TrackData['tier']): string =>
-  tier === 'contact' ? neutralLexicon.contact : tier === 'identified' ? neutralLexicon.identified : neutralLexicon.destroyed
+/** An Einsatz unit that moves: the map selects it to give it orders through the Dispatch panel. */
+const isMovingUnit = (object: OperationalObject): boolean => typeOf(object) === 'unit' && object.kind === 'mobile_entity'
 
 const dot = { shape: 'dot' } as const
 
@@ -131,10 +93,8 @@ const unitLabel = (object: OperationalObject, data: UnitData): string => {
 
 /** The track's serial and, while the Run clock is known, the age of its last detection. */
 const trackLabel = (object: OperationalObject, context: PackObjectPresentationContext): string => {
-  const observedAt = object.spatial.position?.observedAt
-  const now = context.currentTime
-  if (observedAt === undefined || now === undefined) return object.label
-  return `${object.label} · ${clockText((Date.parse(now) - Date.parse(observedAt)) / 1_000)}`
+  const age = trackAgeText(object, context.currentTime === undefined ? null : Date.parse(context.currentTime))
+  return age === null ? object.label : `${object.label} · ${age}`
 }
 
 const presentTrack = (object: OperationalObject, data: TrackData, context: PackObjectPresentationContext): PackObjectPresentation => {
@@ -159,18 +119,36 @@ const presentTrack = (object: OperationalObject, data: TrackData, context: PackO
   }
 }
 
+/** The tasks some Einsatz unit is assigned to, once per object list. */
+const assignedTasksOf = (() => {
+  const cache = new WeakMap<ReadonlyArray<OperationalObject>, ReadonlySet<string>>()
+  return (objects: ReadonlyArray<OperationalObject>): ReadonlySet<string> => {
+    const known = cache.get(objects)
+    if (known !== undefined) return known
+    const assigned = new Set(objects.flatMap(object => {
+      if (object.packId !== einsatzPackId) return []
+      const record = einsatzRecordOf(object)
+      return record.type === 'unit' && record.taskId !== undefined ? [record.taskId] : []
+    }))
+    cache.set(objects, assigned)
+    return assigned
+  }
+})()
+
+/** An open call no unit is assigned to pulses until one is. */
+const waitingStatus: PackObjectStatusPresentation = { tone: 'idle', label: dispatchWords.waiting, indicator: { shape: 'dot', pulse: true } }
+
 const presentEinsatzObject = (object: OperationalObject, context: PackObjectPresentationContext): PackObjectPresentation => {
-  const data = dataOf(object)
+  const data = einsatzRecordOf(object)
   switch (data.type) {
     case 'unit': {
-      const site = data.accepting !== undefined
+      const site = kindOfRecord(data) === 'site'
       return {
         categoryId: unitsCategory,
         icon: data.presentation.icon,
         color: unitColor,
         summary: data.presentation.typeLabel,
         muted: object.lifecycle !== 'active' || data.integrity === 'destroyed',
-        ...(groupUnseen(data.group, context.seenRoleIds) ? { mapIconVisible: false } : {}),
         fields: [],
         ...(site ? { mapLabel: data.accepting === true ? object.label : `${object.label} · closed` } : { mapLabel: unitLabel(object, data), ...(object.kind === 'facility' && data.integrity !== 'destroyed' ? {} : { status: unitStatus(data) }) }),
       }
@@ -184,6 +162,7 @@ const presentEinsatzObject = (object: OperationalObject, context: PackObjectPres
         muted: object.lifecycle !== 'active',
         fields: [],
         mapLabel: object.label,
+        ...(object.lifecycle === 'active' && !assignedTasksOf(context.objects).has(object.id) ? { status: waitingStatus } : {}),
       }
     case 'track':
       return presentTrack(object, data, context)
@@ -212,43 +191,37 @@ export const einsatzPackView = {
     defaultRuntimeId: einsatzRuntimeId,
   },
   presentation: {
-    // The Board is the only unit and task list, so no category takes a rail section.
+    // The Dispatch panel is the only list, so no category takes a rail section.
     categories: [
-      { id: unitsCategory, label: neutralLexicon.units, emptyLabel: `No ${neutralLexicon.units.toLowerCase()}`, matches: object => typeOf(object) === 'unit', rail: false },
-      { id: tasksCategory, label: neutralLexicon.calls, emptyLabel: `No ${neutralLexicon.calls.toLowerCase()}`, matches: object => typeOf(object) === 'task', rail: false },
+      { id: unitsCategory, label: neutralLexicon.units, emptyLabel: neutralLexicon.noUnits, matches: object => typeOf(object) === 'unit', rail: false },
+      { id: tasksCategory, label: neutralLexicon.calls, emptyLabel: neutralLexicon.noCalls, matches: object => typeOf(object) === 'task', rail: false },
       { id: tracksCategory, label: neutralLexicon.tracks, emptyLabel: `No ${neutralLexicon.tracks.toLowerCase()}`, matches: object => typeOf(object) === 'track', rail: false },
       { id: trackIndexesCategory, label: 'Track indexes', emptyLabel: 'No track indexes', matches: object => typeOf(object) === 'track-index', rail: false },
     ],
     presentObject: (object, context) => presentEinsatzObject(object, context),
-    /** Each unit's queued steps as straight segments after its route: the planned path of its job chain, the selected unit's drawn strongly. */
-    mapFeatures: context => {
-      const unseen = new Set(context.objects.filter(object => unitUnseen(object, context.seenRoleIds)).map(object => object.id as string))
-      return plannedPathFeatures(context.objects, unitsCategory, unitId => !unseen.has(unitId), context.selectedObjectId)
-    },
+    /** Each unit's queued stops as straight segments after its route: the planned path of its plan, the selected unit's drawn strongly. */
+    mapFeatures: context => plannedPathFeatures(context.objects, unitsCategory, context.selectedObjectId),
     // The selected unit's path is drawn strongly, so the map redraws these features when the selection changes.
     mapFeaturesFollowSelection: true,
     mapFeatureLayers: ['routes'],
     mapFeatureSourcePackIds: [einsatzPackId],
   },
   targeting: {
-    isController: boardMapOrders.isController,
-    // Another role's units are drawn muted; a tap on one says who commands it.
-    mutedOnMap: boardMapOrders.mutedOnMap,
-    // Every map order for an Einsatz unit goes to the open Board's `onMapTarget`; the generic surface never sends one.
+    isController: object => isMovingUnit(object),
+    // Every map order for an Einsatz unit goes to the open Dispatch panel's `onMapTarget`; the generic surface never sends one.
     isTarget: () => false,
-    buildSetTargetCommand: controller => { throw new Error(`Einsatz map orders go through the Board, never the generic map path: ${controller.id}`) },
-    buildCancelTargetCommand: controller => { throw new Error(`Einsatz map orders go through the Board, never the generic map path: ${controller.id}`) },
+    buildSetTargetCommand: controller => { throw new Error(`Einsatz map orders go through the Dispatch panel, never the generic map path: ${controller.id}`) },
+    buildCancelTargetCommand: controller => { throw new Error(`Einsatz map orders go through the Dispatch panel, never the generic map path: ${controller.id}`) },
   },
   ui: {
     surfacePanels: [{
-      id: einsatzBoardPanelId,
-      label: neutralLexicon.calls,
+      id: einsatzDispatchPanelId,
+      label: dispatchWords.panel,
       defaultOpen: true,
       mapTargets: true,
-      keymap: true,
-      load: async () => await import('./ui/BoardPanel.svelte'),
+      load: async () => await import('./ui/DispatchPanel.svelte'),
     }],
-    mapInteraction: { doubleClickZoom: false, keyboard: false, boxZoom: false },
+    mapInteraction: { doubleClickZoom: false },
     surfaceLayout: { railCollapsed: true },
   },
 } satisfies WorldPackView
