@@ -55,7 +55,8 @@ describe('what differs from an option of the previous set', () => {
     const text = compare(current, swap, reordered)
     expect(text).toContain('Changed since: Changed the goal order.')
     expect(text).toContain('The goals changed since, so goal values are not compared.')
-    expect(text.some(line => line.startsWith('Outage time') || line.startsWith('Extra cost') || line.startsWith('Longest outage'))).toBe(false)
+    // No goal value; the groups' longest outages are the checker's own span figures, not goal ids, so they stay.
+    expect(text.some(line => line.startsWith('Outage time') || line.startsWith('Extra cost') || line.startsWith('Hours out of service'))).toBe(false)
     // The entry for revision 4 trimmed from the history: what changed is not known, so nothing is compared on goals.
     const trimmed = compare(current, swap, plan.changes.slice(0, 3).map(change => ({ ...change, revision: 3 })), 1)
     expect(trimmed).toContain('The history no longer holds every change since revision 3.')
@@ -71,11 +72,10 @@ describe('what differs from an option of the previous set', () => {
 })
 
 describe('the longest outage of each group with a span rule (G5)', () => {
-  test('from the checker\'s stored span figures, for every group a span rule names, beside the goal values', async () => {
-    const { checkPlan } = await import('../check/check.ts')
-    // As Generate stores them: lane K's 'span:<group>' figures on the option's own rows.
-    const spanned = (option: Option, revision?: number) => variantOf(option, { ...(revision === undefined ? {} : { revision }), metrics: [...option.metrics, ...checkPlan(trainAInputs, option.variant, option.rows).metrics.filter(metric => metric.id.startsWith('span:'))] })
-    const now = spanned(rebuild, 4), was = spanned(swap)
+  test('from the checker\'s stored span figures, for every group a span rule names, in the lines and the facts', async () => {
+    const { versus } = await import('./versus.ts')
+    // The fixture options carry lane K's 'span:<group>' figures as Generate stores them.
+    const now = current, was = swap
     const text = compare(now, was)
     const groups = [...new Set(trainAInputs.rules.flatMap(rule => rule.kind === 'span-limit' ? [rule.group] : []))]
     expect(groups.length).toBeGreaterThan(1)
@@ -84,6 +84,13 @@ describe('the longest outage of each group with a span rule (G5)', () => {
       const difference = figure(now) - figure(was)
       expect(text).toContain(`Longest outage of ${nameOf(trainAInputs, group)}: ${valueWords(figure(now), 'h')}${Math.abs(difference) < 1e-9 ? ', unchanged.' : `, was ${valueWords(figure(was), 'h')} (${valueWords(Math.abs(difference), 'h')} ${difference > 0 ? 'longer' : 'shorter'}).`}`)
     }
+    // Every group with a span rule is in the facts, now and then, in h.
+    const facts = versus({ inputs: trainAInputs, option: now, previous: was, plan: { revision: 4, changes: plan.changes, droppedChanges: 0 } }).facts
+    const figure = (option: Option, group: string) => option.metrics.find(metric => metric.id === `span:${group}`)!.value
+    expect(facts.outages).toEqual(groups.map(group => ({ group, now: figure(now, group), was: figure(was, group) })))
+    // Without a stored figure for every such group, no outages are given in the facts.
+    const without = variantOf(was, { metrics: was.metrics.filter(metric => metric.id !== `span:${groups.at(-1)}`) })
+    expect(versus({ inputs: trainAInputs, option: now, previous: without, plan: { revision: 4, changes: plan.changes, droppedChanges: 0 } }).facts.outages).toBeUndefined()
   })
 })
 

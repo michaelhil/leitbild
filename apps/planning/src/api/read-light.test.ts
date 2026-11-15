@@ -12,8 +12,7 @@ mock.module('../check/check.ts', () => ({ ...check, checkPlan: (...args: Paramet
 const { createSolverPool } = await import('../solve/pool.ts')
 const { createRealSolver } = await import('./wiring.ts')
 const { createHarness } = await import('./fixtures/harness.ts')
-const { planWith, rebuild, refusedWith, setAt, swap, trainAInputs, variantOf } = await import('./fixtures/choose.ts')
-const { rungsOf } = await import('../plan/buys.ts')
+const { ladderFor, planWith, rebuild, setAt, swap, variantOf } = await import('./fixtures/choose.ts')
 
 const pool = createSolverPool()
 const solver = createRealSolver(pool)
@@ -28,10 +27,8 @@ const counted = async (read: () => Promise<{ status: number }>): Promise<[number
 }
 
 test('read buys, why recommended and versus run no checker in the service', async () => {
-  // Each rung's option under the key Generate gives its buy list: days only refused, Rebuild, Swap.
-  const rungs = rungsOf(trainAInputs)
-  const keyOf = (rung: number) => `${solver.variantKey(trainAInputs, { buy: [...rungs[rung]!.buy] })}.0a1b2c3d`
-  const options = [refusedWith(variantOf(rebuild, { key: keyOf(0) }), rungs[0]!.buy), variantOf(rebuild, { key: keyOf(1) }), variantOf(swap, { key: keyOf(2) })]
+  // Rebuild's ladder under lane S's per-method keys: days only refused, then Rebuild's plan twice.
+  const options = ladderFor(rebuild)
   const plan = await harness.store.create(harness.workspaceId, planWith(harness.workspaceId, options, 3, { previousOptions: { at: setAt, by: { kind: 'human' }, options: [variantOf(swap, { revision: 2 })] } }))
   const read = (input: object) => () => harness.call('planning.plan.read', { resource: plan.id, input })
   const explain = (input: object) => () => harness.call('planning.plan.explain', { resource: plan.id, input })

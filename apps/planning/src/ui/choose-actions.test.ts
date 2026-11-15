@@ -23,7 +23,7 @@ const host = (plan: PlanModel, script: Answer[] = []) => {
     crews: [...plan.inputs.calendars.map(calendar => ({ calendar })), ...plan.inputs.resources.map(resource => ({ resource })), ...plan.inputs.purchases.map(purchase => ({ purchase }))],
     sources: [...plan.inputs.equipment.map(equipment => ({ equipment })), ...plan.inputs.groups.map(group => ({ group }))],
     options: plan.options?.items ?? [], schedule: Object.values(plan.rows)[0] ?? [],
-    buys: [{ rung: { rung: 0, buy: ['crane-fri'], bought: [] } }],
+    buys: [{ rung: { rung: 0, methods: [], buy: ['crane-fri'], bought: [] } }],
     previous: [],
   }
   const client = createPlanningClient(workspace, async (path, init) => {
@@ -84,7 +84,7 @@ describe('what overtime buys, worked out', () => {
   test('the buys section is read whole, every page', async () => {
     const model = trainAPlanned()
     const actions = createPlanActions(host(model).client, model.id)
-    expect((await actions.buys()).flatMap(page => page.items)).toEqual([{ rung: { rung: 0, buy: ['crane-fri'], bought: [] } }])
+    expect((await actions.buys()).flatMap(page => page.items)).toEqual([{ rung: { rung: 0, methods: [], buy: ['crane-fri'], bought: [] } }])
   })
 })
 

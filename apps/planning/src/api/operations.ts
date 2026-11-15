@@ -14,7 +14,7 @@ import { applyEdits, requireAuthority, type ChangeRecord, type EditOutcome, type
 import { definitionRevision, startPlan } from '../definitions/start.ts'
 import type { PlanDefinitionsPort } from '../definitions/index.ts'
 import { outTogether, readiness, worldSubjects, type ReadinessItem } from '../plan/readiness.ts'
-import { buysItems, ladderOf, rungsOf, type FinishCause } from '../plan/buys.ts'
+import { buysItems, methodLadders, type FinishCause } from '../plan/buys.ts'
 import { rungStanding } from '../check/buys.ts'
 import { changesSince, versus } from '../plan/versus.ts'
 import { dominatedWithin, optionName, outageFloor, whyRecommended } from '../plan/why.ts'
@@ -84,8 +84,6 @@ export interface SolverPort {
     readonly job: string | undefined
     readonly cursor: string | undefined
   }) => Promise<ExplainResult>
-  /** The key Generate gives the option of `variant` (a function of its methods, purchases, extra rule and lead), without the set suffix. */
-  readonly variantKey: (inputs: PlanInputs, variant: GenerateVariant) => string
   /**
    * The first cause of what sets the finish of `option`'s own schedule (explain finish's first cause), or
    * undefined when its chain names none. On the option's own compile, in this process: no solver child.
@@ -408,22 +406,22 @@ export const createPlanningOperations = (ports: PlanningOperationsPorts) => {
   }
 
   /**
-   * "What overtime buys" from stored options only (design §4.1): each rung's option is the one Generate keyed
-   * for its buy list, and only when fresh on this revision and formulation (else still to solve); where it
+   * "What overtime buys" from stored options only (design §4.1), one ladder per method: each rung's option is
+   * the one lane S keys for that method and buy list, and only when fresh on this revision and formulation (else still to solve); where it
    * stands is lane K's, from stored figures. A "proven: no gain" row names the higher rung's cause of the finish.
    */
   const buysOf = async (plan: Plan, states: ReadonlyMap<string, OptionState>) => {
-    const rungs = rungsOf(plan.inputs).map(rung => {
-      const key = solver.variantKey(plan.inputs, { buy: [...rung.buy] })
+    const formulation = solver.formulation(plan.inputs.settings.grid)
+    const ladders = methodLadders(plan.inputs, key => {
       const option = plan.options?.options.find(entry => variantKey(entry.key) === key && states.get(entry.key)?.stale === false && entry.variant.lead === undefined && entry.variant.also === undefined)
-      return { ...rung, ...(option === undefined ? {} : { option: { key: option.key, standing: rungStanding(plan, option, solver.formulation(plan.inputs.settings.grid)) } }) }
+      return option === undefined ? undefined : { key: option.key, standing: rungStanding(plan, option, formulation) }
     })
-    const ladder = ladderOf(rungs)
-    const causes = await Promise.all(ladder.rows.flatMap(({ finishFrom }) => finishFrom === undefined ? [] : [finishFrom]).map(async key => {
+    const causes = await Promise.all([...new Set(ladders.flatMap(ladder => ladder.rows.flatMap(({ finishFrom }) => finishFrom === undefined ? [] : [finishFrom])))].map(async key => {
       const cause = await solver.finishCause({ inputs: plan.inputs, option: plan.options!.options.find(entry => entry.key === key)! })
       return cause === undefined ? [] : [[key, cause] as const]
     }))
-    return buysItems(ladder, new Map(causes.flat()))
+    const finish = new Map(causes.flat())
+    return ladders.flatMap(ladder => buysItems(ladder, finish))
   }
 
   /**

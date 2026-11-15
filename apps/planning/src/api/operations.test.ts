@@ -7,7 +7,7 @@ import { buysHonesty } from '../../tests/harness/buys-honesty.ts'
 import { recommendedFactsSchema, sectionDataSchemas, versusFactsSchema } from './contract.ts'
 import { versus } from '../plan/versus.ts'
 import { whyRecommended } from '../plan/why.ts'
-import { formulation, planWith, rebuild, refusedWith, swap, trainAInputs, variantOf } from './fixtures/choose.ts'
+import { formulation, ladderFor, planWith, rebuild, refusedWith, swap, trainAInputs, variantOf } from './fixtures/choose.ts'
 import { bundledPlanDefinitions } from '../definitions/index.ts'
 import { worldSubjects } from '../plan/readiness.ts'
 import { createSolverDouble, doubleVariantKey, subjectsFor } from './fixtures/doubles.ts'
@@ -573,24 +573,24 @@ describe('increment 2: keep, the previous set, why recommended, versus and what 
     } finally { await local.close() }
   })
 
-  test('read buys: each rung names its fresh option by the key Generate gives its buy list; lane K finds every word honest', async () => {
+  test('read buys: one ladder per method, each rung naming its fresh option by lane S\'s per-method key; lane K finds every word honest', async () => {
     const local = await createHarness({ solver: { ...createSolverDouble(), formulation: () => formulation } })
     try {
-      const rungs = rungsOf(trainAInputs)
-      const keyOf = (rung: number) => `${doubleVariantKey({ buy: [...rungs[rung]!.buy] })}.0a1b2c3d`
-      // Rung 0 refused (days only), rung 1 the stored Rebuild; rung 2's Swap is of an older revision: still to solve.
-      const options = [refusedWith(variantOf(rebuild, { key: keyOf(0) }), rungs[0]!.buy), variantOf(rebuild, { key: keyOf(1) }), variantOf(swap, { key: keyOf(2), revision: 2 })]
+      // Rebuild's ladder, its top rung of an older revision (still to solve); Swap's ladder not solved at all.
+      const [low, middle, top] = ladderFor(rebuild)
+      const options = [low!, middle!, variantOf(top!, { revision: 2 })]
       const plan = await local.store.create(local.workspaceId, planWith(local.workspaceId, options))
       const answer = await local.call('planning.plan.read', { resource: plan.id, input: { section: 'buys' } })
       expect([answer.status, answer.bytes <= 4_096, answer.body.result.sections[0].description]).toEqual([200, true, buysPointer])
       const { items } = sectionDataSchemas.buys.parse(answer.body.result.sections[0].data)
-      expect(items.flatMap(item => 'rung' in item ? [[item.rung.rung, item.rung.option ?? null]] : [])).toEqual([[0, keyOf(0)], [1, keyOf(1)], [2, null]])
-      expect(items.flatMap(item => 'row' in item ? [item.row.word] : [])).toEqual(['makes it possible'])
-      expect(buysHonesty(plan, items, formulation)).toEqual([])
+      const method = (item: (typeof items)[number]) => ('rung' in item ? item.rung.methods : item.row.methods).map(pick => pick.option).join('+')
+      expect(items.flatMap(item => 'rung' in item ? [[method(item), item.rung.rung, item.rung.option ?? null]] : [])).toEqual([['rebuild', 0, low!.key], ['rebuild', 1, middle!.key], ['rebuild', 2, null], ['swap', 0, null], ['swap', 1, null], ['swap', 2, null]])
+      expect(items.flatMap(item => 'row' in item ? [[method(item), item.row.word]] : [])).toEqual([['rebuild', 'makes it possible']])
+      expect(buysHonesty(plan, items.filter(item => method(item) === 'rebuild'), formulation)).toEqual([])
       // A plan with no options lists the rungs to solve and no row.
       const empty = await local.create('train-a-work-week')
       const listed = sectionDataSchemas.buys.parse((await local.call('planning.plan.read', { resource: empty.id, input: { section: 'buys' } })).body.result.sections[0].data)
-      expect(listed.items).toEqual(rungsOf(plan.inputs).map(rung => ({ rung: { rung: rung.rung, buy: [...rung.buy], bought: [] } })))
+      expect(listed.items).toEqual(['rebuild', 'swap'].flatMap(option => rungsOf(plan.inputs).map(rung => ({ rung: { rung: rung.rung, methods: [{ choice: 'SWA-method', option }], buy: [...rung.buy], bought: [] } }))))
     } finally { await local.close() }
   })
 })

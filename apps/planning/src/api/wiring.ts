@@ -8,7 +8,7 @@ import { formulationOf } from '../solve/compile.ts'
 import { compiled, scheduleOf } from '../solve/preview.ts'
 import { makeExplainer, mostLimiting, refusalLines, type ExplainItem } from '../solve/explain.ts'
 import { totalFloat } from '../solve/float.ts'
-import { CERTIFIED_SIZE, generate, variantsOf } from '../solve/generate.ts'
+import { CERTIFIED_SIZE, generate } from '../solve/generate.ts'
 import { SOLVER_BUSY_WORDS, type SolverPool } from '../solve/pool.ts'
 import type { Plan, PlanInputs } from '../plan/schema.ts'
 import { clip, nameOf, timeWords } from '../plan/summary.ts'
@@ -103,8 +103,6 @@ export const createRealSolver = (pool: SolverPool): SolverPort => {
       })
       return bounded({ lines: items.map(item => lineOf(inputs, item)), items, ...(limiting === null ? {} : { limiting }) })
     },
-    // Lane S's variant keys, as Generate gives them (without the service's set suffix).
-    variantKey: (inputs, variant) => variantsOf(inputs, { variants: [variant] })[0]!.key,
     // The first cause on the finish chain of the option's own schedule; no solver child.
     finishCause: async ({ inputs, option }) => explainerOf(inputs, option).explainer.finishChain()[0]?.because[0],
     // In a solver child, like Generate: one child at a time across the service, so a preview while a Generate
