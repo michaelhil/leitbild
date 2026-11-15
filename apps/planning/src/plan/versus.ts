@@ -90,10 +90,15 @@ export const versus = (input: {
     const figure = of.metrics.find(metric => metric.id === `span:${group}`) ?? (goalsSame && spanGoal >= 0 ? of.metrics.find(metric => metric.id === `goal:${spanGoal}:${group}`) : undefined)
     return figure === undefined || !isTimeUnit(figure.unit) ? undefined : figure.value * timeUnitMs[figure.unit] / timeUnitMs.h
   }
-  const outages = [...new Set(inputs.rules.flatMap(rule => rule.kind === 'span-limit' ? [rule.group] : []))].flatMap(group => {
+  const spanGroups = [...new Set(inputs.rules.flatMap(rule => rule.kind === 'span-limit' ? [rule.group] : []))]
+  const outages = spanGroups.flatMap(group => {
     const now = outageOf(option, group), was = outageOf(previous, group)
     return now === undefined || was === undefined ? [] : [{ group, now, was }]
   })
+  // In the facts only from the checker's own 'span:<group>' figures, and only when both options store one for
+  // every group a span rule names (the contract's outages: one entry per group).
+  const spanned = (of: Option) => spanGroups.every(group => of.metrics.some(metric => metric.id === `span:${group}`))
+  const outageFacts = spanGroups.length > 0 && spanned(option) && spanned(previous) ? outages : undefined
   const outageLines = outages.map(({ group, now, was }) => Math.abs(now - was) < 1e-9 ? `Longest outage of ${nameOf(inputs, group)}: ${valueWords(now, 'h')}, unchanged.`
     : `Longest outage of ${nameOf(inputs, group)}: ${valueWords(now, 'h')}, was ${valueWords(was, 'h')} (${valueWords(Math.abs(now - was), 'h')} ${now > was ? 'longer' : 'shorter'}).`)
 
@@ -143,7 +148,7 @@ export const versus = (input: {
   return {
     lines: fitLines([...fixed, ...movedLines, ...jobLines]),
     facts: {
-      ...frame, ...(goalFacts === undefined ? {} : { goals: goalFacts }), methods: methodFacts, buys: { added, dropped },
+      ...frame, ...(goalFacts === undefined ? {} : { goals: goalFacts }), ...(outageFacts === undefined ? {} : { outages: outageFacts }), methods: methodFacts, buys: { added, dropped },
       moved: moved.slice(0, movedShown).map(({ row, was }) => ({ job: row.job, now: { start: row.start, finish: row.finish }, was: { start: was.start, finish: was.finish } })),
       movedMore: Math.max(0, moved.length - movedShown), added: joined, removed: left,
     },

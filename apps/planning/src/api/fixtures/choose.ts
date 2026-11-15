@@ -2,8 +2,9 @@
 // and checker made in increment 1 (plan/fixtures/increment-1-plan.json: Swap and Rebuild, their rows, metrics
 // and statuses as stored), on that plan's own inputs (World values read) with the method caveats the bundled
 // Definition now has. Their rows re-check feasible under today's checker, so they carry today's formulation,
-// and the bought crew time Generate now stores from the child's checker ('bought:<purchase>'), counted here
-// by lane K's checker on their own rows.
+// and what Generate now stores from the child's checker, counted here by lane K's checker on their own rows:
+// the bought crew time ('bought:<purchase>') and the longest outage of each group a span rule names
+// ('span:<group>').
 // Nothing here is a typed schedule: tests vary only status words, keys and revisions, and compute every
 // expected figure from these options or lane K's checker.
 import { verifyCertificate } from '../../check/certificate.ts'
@@ -21,12 +22,13 @@ const stored = JSON.parse(line!) as { inputs: PlanInputs; options: { options: Op
 
 /** Increment 1's Train A plan inputs, World values read, with the method caveats lane A added for increment 2. */
 export const trainAInputs: PlanInputs = planInputsSchema.parse({ ...stored.inputs, methods: bundledPlanDefinitions.find(definition => definition.id === 'train-a-work-week')!.inputs.methods })
+const spanRuled = new Set(trainAInputs.rules.flatMap(rule => rule.kind === 'span-limit' ? [`span:${rule.group}`] : []))
 /** Today's formulation on the Train A grid. */
 export const formulation = formulationOf(trainAInputs.settings.grid)
 /** Increment 1's two Train A options: swap (recommended there) and rebuild. */
 export const [swap, rebuild] = stored.options.options.map(option => optionSchema.parse({
   ...option, status: { ...option.status, run: { ...(option.status as Feasible).run, formulation } },
-  metrics: [...option.metrics, ...checkPlan(trainAInputs, option.variant, option.rows).metrics.filter(metric => metric.id.startsWith('bought:'))],
+  metrics: [...option.metrics, ...checkPlan(trainAInputs, option.variant, option.rows).metrics.filter(metric => metric.id.startsWith('bought:') || spanRuled.has(metric.id))],
 })) as [Option, Option]
 export const setAt = stored.options.at
 
