@@ -82,7 +82,7 @@
   <p class="eyebrow">Planning</p>
   <h1>Plan work against real equipment</h1>
   <p class="intro">List the work, the crews and their shifts, and the rules that must hold. Generate says when each job can run, why, and how sure it is.</p>
-  <p class="hint release-note">First release: build a plan, generate options and see why. Recording progress and replanning after disruptions come next.</p>
+  <p class="hint release-note">Release 2 of 3: compare options, see what overtime buys, ask what-ifs and see why one is recommended. Recording progress and replanning after disruptions come in release 3.</p>
   {#if error}<p class="error" role="alert">{error}</p>{/if}
   {#if loading}
     <p class="loading">Loading plans…</p>
