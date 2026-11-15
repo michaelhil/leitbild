@@ -90,3 +90,14 @@ describe('G2: no what-if is ever recommended, so the Generate sentence never nam
     } finally { await local.close() }
   })
 })
+
+describe('G4: explain recommended gives the proven floor of the longest outage only from lane K\'s stored figure', () => {
+  test('a recommended option proven over its target carries {goal, group, hours}; Swap, proven at 0 h over it, none', async () => {
+    const proven = variantOf(rebuild, { status: provenOn(rebuild, 0) })
+    const plan = await harness.store.create(harness.workspaceId, planWith(harness.workspaceId, [proven]))
+    const outage = proven.metrics.find(metric => metric.id === 'goal:0:COOL-A')!.value
+    expect((await harness.call('planning.plan.explain', { resource: plan.id, input: { ask: 'recommended' } })).body.result.recommended.outage).toEqual({ goal: 0, group: 'COOL-A', hours: outage })
+    const zero = await harness.store.create(harness.workspaceId, planWith(harness.workspaceId, [swap, rebuild]))
+    expect((await harness.call('planning.plan.explain', { resource: zero.id, input: { ask: 'recommended' } })).body.result.recommended.outage).toBeUndefined()
+  })
+})

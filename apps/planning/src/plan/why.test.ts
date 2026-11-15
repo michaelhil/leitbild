@@ -56,6 +56,9 @@ describe('why the recommended option ranks first', () => {
     const floor = outageFloor(plan, proven, formulation)!
     expect(floor).toEqual({ goal: 0, group: 'COOL-A', hours: standing.outage! })
     expect(outageLines(whyRecommended(trainAInputs, proven, [], undefined, floor).lines)).toEqual([`Proven: with what this option may buy, no plan that keeps every hard rule has ${nameOf(trainAInputs, 'COOL-A')} out less than ${valueWords(standing.outage!, 'h')}.`])
+    // The facts give the same floor, and none without it.
+    expect(whyRecommended(trainAInputs, proven, [], undefined, floor).facts.outage).toEqual(floor)
+    expect(whyRecommended(trainAInputs, swap, [rebuild]).facts.outage).toBeUndefined()
   })
 
   test('a what-if is never the next in rank, nor named as recommended: one with an extra rule is a card too (G2)', () => {
