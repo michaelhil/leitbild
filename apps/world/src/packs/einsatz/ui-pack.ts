@@ -30,7 +30,8 @@ import { contactIcon, dispatchWords, einsatzRecordOf, kindOfRecord, tierWord, tr
  * a receiving site, its name and whether it is
  * closed; a task, its label; a track, its serial and the age of its last
  * detection. A unit's status tone says whether it is free, committed or out
- * of action.
+ * of action. A call no unit is assigned to yet carries a pulsing "Waiting"
+ * status: with no coach line (plan B.2, B.7), it is the novice's cue.
  *
  * The Dispatch panel is the Pack's one surface panel and its only list, so
  * no category takes a rail section. Open by default, it takes every map
@@ -117,6 +118,25 @@ const presentTrack = (object: OperationalObject, data: TrackData, context: PackO
   }
 }
 
+/** The tasks some Einsatz unit is assigned to, once per object list. */
+const assignedTasksOf = (() => {
+  const cache = new WeakMap<ReadonlyArray<OperationalObject>, ReadonlySet<string>>()
+  return (objects: ReadonlyArray<OperationalObject>): ReadonlySet<string> => {
+    const known = cache.get(objects)
+    if (known !== undefined) return known
+    const assigned = new Set(objects.flatMap(object => {
+      if (object.packId !== einsatzPackId) return []
+      const record = einsatzRecordOf(object)
+      return record.type === 'unit' && record.taskId !== undefined ? [record.taskId] : []
+    }))
+    cache.set(objects, assigned)
+    return assigned
+  }
+})()
+
+/** An open call no unit is assigned to pulses until one is. */
+const waitingStatus: PackObjectStatusPresentation = { tone: 'idle', label: dispatchWords.waiting, indicator: { shape: 'dot', pulse: true } }
+
 const presentEinsatzObject = (object: OperationalObject, context: PackObjectPresentationContext): PackObjectPresentation => {
   const data = einsatzRecordOf(object)
   switch (data.type) {
@@ -141,6 +161,7 @@ const presentEinsatzObject = (object: OperationalObject, context: PackObjectPres
         muted: object.lifecycle !== 'active',
         fields: [],
         mapLabel: object.label,
+        ...(object.lifecycle === 'active' && !assignedTasksOf(context.objects).has(object.id) ? { status: waitingStatus } : {}),
       }
     case 'track':
       return presentTrack(object, data, context)
