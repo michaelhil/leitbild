@@ -1,7 +1,7 @@
 import { z } from 'zod'
-import { commandIdSchema, idSchema, type CommandId, type GeoJsonPoint } from '../../../core/model/index.ts'
+import { idSchema, type CommandId, type GeoJsonPoint } from '../../../core/model/index.ts'
 import { configIdSchema, roeModes } from '../config-schema.ts'
-import { unitOrderInputSchema } from '../order-schema.ts'
+import { unitOrderInputSchema, unitRecallInputSchema, unitStopRemoveInputSchema, unitUndoInputSchema } from '../order-schema.ts'
 import type { Draft } from './draft.ts'
 import { pointSchema, propertyValueSchema, type Leg, type UnitRecord } from './model.ts'
 
@@ -20,17 +20,11 @@ const reasonSchema = z.string().trim().min(1).max(500)
  * accept the same fields on the wire; a create's id is the runtime's to give.
  */
 export const intentFields = {
-  /** `unitOrderInputSchema` (`order-schema.ts`): units, stops, and for a busy unit when it applies. */
+  /** The plan commands' wire inputs (`order-schema.ts`): an order's units, stops, and for a busy unit when it applies; a recall, undo or stop removal's unit and what it names. */
   order: unitOrderInputSchema.shape,
-  recall: { unitId: idSchema.describe('The unit to bring back to base.') },
-  undo: {
-    unitId: idSchema.describe('The unit whose order is taken back.'),
-    commandId: commandIdSchema.describe('The commandId the accepted world.einsatz.unit.order answered with; it must be the unit\'s latest order, else refused newer_order_exists.'),
-  },
-  stopRemove: {
-    unitId: idSchema.describe('The unit whose plan holds the stop.'),
-    stopId: idSchema.describe('The stop id, as world.einsatz.situation lists it in the unit\'s plan.'),
-  },
+  recall: unitRecallInputSchema.shape,
+  undo: unitUndoInputSchema.shape,
+  stopRemove: unitStopRemoveInputSchema.shape,
   taskCreate: {
     template: configIdSchema.describe('A task template id the configuration declares (world.einsatz.configuration).'),
     priority: configIdSchema.optional().describe('A declared priority id; without it the template\'s priority, else the lowest declared.'),
@@ -79,7 +73,6 @@ export const intentFields = {
  * had queued behind the new ones. If any stop is refused, nothing changes.
  */
 export const orderIntentSchema = z.object({ kind: z.literal('order'), ...intentFields.order }).strict()
-  .refine(intent => intent.drops === undefined || intent.when === 'now', { message: 'drops goes only with when "now"', path: ['drops'] })
 
 /** Release a unit from its task, if any, clear its plan and bring it back to base. */
 export const recallIntentSchema = z.object({ kind: z.literal('recall'), ...intentFields.recall }).strict()

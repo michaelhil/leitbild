@@ -5,6 +5,7 @@ import { executeIntent } from '../engine/engine.ts'
 import { emptyEngineState, type EngineState } from '../engine/model.ts'
 import { openViewer } from '../viewer.ts'
 import { situationSchema } from './schema.ts'
+import { createDirectRoutingAdapter } from '../../../routing/direct-adapter.ts'
 import { recommend } from '../recommend.ts'
 import { readSituation } from './situation.ts'
 
@@ -114,7 +115,7 @@ describe('Einsatz situation', () => {
     expect(situation.counts.freeUnits).toBe(3)
     const pair = situation.calls.find(call => call.id === 't-second')!
     expect(pair.states.map(entry => entry.code)).not.toContain('no_free_unit')
-    const answer = await recommend({ state, viewer: openViewer, taskId: 't-second', routing: ports.routing })
+    const answer = await recommend({ state, viewer: openViewer, taskId: 't-second', routing: createDirectRoutingAdapter() })
     expect(answer.proposal?.order.units).toEqual(['g1'])
   })
 

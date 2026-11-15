@@ -3,7 +3,7 @@ import { aiByPrefix, chainStepBy, isStandingOrderBy } from '../ids.ts'
 import { wordFor, surfaceLexiconKeys } from '../lexicon.ts'
 import { refusal } from '../refusal.ts'
 import type { PriorityRef } from '../recommendation-schema.ts'
-import type { Step } from '../steps.ts'
+import type { StepKind, StepTarget } from '../steps.ts'
 import { assignedTo, freeToHelp } from '../engine/coverage.ts'
 import { priorityOf, priorityRankOf, templateOf, unitTypeOf, type EngineState, type TaskRecord, type UnitRecord } from '../engine/model.ts'
 import { committedPhases, isDestroyed, isFree } from '../engine/rules.ts'
@@ -55,12 +55,16 @@ export const actorWords = (by: string, viewer: EinsatzViewer): { readonly label:
 }
 
 
-/** The verb a stop gives: a task is served, or its waiting load picked up by a carrier; a site takes a delivery or is gone to. */
-export const stopVerb = (state: EngineState, unit: UnitRecord, step: Step): StopVerb => {
-  if (step.kind === 'deliver') return 'deliver'
-  if (step.kind === 'move') return 'go-to'
-  if (step.kind === 'engage') return 'engage'
-  const task = 'taskId' in step.target ? state.tasks.get(step.target.taskId) : undefined
+/**
+ * The verb a stop of this kind gives the unit at its target: a task is
+ * served, or its waiting load picked up by a carrier; a site takes a
+ * delivery or is gone to, as a point is; a track is engaged.
+ */
+export const stopVerb = (state: EngineState, unit: UnitRecord, kind: StepKind, target: StepTarget): StopVerb => {
+  if (kind === 'deliver') return 'deliver'
+  if (kind === 'move') return 'go-to'
+  if (kind === 'engage') return 'engage'
+  const task = 'taskId' in target ? state.tasks.get(target.taskId) : undefined
   const carry = unitTypeOf(state.catalog, unit).components.carry
   const picksUp = task !== undefined && carry !== undefined && carry.classes.some(classId => countOf(task.loads, classId) > 0)
   return picksUp ? 'pick-up' : 'serve'
@@ -107,7 +111,7 @@ const unitRow = (state: EngineState, viewer: EinsatzViewer, roles: ReadonlyArray
     phaseDueInS: unit.phaseDueMs === undefined ? null : Math.max(0, (unit.phaseDueMs - state.timeMs) / 1_000),
     plan: unit.orders.map((step, index) => ({
       id: step.id,
-      verb: stopVerb(state, unit, step),
+      verb: stopVerb(state, unit, step.kind, step.target),
       target: step.target,
       label: targetLabel(state, step.target),
       state: step.state,

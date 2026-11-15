@@ -6,7 +6,7 @@ import type { EngineActor } from '../engine/intents.ts'
 import { taskIn } from '../engine/draft.ts'
 import { motionOf, priorityOf, unitTypeOf, type EngineState } from '../engine/model.ts'
 import { isBusy } from '../engine/plan-order.ts'
-import { isDestroyed } from '../engine/rules.ts'
+import { hasLoad, isDestroyed } from '../engine/rules.ts'
 import { refusal, refusalCode } from '../refusal.ts'
 import type { StepTarget } from '../steps.ts'
 import { targetLabel } from '../engine/chain-steps.ts'
@@ -14,7 +14,8 @@ import { stepKindFor } from '../steps.ts'
 import { inPicture, unitAuthority, type EinsatzViewer } from '../viewer.ts'
 import type { ScenarioRole } from '../../../core/model/index.ts'
 import { stopPoint } from './estimates.ts'
-import type { StopVerb, UnitOptions } from './schema.ts'
+import type { UnitOptions } from './schema.ts'
+import { stopVerb } from './situation.ts'
 
 /**
  * `world.einsatz.unit.options`: where one unit may be ordered now, nearest
@@ -65,22 +66,13 @@ export const readUnitOptions = async (input: {
     }
     const now = verdict('now')
     const after = verdict('after')
-    return { target, now: now.ok, refusal: after.ok || now.ok ? undefined : after.ok ? undefined : (after as { readonly reason: string }).reason }
+    return { target, now: now.ok, refusal: now.ok ? undefined : after.ok ? undefined : after.reason }
   })
   const accepted = judged.filter(entry => entry.refusal === undefined)
   const from = type.components.mobility === undefined ? undefined : motionOf(state, unit.id).point
   const moving = accepted.filter(entry => !('trackId' in entry.target))
   const etas = from === undefined ? [] : await etasFrom(state, unit, from, moving.map(entry => ({ point: stopPoint(state, entry.target)!, turnoutS: turnoutFor(state, unit, 'taskId' in entry.target) })), input.routing)
   const etaOf = new Map(moving.map((entry, index) => [entry, etas[index]!]))
-  const verbOf = (target: StepTarget): StopVerb => {
-    const kind = stepKindFor(target, Object.keys(unit.load).length > 0)
-    if (kind === 'deliver') return 'deliver'
-    if (kind === 'move') return 'go-to'
-    if (kind === 'engage') return 'engage'
-    const task = 'taskId' in target ? state.tasks.get(target.taskId) : undefined
-    const carry = type.components.carry
-    return task !== undefined && carry !== undefined && carry.classes.some(classId => (task.loads[classId] ?? 0) > 0) ? 'pick-up' : 'serve'
-  }
   const drops = busyTask === undefined ? undefined : { taskId: busyTask.id, label: busyTask.label, code: priorityOf(state.catalog, busyTask.priority).code }
   const targets: Array<UnitOptions['targets'][number]> = []
   const refused: Array<UnitOptions['refused'][number]> = judged.flatMap(entry => entry.refusal === undefined ? [] : [{
@@ -94,7 +86,7 @@ export const readUnitOptions = async (input: {
     }
     targets.push({
       target: entry.target,
-      verb: verbOf(entry.target),
+      verb: stopVerb(state, unit, stepKindFor(entry.target, hasLoad(unit)), entry.target),
       label: targetLabel(state, entry.target),
       etaS: eta === undefined ? 0 : eta.seconds,
       ...(entry.now && drops !== undefined ? { drops } : {}),
