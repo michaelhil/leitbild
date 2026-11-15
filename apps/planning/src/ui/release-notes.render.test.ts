@@ -20,9 +20,9 @@ const contextOf = (model: PlanModel): Context => ({ inputs: model.inputs, names:
 const none = () => {}
 
 describe('before the release', () => {
-  test('the library says what this release is, with no internal names', () => {
+  test('the library says which release this is, with no internal names (release-line.render.test.ts has the words)', () => {
     const text = readableText(renderHtml(Library, { client: offline, onOpen: none }))
-    expect(text).toContain('First release: build a plan, generate options and see why. Recording progress and replanning after disruptions come next.')
+    expect(text).toMatch(/Release 2 of 3: /)
     expect(text).not.toMatch(/increment|Release A|phase/i)
   })
 

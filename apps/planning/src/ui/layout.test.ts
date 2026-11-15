@@ -141,7 +141,7 @@ describe('the plan screen lays out without overlap', () => {
     for (const column of ['.col-attention', '.col-main', '.col-panel', '.desktop-only']) {
       expect({ column, track: valueAt(column, 'grid-template-columns', 1600), min: valueAt(column, 'min-width', 1600) }).toEqual({ column, track: 'minmax(0, 1fr)', min: '0' })
     }
-    for (const card of ['.attention', '.glance', '.work-list', '.options', '.rules', '.crews', '.picker', '.authoring', '.job-panel', '.preview', '.shift-list', '.shown-option', '.timeline', '.options-glance', '.finish-panel']) {
+    for (const card of ['.attention', '.glance', '.work-list', '.options', '.rules', '.crews', '.picker', '.authoring', '.job-panel', '.preview', '.shift-list', '.shown-option', '.timeline', '.options-glance', '.finish-panel', '.ladder', '.what-if-panel', '.why-panel', '.compare-panel']) {
       expect({ card, wrap: valueAt(card, 'overflow-wrap', 1600), min: valueAt(card, 'min-width', 1600) }).toEqual({ card, wrap: 'anywhere', min: '0' })
     }
     // Only the timeline scrolls sideways; it scrolls inside its own card.

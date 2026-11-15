@@ -13,6 +13,9 @@ const trainAJson = await fixture('train-a.fragment.json')
 const supplyRunJson = await fixture('supply-run.case2.json')
 
 export const trainAInputs = (): PlanInputs => planInputsSchema.parse(trainAJson)
+const trainACaseJson = await fixture('train-a.case.json')
+/** The whole frozen Train A case as lane A converts it: 34 jobs, and each SW A method's caveat. */
+export const trainACaseInputs = (): PlanInputs => planInputsSchema.parse(trainACaseJson)
 export const supplyRunInputs = (): PlanInputs => planInputsSchema.parse(supplyRunJson)
 
 export const modelOf = (inputs: PlanInputs, extra: Partial<PlanModel> = {}): PlanModel => ({
