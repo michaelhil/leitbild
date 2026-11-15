@@ -32,7 +32,8 @@ describe('Einsatz unit.order', () => {
       ['step-1', 'serve', 'active', 'command-1'],
       ['step-2', 'deliver', 'queued', 'command-1'],
     ])
-    expect(unit).toMatchObject({ taskId: 't1', lastCommand: { id: 'command-1' }, lastAction: { verb: 'queue', commandId: 'command-1' } })
+    expect(unit).toMatchObject({ taskId: 't1', lastCommand: { id: 'command-1', stepId: 'step-1' }, lastAction: { verb: 'queue' } })
+    expect(unit.lastAction).not.toHaveProperty('commandId')
     const done = await advance(outcome.state, start + 600_000)
     expect(unitOf(done, 'camp').received).toEqual({ [top]: 1 })
     expect(unitOf(done, 'clinic').received).toEqual({})

@@ -1,5 +1,5 @@
 import type { StepTarget } from '../steps.ts'
-import { planAppend, removeSteps } from './chain.ts'
+import { deliveryRefusal, planAppend, removeSteps } from './chain.ts'
 import { closeDraft, openDraft, putUnit, taskIn, unitIn } from './draft.ts'
 import { clockText } from '../situation/text.ts'
 import { freeInS } from './estimates.ts'
@@ -120,13 +120,18 @@ export const planOrder = (state: EngineState, intent: IntentOf<'order'>, actor: 
   }
   const [first, ...rest] = intent.stops as [StepTarget, ...StepTarget[]]
   const following = (targets: ReadonlyArray<StepTarget>) => targets.flatMap(to => units.map(unit => (current: EngineState) => planAppend(current, unit.id, to, actor)))
-  /** The command becomes the latest of each unit it gave a stop; a unit the order left as it was keeps its own. */
+  /**
+   * The command becomes the latest of each unit it gave a stop, naming the
+   * first of them, which the unit reaches before the others; a unit the
+   * order left as it was keeps its own.
+   */
   const stamped = (draft: Parameters<Extract<Plan, { ok: true }>['apply']>[0]): void => {
     if (actor.commandId === undefined) return
     for (const unit of units) {
       const current = unitIn(draft, unit.id)
-      if (!current.orders.some(step => step.commandId === actor.commandId)) continue
-      putUnit(draft, patch(current, { lastCommand: { id: actor.commandId, ...(intent.drops === undefined ? {} : { drops: intent.drops }) } }))
+      const firstStop = current.orders.find(step => step.commandId === actor.commandId)
+      if (firstStop === undefined) continue
+      putUnit(draft, patch(current, { lastCommand: { id: actor.commandId, stepId: firstStop.id, ...(intent.drops === undefined ? {} : { drops: intent.drops }) } }))
     }
   }
   if (intent.when === 'after') {
@@ -146,14 +151,17 @@ export const planOrder = (state: EngineState, intent: IntentOf<'order'>, actor: 
 const underWay: ReadonlyArray<UnitRecord['phase']> = ['mobilizing', 'en-route', 'transporting']
 
 /**
- * Take back a command's order while none of it has been carried out: every
- * stop it gave is still in the unit's plan, and the unit has not arrived at
- * the first. Refused `newer_order_exists` when another command changed the
- * unit's plan since, `nothing_to_undo` when nothing of it is left to take
- * back. The stops leave quietly: a task's work never left it. An order that
- * dropped a task gives the task back: the unit is sent to it again, which
- * is refused for the reason any order to it would be (the task closed, or
- * covered meanwhile).
+ * Take back a command's order while none of it has been carried out: the
+ * unit's plan still holds the first stop it gave (`lastCommand.stepId`),
+ * and the unit has not arrived there. Refused `newer_order_exists` when
+ * another command changed the unit's plan since, `nothing_to_undo` once the
+ * unit is past that first stop or has arrived at it, and for a command that
+ * gave no stop (a return, a removed stop). As `unit.stop.remove`, an undo
+ * never takes the stop that delivers the load a unit carries
+ * (`unit_loaded`). The stops leave quietly: a task's work never left it. An
+ * order that dropped a task gives the task back: the unit is sent to it
+ * again, which is refused for the reason any order to it would be (the task
+ * closed, or covered meanwhile).
  */
 export const planUndo = (state: EngineState, intent: IntentOf<'undo'>, actor: EngineActor): Plan => {
   const unit = state.units.get(intent.unitId)
@@ -161,10 +169,14 @@ export const planUndo = (state: EngineState, intent: IntentOf<'undo'>, actor: En
   const last = unit.lastCommand
   if (last === undefined) return refused('nothing_to_undo', `${unit.label} has no order to undo`)
   if (last.id !== intent.commandId) return refused('newer_order_exists', `A newer order changed ${unit.label}'s plan since; undo that one, or give a new order`)
+  if (last.stepId === undefined) return refused('nothing_to_undo', `${unit.label}'s last order gave it no stop to take back`)
+  const firstIndex = unit.orders.findIndex(step => step.id === last.stepId)
+  if (firstIndex < 0) return refused('nothing_to_undo', `${unit.label} is past the first stop of its last order`)
+  const active = firstIndex === 0 && unit.orders[0]!.state === 'active'
+  if (active && !underWay.includes(unit.phase)) return refused('nothing_to_undo', `${unit.label}'s last order has been carried out: it has arrived`)
+  const delivery = active ? deliveryRefusal(state, unit, 0) : undefined
+  if (delivery) return delivery
   const steps = unit.orders.filter(step => step.commandId === intent.commandId)
-  const head = unit.orders[0]
-  const arrived = head !== undefined && head.state === 'active' && head.commandId === intent.commandId && !underWay.includes(unit.phase)
-  if (steps.length === 0 || arrived) return refused('nothing_to_undo', `${unit.label}'s last order has been carried out${arrived ? ': it has arrived' : ''}`)
   const removal: Plan = { ok: true, routes: [], notes: [], apply: draft => removeSteps(draft, actor, unit.id, steps, true) }
   const back = last.drops
   if (back === undefined) return removal

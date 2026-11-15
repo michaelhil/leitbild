@@ -4,15 +4,24 @@ import { motionOf, unitTypeOf, type EngineState, type UnitRecord } from './model
 import { isDestroyed, isSite, linksToSite } from './rules.ts'
 import { total, type Counts } from './values.ts'
 
+/** Whether a site takes arrivals now: it receives load, is accepting, and is not destroyed. */
+export const takesArrivals = (state: EngineState, site: UnitRecord): boolean =>
+  isSite(state.catalog, site) && site.accepting === true && !isDestroyed(site)
+
+/**
+ * The sites a unit can deliver `load` to now: taking arrivals, public or
+ * the unit's side's, and accepting every class of the load.
+ */
+export const acceptingSitesFor = (state: EngineState, unit: UnitRecord, load: Counts): UnitRecord[] => [...state.units.values()]
+  .filter(site => takesArrivals(state, site) && linksToSite(state.catalog, unit, site)
+    && Object.keys(load).every(classId => unitTypeOf(state.catalog, site).components.receiving!.accepts.includes(classId)))
+
 /**
  * Where a carrier's `deliver: nearest-accepting` standing order takes load:
- * the nearest accepting site from `from`, by straight-line distance and then
- * id, that is public or the unit's side's and accepts every class of `load`.
- * Undefined when no site does.
+ * of `acceptingSitesFor`, the nearest from `from`, by straight-line distance
+ * and then id. Undefined when no site accepts it.
  */
-export const nearestAcceptingSite = (state: EngineState, unit: UnitRecord, from: GeoJsonPoint, load: Counts): UnitRecord | undefined => [...state.units.values()]
-  .filter(site => isSite(state.catalog, site) && site.accepting === true && !isDestroyed(site) && linksToSite(state.catalog, unit, site)
-    && Object.keys(load).every(classId => unitTypeOf(state.catalog, site).components.receiving!.accepts.includes(classId)))
+export const nearestAcceptingSite = (state: EngineState, unit: UnitRecord, from: GeoJsonPoint, load: Counts): UnitRecord | undefined => acceptingSitesFor(state, unit, load)
   .map(site => ({ site, distance: routeDistanceMeters(from, motionOf(state, site.id).point) }))
   .sort((a, b) => a.distance - b.distance || (a.site.id < b.site.id ? -1 : 1))[0]?.site
 

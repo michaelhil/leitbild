@@ -134,7 +134,7 @@ export const planAppend = (state: EngineState, unitId: string, to: StepTarget, a
  * keeps its first site step; load it will pick up on the way keeps the step
  * unless its deliver order would deliver that load anyway.
  */
-const deliveryRefusal = (state: EngineState, unit: UnitRecord, index: number): Refused | undefined => {
+export const deliveryRefusal = (state: EngineState, unit: UnitRecord, index: number): Refused | undefined => {
   if (!('siteId' in unit.orders[index]!.target)) return undefined
   if (hasLoad(unit) && unit.orders.findIndex(entry => 'siteId' in entry.target) === index) return refused('unit_loaded', loadedText(state, unit))
   const load = loadAfter(state, unit, index)

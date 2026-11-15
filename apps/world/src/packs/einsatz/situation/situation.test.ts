@@ -1,10 +1,12 @@
 import { describe, expect, test } from 'bun:test'
-import { advance, append, at, commanding, config, emptyState, first, low, newTask, newUnit, ports, run, runAll, second, send, start, templates, top, types } from '../fixtures/engine-harness.ts'
+import { advance, append, at, commanding, config, emptyState, first, low, newTask, newUnit, ports, run, runAll, second, send, start, templates, top, types, unitOf } from '../fixtures/engine-harness.ts'
 import { einsatzConfigSchema } from '../config-validation.ts'
 import { executeIntent } from '../engine/engine.ts'
 import { emptyEngineState, type EngineState } from '../engine/model.ts'
 import { openViewer } from '../viewer.ts'
 import { situationSchema } from './schema.ts'
+import { createDirectRoutingAdapter } from '../../../routing/direct-adapter.ts'
+import { recommend } from '../recommend.ts'
 import { readSituation } from './situation.ts'
 
 /**
@@ -57,6 +59,10 @@ describe('Einsatz situation', () => {
     expect(call.assigned).toMatchObject([{ unitId: 'c1', label: 'C1', phase: 'mobilizing' }])
     const site = read(outcome.state).sites[0]!
     expect(site).toMatchObject({ id: 'clinic', accepting: true, slots: { used: 0, total: 1 }, inbound: [{ unitId: 'c1' }] })
+    // The plan going on by itself is the last order now, but the command undo names stays the one that gave the plan.
+    let later = outcome.state
+    while (unitOf(later, 'c1').phase !== 'transporting') later = await advance(later, later.timeMs + 5_000)
+    expect(read(later).units.find(entry => entry.id === 'c1')!.lastOrder).toMatchObject({ by: { label: 'Standing order', isViewer: false }, commandId: 'command-1' })
   })
 
   test('a unit moving in straight lines has an estimate for every stop; a stop it delivers at is a delivery', async () => {
@@ -99,5 +105,27 @@ describe('Einsatz situation', () => {
     expect(situation.words).toMatchObject({ calls: 'Jobs', units: 'Units', send: 'Dispatch', noCalls: 'No calls waiting' })
     expect(situation.features).toEqual({ hasCarry: true, hasSites: true, hasContacts: false, propertyColumns: [{ id: 'liftKg', label: 'Lift' }, { id: 'payloadKg', label: 'Payload' }] })
     expect(() => read(state, 'nowhere')).toThrow('unknown_group: Group "nowhere" is not declared')
+  })
+
+  test('free is the engine\'s: a unit going to a map point counts free and is proposed, so its call is not flagged no_free_unit', async () => {
+    let state = await field()
+    state = await run(state, send(['g1'], { point: at(0.03) }))
+    const situation = read(state)
+    expect(situation.units.find(unit => unit.id === 'g1')!.status).toEqual({ word: 'En route', tone: 'free' })
+    expect(situation.counts.freeUnits).toBe(3)
+    const pair = situation.calls.find(call => call.id === 't-second')!
+    expect(pair.states.map(entry => entry.code)).not.toContain('no_free_unit')
+    const answer = await recommend({ state, viewer: openViewer, taskId: 't-second', routing: createDirectRoutingAdapter() })
+    expect(answer.proposal?.order.units).toEqual(['g1'])
+  })
+
+  test('every unit record is listed once: a place that receives no load is a site without accepting state or slots, and the units going there are inbound', async () => {
+    let state = await run(await field(), newUnit('store', types.inert, at(0.03)))
+    state = await run(state, send(['g1'], { siteId: 'store' }))
+    const situation = read(state)
+    expect(situation.units.map(unit => unit.id)).toEqual(['c1', 'd1', 'g1'])
+    expect(situation.sites.map(site => [site.id, site.accepting, site.slots])).toEqual([['clinic', true, { used: 0, total: 1 }], ['store', null, null]])
+    expect(situation.sites[1]!.inbound).toMatchObject([{ unitId: 'g1' }])
+    expect(situation.counts).toMatchObject({ acceptingSites: 1, sites: 1 })
   })
 })

@@ -3,10 +3,11 @@ import { aiByPrefix, chainStepBy, isStandingOrderBy } from '../ids.ts'
 import { wordFor, surfaceLexiconKeys } from '../lexicon.ts'
 import { refusal } from '../refusal.ts'
 import type { PriorityRef } from '../recommendation-schema.ts'
-import type { Step } from '../steps.ts'
-import { assignedTo, contributionOf } from '../engine/coverage.ts'
+import type { StepKind, StepTarget } from '../steps.ts'
+import { assignedTo, freeToHelp } from '../engine/coverage.ts'
 import { priorityOf, priorityRankOf, templateOf, unitTypeOf, type EngineState, type TaskRecord, type UnitRecord } from '../engine/model.ts'
-import { committedPhases, isDestroyed, isFree, isSite } from '../engine/rules.ts'
+import { committedPhases, isDestroyed, isFree } from '../engine/rules.ts'
+import { takesArrivals } from '../engine/delivery.ts'
 import { byId, countOf } from '../engine/values.ts'
 import { loadText, propertyValueText } from '../engine/wording.ts'
 import { targetLabel } from '../engine/chain-steps.ts'
@@ -54,22 +55,27 @@ export const actorWords = (by: string, viewer: EinsatzViewer): { readonly label:
 }
 
 
-/** The verb a stop gives: a task is served, or its waiting load picked up by a carrier; a site takes a delivery or is gone to. */
-export const stopVerb = (state: EngineState, unit: UnitRecord, step: Step): StopVerb => {
-  if (step.kind === 'deliver') return 'deliver'
-  if (step.kind === 'move') return 'go-to'
-  if (step.kind === 'engage') return 'engage'
-  const task = 'taskId' in step.target ? state.tasks.get(step.target.taskId) : undefined
+/**
+ * The verb a stop of this kind gives the unit at its target: a task is
+ * served, or its waiting load picked up by a carrier; a site takes a
+ * delivery or is gone to, as a point is; a track is engaged.
+ */
+export const stopVerb = (state: EngineState, unit: UnitRecord, kind: StepKind, target: StepTarget): StopVerb => {
+  if (kind === 'deliver') return 'deliver'
+  if (kind === 'move') return 'go-to'
+  if (kind === 'engage') return 'engage'
+  const task = 'taskId' in target ? state.tasks.get(target.taskId) : undefined
   const carry = unitTypeOf(state.catalog, unit).components.carry
   const picksUp = task !== undefined && carry !== undefined && carry.classes.some(classId => countOf(task.loads, classId) > 0)
   return picksUp ? 'pick-up' : 'serve'
 }
 
+/** Free is the engine's `isFree`, no task and no load: a unit going to a point or a place is free to send, as recommend proposes it. */
 const toneOf = (unit: UnitRecord): UnitTone => {
   if (isDestroyed(unit)) return 'out'
   if (unit.alerts.length > 0) return 'attention'
   if (unit.phase === 'returning') return 'returning'
-  return isFree(unit) && unit.orders.length === 0 ? 'free' : 'busy'
+  return isFree(unit) ? 'free' : 'busy'
 }
 
 const statusOf = (state: EngineState, unit: UnitRecord) => ({ word: wordFor(state.catalog.config.lexicon, unit.phase, unitTypeOf(state.catalog, unit).lexicon), tone: toneOf(unit) })
@@ -105,7 +111,7 @@ const unitRow = (state: EngineState, viewer: EinsatzViewer, roles: ReadonlyArray
     phaseDueInS: unit.phaseDueMs === undefined ? null : Math.max(0, (unit.phaseDueMs - state.timeMs) / 1_000),
     plan: unit.orders.map((step, index) => ({
       id: step.id,
-      verb: stopVerb(state, unit, step),
+      verb: stopVerb(state, unit, step.kind, step.target),
       target: step.target,
       label: targetLabel(state, step.target),
       state: step.state,
@@ -113,7 +119,7 @@ const unitRow = (state: EngineState, viewer: EinsatzViewer, roles: ReadonlyArray
       by: actorWords(step.by, viewer),
     })),
     predictedDelivery: estimate.delivery === undefined ? null : { siteId: estimate.delivery.site.id, label: estimate.delivery.site.label, eta: estimate.delivery.eta },
-    lastOrder: last === undefined ? null : { by: actorWords(last.by, viewer), commandId: last.commandId ?? null },
+    lastOrder: last === undefined ? null : { by: actorWords(last.by, viewer), commandId: unit.lastCommand?.id ?? null },
     carry: type.components.carry === undefined ? null : { capacity: type.components.carry.capacity, load: loadCounts(state, unit.load) },
     properties: type.properties.filter(property => property.show).map(property => ({ id: property.id, label: property.label, value: propertyValueText(property, unit.properties[property.id]!) })),
     commandedBy: commandedByOf(state, viewer, roles, unit),
@@ -140,8 +146,8 @@ const callRow = (state: EngineState, viewer: EinsatzViewer, task: TaskRecord, ro
   const needs = task.coverage.requirements.some(entry => entry.enRoute + entry.onTask + entry.completed < entry.count)
     || task.coverage.loads.some(entry => entry.covered < entry.waiting)
   const assignedNow = assignedTo(state.units.values(), task)
-  const freeCanHelp = [...state.units.values()].some(unit => commandable(unit) && isFree(unit) && unit.orders.length === 0
-    && unitTypeOf(state.catalog, unit).components.mobility !== undefined && contributionOf(state.catalog, task, assignedNow, unit).adds)
+  // The units recommend would propose from: free, on the task's side, adding to it.
+  const freeCanHelp = [...state.units.values()].some(unit => commandable(unit) && freeToHelp(state, task, assignedNow, unit))
   return {
     id: task.id,
     label: task.label,
@@ -150,6 +156,7 @@ const callRow = (state: EngineState, viewer: EinsatzViewer, task: TaskRecord, ro
     priority: priorityRefOf(state, task.priority),
     waitingS: Math.max(0, (state.timeMs - task.createdAtMs) / 1_000),
     ...(overdue === undefined ? {} : { overdue }),
+    ...(task.observed === undefined ? {} : { observed: { by: task.observed.by, at: new Date(task.observed.atMs).toISOString() } }),
     needs: [
       ...task.coverage.requirements.map((entry, index) => {
         const requirement = template.requires[index]!
@@ -196,9 +203,15 @@ const callRow = (state: EngineState, viewer: EinsatzViewer, task: TaskRecord, ro
   }
 }
 
+/**
+ * A site: a unit of a type that does not move, which units go to (`{siteId}`
+ * in an order). One that receives load takes deliveries in its slots while
+ * it takes arrivals (`takesArrivals`); any other, such as a depot, an
+ * objective or a sensor post, is a place units only go to.
+ */
 const siteRow = (state: EngineState, site: UnitRecord, units: ReadonlyArray<UnitRecord>, rows: ReadonlyMap<string, SituationUnit>): SituationSite => {
   const type = unitTypeOf(state.catalog, site)
-  const receiving = type.components.receiving!
+  const receiving = type.components.receiving
   const inbound = units.flatMap(unit => {
     const row = rows.get(unit.id)
     if (row === undefined) return []
@@ -212,8 +225,8 @@ const siteRow = (state: EngineState, site: UnitRecord, units: ReadonlyArray<Unit
     label: site.label,
     icon: type.icon,
     typeLabel: type.label,
-    accepting: site.accepting === true,
-    slots: { used: units.filter(unit => unit.siteId === site.id && unit.phase === 'at-site' && unit.phaseDueMs !== undefined).length, total: receiving.slots },
+    accepting: receiving === undefined ? null : takesArrivals(state, site),
+    slots: receiving === undefined ? null : { used: units.filter(unit => unit.siteId === site.id && unit.phase === 'at-site' && unit.phaseDueMs !== undefined).length, total: receiving.slots },
     inbound: inbound.sort((a, b) => seconds(a.eta) - seconds(b.eta) || (a.unitId < b.unitId ? -1 : 1)),
     states: site.alerts.map(alert => ({ code: alert.code, text: alert.message })),
   }
@@ -237,8 +250,10 @@ export const readSituation = (input: {
     return index < 0 ? config.groups.length : index
   }
   const typeIndex = (unit: UnitRecord): number => config.unitTypes.findIndex(type => type.id === unit.unitType)
+  // Every unit record is listed once: a unit when its type moves, else a site.
   const allUnits = [...state.units.values()].filter(seen)
-  const movers = allUnits.filter(unit => unitTypeOf(state.catalog, unit).components.mobility !== undefined)
+  const moves = (unit: UnitRecord): boolean => unitTypeOf(state.catalog, unit).components.mobility !== undefined
+  const movers = allUnits.filter(moves)
   const listed = movers
     .filter(unit => input.group === undefined || unit.group === input.group)
     .sort((a, b) => (config.groups.length > 0 ? groupIndex(a) - groupIndex(b) : typeIndex(a) - typeIndex(b)) || typeIndex(a) - typeIndex(b) || naturalOrder(a, b))
@@ -248,17 +263,18 @@ export const readSituation = (input: {
     .filter(task => task.closedAtMs === undefined && seen(task))
     .sort((a, b) => priorityRankOf(state.catalog, a.priority) - priorityRankOf(state.catalog, b.priority) || a.createdAtMs - b.createdAtMs || byId(a, b))
     .map(task => callRow(state, viewer, task, rows))
-  const sites = allUnits.filter(unit => isSite(state.catalog, unit) && !isDestroyed(unit)).sort(naturalOrder).map(site => siteRow(state, site, movers, rows))
+  const sites = allUnits.filter(unit => !moves(unit)).sort(naturalOrder).map(site => siteRow(state, site, movers, rows))
+  const receiving = sites.filter(site => site.accepting !== null)
   const types = config.unitTypes
   const shown = types.flatMap(type => type.properties.filter(property => property.show))
   return {
     counts: {
       calls: state.catalog.priorities.map(priority => ({ priorityId: priority.id, code: priority.code, count: calls.filter(call => call.priority.id === priority.id).length })),
       oldestWaitingS: calls.length === 0 ? null : Math.max(...calls.map(call => call.waitingS)),
-      freeUnits: units.filter(unit => unit.status.tone === 'free').length,
+      freeUnits: listed.filter(isFree).length,
       units: units.length,
-      acceptingSites: sites.filter(site => site.accepting).length,
-      sites: sites.length,
+      acceptingSites: receiving.filter(site => site.accepting === true).length,
+      sites: receiving.length,
     },
     calls,
     units,

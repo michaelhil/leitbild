@@ -4,8 +4,8 @@ import type { Eta } from '../recommendation-schema.ts'
 import type { Step, StepTarget } from '../steps.ts'
 import { predictedDelivery } from '../engine/delivery.ts'
 import { motionOf, unitTypeOf, type EngineState, type UnitRecord } from '../engine/model.ts'
-import { msToArrival, speedFactor } from '../engine/movement.ts'
-import { isMoving } from '../engine/rules.ts'
+import { arrivalInS, legUnderWay, stopDoneInS } from '../engine/estimates.ts'
+import { stoppedEta } from '../eta.ts'
 
 /**
  * Arrival estimates of a unit's plan for the read models, without routing.
@@ -37,13 +37,11 @@ export interface PlanEstimate {
 export const planEstimate = (state: EngineState, unit: UnitRecord): PlanEstimate => {
   const mobility = unitTypeOf(state.catalog, unit).components.mobility
   const onSceneS = unitTypeOf(state.catalog, unit).components.service?.onSceneS ?? 0
-  const motion = motionOf(state, unit.id)
-  let at = motion.point
+  let at = motionOf(state, unit.id).point
   let seconds = 0
   /** Unknown once a road unit's stop has no route: nothing after it can be timed. */
   let timed = true
   const stops: Array<Eta | null> = []
-  const leg = unit.leg
   const routedKind = (provider: string): 'routed' | 'straight-line' => provider === 'direct' ? 'straight-line' : 'routed'
   const after = (step: Step, index: number): void => {
     const to = stopPoint(state, step.target)
@@ -52,21 +50,18 @@ export const planEstimate = (state: EngineState, unit: UnitRecord): PlanEstimate
       return
     }
     if (index === 0 && step.state === 'active') {
-      if (leg !== undefined && (isMoving(unit) || unit.phase === 'mobilizing')) {
-        const travelMs = msToArrival(leg, motion.progressMs, speedFactor(motion.impacts))
-        const turnoutMs = unit.phase === 'mobilizing' ? Math.max(0, (unit.phaseDueMs ?? state.timeMs) - state.timeMs) : 0
-        if (travelMs === undefined) {
-          timed = false
-          stops.push({ kind: 'unavailable', reason: refusal('routing_unavailable', `${unit.label} is stopped`), straightDistanceM: routeDistanceMeters(at, to) })
-        } else {
-          seconds = (turnoutMs + travelMs) / 1_000
-          stops.push({ kind: routedKind(leg.provider), seconds, distanceM: Math.max(0, leg.distanceM * (1 - motion.progressMs / Math.max(1, leg.durationMs))) })
-        }
-      } else {
-        stops.push(null)
-        seconds = unit.phaseDueMs === undefined ? 0 : Math.max(0, (unit.phaseDueMs - state.timeMs) / 1_000)
+      // The active stop is timed as the engine runs it (`engine/estimates.ts`).
+      const leg = legUnderWay(unit) ? unit.leg : undefined
+      if (leg === undefined) stops.push(null)
+      else {
+        const arrival = arrivalInS(state, unit)
+        stops.push(arrival === undefined
+          ? stoppedEta(unit, at, to)
+          : { kind: routedKind(leg.provider), seconds: arrival, distanceM: Math.max(0, leg.distanceM * (1 - motionOf(state, unit.id).progressMs / Math.max(1, leg.durationMs))) })
       }
-      if ('taskId' in step.target && unit.phase !== 'on-task') seconds += onSceneS
+      const done = stopDoneInS(state, unit)
+      if (done === undefined) timed = false
+      else seconds = done
       at = to
       return
     }
