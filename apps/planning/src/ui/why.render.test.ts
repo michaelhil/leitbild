@@ -53,7 +53,8 @@ const facts = recommendedFactsSchema.parse({
   option: 'swap', against: 'rebuild', deciding: 0,
   goals: [{ goal: 0, value: over(measured.swap.span), against: over(measured.rebuild.span), unit: 'h' }, { goal: 1, value: measured.swap.cost, against: measured.rebuild.cost, unit: 'NOK' }],
   caveats: [{ choice: method.key, option: 'swap', label: caveat(swap).label, value: caveat(swap).value, unit: caveat(swap).unit, against: caveat(rebuild).value }],
-  outage: { goal: 0, word: 'proven optimal', value: 0, unit: 'h', bound: 0 },
+  // Fix round G4: the proven floor of the longest outage of the goal's group, in hours (the swap's proven span).
+  outage: { goal: 0, group: inputs.goals[0]!.scope!.groups![0]!, hours: measured.swap.span },
 })
 
 describe('why recommended', () => {
@@ -74,7 +75,7 @@ describe('why recommended', () => {
     expect(view.goals.map(goal => [goal.name, goal.value, goal.against, goal.deciding])).toEqual([
       ['Over the 54 h guideline', '0 h', '11 h', true], ['Extra cost', 'NOK 474,750', 'NOK 255,800', false],
     ])
-    expect(view.outage).toBe('Over the 54 h guideline: 0 h, proven optimal: no plan does better than its bound, 0 h.')
+    expect(view.outage).toBe(`Longest outage of ${inputs.groups.find(group => group.key === inputs.goals[0]!.scope!.groups![0])!.label}: no plan can make it shorter than ${quantityText(measured.swap.span, 'h')} (proven).`)
     const text = readableText(renderHtml(WhyRecommended, { title: `Why “${swap.label}” is recommended`, policy: policyText(context), answer: { state: 'answered', facts: view }, onClose: none }))
     for (const part of [view.decided!, view.trade!, '◆ Decided here', caveatText(swap), `against ${quantityText(caveat(rebuild).value!, caveat(rebuild).unit!)} for “${rebuild.label}”`, caveat(swap).words]) expect(text).toContain(part)
     expect(routineBreaches(text, identifiers(model.inputs), [])).toEqual([])

@@ -56,7 +56,7 @@ export interface WhyView {
   readonly trade: string | null
   readonly goals: readonly WhyGoalRow[]
   readonly caveats: ReadonlyArray<{ readonly method: string; readonly line: string; readonly against: string | null; readonly words: string | null }>
-  /** What the option's status says about the plan's outage goal. */
+  /** The proven floor of the longest outage, when one is stored. */
   readonly outage: string | null
 }
 
@@ -88,12 +88,9 @@ export const whyView = (facts: RecommendedFacts, model: Pick<PlanModel, 'options
     : deciding === undefined || deciding.against === undefined
       ? 'They tie on every goal within its step, so either could be chosen; Planning lists this one first.'
       : `Decided on ${lower(goalWords(context, deciding.goal))}: ${quantityText(deciding.value, deciding.unit)} against ${quantityText(deciding.against, deciding.unit)}.`
-  const outage = facts.outage === undefined ? null : (() => {
-    const { goal, word, value, unit, bound } = facts.outage
-    const head = `${goalWords(context, goal)}: ${quantityText(value, unit)}`
-    if (word === 'proven optimal') return `${head}, proven optimal: no plan does better${bound === undefined ? '' : ` than its bound, ${quantityText(bound, unit)}`}.`
-    return `${head}, best found${bound === undefined ? '; no bound is proven' : `; no plan can be below ${quantityText(bound, unit)}`}.`
-  })()
+  // Fix round G4: the proven floor of the longest outage, in hours; with none stored the line is left out.
+  const outage = facts.outage === undefined ? null
+    : `Longest outage of ${context.names.group(facts.outage.group)}: no plan can make it shorter than ${quantityText(facts.outage.hours, 'h')} (proven).`
   return {
     against: againstLabel === null ? 'No other ranked option keeps every hard rule, so there is none to weigh it against.' : `Against “${againstLabel}”${named ? '' : ', the next in rank'}.`,
     againstLabel, decided, trade: tradeText(facts, context),
