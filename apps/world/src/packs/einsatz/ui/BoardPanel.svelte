@@ -232,7 +232,8 @@
     const key = prompt === null ? null : JSON.stringify([prompt.unitId, prompt.point.coordinates, prompt.label])
     if (key === shownPromptKey) return
     shownPromptKey = key
-    untrack(() => props.onMapPrompt(prompt === null ? null : { point: prompt.point, label: prompt.label, onConfirm: () => click({ kind: 'move-here' }) }))
+    // The October Board has no dismiss event; it keeps its prompt until it next changes. Lane D's panel replaces it.
+    untrack(() => props.onMapPrompt(prompt === null ? null : { point: prompt.point, options: [{ label: prompt.label, onConfirm: () => click({ kind: 'move-here' }) }], onDismiss: () => undefined }))
   })
 </script>
 

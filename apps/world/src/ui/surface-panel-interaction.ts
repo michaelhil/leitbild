@@ -30,15 +30,80 @@ export interface SurfacePanelInteraction {
   readonly onKey?: (key: PanelKey) => boolean
 }
 
+/** One button of a map prompt; a warning one names work it drops, e.g. "Now (drops C-3 · P3)". */
+export interface MapPromptOption {
+  readonly label: string
+  readonly tone?: 'default' | 'warning'
+  readonly onConfirm: () => void
+}
+
 /**
- * A one-button prompt a map-target panel shows at a point on the map, such as
- * "Move here" after a tap on open ground: the map draws the button there and
- * a tap on it confirms. A tap anywhere else on the map does not.
+ * A prompt a map-target panel shows at a point on the map, such as "Move
+ * here" after a tap on open ground, or "After current job" and "Now (drops
+ * …)" for a busy unit: one or two buttons, in the order given. The map draws
+ * them offset above or beside the point, never under it, so the finger or
+ * pointer that made the tap does not land on one; a tap on a button confirms
+ * it. A tap anywhere else on the map, the prompt's × or Esc dismisses it
+ * without confirming: the surface drops the prompt and calls `onDismiss`
+ * once, and the panel forgets it, so it never shows that prompt again. A
+ * prompt the panel replaces or clears itself is not dismissed.
  */
 export interface MapPrompt {
   readonly point: GeoJsonPoint
-  readonly label: string
-  readonly onConfirm: () => void
+  readonly options: ReadonlyArray<MapPromptOption>
+  readonly onDismiss: () => void
+}
+
+/** A panel's prompt, refused unless it has one or two options, each with a label. */
+export const assertMapPrompt = (panelId: string, prompt: MapPrompt): MapPrompt => {
+  if (prompt.options.length < 1 || prompt.options.length > 2) throw new Error(`Surface panel ${panelId} showed a map prompt with ${prompt.options.length} options; a prompt has one or two`)
+  const unlabelled = prompt.options.findIndex(option => option.label.trim().length === 0)
+  if (unlabelled >= 0) throw new Error(`Surface panel ${panelId} showed a map prompt whose option ${unlabelled + 1} has no label`)
+  return prompt
+}
+
+/** The most targets one map targeting marks; a panel gives the nearest few. */
+export const mapTargetingMaxTargets = 8
+
+/**
+ * One target an armed order marks. A valid one (the default) gets a green
+ * halo whose tag is the verb or ETA a click there gives, e.g. "4 min". A
+ * refused one is the target a click was just refused for: it gets a neutral
+ * ring apart from the valid ones, and its tag is the refusal, shown beside
+ * the target for as long as the panel keeps it in the targeting (plan B.3:
+ * 4 s).
+ */
+export interface MapTargetingTarget {
+  readonly id: ObjectId
+  readonly tag: string
+  readonly tone?: 'valid' | 'refused'
+}
+
+/**
+ * What a map-target panel shows on the map while it arms an order for one
+ * of its objects, `from`: each target gets a halo with its tag
+ * (`MapTargetingTarget`), every other object is dimmed, and a line runs from
+ * `from` to a mouse pointer (never to a finger, which has none between taps).
+ * The map only draws it; clicks route as always (`map-target-routing.ts`),
+ * and a tap on a tag is a tap on its target.
+ */
+export interface MapTargeting {
+  readonly from: ObjectId
+  readonly targets: ReadonlyArray<MapTargetingTarget>
+}
+
+/** A panel's targeting, refused beyond eight targets, with a target twice or as `from`, or with an empty tag. */
+export const assertMapTargeting = (panelId: string, targeting: MapTargeting): MapTargeting => {
+  const refuse = (reason: string): never => { throw new Error(`Surface panel ${panelId} showed a map targeting from ${targeting.from} ${reason}`) }
+  if (targeting.targets.length > mapTargetingMaxTargets) refuse(`with ${targeting.targets.length} targets; at most ${mapTargetingMaxTargets} are marked`)
+  const ids = new Set<ObjectId>()
+  for (const target of targeting.targets) {
+    if (target.id === targeting.from) refuse('that targets its own object')
+    if (ids.has(target.id)) refuse(`that marks ${target.id} twice`)
+    if (target.tag.trim().length === 0) refuse(`whose target ${target.id} has no tag`)
+    ids.add(target.id)
+  }
+  return targeting
 }
 
 export const noMapCover: MapCover = Object.freeze({ top: 0, right: 0, bottom: 0, left: 0 })
@@ -103,9 +168,16 @@ export interface SurfacePanelProps {
   /**
    * Shows a prompt at a point on the map, or clears it with null. Only the
    * open map-target panel's latest prompt is shown; a panel clears its own
-   * when it unmounts.
+   * when it unmounts. When the operator dismisses it, the surface drops it
+   * and calls its `onDismiss`.
    */
   readonly onMapPrompt: (prompt: MapPrompt | null) => void
+  /**
+   * Shows an armed order's targets on the map (`MapTargeting`), or clears
+   * them with null. Only the open map-target panel's latest targeting is
+   * drawn; a panel clears its own when it unmounts.
+   */
+  readonly onMapTargeting: (targeting: MapTargeting | null) => void
 }
 
 /** A panel connects the handlers its contribution declares, and only those. */

@@ -10,6 +10,14 @@ import type { PackCommandRequest, PackMapTarget, PackTargetContext, PackTargetin
  * of another Pack keeps the generic path. A click that orders nothing, with no
  * unit chosen and no such panel open, opens the object's display where its Pack
  * asks so (`PackUiContribution.displayOnPress`).
+ *
+ * A Pack that declares a map-target panel takes no click on its objects
+ * through the generic path: while that panel is closed, a click on one of its
+ * objects opens the panel with the object selected, and while it is open the
+ * click reaches the panel or selects the object for it. No click on such an
+ * object is ever ignored. While that panel is open, a click on open ground
+ * with an object selected that is not a controller clears the selection: the
+ * ground means "away" (plan B.3, a call or a site card closes).
  */
 
 /** The open panel declaring map targets, with its handlers once it has connected them. */
@@ -22,12 +30,23 @@ export interface MapTargetPanel {
   readonly previewMapTarget: ((controllerId: ObjectId, target: PackMapTarget) => PackTargetPreview | null) | null
 }
 
+/** A surface panel that declares map targets and is closed: a click on an object of its Pack opens it. */
+export interface ClosedMapTargetPanel {
+  readonly panelId: string
+  /** The Pack that contributes the panel. */
+  readonly packId: string
+}
+
 export interface MapClickContext {
   /** The selected controller, if the selection is one. */
   readonly controller: OperationalObject | null
+  /** The one selection the screen shares with its panels, a controller or not. */
+  readonly selectedObjectId: ObjectId | null
   readonly targeting: PackTargetingContribution | undefined
   readonly context: PackTargetContext
   readonly panel: MapTargetPanel | null
+  /** Every closed panel that declares map targets, with its Pack. */
+  readonly closedMapTargetPanels: ReadonlyArray<ClosedMapTargetPanel>
   /** Whether a click on the object opens its display in the display window, when the click orders nothing. */
   readonly opensDisplay: (object: OperationalObject) => boolean
 }
@@ -39,6 +58,10 @@ export type MapClickRoute =
   | { readonly kind: 'note'; readonly text: string }
   | { readonly kind: 'send'; readonly command: PackCommandRequest; readonly subject: string }
   | { readonly kind: 'display'; readonly objectId: ObjectId }
+  /** Open the closed map-target panel of the object's Pack and select the object for it. */
+  | { readonly kind: 'openPanel'; readonly panelId: string; readonly objectId: ObjectId }
+  /** Clear the shared selection: open ground under an open map-target panel, with no controller selected. */
+  | { readonly kind: 'deselect' }
 
 const none: MapClickRoute = { kind: 'none' }
 
@@ -61,8 +84,28 @@ const notTargeted = (preview: PackTargetPreview | null): MapClickRoute =>
 const send = (command: PackCommandRequest, preview: PackTargetPreview | null, subject: string): MapClickRoute =>
   preview?.refused ? { kind: 'note', text: preview.text } : { kind: 'send', command, subject: preview?.text ?? subject }
 
+/** A click on an object for a controller with no panel taking its orders: the Pack's generic targeting decides. */
+const genericObjectClick = (object: OperationalObject, controller: OperationalObject, click: MapClickContext): MapClickRoute => {
+  const { targeting, context, panel } = click
+  if (!targeting || object.id === controller.id) return none
+  const target: PackMapTarget = { kind: 'object', objectId: object.id }
+  const preview = previewOf(click, controller, target)
+  if (!targeting.isTarget(controller, object, context)) {
+    // An object of the open map-target panel's Pack is never ignored: it becomes the selection the panel shows.
+    if (panel !== null && object.packId === panel.packId) return { kind: 'select', objectId: object.id, note: preview?.refused ? preview.text : null }
+    return notTargeted(preview)
+  }
+  return send(targeting.buildSetTargetCommand(controller, object, context), preview, `Sending ${controller.label} to ${object.label}`)
+}
+
 export const routeObjectClick = (object: OperationalObject, click: MapClickContext): MapClickRoute => {
   const { controller, targeting, context, panel } = click
+  const closedPanel = click.closedMapTargetPanels.find(candidate => candidate.packId === object.packId)
+  if (closedPanel) {
+    // A controller of another Pack still sends to an object it targets; every other click opens the object's panel.
+    const sent = controller && controller.packId !== closedPanel.packId ? genericObjectClick(object, controller, click) : null
+    return sent?.kind === 'send' ? sent : { kind: 'openPanel', panelId: closedPanel.panelId, objectId: object.id }
+  }
   const owningPanel = controller ? panelFor(panel, controller) : null
   if (targeting?.isController(object, context)) {
     // A second click on the selected controller is the panel's to read, e.g. a touch screen clearing the highlight.
@@ -74,17 +117,13 @@ export const routeObjectClick = (object: OperationalObject, click: MapClickConte
   if (owningPanel && controller) return toPanel(owningPanel, controller.id, { kind: 'object', objectId: object.id })
   // With no unit chosen and no panel taking map targets, a click orders nothing: it opens the object's display, where it opens one.
   if (!controller) return click.opensDisplay(object) ? { kind: 'display', objectId: object.id } : none
-  if (!targeting || object.id === controller.id) return none
-  const target: PackMapTarget = { kind: 'object', objectId: object.id }
-  const preview = previewOf(click, controller, target)
-  if (!targeting.isTarget(controller, object, context)) return notTargeted(preview)
-  return send(targeting.buildSetTargetCommand(controller, object, context), preview, `Sending ${controller.label} to ${object.label}`)
+  return genericObjectClick(object, controller, click)
 }
 
 /** A click on open ground, reported only while a panel or a Pack takes point targets. */
 export const routeGroundClick = (point: GeoJsonPoint, click: MapClickContext): MapClickRoute => {
   const { controller, targeting, context, panel } = click
-  if (!controller) return none
+  if (!controller) return panel !== null && click.selectedObjectId !== null ? { kind: 'deselect' } : none
   const owningPanel = panelFor(panel, controller)
   if (owningPanel) return toPanel(owningPanel, controller.id, { kind: 'point', point })
   const pointTargets = targeting?.pointTargets

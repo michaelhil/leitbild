@@ -3,7 +3,7 @@ import { remainingRouteGeometry } from '../../core/model/index.ts'
 import type { PackMapFeature, PackObjectPresentation } from '../../core/packs/protocol.ts'
 import { alertRows, asksAttention, worstFirst } from '../../features/displays/alerts/rows.ts'
 import { severityTable, type Palette } from '../displays/severity.ts'
-import { colorWithAlpha, hexToRgba, toneColor, white } from './colors.ts'
+import { colorWithAlpha, dimmedAlpha, hexToRgba, toneColor, white } from './colors.ts'
 import { symbolAtlasFor, symbolSizePx } from './symbol-kit.ts'
 import {
   lineStringPositions,
@@ -130,7 +130,11 @@ const operationalPointFor = (
   const highlighted = context.highlightedObjectIds.has(object.id)
   const hasNewInfo = presentation.noteworthyUpdates === true && context.hasNewInfo(object)
   const muted = presentation.muted === true || context.mutedObjectIds.has(object.id)
-  const color = muted ? colorWithAlpha(hexToRgba(presentation.color), 132) : hexToRgba(presentation.color)
+  const target = context.targeting?.targets.get(object.id) ?? null
+  const targetTag = target?.tag ?? null
+  const targetRefused = target?.refused === true
+  const dimmed = context.targeting !== null && target === null && object.id !== context.targeting.fromId
+  const color = dimmed ? colorWithAlpha(hexToRgba(presentation.color), dimmedAlpha) : muted ? colorWithAlpha(hexToRgba(presentation.color), 132) : hexToRgba(presentation.color)
   const sizePx = presentation.mapIconSizePx ?? symbolSizePx(symbolId)
   const alert = alertBadge(object, context.alertPalette)
   const signature = [
@@ -144,6 +148,8 @@ const operationalPointFor = (
     highlighted ? 'h' : '',
     hasNewInfo ? 'n' : '',
     muted ? 'm' : '',
+    dimmed ? 'd' : '',
+    targetTag === null ? '' : `t=${targetRefused ? 'r' : 'v'}=${targetTag}`,
     label ?? '',
     alert === null ? '' : alert.color.join(','),
   ].join(':')
@@ -161,6 +167,9 @@ const operationalPointFor = (
     highlighted,
     hasNewInfo,
     muted,
+    targetTag,
+    targetRefused,
+    dimmed,
     sizePx,
     rotationDeg: 0,
     priority: pointPriority(object, presentation),
@@ -253,6 +262,7 @@ const projectionContextFor = (
   selectedControllerId: input.selectedControllerId,
   highlightedObjectIds: new Set(input.highlightedObjectIds),
   mutedObjectIds: new Set(input.mutedObjectIds ?? []),
+  targeting: input.targeting ?? null,
   hiddenObjectCategoryIds: new Set(input.hiddenObjectCategoryIds),
   hasNewInfo: input.hasNewInfo,
   presentationFor: input.presentationFor,

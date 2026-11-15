@@ -50,6 +50,12 @@ export interface OperationalPointFeature {
   readonly highlighted: boolean
   readonly hasNewInfo: boolean
   readonly muted: boolean
+  /** A target of the armed order (`MapTargeting`): its halo carries this tag; null for any other object. */
+  readonly targetTag: string | null
+  /** The target a click was just refused for: ringed apart, its tag the refusal. */
+  readonly targetRefused: boolean
+  /** Dimmed while an order is armed: neither its object nor one of its targets. */
+  readonly dimmed: boolean
   readonly sizePx: number
   readonly rotationDeg: number
   readonly priority: number
@@ -95,12 +101,20 @@ export interface MapAssignmentInteraction {
   readonly handles: ReadonlyArray<MapAssignmentHandleFeature>
 }
 
+/** An armed order as the map draws it (`MapTargeting`): the object it is for, and each target's tag and tone by object id. */
+export interface MapTargetingRender {
+  readonly fromId: string
+  readonly targets: ReadonlyMap<string, { readonly tag: string; readonly refused: boolean }>
+}
+
 export interface OperationalRenderInput {
   readonly objects: ReadonlyArray<OperationalObject>
   readonly selectedControllerId: string | null
   readonly highlightedObjectIds: ReadonlyArray<string>
   /** Objects the screen sees but may not order (`targeting.mutedOnMap`): drawn muted. */
   readonly mutedObjectIds?: ReadonlyArray<string>
+  /** The armed order's targets, tagged, and every other object dimmed; none while nothing is armed. */
+  readonly targeting?: MapTargetingRender | null
   readonly hiddenObjectCategoryIds: ReadonlyArray<string>
   readonly placementPoints: ReadonlyArray<GeoJsonPoint>
   readonly packFeatures: ReadonlyArray<PackMapFeature>
@@ -190,6 +204,7 @@ export interface MapFeatureProjectionContext {
   readonly selectedControllerId: string | null
   readonly highlightedObjectIds: ReadonlySet<string>
   readonly mutedObjectIds: ReadonlySet<string>
+  readonly targeting: MapTargetingRender | null
   readonly hiddenObjectCategoryIds: ReadonlySet<string>
   readonly hasNewInfo: (object: OperationalObject) => boolean
   readonly presentationFor: (object: OperationalObject) => PackObjectPresentation
