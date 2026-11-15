@@ -266,7 +266,7 @@ export interface UnitCardView {
   readonly readOnly: string | null
   readonly dispatch: ButtonView
   readonly recall: ButtonView
-  /** "Undo last order (by Assistant: C-2 → Triage post)": who gave the order it takes back, and where it sent the unit. */
+  /** "Undo last order (by Assistant: C-2 → Depot B)": who gave the order it takes back, and where it sent the unit. */
   readonly undo: ButtonView & { readonly commandId: string | null }
   /** The situation's word for the unit's stops. */
   readonly planHeading: string

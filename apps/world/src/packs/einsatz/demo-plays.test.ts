@@ -1,34 +1,36 @@
 import { describe, expect, test } from 'bun:test'
 import { isMapSymbol } from '../../core/map-symbols/catalog.ts'
 import atlas from '../../core/map-symbols/common.json'
-import { runRolesOf, type ScenarioRolePreset } from '../../core/model/index.ts'
 import { compileScenarioDefinition } from '../../core/scenarios/compiler.ts'
 import { scenarioDefinitionSchema, type ScenarioDefinition } from '../../core/scenarios/definition.ts'
 import { createDirectRoutingAdapter } from '../../routing/direct-adapter.ts'
 import emergencyJson from '../../scenarios/halden-emergency.scenario.json'
 import supplyJson from '../../scenarios/supply-run.scenario.json'
 import { startingZoomFor } from '../../ui/map/map-camera.ts'
-import { openRoleDialog, roleDialogModel, togglePreset } from '../../ui/roles/role-dialog.ts'
 import { einsatzCommandIds as ids, einsatzQueryIds } from './capabilities.ts'
-import { createWall, openScreen, pastGuardMs, roleScreen, runFor, type Screen } from './fixtures/board-harness.ts'
-import { addToEndOfNearestBusy, chainBoth, configOf, metresBetween, playDemo, slowedRouting, type Beat, type CallLog, type PlayLog, type Policy } from './fixtures/demo-play.ts'
-import { openRun, operator } from './fixtures/run-harness.ts'
-import { groupRoleId } from './ids.ts'
+import { openCardScreen, type CardScreen } from './fixtures/card-harness.ts'
+import { afterNearestBusy, bothToOne, configOf, lonLatOf, metresBetween, playDemo, slowedRouting, type Beat, type CallLog, type PlayLog, type Policy } from './fixtures/demo-play.ts'
+import { openRun, type OpenRun } from './fixtures/run-harness.ts'
 import { einsatzPack } from './pack.ts'
-import type { Recommendation } from './recommendation-schema.ts'
+import type { RecommendAnswer } from './recommendation-schema.ts'
+import type { Situation } from './situation/schema.ts'
+import { einsatzPackView } from './ui-pack.ts'
 import { dispatchMapCover, panelBottomClearancePx, panelLayoutFor, panelTopClearancePx } from './ui/dispatch-layout.ts'
 
 /**
  * The demo Definitions every leitbild.app user can start, held to the demo
  * quality bar: words, pacing, the start view on an iPad, objectives that a
- * good dispatcher meets and a passive one does not, groups, icons and no call
- * that nobody but the Controller can close. Plays run headless on the direct
- * router, and again with travel twice and two and a half times as slow, as
- * town roads make it, by a dispatcher who reacts at once, after 30 s and
- * after 60 s. Objectives are judged when the exercise ends, from the Run's
- * state: a call still waiting then has waited until then. Everything is
- * found from the Definitions themselves: cues by id, calls by when a cue made
- * them, units and places by their records.
+ * good dispatcher meets and a passive one does not, icons and no call that
+ * nobody but the Controller can close; and plan B.11's click counts, each
+ * row played on a Dispatch panel screen (`fixtures/card-harness.ts`) at
+ * the count it states. Every order of every play is given by the panel's
+ * own clicks. Plays run headless on the direct router, and again with
+ * travel twice and two and a half times as slow, as town roads make it, by
+ * a dispatcher who reacts at once, after 30 s and after 60 s. Objectives
+ * are judged when the exercise ends, from the Run's state: a call still
+ * waiting then has waited until then. Everything is found from the
+ * Definitions themselves: cues by id, calls by when a cue made them, units
+ * and places by their records.
  */
 
 type Definition = ScenarioDefinition & { readonly timeline: NonNullable<ScenarioDefinition['timeline']> }
@@ -52,7 +54,7 @@ const stated = (definition: Definition, index: number, pattern: RegExp): string 
 const statedS = (definition: Definition, index: number, pattern: RegExp): number => Number(stated(definition, index, pattern)) * 60
 const minutes = /within (\d+) minutes of the (?:call|request)/
 const waitsAtMost = /more than (\d+) minutes/
-const classCode = /every (?:top-priority )?\(?(P\d)\)? call/
+const priorityCode = /every (?:top-priority )?\(?(P\d)\)? call/
 
 interface Demo {
   readonly definition: Definition
@@ -60,18 +62,16 @@ interface Demo {
   readonly beats: ReadonlyArray<Beat>
   /** Each objective, judged from a play. */
   readonly objectives: (log: PlayLog) => ReadonlyArray<boolean>
-  /** The least slack, in seconds, any call has against the objectives that set a response time for every call of a class. */
+  /** The least slack, in seconds, any call has against the objectives that set a response time for every call of a priority. */
   readonly slack: (log: PlayLog) => number
-  /** The roles one dispatcher holds: the first preset in a Definition with groups. */
-  readonly roleIds?: ReadonlyArray<string>
 }
 
-const topClass = (definition: Definition): string => configOf(definition).loadClasses[0]!.id
-/** The load class an objective names by its code. */
-const classNamed = (definition: Definition, index: number): string => {
-  const code = stated(definition, index, classCode)
-  const found = configOf(definition).loadClasses.find(entry => entry.code === code)
-  if (found === undefined) throw new Error(`${definition.id} has no class ${code}`)
+const topPriority = (definition: Definition): string => configOf(definition).priorities[0]!.id
+/** The priority an objective names by its code. */
+const priorityNamed = (definition: Definition, index: number): string => {
+  const code = stated(definition, index, priorityCode)
+  const found = configOf(definition).priorities.find(entry => entry.code === code)
+  if (found === undefined) throw new Error(`${definition.id} has no priority ${code}`)
   return found.id
 }
 /** How long a call waited for its first unit, as the Run stands when the exercise ends. */
@@ -87,30 +87,29 @@ const createdBy = (calls: ReadonlyArray<CallLog>, atS: number): CallLog => {
 const demos: Readonly<Record<'emergency' | 'supply', Demo>> = {
   emergency: {
     definition: emergency,
-    beats: [addToEndOfNearestBusy('second fire beside the first', cueAt(emergency, 'harbour-car-fire'))],
+    beats: [afterNearestBusy('second fire beside the first', cueAt(emergency, 'harbour-car-fire'))],
     objectives: ({ calls }) => {
       const held = inExercise(emergency, calls)
       return [
-        held.filter(call => call.rank === classNamed(emergency, 0)).every(call => waitedS(emergency, call) <= statedS(emergency, 0, minutes)),
+        held.filter(call => call.priority === priorityNamed(emergency, 0)).every(call => waitedS(emergency, call) <= statedS(emergency, 0, minutes)),
         waitedS(emergency, createdBy(held, cueAt(emergency, 'harbour-car-fire'))) <= statedS(emergency, 1, minutes),
-        held.filter(call => call.rank === classNamed(emergency, 2)).every(call => waitedS(emergency, call) <= statedS(emergency, 2, minutes)),
+        held.filter(call => call.priority === priorityNamed(emergency, 2)).every(call => waitedS(emergency, call) <= statedS(emergency, 2, minutes)),
       ]
     },
     slack: ({ calls }) => Math.min(...[0, 2].flatMap(index => inExercise(emergency, calls)
-      .filter(call => call.rank === classNamed(emergency, index))
+      .filter(call => call.priority === priorityNamed(emergency, index))
       .map(call => statedS(emergency, index, minutes) - waitedS(emergency, call)))),
-    roleIds: emergency.rolePresets![0]!.roles,
   },
   supply: {
     definition: supply,
     beats: [
-      chainBoth('two requests side by side', cueAt(supply, 'scout-camp-request')),
-      addToEndOfNearestBusy('the heavy unit stays home', cueAt(supply, 'harbour-request')),
+      bothToOne('two requests side by side', cueAt(supply, 'scout-camp-request')),
+      afterNearestBusy('the heavy unit stays home', cueAt(supply, 'harbour-request')),
     ],
     objectives: ({ calls }) => {
       const held = inExercise(supply, calls)
       return [
-        held.filter(call => call.rank === topClass(supply)).every(call => waitedS(supply, call) <= statedS(supply, 0, minutes)),
+        held.filter(call => call.priority === topPriority(supply)).every(call => waitedS(supply, call) <= statedS(supply, 0, minutes)),
         held.every(call => waitedS(supply, call) <= statedS(supply, 1, waitsAtMost)),
       ]
     },
@@ -126,7 +125,7 @@ interface Pace {
 }
 const play = async (demo: Demo, policy: Policy, pace: Pace = { factor: 1, reactS: 0 }, untilS = endOf(demo.definition)): Promise<PlayLog> => await playDemo({
   definition: demo.definition,
-  screens: [{ name: 'dispatcher', ...(demo.roleIds === undefined ? {} : { roleIds: demo.roleIds }), policy }],
+  policy,
   untilS,
   reactS: pace.reactS,
   ...(pace.factor === 1 ? {} : { routing: slowedRouting(pace.factor) }),
@@ -144,16 +143,18 @@ const paces: ReadonlyArray<Pace> = [
 ]
 /** Every call's slack against a per-call objective is at least this in every play. */
 const slackS = 3 * 60
+/** A busy unit's first submit is refused when_required: the busy prompt it opens is the next click (plan B.3), never an order lost. */
+const refusedOrders = (log: PlayLog) => log.orders.filter(order => !order.ok && order.code !== 'when_required')
 
 const describeLog = (log: PlayLog): string => JSON.stringify({
-  orders: log.orders.map(order => [order.atS, order.capabilityId, order.input, order.ok ? 'ok' : order.reason]),
+  orders: log.orders.map(order => [order.atS, order.capabilityId, order.input, order.ok ? 'ok' : order.reason, order.clicks]),
   calls: log.calls.map(call => [call.label, call.createdS, call.firstOnSceneS, call.closedS]),
 })
 
 for (const demo of Object.values(demos)) {
   const { definition } = demo
   const config = configOf(definition)
-  const items = definition.packs[0]!.items as unknown as ReadonlyArray<{ readonly type: string; readonly id: string; readonly label: string; readonly position: readonly [number, number]; readonly unitType?: string; readonly template?: string; readonly group?: string }>
+  const items = definition.packs[0]!.items as unknown as ReadonlyArray<{ readonly type: string; readonly id: string; readonly label: string; readonly position: readonly [number, number]; readonly unitType?: string; readonly template?: string; readonly loads?: Record<string, number> }>
   const created = definition.timeline.cues.flatMap(cue => cue.actions.flatMap(action =>
     action.type === 'invoke_capability' && (action.capabilityId === ids.taskCreate || action.capabilityId === ids.unitCreate)
       ? [{ atS: cue.at.seconds, capabilityId: action.capabilityId, input: action.input as { readonly template?: string; readonly type?: string; readonly at: { readonly coordinates: readonly [number, number] }; readonly loads?: Record<string, number> } }]
@@ -174,8 +175,7 @@ for (const demo of Object.values(demos)) {
       const sentences = howTo!.split(/(?<=\.) /)
       expect(sentences.length).toBeGreaterThanOrEqual(2)
       expect(sentences.length).toBeLessThanOrEqual(4)
-      for (const idiom of [/\btap\b/, /Do now or Add to end/, /\bthe \+ on\b/i]) expect(howTo).toMatch(idiom)
-      if (config.groups.length > 0) expect(howTo).toMatch(/groups dialog from the role chip/)
+      expect(howTo).toMatch(/\btap\b/)
       expect(definition.objectives.length).toBeGreaterThanOrEqual(2)
     })
 
@@ -216,79 +216,69 @@ for (const demo of Object.values(demos)) {
       for (const call of calls) expect(Math.min(...starts.map(start => metresBetween(start, call)))).toBeLessThanOrEqual(3_000)
     })
 
-    test('its icons are catalogue symbols and no call is one that only the Controller could close', async () => {
+    test('it is an open Run, its icons are catalogue symbols, and no call is one that only the Controller could close', async () => {
       for (const entry of [...config.unitTypes, ...config.taskTemplates]) expect(isMapSymbol(entry.icon)).toBe(true)
       const compiled = await compileScenarioDefinition(definition, [einsatzPack], { routing: createDirectRoutingAdapter() })
       expect(compiled.id).toBe(definition.id)
-      // Every call needs a service, or holds load, or both: never a report, which only the Controller could close.
-      // Each part must be served by a unit some role holds: in a Definition with groups, by a grouped unit, and
-      // under each preset split by a unit of a group one desk of the split holds.
-      const tasks = [...items.filter(item => item.type === 'task').map(item => ({ template: item.template!, loads: (item as { readonly loads?: Record<string, number> }).loads })), ...created.filter(entry => entry.capabilityId === ids.taskCreate).map(entry => ({ template: entry.input.template!, loads: entry.input.loads }))]
+      // Open mode (plan C.5, decision 2): no role gate, so groups create no roles.
+      expect([compiled.roles ?? [], compiled.rolePresets ?? []]).toEqual([[], []])
+      // Every call needs a service, or holds load, or both: never a report, which only the Controller could close; and some unit serves each part.
+      const tasks = [...items.filter(item => item.type === 'task').map(item => ({ template: item.template!, loads: item.loads })), ...created.filter(entry => entry.capabilityId === ids.taskCreate).map(entry => ({ template: entry.input.template!, loads: entry.input.loads }))]
       const typeOf = (id: string) => config.unitTypes.find(type => type.id === id)!
-      const unitsIn = (groups: ReadonlySet<string> | null) => [
-        ...items.filter(item => item.type === 'unit' && (groups === null || (item.group !== undefined && groups.has(item.group)))).map(item => typeOf(item.unitType!)),
-        // A unit a cue creates joins no group; it counts only in a Definition without groups.
-        ...(groups === null ? created.filter(entry => entry.capabilityId === ids.unitCreate).map(entry => typeOf(entry.input.type!)) : []),
-      ]
-      const servedBy = (task: typeof tasks[number], units: ReturnType<typeof unitsIn>): ReadonlyArray<string> => {
+      const units = [...items.filter(item => item.type === 'unit').map(item => typeOf(item.unitType!)), ...created.filter(entry => entry.capabilityId === ids.unitCreate).map(entry => typeOf(entry.input.type!))]
+      for (const task of tasks) {
         const template = config.taskTemplates.find(entry => entry.id === task.template)!
         const loads = Object.keys(task.loads ?? {}).filter(classId => (task.loads![classId] ?? 0) > 0)
-        return [
+        const unserved = [
           ...(template.requires.length === 0 && loads.length === 0 ? ['a report'] : []),
           ...template.requires.filter(requirement => !units.some(type => type.components.service?.provides.includes(requirement.provides) === true)).map(requirement => requirement.provides),
           ...loads.filter(classId => !units.some(type => type.components.carry?.classes.includes(classId) === true)),
         ]
-      }
-      const presetGroups = (definition.rolePresets ?? []).map(preset => new Set(preset.roles.flatMap(roleId => config.groups.filter(group => groupRoleId(group.id) === roleId).map(group => group.id))))
-      const splits = presetGroups.length < 2 ? [] : presetGroups.slice(1)
-      for (const task of tasks) {
-        expect([task.template, servedBy(task, unitsIn(config.groups.length === 0 ? null : new Set(config.groups.map(group => group.id))))]).toEqual([task.template, []])
-        // Under a split, each part the task needs is served by a group some desk of the split holds.
-        if (splits.length > 0) {
-          const missing = servedBy(task, unitsIn(new Set(splits.flatMap(groups => [...groups]))))
-          expect([task.template, missing]).toEqual([task.template, []])
-        }
+        expect([task.template, unserved]).toEqual([task.template, []])
       }
     })
 
     for (const pace of paces) {
-      test(`a good dispatcher meets every objective with travel ${pace.factor}× as slow, reacting after ${pace.reactS} s, with something to do every 3 minutes until the end and no order refused`, async () => {
+      test(`a good dispatcher at the panel meets every objective with travel ${pace.factor}× as slow, reacting after ${pace.reactS} s, with something to do every 3 minutes until the end, every suggestion taken in 2 clicks and no order refused`, async () => {
         const log = await play(demo, good(demo), pace)
         try {
           expect(demo.objectives(log), describeLog(log)).toEqual(demo.objectives(log).map(() => true))
           if (pace.factor <= 2) expect(demo.slack(log)).toBeGreaterThanOrEqual(slackS)
-          expect(log.orders.filter(order => !order.ok)).toEqual([])
+          expect(refusedOrders(log)).toEqual([])
           expect(new Set(log.orders.flatMap(order => order.beat === undefined ? [] : [order.beat]))).toEqual(new Set(demo.beats.map(beat => beat.name)))
+          // A suggestion is the call's row and its Dispatch (B.11); a divert that row, then the busy unit's 4 clicks.
+          expect(new Set(log.orders.filter(order => order.move === 'suggestion').map(order => order.clicks))).toEqual(new Set([2]))
+          for (const order of log.orders.filter(entry => entry.move === 'divert')) expect(order.clicks).toBe(5)
           // Something to do at least every 3 minutes over the whole exercise: a new call, or an order the dispatcher gives.
           const moments = [...new Set([...log.calls.map(call => call.createdS), ...log.orders.map(order => order.atS), endOf(definition)])].sort((a, b) => a - b)
           expect(Math.max(...moments.slice(1).map((at, index) => at - moments[index]!))).toBeLessThanOrEqual(180)
         } finally {
           await log.run.close()
         }
-      }, 60_000)
+      }, 120_000)
     }
 
     test('in a good play every call is served in the end: none is left for the Controller to close', async () => {
       const log = await play(demo, good(demo), { factor: 1, reactS: 0 }, endOf(definition) + 15 * 60)
       try {
         expect(log.calls.filter(call => call.closedS === undefined).map(call => call.label)).toEqual([])
-        expect(log.orders.filter(order => !order.ok)).toEqual([])
+        expect(refusedOrders(log)).toEqual([])
       } finally {
         await log.run.close()
       }
-    }, 60_000)
+    }, 120_000)
 
-    test('a dispatcher who does nothing fails an objective, and one who only follows recommendations without the beat\'s move fails one too', async () => {
+    test('a dispatcher who does nothing fails an objective, and one who only takes the suggestions without the beat\'s move fails one too', async () => {
       for (const policy of [{ kind: 'nothing' } as const, { kind: 'recommendations', beats: [] } as const]) {
         const log = await play(demo, policy)
         try {
           expect([policy.kind, demo.objectives(log).every(Boolean)]).toEqual([policy.kind, false])
-          expect(log.orders.filter(order => !order.ok)).toEqual([])
+          expect(refusedOrders(log)).toEqual([])
         } finally {
           await log.run.close()
         }
       }
-    }, 60_000)
+    }, 120_000)
 
     test('plays are deterministic: the same policy gives the same orders and the same call times', async () => {
       const [first, second] = [await play(demo, good(demo)), await play(demo, good(demo))]
@@ -298,253 +288,54 @@ for (const demo of Object.values(demos)) {
         await first.run.close()
         await second.run.close()
       }
-    }, 60_000)
+    }, 120_000)
   })
 }
 
-describe('halden-emergency pressure moments and desks', () => {
-  test('the good play reaches the chest pain before the ankle that arrives with it, diverts the unit on its way to the fallen tree to the fight, and adds the car fire to the end of the chain of the unit busy at the first fire', async () => {
+const stopsOf = (input: unknown): ReadonlyArray<Record<string, unknown>> => (input as { readonly stops: ReadonlyArray<Record<string, unknown>> }).stops
+const whenOf = (input: unknown): string | undefined => (input as { readonly when?: string }).when
+const unitsOf = (input: unknown): ReadonlyArray<string> => (input as { readonly units: ReadonlyArray<string> }).units
+
+describe('halden-emergency pressure moments', () => {
+  test('the good play reaches the chest pain before the ankle that arrives with it, diverts the unit on its way to the fallen tree to the fight, and gives the car fire to the engine on scene at the first fire after its current job in 4 clicks', async () => {
     const log = await play(demos.emergency, good(demos.emergency))
     try {
       // Two calls arrive together; the top-priority one is reached first.
       expect(cueAt(emergency, 'rodsberg-ankle')).toBe(cueAt(emergency, 'fortress-chest-pain'))
       const together = log.calls.filter(call => call.createdS === cueAt(emergency, 'fortress-chest-pain'))
-      const [top, other] = [together.filter(call => call.rank === topClass(emergency)), together.filter(call => call.rank !== topClass(emergency))]
-      expect([top.length, other.length]).toEqual([1, 1])
-      expect(top[0]!.firstOnSceneS!).toBeLessThan(other[0]!.firstOnSceneS!)
+      const ranks = configOf(emergency).priorities.map(entry => entry.id)
+      const [first, later] = [...together].sort((a, b) => ranks.indexOf(a.priority) - ranks.indexOf(b.priority))
+      expect(ranks.indexOf(first!.priority)).toBeLessThan(ranks.indexOf(later!.priority))
+      expect(first!.firstOnSceneS!).toBeLessThan(later!.firstOnSceneS!)
+      const [fireBeat] = demos.emergency.beats
+      // No free unit can help at the fight: the dispatcher diverts the one on its way to the fallen tree, by the fight's row, the unit, its Dispatch, the fight, then "Now (drops …)" naming the tree, which the server checks.
       const fight = createdBy(log.calls, cueAt(emergency, 'torget-fight'))
       const tree = createdBy(log.calls, cueAt(emergency, 'tree-on-road'))
-      const divert = log.orders.find(order => order.capabilityId === ids.send && (order.input as { readonly divert?: ReadonlyArray<{ readonly fromTaskId: string }> }).divert !== undefined)
-      expect(divert?.input).toMatchObject({ to: { taskId: fight.id }, divert: [{ fromTaskId: tree.id }] })
-      expect(divert?.atS).toBe(fight.createdS)
+      const divert = log.orders.filter(order => order.move === 'divert' && stopsOf(order.input)[0]?.taskId === fight.id)
+      expect(divert.map(order => [whenOf(order.input), (order.input as { readonly drops?: string }).drops, order.ok ? 'ok' : order.code, order.clicks])).toEqual([
+        [undefined, undefined, 'when_required', 5],
+        ['now', tree.id, 'ok', 5],
+      ])
+      // Within a step of the fight's arrival: the first free unit goes by the suggestion, the second by the divert.
+      expect(divert[1]!.atS - fight.createdS).toBeLessThanOrEqual(5)
+      // The car fire: the unit, its Dispatch, the car fire, then "After current job".
       const carFire = createdBy(log.calls, cueAt(emergency, 'harbour-car-fire'))
-      const queued = log.orders.filter(order => order.beat !== undefined)
-      expect(queued.map(order => [order.capabilityId, (order.input as { readonly to: unknown }).to])).toEqual([[ids.queue, { taskId: carFire.id }]])
-      // The unit it was added to stood on scene at the first fire, then at the car fire.
-      const unitId = (queued[0]!.input as { readonly unitId: string }).unitId
+      const after = log.orders.filter(order => order.beat === fireBeat!.name)
+      expect(after.map(order => [order.capabilityId, stopsOf(order.input), whenOf(order.input), order.ok ? 'ok' : order.code, order.clicks])).toEqual([
+        [ids.order, [{ taskId: carFire.id }], undefined, 'when_required', 4],
+        [ids.order, [{ taskId: carFire.id }], 'after', 'ok', 4],
+      ])
+      // The unit it was given to stood on scene at the first fire, then at the car fire.
+      const unitId = unitsOf(after[1]!.input)[0]!
       expect(createdBy(log.calls, cueAt(emergency, 'guest-harbour-fire')).onScene.has(unitId)).toBe(true)
       expect(carFire.onScene.has(unitId)).toBe(true)
     } finally {
       await log.run.close()
     }
-  }, 60_000)
-
-  test('the groups replace operator roles: a Controller, one role per group with a category, the whole side first among the presets, then a two-desk split', async () => {
-    const compiled = await compileScenarioDefinition(emergency, [einsatzPack], { routing: createDirectRoutingAdapter() })
-    const groups = configOf(emergency).groups
-    expect((emergency.roles ?? []).map(role => role.class)).toEqual(['controller'])
-    expect(compiled.roles?.filter(role => role.class === 'operator').map(role => [role.id, role.category !== undefined])).toEqual(groups.map(group => [groupRoleId(group.id), true]))
-    const presets: ReadonlyArray<ScenarioRolePreset> = compiled.rolePresets ?? []
-    const all = groups.map(group => groupRoleId(group.id))
-    expect(presets[0]?.roles).toEqual(all)
-    expect(presets[0]?.label).toMatch(/one dispatcher/)
-    const [desk, other] = [presets[1]!.roles, presets[2]!.roles]
-    expect([...desk, ...other].sort()).toEqual([...all].sort())
-    expect(desk.filter(roleId => other.includes(roleId))).toEqual([])
-    expect(new Set(groups.map(group => group.category)).size).toBeGreaterThan(1)
-    // Every unit that is not a public place is in exactly one group.
-    const publicTypes = new Set(configOf(emergency).unitTypes.filter(type => type.public).map(type => type.id))
-    for (const item of emergency.packs[0]!.items as ReadonlyArray<{ readonly type: string; readonly unitType?: string; readonly group?: string }>) {
-      if (item.type === 'unit') expect([item.unitType, item.group !== undefined]).toEqual([item.unitType, !publicTypes.has(item.unitType!)])
-    }
-  })
-
-  test('the groups dialog reads as the Definition\'s categories, each listing its groups, under the presets and the Controller; the first preset ticks every group', async () => {
-    const declaration = runRolesOf(await compileScenarioDefinition(emergency, [einsatzPack], { routing: createDirectRoutingAdapter() }))
-    if (declaration === null) throw new Error('halden-emergency declares roles')
-    const groups = configOf(emergency).groups
-    const joining = openRoleDialog(declaration, [], [])
-    const model = roleDialogModel(declaration, joining, { mode: 'join', held: [], holders: null })
-    const categories = [...new Set(groups.map(group => group.category))]
-    expect(model.categories.map(category => [category.label, category.rows.map(row => row.label)]))
-      .toEqual(categories.map(category => [category, groups.filter(group => group.category === category).map(group => group.label)]))
-    expect(model.presets.map(row => [row.kind, row.label])).toEqual([
-      ...emergency.rolePresets!.map(preset => ['preset', preset.label]),
-      ['role', emergency.roles![0]!.label],
-    ])
-    const everything = roleDialogModel(declaration, togglePreset(declaration, joining, emergency.rolePresets![0]!.id), { mode: 'join', held: [], holders: null })
-    expect(everything.categories.flatMap(category => category.rows.map(row => row.control))).toEqual(groups.map(() => true))
-    expect(everything.canApply).toBe(true)
-  })
-
-  test('two dispatchers, one at each desk, also meet every objective, each ordering only its own groups\' units', async () => {
-    const [desk, other] = [emergency.rolePresets![1]!, emergency.rolePresets![2]!]
-    const log = await playDemo({
-      definition: emergency,
-      screens: [
-        { name: desk.id, roleIds: desk.roles, policy: { kind: 'recommendations', beats: [] } },
-        // The second desk commands the unit busy at the first fire, so it takes the beat.
-        { name: other.id, roleIds: other.roles, policy: good(demos.emergency) },
-      ],
-      untilS: endOf(emergency),
-    })
-    try {
-      expect(demos.emergency.objectives(log)).toEqual(demos.emergency.objectives(log).map(() => true))
-      expect(log.orders.filter(order => !order.ok)).toEqual([])
-      expect(new Set(log.orders.map(order => order.screen))).toEqual(new Set([desk.id, other.id]))
-    } finally {
-      await log.run.close()
-    }
-  }, 60_000)
-
-  test('a desk is refused another desk\'s unit, naming the group that commands it, and queues only the calls its units serve', async () => {
-    const run = await openRun({ definition: emergency, paused: true })
-    try {
-      const [desk, other] = [emergency.rolePresets![1]!, emergency.rolePresets![2]!]
-      const deskScreen = roleScreen(run, ...desk.roles)
-      const otherScreen = roleScreen(run, ...other.roles)
-      const groups = configOf(emergency).groups
-      const firstCall = (emergency.packs[0]!.items as ReadonlyArray<{ readonly type: string; readonly id: string }>).find(item => item.type === 'task')!
-      // The call waiting at the start holds load only the first desk's units carry.
-      const answer = await run.query<Recommendation>(einsatzQueryIds.recommend, { taskId: firstCall.id }, deskScreen)
-      expect(answer.proposal.units.length).toBe(1)
-      const refused = await run.refusal(ids.send, { units: [answer.proposal.units[0]!.unitId], to: { taskId: firstCall.id } }, otherScreen)
-      const owner = groups.find(group => desk.roles.includes(groupRoleId(group.id)) && refused.reason.includes(group.label))
-      expect([refused.code, owner !== undefined]).toEqual(['unit_not_authorized', true])
-      const queued = await run.query(einsatzQueryIds.recommend, { taskId: firstCall.id }, otherScreen).then(() => 'answered', (error: Error) => error.message)
-      expect(queued).toStartWith('task_not_in_role_queue')
-    } finally {
-      await run.close()
-    }
-  })
-})
-
-describe('supply-run pressure moments', () => {
-  test('the good play diverts a heavy unit to the first urgent bulk request, gives the two side-by-side requests to one unit in one chain, and adds the guest harbour to the end of a busy unit\'s chain', async () => {
-    const log = await play(demos.supply, good(demos.supply))
-    try {
-      const bulk = createdBy(log.calls, cueAt(supply, 'pumping-station-bulk'))
-      const divert = log.orders.find(order => (order.input as { readonly divert?: unknown }).divert !== undefined)
-      expect(divert).toMatchObject({ atS: bulk.createdS, input: { to: { taskId: bulk.id } }, ok: true })
-      const [chainBeat, homeBeat] = demos.supply.beats
-      const chain = log.orders.filter(order => order.beat === chainBeat!.name)
-      const pair = log.calls.filter(call => call.createdS === cueAt(supply, 'scout-camp-request')).map(call => call.id)
-      expect(pair.length).toBe(2)
-      expect(chain.map(order => [order.capabilityId, (order.input as { readonly to: { readonly taskId: string } }).to.taskId, order.ok])).toEqual([[ids.send, pair[0]!, true], [ids.queue, pair[1]!, true]])
-      const unitId = (chain[1]!.input as { readonly unitId: string }).unitId
-      expect((chain[0]!.input as { readonly units: ReadonlyArray<string> }).units).toEqual([unitId])
-      for (const call of log.calls.filter(entry => pair.includes(entry.id))) expect([...call.onScene]).toEqual([unitId])
-      // The guest harbour goes to the end of a busy unit's chain, so the free heavy unit stays home.
-      const harbour = createdBy(log.calls, cueAt(supply, 'harbour-request'))
-      const home = log.orders.filter(order => order.beat === homeBeat!.name)
-      expect(home.map(order => [order.capabilityId, (order.input as { readonly to: { readonly taskId: string } }).to.taskId, order.ok])).toEqual([[ids.queue, harbour.id, true]])
-    } finally {
-      await log.run.close()
-    }
-  }, 60_000)
-
-  test('a dispatcher who sends the free heavy unit to the guest harbour instead, reacting after a minute, misses the last urgent bulk request', async () => {
-    const [chainBeat, homeBeat] = demos.supply.beats
-    const log = await play({ ...demos.supply, beats: [chainBeat!] }, { kind: 'recommendations', beats: [chainBeat!] }, { factor: 1, reactS: 60 })
-    try {
-      expect(log.orders.some(order => order.beat === homeBeat!.name)).toBe(false)
-      expect(demos.supply.objectives(log)[0]).toBe(false)
-      expect(waitedS(supply, createdBy(log.calls, cueAt(supply, 'community-centre-bulk')))).toBeGreaterThan(statedS(supply, 0, minutes))
-    } finally {
-      await log.run.close()
-    }
-  }, 60_000)
-
-  test('the one moving type and the request icons are ones the operational atlas has never drawn: the openness the description claims', () => {
-    const config = configOf(supply)
-    const mobile = config.unitTypes.filter(type => type.components.mobility !== undefined)
-    expect(mobile.length).toBe(1)
-    for (const icon of [...mobile.map(type => type.icon), ...config.taskTemplates.map(template => template.icon)]) expect(Object.keys(atlas)).not.toContain(icon)
-  })
-})
-
-describe('the first two minutes on the Board, by taps', () => {
-  /** Taps a call's row, waits out the guard, then taps the action button: the call-first idiom, 2 taps. */
-  const dispatchByTaps = async (definition: Definition, roleIds: ReadonlyArray<string> | undefined, script: ReadonlyArray<number>) => {
-    const run = await openRun({ definition })
-    try {
-      const actor = roleIds === undefined ? operator : roleScreen(run, ...roleIds)
-      const screen = await openScreen(run, createWall(), { actor })
-      const startMs = run.nowMs()
-      for (const atS of script) {
-        await runFor(run, startMs + atS * 1_000 - run.nowMs(), [screen])
-        await screen.wait(pastGuardMs)
-        // The top unserved call: the one the Board lists first.
-        const row = screen.view().workList.rows.find(entry => !entry.served)
-        expect(row).toBeDefined()
-        const expected = await run.query<Recommendation>(einsatzQueryIds.recommend, { taskId: row!.id }, actor)
-        screen.resetActions()
-        await screen.click({ kind: 'row', list: 'work', id: row!.id })
-        await screen.wait(pastGuardMs)
-        await screen.click({ kind: 'commit' })
-        expect(screen.actions()).toBe(2)
-        expect(screen.calls.at(-1)).toMatchObject({ capabilityId: ids.send, input: { units: expected.proposal.units.map(unit => unit.unitId), to: { taskId: row!.id } }, result: { ok: true } })
-      }
-      expect(screen.calls.every(call => call.result.ok)).toBe(true)
-      return screen.calls.length
-    } finally {
-      await run.close()
-    }
-  }
-
-  test('halden-emergency, all desks: the call waiting at the start and the crash at 0:40 are each dispatched in 2 taps', async () => {
-    expect(await dispatchByTaps(emergency, emergency.rolePresets![0]!.roles, [0, cueAt(emergency, 'busterud-crash')])).toBe(2)
-  })
-
-  test('supply-run: the two requests waiting at the start are each sent in 2 taps', async () => {
-    expect(await dispatchByTaps(supply, undefined, [0, 1])).toBe(2)
-  })
-})
-
-describe('the pressure moments by Board taps', () => {
-  /**
-   * Plays the good dispatcher up to a beat, without the beat's own move, then
-   * opens a Board on the Run as that dispatcher: the Run as a person would
-   * find it when the beat's call arrives.
-   */
-  const boardAt = async (demo: Demo, atS: number): Promise<{ readonly log: PlayLog; readonly screen: Screen }> => {
-    const log = await play(demo, { kind: 'recommendations', beats: demo.beats.filter(beat => beat.atS < atS) }, { factor: 1, reactS: 0 }, atS)
-    const actor = demo.roleIds === undefined ? operator : roleScreen(log.run, ...demo.roleIds)
-    const screen = await openScreen(log.run, createWall(), { actor })
-    await screen.wait(pastGuardMs)
-    return { log, screen }
-  }
-  const optionsOf = (screen: Screen) => screen.view().commit.options.map(entry => entry.option)
-
-  test('halden-emergency car fire, unit first: the engine on scene at the first fire offers only Add to end for the car fire, and Add to end is accepted', async () => {
-    const atS = cueAt(emergency, 'harbour-car-fire')
-    const firstFire = (log: PlayLog) => createdBy(log.calls, cueAt(emergency, 'guest-harbour-fire'))
-    const tap = async (log: PlayLog, screen: Screen): Promise<string> => {
-      const [engine] = [...firstFire(log).onScene]
-      expect(engine).toBeDefined()
-      await screen.mapTap(engine!)
-      await screen.mapTap(createdBy(log.calls, atS).id)
-      return engine!
-    }
-    const first = await boardAt(demos.emergency, atS)
-    let offered: ReadonlyArray<string>
-    try {
-      const engine = await tap(first.log, first.screen)
-      expect(first.log.run.unit(engine).phase).toBe('on-task')
-      expect(emergency.description).toContain(`${first.log.run.object(engine)!.label} is about to finish`)
-      expect(first.screen.view().commit).toMatchObject({ state: 'choice', detail: expect.stringContaining(firstFire(first.log).label) })
-      offered = optionsOf(first.screen)
-      expect(offered).toEqual(['add-to-end'])
-    } finally {
-      await first.log.run.close()
-    }
-    // Every option offered is accepted: each is tried on its own replay of the same deterministic play.
-    for (const option of offered) {
-      const { log, screen } = await boardAt(demos.emergency, atS)
-      try {
-        const engine = await tap(log, screen)
-        await screen.wait(pastGuardMs)
-        await screen.click({ kind: 'option', option: option as 'do-now' | 'add-to-end' })
-        expect(screen.calls.map(call => [call.capabilityId, call.result])).toEqual([[option === 'add-to-end' ? ids.queue : ids.send, { ok: true }]])
-        expect(log.run.unit(engine).orders.map(step => step.state)).toEqual(['active', 'queued'])
-      } finally {
-        await log.run.close()
-      }
-    }
-  }, 60_000)
+  }, 120_000)
 
   /**
-   * How long the busy unit of a Do now / Add to end beat still stands on
+   * How long the busy unit of an After current job beat still stands on
    * scene when the beat's call arrives, under a dispatcher who sent it at
    * once on straight lines (the shortest the beat gets) and on travel twice
    * as slow, as town roads make it.
@@ -558,7 +349,8 @@ describe('the pressure moments by Board taps', () => {
         expect(log.run.unit(unitId).phase).toBe('on-task')
         let leftS = 0
         while (log.run.unit(unitId).phase === 'on-task' && leftS < 900) {
-          await runFor(log.run, 5_000)
+          log.run.forward(5_000)
+          await log.run.settle()
           leftS += 5
         }
         windows.push(leftS)
@@ -569,38 +361,278 @@ describe('the pressure moments by Board taps', () => {
     return windows
   }
 
-  test('halden-emergency car fire: the engine at the first fire stays on scene a minute to a minute and a half or more after the car fire arrives, time for the beat\'s taught taps', async () => {
+  test('halden-emergency car fire: the engine at the first fire stays on scene a minute to two after the car fire arrives, time for the beat\'s 4 clicks', async () => {
     const atS = cueAt(emergency, 'harbour-car-fire')
     const windows = await beatWindowsS(demos.emergency, atS, log => [...createdBy(log.calls, cueAt(emergency, 'guest-harbour-fire')).onScene][0]!)
     expect(Math.min(...windows)).toBeGreaterThanOrEqual(60)
     // Not so long that the car fire's four minutes are out of reach behind it.
     expect(Math.min(...windows)).toBeLessThanOrEqual(120)
-  }, 60_000)
+  }, 120_000)
+})
 
-  test('supply-run chain, as the description teaches it: tap the unit, then the first request, then the + on the unit and the second; every tap is accepted', async () => {
-    const atS = cueAt(supply, 'scout-camp-request')
-    const { log, screen } = await boardAt(demos.supply, atS)
+describe('supply-run pressure moments', () => {
+  test('the good play diverts a unit to the first urgent bulk request, gives the two side-by-side requests to one unit in one plan in 5 clicks, and the guest harbour to a busy unit after its current job in 4', async () => {
+    const log = await play(demos.supply, good(demos.supply))
     try {
-      const [first, second] = log.calls.filter(call => call.createdS === atS)
-      const unitId = (await log.run.query<Recommendation>(einsatzQueryIds.recommend, { taskId: first!.id }, operator)).proposal.units[0]!.unitId
-      const chosen = log.run.unit(unitId)
-      const label = log.run.object(unitId)!.label
-      const code = (callLabel: string) => callLabel.split(' ')[0]!
-      expect(supply.description).toContain(`tap ${label}, then ${code(first!.label)}, then the + on ${label} and ${code(second!.label)}`)
-      // The unit stands free, so the first tap sends it at once.
-      expect([chosen.phase, chosen.taskId, chosen.orders.length]).toEqual(['available', undefined, 0])
-      await screen.mapTap(unitId)
-      await screen.mapTap(first!.id)
-      await screen.wait(pastGuardMs)
-      await screen.click({ kind: 'verb', verb: 'add', id: unitId })
-      await screen.mapTap(second!.id)
-      expect(screen.calls.map(call => [call.capabilityId, call.input, call.result])).toEqual([
-        [ids.send, { units: [unitId], to: { taskId: first!.id } }, { ok: true }],
-        [ids.queue, { unitId, to: { taskId: second!.id } }, { ok: true }],
+      const [chainBeat, homeBeat] = demos.supply.beats
+      // No free unit can take the first urgent bulk request: the dispatcher diverts one on its way to a routine request.
+      const bulk = createdBy(log.calls, cueAt(supply, 'pumping-station-bulk'))
+      const divert = log.orders.filter(order => order.move === 'divert' && stopsOf(order.input)[0]?.taskId === bulk.id)
+      expect(divert.map(order => [whenOf(order.input), order.ok ? 'ok' : order.code, order.clicks, order.atS])).toEqual([
+        [undefined, 'when_required', 5, bulk.createdS],
+        ['now', 'ok', 5, bulk.createdS],
       ])
-      expect(log.run.unit(unitId).orders.map(step => step.state)).toEqual(['active', 'queued'])
+      const chain = log.orders.filter(order => order.beat === chainBeat!.name)
+      const pair = log.calls.filter(call => call.createdS === cueAt(supply, 'scout-camp-request')).map(call => call.id)
+      expect(pair.length).toBe(2)
+      expect(chain.map(order => [order.capabilityId, stopsOf(order.input), whenOf(order.input), order.ok, order.clicks])).toEqual([
+        [ids.order, [{ taskId: pair[0]! }], undefined, true, 5],
+        [ids.order, [{ taskId: pair[1]! }], 'after', true, 5],
+      ])
+      const unitId = unitsOf(chain[0]!.input)[0]!
+      expect(unitsOf(chain[1]!.input)).toEqual([unitId])
+      for (const call of log.calls.filter(entry => pair.includes(entry.id))) expect([...call.onScene]).toEqual([unitId])
+      // The guest harbour goes to a busy unit after its current job, so the free heavy unit stays home.
+      const harbour = createdBy(log.calls, cueAt(supply, 'harbour-request'))
+      const home = log.orders.filter(order => order.beat === homeBeat!.name)
+      expect(home.map(order => [stopsOf(order.input), whenOf(order.input), order.ok ? 'ok' : order.code, order.clicks])).toEqual([
+        [[{ taskId: harbour.id }], undefined, 'when_required', 4],
+        [[{ taskId: harbour.id }], 'after', 'ok', 4],
+      ])
     } finally {
       await log.run.close()
     }
-  }, 60_000)
+  }, 120_000)
+
+  test('a dispatcher who sends the free heavy unit to the guest harbour instead, reacting after a minute, misses the last urgent bulk request', async () => {
+    const [chainBeat, homeBeat] = demos.supply.beats
+    const log = await play({ ...demos.supply, beats: [chainBeat!] }, { kind: 'recommendations', beats: [chainBeat!] }, { factor: 1, reactS: 60 })
+    try {
+      expect(log.orders.some(order => order.beat === homeBeat!.name)).toBe(false)
+      expect(demos.supply.objectives(log)[0]).toBe(false)
+      expect(waitedS(supply, createdBy(log.calls, cueAt(supply, 'community-centre-bulk')))).toBeGreaterThan(statedS(supply, 0, minutes))
+    } finally {
+      await log.run.close()
+    }
+  }, 120_000)
+
+  test('the one moving type and the request icons are ones the operational atlas has never drawn: the openness the description claims', () => {
+    const config = configOf(supply)
+    const mobile = config.unitTypes.filter(type => type.components.mobility !== undefined)
+    expect(mobile.length).toBe(1)
+    for (const icon of [...mobile.map(type => type.icon), ...config.taskTemplates.map(template => template.icon)]) expect(Object.keys(atlas)).not.toContain(icon)
+  })
+})
+
+/**
+ * Plan B.11, row by row, on halden-emergency at its start: each task is
+ * done at the panel in exactly the clicks the plan states, and sends exactly
+ * the order the clicks mean. A click is a map tap, a row tap, a card or
+ * footer button or a map prompt option, whether it acts or not.
+ */
+describe('B.11 click counts at the Dispatch panel', () => {
+  interface Scene {
+    readonly run: OpenRun
+    readonly screen: CardScreen
+    readonly situation: Situation
+    /** The call waiting at the start. */
+    readonly callId: string
+    readonly answer: RecommendAnswer
+  }
+  const scene = async (body: (scene: Scene) => Promise<void>): Promise<void> => {
+    const run = await openRun({ definition: emergency, paused: true })
+    try {
+      const screen = await openCardScreen(run)
+      const situation = screen.situation()
+      const callId = situation.calls[0]!.id
+      const answer = await run.query<RecommendAnswer>(einsatzQueryIds.recommend, { taskId: callId })
+      await body({ run, screen, situation, callId, answer })
+    } finally {
+      await run.close()
+    }
+  }
+  const sent = (screen: CardScreen) => screen.calls.map(call => [call.capabilityId, call.input, call.result.ok ? 'ok' : (call.result.code ?? call.result.reason)])
+  /** A free carrier the start's recommendation did not propose: a unit the dispatcher chooses. */
+  const chosenCarrier = (situation: Situation, answer: RecommendAnswer): string => {
+    const proposed = new Set(answer.proposal?.units.map(unit => unit.unitId) ?? [])
+    const unit = situation.units.find(entry => entry.carry !== null && entry.status.tone === 'free' && !proposed.has(entry.id))
+    if (unit === undefined) throw new Error('halden-emergency has no second free carrier at the start')
+    return unit.id
+  }
+
+  test('landing → a screen that can dispatch: the panel opens with the World surface, so the Host\'s two clicks (Try the dispatch demo, Start demo) are all it takes', () => {
+    // The Host's two clicks are the Playwright smoke test's (plan F.1 V.6); inside World the panel is open by default and takes map targets.
+    expect(einsatzPackView.ui.surfacePanels.map(panel => [panel.defaultOpen, panel.mapTargets])).toEqual([[true, true]])
+  })
+
+  test('see what is running: 0 clicks, the Overview lists every call and unit as the panel opens', async () => {
+    await scene(async ({ screen, situation }) => {
+      const lists = screen.lists()
+      expect(screen.actions()).toBe(0)
+      expect(lists.calls.rows.map(row => row.id)).toEqual(situation.calls.map(call => call.id))
+      expect(lists.units.groups.flatMap(group => group.rows.map(row => row.id)).sort()).toEqual(situation.units.map(unit => unit.id).sort())
+      expect(lists.counts).not.toBe('')
+    })
+  })
+
+  test('dispatch the suggested unit: 2 clicks (the call, Dispatch), sending the suggestion\'s order unchanged', async () => {
+    await scene(async ({ screen, callId, answer }) => {
+      await screen.mapTap(callId)
+      await screen.press({ kind: 'dispatch' })
+      expect(screen.actions()).toBe(2)
+      expect(sent(screen)).toEqual([[ids.order, answer.proposal!.order, 'ok']])
+    })
+  })
+
+  test('a double-click on Dispatch sends the order once: the second click falls within the double-click interval and does nothing', async () => {
+    await scene(async ({ screen, callId, answer }) => {
+      await screen.mapTap(callId)
+      await screen.press({ kind: 'dispatch' })
+      await screen.press({ kind: 'dispatch' }, 120)
+      expect(sent(screen)).toEqual([[ids.order, answer.proposal!.order, 'ok']])
+    })
+  })
+
+  test('chosen free unit → call, unit first: 3 clicks (the unit, Dispatch…, the call)', async () => {
+    await scene(async ({ screen, situation, callId, answer }) => {
+      const unitId = chosenCarrier(situation, answer)
+      await screen.mapTap(unitId)
+      // A selected unit never sends anything by itself: a click to look is a look.
+      expect(screen.calls).toEqual([])
+      await screen.press({ kind: 'arm' })
+      await screen.mapTap(callId)
+      expect(screen.actions()).toBe(3)
+      expect(sent(screen)).toEqual([[ids.order, { units: [unitId], stops: [{ taskId: callId }] }, 'ok']])
+      expect(screen.selection()).toEqual({ kind: 'unit', unitId })
+    })
+  })
+
+  test('chosen unit, call first: 2 clicks (the call, an offered alternative)', async () => {
+    await scene(async ({ screen, callId, answer }) => {
+      const alternative = answer.alternatives.flatMap(entry => entry.units)[0]
+      if (alternative === undefined) throw new Error('The start call offers no alternative')
+      await screen.mapTap(callId)
+      await screen.press({ kind: 'alternative', unitId: alternative.unitId })
+      expect(screen.actions()).toBe(2)
+      expect(sent(screen)).toEqual([[ids.order, alternative.order, 'ok']])
+    })
+  })
+
+  test('busy unit → call: 4 clicks (the unit, Dispatch…, the call, "After current job" on the busy prompt)', async () => {
+    await scene(async ({ run, screen, callId, answer }) => {
+      // Set up, not counted: the suggested unit takes the start call, and a second call of the same kind comes in nearby.
+      const busyId = answer.proposal!.units[0]!.unitId
+      expect((await run.invoke(ids.order, answer.proposal!.order)).ok).toBe(true)
+      const start = run.task(callId)
+      const position = lonLatOf(run.object(callId)!)
+      expect((await run.invoke(ids.taskCreate, { template: start.template, label: 'C-9 Second call', at: { type: 'Point', coordinates: [position[0] + 0.003, position[1]] }, loads: start.loads })).ok).toBe(true)
+      await screen.sync()
+      const second = screen.situation().calls.find(call => call.label === 'C-9 Second call')!.id
+      await screen.mapTap(busyId)
+      await screen.press({ kind: 'arm' })
+      await screen.mapTap(second)
+      // Refused when_required: the busy prompt names the job "Now" would drop.
+      expect(screen.prompt()).toEqual([expect.stringMatching(/^After current job/), expect.stringContaining(run.object(callId)!.label)])
+      await screen.promptTap(0)
+      expect(screen.actions()).toBe(4)
+      expect(sent(screen)).toEqual([
+        [ids.order, { units: [busyId], stops: [{ taskId: second }] }, 'when_required'],
+        [ids.order, { units: [busyId], stops: [{ taskId: second }], when: 'after' }, 'ok'],
+      ])
+    })
+  })
+
+  test('pick up at A, deliver to chosen B, call first: 3 clicks (the call, Dispatch, a Deliver-to chip)', async () => {
+    await scene(async ({ screen, callId, answer }) => {
+      const carrier = answer.deliverTo[0]
+      if (carrier === undefined) throw new Error('The start call\'s suggestion has no carrier to deliver')
+      // The chosen site: the farthest offered, not the one the standing order would take.
+      const site = carrier.sites.at(-1)!
+      await screen.mapTap(callId)
+      await screen.press({ kind: 'dispatch' })
+      await screen.press({ kind: 'deliver-to', siteId: site.siteId })
+      expect(screen.actions()).toBe(3)
+      expect(sent(screen)).toEqual([
+        [ids.order, answer.proposal!.order, 'ok'],
+        [ids.order, { units: [carrier.unitId], stops: [{ siteId: site.siteId }], when: 'after' }, 'ok'],
+      ])
+    })
+  })
+
+  test('pick up at A, deliver to chosen B, unit first: 4 clicks (the unit, Dispatch…, the call, a Deliver-to chip)', async () => {
+    await scene(async ({ screen, situation, callId, answer }) => {
+      const unitId = chosenCarrier(situation, answer)
+      const siteId = situation.sites.filter(site => site.accepting).at(-1)!.id
+      await screen.mapTap(unitId)
+      await screen.press({ kind: 'arm' })
+      await screen.mapTap(callId)
+      await screen.press({ kind: 'deliver-to', siteId })
+      expect(screen.actions()).toBe(4)
+      expect(sent(screen)).toEqual([
+        [ids.order, { units: [unitId], stops: [{ taskId: callId }] }, 'ok'],
+        [ids.order, { units: [unitId], stops: [{ siteId }], when: 'after' }, 'ok'],
+      ])
+    })
+  })
+
+  test('move a unit to a point: 4 clicks (the unit, Dispatch…, the ground, "Move here"); the ground tap alone moves nothing', async () => {
+    await scene(async ({ run, screen, situation, answer }) => {
+      const unitId = chosenCarrier(situation, answer)
+      const [east, north] = lonLatOf(run.object(unitId)!)
+      await screen.mapTap(unitId)
+      await screen.press({ kind: 'arm' })
+      await screen.groundTap([east + 0.004, north + 0.002])
+      expect(screen.calls).toEqual([])
+      expect(screen.prompt()).toEqual([expect.stringMatching(/ here$/)])
+      await screen.promptTap(0)
+      expect(screen.actions()).toBe(4)
+      expect(sent(screen)).toEqual([[ids.order, { units: [unitId], stops: [{ point: { type: 'Point', coordinates: [east + 0.004, north + 0.002] } }] }, 'ok']])
+    })
+  })
+
+  test('return a unit: 2 clicks (the unit, Return)', async () => {
+    await scene(async ({ run, screen, answer }) => {
+      const unitId = answer.proposal!.units[0]!.unitId
+      expect((await run.invoke(ids.order, answer.proposal!.order)).ok).toBe(true)
+      await screen.sync()
+      await screen.mapTap(unitId)
+      await screen.press({ kind: 'recall' })
+      expect(screen.actions()).toBe(2)
+      expect(sent(screen)).toEqual([[ids.recall, { unitId }, 'ok']])
+    })
+  })
+
+  test('undo: 1 click (the receipt\'s Undo), taking back exactly the order it names', async () => {
+    await scene(async ({ screen, callId, answer }) => {
+      await screen.mapTap(callId)
+      await screen.press({ kind: 'dispatch' })
+      const order = screen.calls[0]!
+      if (!order.result.ok) throw new Error('The suggestion was refused')
+      screen.resetActions()
+      await screen.press({ kind: 'receipt-undo' })
+      expect(screen.actions()).toBe(1)
+      expect(sent(screen).slice(1)).toEqual(answer.proposal!.order.units.map(unitId => [ids.undo, { unitId, commandId: order.result.commandId }, 'ok']))
+    })
+  })
+
+  test('close an unserved call: 3 clicks (the call, Close, its Confirm beside it)', async () => {
+    await scene(async ({ screen, callId }) => {
+      await screen.mapTap(callId)
+      await screen.press({ kind: 'close' })
+      expect(screen.calls).toEqual([])
+      await screen.press({ kind: 'confirm-close' })
+      expect(screen.actions()).toBe(3)
+      expect(sent(screen)).toEqual([[ids.taskClose, { taskId: callId }, 'ok']])
+    })
+  })
+
+  test('a double-click on Close never confirms: Close stays in its place, the confirm stands beside it', async () => {
+    await scene(async ({ screen, callId }) => {
+      await screen.mapTap(callId)
+      await screen.press({ kind: 'close' })
+      await screen.press({ kind: 'close' }, 120)
+      expect(screen.calls).toEqual([])
+      expect(screen.situation().calls.map(call => call.id)).toContain(callId)
+    })
+  })
 })
