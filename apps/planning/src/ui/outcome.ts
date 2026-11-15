@@ -16,10 +16,19 @@ export interface Outcome {
   readonly recommended: boolean
 }
 
-/** The refusal's first line without its "Not possible:" lead, e.g. "6 jobs must run one after another …". */
+/**
+ * The refusal's opening sentences, without its "Not possible:" lead: the rule or the work, and the hours.
+ * A refusal opens with one or two sentences and then lists its jobs ("- …") under a heading ("…:"); the
+ * list is for the explain view, the sentences belong where the planner looks first. For a span limit the
+ * hours are in the second sentence ("The shortest span this plan allows is 80.5 h, against 72 h …").
+ */
 const lead = (lines: readonly string[] | undefined): string | null => {
-  const first = lines?.find(line => line.trim() !== '')
-  return first === undefined ? null : first.replace(/^Not possible:\s*/, '')
+  const sentences: string[] = []
+  for (const line of (lines ?? []).map(entry => entry.trim()).filter(entry => entry !== '')) {
+    if (line.startsWith('- ') || line.endsWith(':') || sentences.length === 2) break
+    sentences.push(line)
+  }
+  return sentences.length === 0 ? null : sentences.join(' ').replace(/^Not possible:\s*/, '')
 }
 
 export const outcomeOf = (option: OptionView, model: PlanModel, context: Context): Outcome => {

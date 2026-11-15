@@ -52,7 +52,7 @@ describe('maint walk defects on the plan screen', () => {
     expect(banner.title).toBe('No option can be recommended: both are proven infeasible.')
     expect(banner.lines).toEqual([
       'Rebuild in place, days only: proven infeasible. 3 jobs must run one after another and need 37 h of work, but from Mon 07:00 to Fri 15:00 their crews and tools are on duty together for only 32 h.',
-      'Swap in refurbished spare, days only: proven infeasible. the cooling chain must be back within 72 h.',
+      'Swap in refurbished spare, days only: proven infeasible. the cooling chain must be back within 72 h. The shortest span this plan allows is 80 h, against 72 h: first tag-out Mon 07:00, last test passed Thu 15:00.',
     ])
     const cards = attentionCards(model, contextOf(model)).map(card => `${card.title} ${card.text}`)
     expect(cards.some(card => card.startsWith('Rebuild in place, days only: proven infeasible.') && card.includes('37 h of work') && card.includes('only 32 h'))).toBe(true)
