@@ -303,7 +303,7 @@
     },
     {
       "key": "crane",
-      "label": "Lit crane-crew hours, Tue to Thu",
+      "label": "Crane hours (crew and floodlights), Tue to Thu",
       "weekly": [],
       "periods": [
         {

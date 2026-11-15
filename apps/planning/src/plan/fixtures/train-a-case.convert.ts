@@ -191,7 +191,7 @@ export const convertTrainACase = (frozen: CaseCase): PlanInputs => {
       { key: 'overtime', label: 'Overtime to 19:00', weekly: weeklyOf(frozen.calendars.overtime.weekly), periods: [], except: [], source: planner },
       { key: 'always', label: '24/7 shift operation', weekly: [{ days: [...allDays], from: '00:00', to: '00:00' }], periods: [], except: [], source: planner },
       { key: 'none', label: 'Booked nights only', weekly: [], periods: [], except: [], source: planner },
-      { key: 'crane', label: 'Lit crane-crew hours, Tue to Thu', weekly: [], periods: frozen.calendars.crane.intervals.map(pair), except: [], source: planner },
+      { key: 'crane', label: 'Crane hours (crew and floodlights), Tue to Thu', weekly: [], periods: frozen.calendars.crane.intervals.map(pair), except: [], source: planner },
       { key: 'ect', label: 'Eddy-current team booked Wednesday', weekly: [], periods: frozen.calendars.ect.intervals.map(pair), except: [], source: planner },
     ],
     resources: frozen.resources.map(entry => ({
