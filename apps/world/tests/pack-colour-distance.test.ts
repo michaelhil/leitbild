@@ -22,7 +22,6 @@ const editedFiles = [
   'packs/weather/projection.ts',
   'packs/weather/pack.ts',
   'packs/situation-monitor/map.ts',
-  'packs/ambulance/ui-pack.ts',
   'packs/drone/model.ts',
   'packs/drone/query.ts',
   'packs/drone/ui-pack.ts',

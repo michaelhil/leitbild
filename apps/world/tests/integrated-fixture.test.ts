@@ -46,10 +46,10 @@ const registryOn = (dataDir: string, workspaceId: ReturnType<typeof newWorkspace
 const states = (objects: ReadonlyArray<any>) => objects.map(object => `${object.id} ${object.lifecycle} ${object.operational?.status ?? '-'}`).sort()
 
 describe('the integrated all-pack fixture', () => {
-  test('is no product Scenario, holds six packs in open mode, plays two simulated minutes with its source cues and restores', async () => {
+  test('is no product Scenario, holds five packs in open mode, plays two simulated minutes with its source cues and restores', async () => {
     const fixture = scenarioDefinitionSchema.parse(await Bun.file(fixtureFile).json())
     expect(builtinScenarioDefinitions.some(definition => definition.id === fixture.id)).toBe(false)
-    expect(fixture.packs.map(pack => pack.id).sort()).toEqual(['ambulance', 'drone', 'einsatz', 'electric-grid', 'process-plant', 'weather'])
+    expect(fixture.packs.map(pack => pack.id).sort()).toEqual(['drone', 'einsatz', 'electric-grid', 'process-plant', 'weather'])
     // Einsatz runs in open mode: the fixture declares no roles, so the Assistant is not refused.
     expect('roles' in fixture).toBe(false)
 
@@ -60,7 +60,7 @@ describe('the integrated all-pack fixture', () => {
     const run = await first.create({ scenarioId: fixture.id })
     await run.setClock({ paused: true })
     const packsPresent = new Set(run.snapshot().objects.map(object => String(object.packId)))
-    expect([...packsPresent].sort()).toEqual(['ambulance', 'drone', 'einsatz', 'electric-grid', 'process-plant', 'weather'])
+    expect([...packsPresent].sort()).toEqual(['drone', 'einsatz', 'electric-grid', 'process-plant', 'weather'])
     // No live pack (situation-monitor is left out), so the Run fast-forwards: plan §6's realtime budget came from it (architecture E15).
     expect((await first.executionStatus(run.id)).maximumPace).toEqual({ available: true })
 
@@ -68,12 +68,12 @@ describe('the integrated all-pack fixture', () => {
     await run.runMaximumPace(new Date(startedAt + 120_000).toISOString() as IsoTimestamp, { shouldStop: () => false })
     const played = run.snapshot()
     expect(Date.parse(played.clock!.currentTime)).toBeGreaterThanOrEqual(startedAt + 120_000)
-    // Every cue due in the two minutes started: the dispatch exercise's and the supply run's. The fixture adds none:
+    // Every cue due in the two minutes started: the drones' and the supply run's. The fixture adds none:
     // each evaluation scenario declares its own disturbances as setup steps.
     const due = fixture.timeline!.cues.filter(cue => cue.at.kind === 'after_scenario_start' && cue.at.seconds <= 120).map(cue => cue.id).sort()
     const started = run.events().flatMap(event => event.type === 'scenario.cue.started' ? [event.cueId] : []).sort()
     expect(started).toEqual(due)
-    expect(due).toEqual(expect.arrayContaining(['initial-road-response', 'initial-air-response', 'initial-drone-observations', 'second-truck']))
+    expect(due).toEqual(expect.arrayContaining(['initial-drone-flights', 'second-truck']))
     const savedObjects = states(played.objects)
     const savedClock = played.clock!.currentTime
     const savedEvents = run.events().length

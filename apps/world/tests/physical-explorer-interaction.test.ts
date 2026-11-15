@@ -51,9 +51,9 @@ test('preparing another floor retains owner demand only for the same loaded and 
 })
 
 test('every operational capture including an armed controller and panel target picking preempts both physical hosts', () => {
-  const ordinary = { placement: false, assignment: false, targetPicking: false, controllerSelected: false }
+  const ordinary = { placement: false, targetPicking: false, controllerSelected: false }
   expect(physicalExplorerOperationalCapture(ordinary)).toBe(false)
-  for (const capture of ['placement', 'assignment', 'targetPicking', 'controllerSelected'] as const) {
+  for (const capture of ['placement', 'targetPicking', 'controllerSelected'] as const) {
     const state = { ...ordinary, [capture]: true }
     expect(physicalExplorerOperationalCapture(state)).toBe(true)
     expect(physicalExplorerNeedsLive({ ...demand, inspectedSceneId: 'unit-1', suspended: physicalExplorerOperationalCapture(state) })).toBe(false)

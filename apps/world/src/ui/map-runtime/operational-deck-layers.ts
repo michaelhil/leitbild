@@ -12,8 +12,7 @@ import {
 } from './symbol-kit.ts'
 import type {
   ColorRgba,
-  MapAssignmentHandleFeature,
-  MapAssignmentInteraction,
+  MapTargetingLine,
   OperationalPathFeature,
   OperationalPointFeature,
   OperationalRenderSnapshot,
@@ -50,8 +49,7 @@ export interface OperationalDeckLayerConfig {
   readonly diskClicks: ((object: OperationalObject) => boolean) | null
   /** The zoom step the icons are laid out for (`point-declutter.ts`, `fanZoomOf`). */
   readonly zoom: number
-  readonly assignmentInteraction?: MapAssignmentInteraction
-  readonly onAssignmentHandleSelected?: (handle: MapAssignmentHandleFeature) => void
+  readonly targetingLine?: MapTargetingLine
   readonly layerData?: OperationalDeckLayerData
 }
 
@@ -62,10 +60,6 @@ export interface OperationalDeckLayerData {
   readonly points: ReadonlyArray<OperationalPointFeature>
   /** A leader from each fanned icon to its true position. */
   readonly leaders: ReadonlyArray<PointLeader>
-  /** Where each fanned object's icon is drawn, by object id. */
-  readonly drawnAt: ReadonlyMap<string, Position3>
-  /** Counts each new layout of the icons. */
-  readonly layoutRevision: number
   readonly newInfoPoints: ReadonlyArray<OperationalPointFeature>
   readonly placementPoints: ReadonlyArray<{ readonly id: string; readonly position: Position3 }>
   /** Points the compiled atlas draws: every point while no Pack uses another catalogue icon. */
@@ -169,7 +163,6 @@ const emptyPoints: ReadonlyArray<OperationalPointFeature> = []
 const emptySymbols: ReadonlyArray<OperationalSymbolFeature> = []
 const emptyPlacementPoints: ReadonlyArray<{ readonly id: string; readonly position: Position3 }> = []
 const emptyLeaders: ReadonlyArray<PointLeader> = []
-const nothingMoved: ReadonlyMap<string, Position3> = new Map()
 
 /** Splits features by atlas; with no catalogue icon the compiled list is the input itself, so nothing changes for it. */
 const byAtlas = <T extends { readonly symbolId: string; readonly symbolAtlas: 'compiled' | 'catalogue' }>(
@@ -190,10 +183,8 @@ export const createOperationalDeckLayerDataCache = (): OperationalDeckLayerDataC
   let visiblePaths: ReadonlyArray<OperationalPathFeature> = emptyPaths
   let pointsRevision = -1
   let layoutZoom = Number.NaN
-  let layoutRevision = 0
   let drawnPoints: ReadonlyArray<OperationalPointFeature> = emptyPoints
   let leaders: ReadonlyArray<PointLeader> = emptyLeaders
-  let drawnAt: ReadonlyMap<string, Position3> = nothingMoved
   let newInfoPoints: ReadonlyArray<OperationalPointFeature> = emptyPoints
   let placementRevision = -1
   let symbolsRevision = -1
@@ -214,7 +205,6 @@ export const createOperationalDeckLayerDataCache = (): OperationalDeckLayerDataC
     layoutZoom = Number.NaN
     drawnPoints = emptyPoints
     leaders = emptyLeaders
-    drawnAt = nothingMoved
     newInfoPoints = emptyPoints
     placementRevision = -1
     symbolsRevision = -1
@@ -247,11 +237,9 @@ export const createOperationalDeckLayerDataCache = (): OperationalDeckLayerDataC
       if (pointsRevision !== snapshot.revisions.points || atlasChanged || layoutZoom !== zoom) {
         pointsRevision = snapshot.revisions.points
         layoutZoom = zoom
-        layoutRevision += 1
         const decluttered = declutterPoints(snapshot.points, zoom)
         drawnPoints = decluttered.points
         leaders = decluttered.leaders
-        drawnAt = decluttered.drawnAt
         newInfoPoints = drawnPoints.filter(point => point.hasNewInfo)
         pointsByAtlas = byAtlas(drawnPoints, catalogueAtlas, emptyPoints)
         labelPoints = drawnPoints.some(point => point.label !== null) ? drawnPoints.filter(point => point.label !== null) : emptyPoints
@@ -268,8 +256,6 @@ export const createOperationalDeckLayerDataCache = (): OperationalDeckLayerDataC
         visibleAreaSymbols,
         points: drawnPoints,
         leaders,
-        drawnAt,
-        layoutRevision,
         newInfoPoints,
         placementPoints,
         compiledPoints: pointsByAtlas.compiled,
@@ -304,7 +290,8 @@ export const createOperationalDeckLayerFactory = (): OperationalDeckLayerFactory
 export const createOperationalDeckLayers = (config: OperationalDeckLayerConfig): ReadonlyArray<Layer> => {
   const snapshot = config.snapshot
   const visibleFamilies = config.visibleFamilies
-  const assignmentInteraction = config.assignmentInteraction ?? { revision: 0, active: false, anchor: null, pointer: null, handles: [] }
+  const targetingLine = config.targetingLine ?? { revision: 0, anchor: null, pointer: null }
+  const lineEnds = targetingLine.anchor && targetingLine.pointer ? { anchor: targetingLine.anchor, pointer: targetingLine.pointer } : null
   const layerData = config.layerData ?? createOperationalDeckLayerDataCache().dataFor(snapshot, visibleFamilies, config.catalogueAtlas, config.zoom)
   const visiblePaths = layerData.visiblePaths
   const points = layerData.points
@@ -322,21 +309,19 @@ export const createOperationalDeckLayers = (config: OperationalDeckLayerConfig):
   }
   return [
     new PathLayer<{ readonly path: ReadonlyArray<Position3> }>({
-      id: 'leitbild-assignment-preview-line',
-      data: assignmentInteraction.active && assignmentInteraction.anchor && assignmentInteraction.pointer
-        ? [{ path: [assignmentInteraction.anchor, assignmentInteraction.pointer] }]
-        : [],
+      id: 'leitbild-targeting-line',
+      data: lineEnds ? [{ path: [lineEnds.anchor, lineEnds.pointer] }] : [],
       pickable: false,
       getPath: entry => entry.path as unknown as number[],
       getColor: rgba(38, 117, 216, 220),
       getWidth: 2,
       widthUnits: 'pixels',
       capRounded: true,
-      updateTriggers: { getPath: assignmentInteraction.revision },
+      updateTriggers: { getPath: targetingLine.revision },
     }),
     new ScatterplotLayer<{ readonly position: Position3 }>({
-      id: 'leitbild-assignment-crosshair',
-      data: assignmentInteraction.active && assignmentInteraction.pointer ? [{ position: assignmentInteraction.pointer }] : [],
+      id: 'leitbild-targeting-crosshair',
+      data: lineEnds ? [{ position: lineEnds.pointer }] : [],
       pickable: false,
       radiusUnits: 'pixels',
       lineWidthUnits: 'pixels',
@@ -346,24 +331,7 @@ export const createOperationalDeckLayers = (config: OperationalDeckLayerConfig):
       getRadius: 11,
       getLineColor: rgba(38, 117, 216, 245),
       getLineWidth: 2.5,
-      updateTriggers: { getPosition: assignmentInteraction.revision },
-    }),
-    new IconLayer<MapAssignmentHandleFeature>({
-      id: 'leitbild-assignment-handles',
-      data: assignmentInteraction.handles,
-      pickable: true,
-      visible: !assignmentInteraction.active,
-      iconAtlas: atlasUrl,
-      iconMapping,
-      sizeUnits: 'pixels',
-      getIcon: () => 'git-branch-plus',
-      // A handle stands on its controller's icon, wherever a fan draws it.
-      getPosition: handle => layerData.drawnAt.get(handle.controllerId) ?? handle.position,
-      getPixelOffset: [15, -15],
-      getColor: white(250),
-      getSize: 30,
-      onClick: info => { if (info.object) config.onAssignmentHandleSelected?.(info.object) },
-      updateTriggers: { getPosition: [assignmentInteraction.revision, layerData.layoutRevision] },
+      updateTriggers: { getPosition: targetingLine.revision },
     }),
     new PathLayer<OperationalPathFeature>({
       id: 'leitbild-operational-path-casing',

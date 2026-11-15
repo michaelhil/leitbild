@@ -138,13 +138,13 @@ describe('the Run\'s observed assets (E2 item 1)', () => {
     const { processPlantPackView } = await import('../src/packs/process-plant/ui-pack.ts')
     const { electricGridPackView } = await import('../src/packs/electric-grid/ui-pack.ts')
     const { weatherPack } = await import('../src/packs/weather/pack.ts')
-    const { ambulancePackView } = await import('../src/packs/ambulance/ui-pack.ts')
-    expect([processPlantPackView, electricGridPackView, weatherPack, ambulancePackView].map(pack => packObserves(pack.descriptor))).toEqual([true, true, true, false])
+    const { einsatzPackView } = await import('../src/packs/einsatz/ui-pack.ts')
+    expect([processPlantPackView, electricGridPackView, weatherPack, einsatzPackView].map(pack => packObserves(pack.descriptor))).toEqual([true, true, true, false])
   })
 
   test('are listed in rail order, then those the rail does not list, never one whose Pack does not observe', () => {
     const object = (id: string, observes: boolean) => ({ id, observes })
-    const all = [object('ambulance-1', false), object('unit-b', true), object('unit-a', true), object('grid', true)]
+    const all = [object('unit-1', false), object('unit-b', true), object('unit-a', true), object('grid', true)]
     expect(observedAssetsOf([all[2]!, all[0]!, all[1]!], all, entry => entry.observes).map(entry => entry.id)).toEqual(['unit-a', 'unit-b', 'grid'])
   })
 })

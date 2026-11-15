@@ -29,7 +29,7 @@
   } from '../../core/model/index.ts'
   import { deleteObjectCommandKind, roleClassForRoleSet, runRolesOf, viewerForRoleSet } from '../../core/model/index.ts'
   import { createPackPresentationComposer } from '../../core/packs/presentation-composer.ts'
-  import type { PackCreateObjectType, PackMapAssignmentMode, PackMapAssignmentTarget, PackMapFeatureQuery, PackObjectPresentation, PackObjectPresentationTier, PackObjectStatusPresentation, PackPresentationContribution, PackProcedureContribution, PackSurfacePanelContribution, PackTargetContext, PackTargetPreview } from '../../core/packs/protocol.ts'
+  import type { PackCreateObjectType, PackMapFeatureQuery, PackObjectPresentation, PackObjectPresentationTier, PackObjectStatusPresentation, PackPresentationContribution, PackProcedureContribution, PackSurfacePanelContribution, PackTargetContext, PackTargetPreview } from '../../core/packs/protocol.ts'
   import type { PackLiveMapLayerBinding } from '../map-runtime/pack-live-layer.ts'
   import type { PhysicalLayoutBinding } from '../physical-layout/sources.ts'
   import { physicalExplorerOperationalCapture } from '../physical-layout/explorer-interaction.ts'
@@ -164,15 +164,6 @@
     readonly provider: PackProcedureContribution
     readonly index: number
   }
-  interface MapAssignmentState {
-    readonly controllerId: string
-    readonly mode: PackMapAssignmentMode
-  }
-  interface MapAssignmentPicker {
-    readonly target: PackMapAssignmentTarget
-    readonly x: number
-    readonly y: number
-  }
   let activePack = $state<ActivePackViews | null>(null)
   let simulationRunId = $state<SimulationRunId | null>(null)
   let objects = $state<OperationalObject[]>([])
@@ -297,9 +288,6 @@
   let mapFocusRequest = $state<MapFocusRequest | null>(null)
   let mapFocusRevision = 0
   let cancelledMapFocusRevision = $state<number | null>(null)
-  let mapAssignment = $state<MapAssignmentState | null>(null)
-  let mapAssignmentPicker = $state<MapAssignmentPicker | null>(null)
-  let mapAssignmentChoiceIds = $state<ReadonlyArray<string>>([])
   let longTaskMonitor: LongTaskDiagnosticsMonitor | null = null
   let latestDroneMotionFrames: ReadonlyArray<DroneMotionFrame> = []
   const droneMotionFrameConsumers = new Set<DroneMotionFrameConsumer>()
@@ -398,7 +386,7 @@
   })
   const mapCameraInteraction = $derived(mapCameraInteractionFor(activePack?.packs ?? []))
   const mapClickContext = $derived<MapClickContext>({ controller: selectedControllerObject, selectedObjectId: selectedControllerId, targeting: activePack?.targeting, context: targetContext, panel: mapTargetPanel, closedMapTargetPanels, opensDisplay })
-  const physicalOperationalCapture = $derived(physicalExplorerOperationalCapture({ placement: placementMode !== null, assignment: mapAssignment !== null, targetPicking: targetPickingWanted(mapClickContext), controllerSelected: selectedControllerId !== null }))
+  const physicalOperationalCapture = $derived(physicalExplorerOperationalCapture({ placement: placementMode !== null, targetPicking: targetPickingWanted(mapClickContext), controllerSelected: selectedControllerId !== null }))
   const mapStartupFailed = $derived(startupSteps.find(step => step.id === 'map')?.status === 'failed')
   const displayRunJoin = $derived.by<DeckRunJoin>(() => {
     if (simulationRunId !== null) return { state: 'joined' }
@@ -406,15 +394,6 @@
     return step?.status === 'failed' ? { state: 'failed', reason: step.error ?? `${step.label} failed` } : { state: 'joining' }
   })
   const richOperationalUiReady = $derived(!mapVisible || mapReady || mapStartupFailed)
-  const mapAssignmentController = $derived.by(() => {
-    const controllerId = mapAssignment?.controllerId
-    return controllerId === undefined ? null : objects.find(object => object.id === controllerId) ?? null
-  })
-  const mapAssignmentContribution = $derived(mapAssignmentController && activePack ? activePack.packForObject(mapAssignmentController).mapAssignment ?? null : null)
-  const mapAssignmentAnchor = $derived(mapAssignmentController && mapAssignmentContribution && mapAssignment
-    ? mapAssignmentContribution.anchorFor(mapAssignmentController, mapAssignment.mode, targetContext)
-    : null)
-  const mapAssignmentHandles = $derived(activePack ? activePack.packs.flatMap(pack => pack.mapAssignment?.handles(targetContext) ?? []) : [])
   const debugMapInput = $derived(new URLSearchParams(location.search).get('debugMapInput') === '1')
   const debugStartup = new URLSearchParams(location.search).get('debugStartup') === '1'
   const categoryRows = $derived<ReadonlyArray<CategoryRow>>(categoryRowsForStartingView(allCategoryRows, railConfig))
@@ -1543,63 +1522,6 @@
     if (body.result.ok) await syncSimulationRunSnapshot()
   }
 
-  const cancelMapAssignment = (): void => {
-    mapAssignment = null
-    mapAssignmentPicker = null
-    mapAssignmentChoiceIds = []
-  }
-
-  /** A long press starts a map assignment only on an object whose Pack declares one; on any other it stays a plain click. */
-  const canLongPress = (object: OperationalObject): boolean => activePack !== null && activePack.packForObject(object).mapAssignment !== undefined
-
-  const beginMapAssignment = (controller: OperationalObject, mode: PackMapAssignmentMode): void => {
-    if (!activePack) return
-    const contribution = activePack.packForObject(controller).mapAssignment
-    if (!contribution) return
-    if (mode === 'start' && !contribution.canStart(controller, targetContext)) {
-      commandFeedback = noteAction(commandFeedback, `${controller.label} is not available for a new assignment`)
-      return
-    }
-    placement.cancel()
-    mapAssignment = { controllerId: controller.id, mode }
-    mapAssignmentPicker = null
-    mapAssignmentChoiceIds = []
-    commandFeedback = noteAction(commandFeedback, mode === 'start' ? `Choose an incident for ${controller.label}` : `Add a stop to ${controller.label}`)
-  }
-
-  const submitMapAssignmentTarget = async (target: PackMapAssignmentTarget, choiceIds: ReadonlyArray<string>): Promise<void> => {
-    if (choiceIds.length < target.minimumChoices || choiceIds.length > target.maximumChoices) {
-      commandFeedback = noteAction(commandFeedback, `Choose ${target.minimumChoices === target.maximumChoices ? target.minimumChoices : `${target.minimumChoices}–${target.maximumChoices}`} patients`)
-      return
-    }
-    const command = target.buildCommand(choiceIds)
-    cancelMapAssignment()
-    await sendCommand(command.kind, command.payload, `Assigning ${target.label}`)
-  }
-
-  const chooseMapAssignmentTarget = (candidate: OperationalObject, screen: { readonly x: number; readonly y: number }): void => {
-    if (!mapAssignment || !mapAssignmentController || !mapAssignmentContribution) return
-    const target = mapAssignmentContribution.targetFor(mapAssignmentController, candidate, mapAssignment.mode, targetContext)
-    if (!target) {
-      commandFeedback = noteAction(commandFeedback, `${candidate.label} is not a valid next destination`)
-      cancelMapAssignment()
-      return
-    }
-    const available = target.choices.filter(choice => !choice.disabledReason)
-    if (target.choices.length <= 1) {
-      void submitMapAssignmentTarget(target, available.map(choice => choice.id))
-      return
-    }
-    mapAssignmentPicker = { target, x: screen.x, y: screen.y }
-    mapAssignmentChoiceIds = []
-  }
-
-  const toggleMapAssignmentChoice = (id: string): void => {
-    mapAssignmentChoiceIds = mapAssignmentChoiceIds.includes(id)
-      ? mapAssignmentChoiceIds.filter(value => value !== id)
-      : [...mapAssignmentChoiceIds, id]
-  }
-
   const sendRealtimeInput = (input: Parameters<typeof realtimeConnection.sendRuntimeInput>[1]): void => {
     if (!simulationRunId) throw new Error('simulation run is not ready')
     realtimeConnection.sendRuntimeInput(simulationRunId, input)
@@ -1639,8 +1561,8 @@
   /** One path for map clicks: a map-target panel takes every target click; otherwise the Pack's targeting sends. */
   const followMapClick = (route: MapClickRoute): void => {
     if (route.kind === 'display') {
-      // A placement or an assignment takes the map over; a unit chosen or an open map-target panel never routes a display.
-      if (placementMode === null && mapAssignment === null) openDisplayFromPress(route.objectId)
+      // A placement takes the map over; a unit chosen or an open map-target panel never routes a display.
+      if (placementMode === null) openDisplayFromPress(route.objectId)
       return
     }
     if (route.kind === 'none') return
@@ -1852,7 +1774,6 @@
     packDataRevisions = { ...stores.packDataRevisions }
     packPanelSelections = { ...stores.packPanelSelections }
     commandFeedback = stores.commandFeedback
-    cancelMapAssignment()
     placement.cancel()
     latestDroneMotionFrames = []
     routeRevision += 1
@@ -2397,14 +2318,6 @@
           packFeatureSourcePackIds={activePackFeatureSourcePackIds}
           focusRequest={mapFocusRequest}
           cancelFocusRevision={cancelledMapFocusRevision}
-          assignmentActive={mapAssignment !== null}
-          assignmentAnchor={mapAssignmentAnchor}
-          assignmentHandles={mapAssignmentHandles}
-          onObjectLongPressed={object => beginMapAssignment(object, 'start')}
-          {canLongPress}
-          onAssignmentHandleSelected={controllerId => { const controller = objects.find(object => object.id === controllerId); if (controller) beginMapAssignment(controller, 'append') }}
-          onAssignmentObjectSelected={chooseMapAssignmentTarget}
-          onAssignmentCancelled={cancelMapAssignment}
           cameraInteraction={mapCameraInteraction}
           cameraPadding={mapCameraPadding}
           targetPicking={targetPickingWanted(mapClickContext)}
@@ -2416,33 +2329,6 @@
         <div class="map-loading">Starting map...</div>
       {:else}
         <div class="surface-empty"></div>
-      {/if}
-      {#if mapAssignmentPicker}
-        <section
-          class="map-assignment-picker"
-          style={`--picker-x:${mapAssignmentPicker.x}px;--picker-y:${mapAssignmentPicker.y}px`}
-          aria-label={`Select patients for ${mapAssignmentPicker.target.label}`}
-        >
-          <div class="map-assignment-picker__header">
-            <div>
-              <strong>{mapAssignmentPicker.target.label}</strong>
-              <span>Select casualties</span>
-            </div>
-            <button type="button" aria-label="Cancel assignment" title="Cancel" onclick={cancelMapAssignment}>×</button>
-          </div>
-          <div class="map-assignment-picker__choices">
-            {#each mapAssignmentPicker.target.choices as choice (choice.id)}
-              <label class:disabled={!!choice.disabledReason} title={choice.disabledReason ?? ''}>
-                <input type="checkbox" disabled={!!choice.disabledReason} checked={mapAssignmentChoiceIds.includes(choice.id)} onchange={() => toggleMapAssignmentChoice(choice.id)} />
-                <span><strong>{choice.label}</strong><small>{choice.summary}</small>{#if choice.disabledReason}<small class="reason">{choice.disabledReason}</small>{/if}</span>
-              </label>
-            {/each}
-          </div>
-          <div class="map-assignment-picker__footer">
-            <span>{mapAssignmentChoiceIds.length}/{mapAssignmentPicker.target.maximumChoices} selected</span>
-            <button type="button" disabled={mapAssignmentChoiceIds.length < mapAssignmentPicker.target.minimumChoices || mapAssignmentChoiceIds.length > mapAssignmentPicker.target.maximumChoices} onclick={() => void submitMapAssignmentTarget(mapAssignmentPicker!.target, mapAssignmentChoiceIds)}>Assign</button>
-          </div>
-        </section>
       {/if}
       {#if activePack && alarmStripVisible && !foregroundProcedure}
         <AlertStrip onClose={() => { alarmStripVisible = false; document.getElementById('run-alarms-trigger')?.focus({ preventScroll: true }) }} {objects} categoryOf={object => presentationFor(object).categoryId} openDisplay={openStripDisplay} {theme} raised={displayWindowOpen} onBounds={setAlarmStripBounds} belowRoles={Boolean(runRoles && heldRoleIds)} railWidth={railVisible ? railLayout.width : 0} clear={{ left: mapCameraPadding.left, right: mapCameraPadding.right, top: visibleGuidanceBottom }} />

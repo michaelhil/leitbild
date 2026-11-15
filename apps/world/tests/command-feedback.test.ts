@@ -9,8 +9,7 @@ import {
   settleCommand,
 } from '../src/ui/command-feedback.ts'
 
-// The Pack's own refusal reaching a screen's line through the real Run is
-// tested in ambulance-run-races.test.ts; this is any refusal reason.
+// Any refusal reason, as the Pack words it.
 const refusal = 'Target is out of range; choose a nearer one'
 
 describe('command feedback line', () => {

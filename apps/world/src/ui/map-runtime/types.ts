@@ -87,18 +87,15 @@ export interface OperationalSymbolFeature {
   readonly signature: string
 }
 
-export interface MapAssignmentHandleFeature {
-  readonly id: string
-  readonly controllerId: string
-  readonly position: Position3
-}
-
-export interface MapAssignmentInteraction {
+/**
+ * An armed order's line to a mouse pointer (`MapTargeting`): from where its
+ * object's icon is drawn to the pointer, drawn only while both are known.
+ * `revision` counts each move of either end.
+ */
+export interface MapTargetingLine {
   readonly revision: number
-  readonly active: boolean
   readonly anchor: Position3 | null
   readonly pointer: Position3 | null
-  readonly handles: ReadonlyArray<MapAssignmentHandleFeature>
 }
 
 /** An armed order as the map draws it (`MapTargeting`): the object it is for, and each target's tag and tone by object id. */

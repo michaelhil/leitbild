@@ -166,14 +166,13 @@ describe('operational points as the map draws them', () => {
     const screen = regional.points.map(point => ({ id: point.id, ...mercatorPixels(point.position[0], point.position[1], 9.5), radiusPx: disk }))
     expect(closest(screen)).toBeGreaterThanOrEqual(apart - settled)
     expect(regional.points.map(point => point.object.id)).toEqual(halden.map(point => point.object.id))
-    expect(regional.drawnAt.get('plant:halden-1')).toEqual(regional.points[0]!.position)
 
     const close = declutterPoints(halden, 15)
     expect(close.points).toBe(halden)
     expect(close.leaders).toEqual([])
   })
 
-  test('every icon layer draws a fanned object where its icon stands, beside a leader to its true position; a handle stands on its controller\'s icon', () => {
+  test('every icon layer draws a fanned object where its icon stands, beside a leader to its true position', () => {
     const snapshot = snapshotOf([...units, objectOf('grid', 11.478, 59.084)], 'plant:halden-2')
     const factory = createOperationalDeckLayerFactory()
     const selected: string[] = []
@@ -187,7 +186,6 @@ describe('operational points as the map draws them', () => {
       onObjectSelected: point => { selected.push(point.object.id) },
       onObjectSeen: () => undefined,
       onObjectHover: () => undefined,
-      assignmentInteraction: { revision: 1, active: false, anchor: null, pointer: null, handles: [{ id: 'handle', controllerId: 'plant:halden-2', position: [11.477, 59.085, 0] }] },
     })
     const drawn = factory.drawnPoints()
     expect(drawn.map(point => point.id)).toEqual(snapshot.points.map(point => point.id))
@@ -210,8 +208,6 @@ describe('operational points as the map draws them', () => {
     const symbols = layers.find(layer => layer.id === 'leitbild-object-symbols')!.props as unknown as { readonly onClick: (info: { readonly object: unknown }) => void }
     symbols.onClick({ object: drawn.find(point => point.id === 'plant:halden-2') })
     expect(selected).toEqual(['plant:halden-2'])
-    const handles = layers.find(layer => layer.id === 'leitbild-assignment-handles')!.props as unknown as { readonly getPosition: (handle: { readonly controllerId: string; readonly position: Position3 }) => Position3 }
-    expect(handles.getPosition({ controllerId: 'plant:halden-2', position: [11.477, 59.085, 0] })).toEqual(at.get('plant:halden-2')!)
 
     // Zoomed in until the disks stand apart, every layer draws the true positions and no leader.
     const close = factory.createLayers({

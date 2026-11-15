@@ -30,8 +30,8 @@ describe('product source references', () => {
       path: 'docs/architecture.md',
       lineRanges: [{ startLine: 4, endLine: 8 }, { startLine: 12, endLine: 13 }],
     })
-    expect(parseProductSourceReference('halden-dispatch.scenario.json:20-25')).toEqual({
-      path: 'halden-dispatch.scenario.json',
+    expect(parseProductSourceReference('supply-run.scenario.json:20-25')).toEqual({
+      path: 'supply-run.scenario.json',
       lineRanges: [{ startLine: 20, endLine: 25 }],
     })
   })
