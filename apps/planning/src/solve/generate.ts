@@ -19,7 +19,7 @@ import { finishOf, prepare } from './decode.ts'
 import { totalFloat, withFloat } from './float.ts'
 import { estimateMemoryMb, SOLVER_CPU_CAP_CORES } from './pool.ts'
 import type { Engine, EngineResult, NormalizedProblem, Schedule } from './problem.ts'
-import { compareOptions, goalExcess, goalKey, goalKeys, type Rankable, type RawMetric } from './rank.ts'
+import { compareOptions, goalExcess, goalKey, goalKeys, type Rankable, type RankFacts, type RawMetric } from './rank.ts'
 import { retimingCount, robustOf, type JudgeRetimed } from './retime.ts'
 import { cancelledStatus, feasibleStatus, infeasibleStatus, inputProblems, onPlanGoals, refusedStatus, unresolvedStatus, type CheckPlan, type CheckReport, type VerifyCertificate, verifiedGoals, type VerifyBound } from './status.ts'
 
@@ -212,6 +212,12 @@ export const rankableOf = (option: Option, inputs: PlanInputs): Rankable => ({
   key: option.key, feasible: option.status.word === 'validated feasible',
   keys: goalKeys(rawOf(option, inputs.goals.length), rankGoals(inputs)),
 })
+
+/** An option's ranking keys with each goal's excess in its unit, for "why recommended" (rank.ts recommendedBecause). */
+export const factsOf = (option: Option, inputs: PlanInputs): RankFacts => {
+  const raw = rawOf(option, inputs.goals.length)
+  return { ...rankableOf(option, inputs), excess: rankGoals(inputs).map((goal, k) => goalExcess(raw[k] ?? 0, goal.threshold)) }
+}
 
 /**
  * An option ranked on the goal list it was solved with: a what-if's lead first (a plan goal's key, or the
