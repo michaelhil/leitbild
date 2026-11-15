@@ -422,10 +422,14 @@ export const createPlanningOperations = (ports: PlanningOperationsPorts) => {
     const sentence = recommended === undefined
       ? 'No option can be recommended: none is validated feasible.'
       : `${recommended.label}: ${statusSentence(states.get(recommended.key)?.shown ?? recommended.status, saved.inputs)}${used.length === 0 ? '' : ` Buys: ${used.map(key => nameOf(saved.inputs, key)).join(', ')}.`}`
+    const cautioned = recommended !== undefined && (states.get(recommended.key)?.warnings ?? []).some(warning => warning.kind === 'above-certified-size')
+    const sizeNote = cautioned ? ` Above the certified size (${certifiedSize.maxJobs} jobs): it may not be near the best.` : ''
     const result: GenerateResult = {
       plan: { id: saved.id, revision: saved.revision }, options,
       ...(generated.recommended === undefined ? {} : { recommended: generated.recommended }),
-      text: clip(sentence, 300),
+      // The one sentence an Assistant quotes never recommends a plan solved above the certified size without
+      // saying so (size decision, 15 Nov); the full caution is in the option's warnings.
+      text: `${clip(sentence, 300 - sizeNote.length)}${sizeNote}`,
     }
     return resultOf(generateResultSchema, fit(result, ['options'], () => undefined))
   }

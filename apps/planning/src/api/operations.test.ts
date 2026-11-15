@@ -443,11 +443,15 @@ describe('an option solved above the certified size says so beside its status (s
       const generated = await local.call('planning.plan.generate', { resource: created.id, input: {}, expectedRevision: 1 })
       expect(generated.status).toBe(200)
       for (const option of generated.body.result.options) expect(option.warnings).toContainEqual({ kind: 'above-certified-size', text: words, about: [] })
+      // The sentence an Assistant quotes says it too, whole, within its 300 characters.
+      const note = ` Above the certified size (${testCertifiedSize.maxJobs} jobs): it may not be near the best.`
+      expect([generated.body.result.text.endsWith(note), generated.body.result.text.length <= 300]).toEqual([true, true])
       const read = await local.call('planning.plan.read', { resource: created.id, input: { section: 'options' } })
       for (const option of read.body.result.sections[0].data.items) expect(option.warnings).toContainEqual({ kind: 'above-certified-size', text: words, about: [] })
       caution = false
       const again = await local.call('planning.plan.generate', { resource: created.id, input: {}, expectedRevision: 1 })
       for (const option of again.body.result.options) expect(option.warnings.some((warning: { kind: string }) => warning.kind === 'above-certified-size')).toBe(false)
+      expect(again.body.result.text).not.toContain('certified size')
     } finally { await local.close() }
   })
 })
