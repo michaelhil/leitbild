@@ -316,7 +316,7 @@
       {
         "id": "board",
         "title": "Find depots and requests",
-        "instruction": "Open the Board. Compare the first requests, their urgency and required capacity with Truck 3 and the two depots.",
+        "instruction": "Open the Dispatch panel. Compare the first requests, their urgency and required capacity with Truck 3 and the two depots.",
         "effects": [
           {
             "id": "board",
@@ -337,7 +337,7 @@
       {
         "id": "dispatch",
         "title": "Send the first truck",
-        "instruction": "Inspect Field kitchen and the suggested eligible units. Dispatch Truck 3 using the real Board action. Acceptance is an assignment; delivery requires travel and work.",
+        "instruction": "Inspect Field kitchen and the suggested eligible units. Send Truck 3 from the request's card in the Dispatch panel. Acceptance is an assignment; delivery requires travel and work.",
         "effects": [
           {
             "id": "request",
