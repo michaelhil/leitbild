@@ -180,7 +180,7 @@ try {
       const set = await generateOptions(inputs)
       const claims = set.options.flatMap(option => verifyOptimality(inputs, option.variant, option.status).map(entry => ({ option: option.key, ...entry })))
       const unconfirmed = claims.filter(entry => !entry.proves)
-      print('optimal', `${name}: ${claims.length} "proven optimal" goals, ${claims.length - unconfirmed.length} confirmed${unconfirmed.length === 0 ? '' : `; unconfirmed: ${unconfirmed.map(entry => `${entry.option} goal ${entry.goal} ${entry.claimed} (bound ${entry.bound})`).join(', ')}`}`)
+      print('optimal', `${name}: ${claims.length} "proven optimal" goals, ${claims.length - unconfirmed.length} confirmed${unconfirmed.length === 0 ? '' : `; unconfirmed: ${unconfirmed.map(entry => `${entry.option} ${'goal' in entry ? `goal ${entry.goal}` : `group ${entry.group}`} ${entry.claimed} (bound ${entry.bound})`).join(', ')}`}`)
     }
   }
 
