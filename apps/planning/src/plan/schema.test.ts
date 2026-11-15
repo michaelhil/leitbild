@@ -654,6 +654,27 @@ describe('increment 2: re-timing, bought metrics and the previous option set', (
     expect(robust({ holds: false, rule: 'window', job: 'AFWA-RTS' })).toBe(false)
   })
 
+  test('a re-timed job that cannot be placed says which, the crew or tool with no time left, and from when (lane S batch 2)', () => {
+    const unplaced = { holds: false, unplaced: { job: 'CCWHXA-ECT', resource: 'ect-team', after: '2026-11-18T15:00:00Z' } }
+    const robust = (allPessimistic: object) => robustSchema.safeParse({ allPessimistic, single: [{ job: 'CCWHXA-CLEAN', outcome: unplaced }] }).success
+    expect(robust(unplaced)).toBe(true)
+    expect(robust({ ...unplaced, unplaced: { ...unplaced.unplaced, after: '2026-11-18T16:00:00+01:00' } })).toBe(true)
+    // One broken item: unplaced is never a rule or the window as well, and names its job inside it.
+    expect(robust({ ...unplaced, rule: 'R2' })).toBe(false)
+    expect(robust({ ...unplaced, window: { by: '2026-11-21T09:30:00Z' } })).toBe(false)
+    expect(robust({ ...unplaced, job: 'CCWHXA-ECT' })).toBe(false)
+    expect(robust({ ...unplaced, by: { value: 3, unit: 'h' } })).toBe(false)
+    expect(robust({ ...unplaced, unplaced: { ...unplaced.unplaced, after: 'Wed 16:00' } })).toBe(false)
+    expect(robust({ ...unplaced, unplaced: { ...unplaced.unplaced, after: { value: 3, unit: 'h' } } })).toBe(false)
+    expect(robust({ ...unplaced, unplaced: { ...unplaced.unplaced, resource: 'ECT team' } })).toBe(false)
+    expect(robust({ ...unplaced, unplaced: { ...unplaced.unplaced, crew: 2 } })).toBe(false)
+    for (const field of ['job', 'resource', 'after'] as const) {
+      const { [field]: _dropped, ...rest } = unplaced.unplaced
+      expect(robust({ ...unplaced, unplaced: rest })).toBe(false)
+    }
+    expect(robust({ holds: true, unplaced: unplaced.unplaced })).toBe(false)
+  })
+
   test('an option takes one bought:<purchase> metric per purchase, beside its other measures', () => {
     const option = (count: number) => optionSchema.safeParse({ key: 'o', label: 'o', variant: { methods: [], purchases: [] }, status: { word: 'unresolved', run }, rows: [],
       metrics: Array.from({ length: count }, (_, index) => ({ id: `bought:p${index}`, value: 1, unit: 'h' })), inputsRevision: 1 }).success

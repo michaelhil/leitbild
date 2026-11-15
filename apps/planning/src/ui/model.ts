@@ -3,7 +3,7 @@
 import type { z } from 'zod'
 import type { OptionWarning, writeResultSchema } from '../api/contract.ts'
 import type { Edit } from '../plan/edit-schema.ts'
-import type { CertifiedSize, Plan, PlanInputs, Status, optionSchema } from '../plan/schema.ts'
+import type { CertifiedSize, Plan, PlanInputs, Robust, Status, optionSchema } from '../plan/schema.ts'
 
 export type { Status }
 export type StoredOption = z.infer<typeof optionSchema>
@@ -28,7 +28,19 @@ export interface OptionView {
   readonly inputsRevision: number
   readonly fresh: boolean
   readonly warnings: readonly OptionWarning[]
+  /** The schedule re-timed at pessimistic estimates and checked; absent when it was not re-timed. */
+  readonly robust?: Robust | undefined
 }
+
+/**
+ * A what-if: an option asked with an extra hard rule or with something solved first. It answers a question
+ * beside the plan; it is never a row of the options table, never recommended, never a rung of the ladder.
+ */
+export const isWhatIf = (option: Pick<OptionView, 'variant'>): boolean => option.variant.also !== undefined || option.variant.lead !== undefined
+/** The plan's own options, in the Module's order: every option that is not a what-if. */
+export const planOptions = (model: Pick<PlanModel, 'options'>): readonly OptionView[] => (model.options?.items ?? []).filter(option => !isWhatIf(option))
+/** The what-ifs, in the Module's order. */
+export const whatIfOptions = (model: Pick<PlanModel, 'options'>): readonly OptionView[] => (model.options?.items ?? []).filter(isWhatIf)
 
 /** The caution an option carries when it was solved above the certified size, in the Module's words; null when it has none. */
 export const sizeCautionOf = (option: Pick<OptionView, 'warnings'>): string | null =>

@@ -1,15 +1,19 @@
 // Status words (A4 and the adversary r2 items 2-3). Only the status schema's words; "proven optimal" at
-// the goal's resolution and only when every earlier goal is proven; the gap is in the goal's unit. Every
+// the goal's resolution and only when every earlier goal is proven (in a what-if with a lead: only the lead,
+// adversary part 2 check, fixes B and C); the gap is in the goal's unit. Every
 // status shown is re-checked against the current inputs, and a stored proof is reused only when the
 // option's inputs revision and formulation both equal the current ones. Prose is never built here.
-import { goalResolution, statusSchema, type BoundCertificate, type Certificate, type GoalWord, type PlanInputs, type Status } from '../plan/schema.ts'
+import type { z } from 'zod'
+import { goalResolution, statusSchema, type alsoRuleSchema, type BoundCertificate, type Certificate, type GoalWord, type PlanInputs, type Status } from '../plan/schema.ts'
 import type { BoundSource } from './problem.ts'
 import { goalExcess, type RawMetric } from './rank.ts'
 import type { DatedRow } from './date.ts'
 
 type RunBasis = Extract<Status, { word: 'validated feasible' }>['run']
 type GoalStatus = Extract<Status, { word: 'validated feasible' }>['goals'][number]
-type Option = { readonly key: string; readonly status: Status; readonly rows: readonly DatedRow[]; readonly inputsRevision: number; readonly variant: { readonly methods: ReadonlyArray<{ choice: string; option: string }>; readonly purchases: readonly string[] } }
+/** What lane K checks an option as: its methods, the purchases it may use, and a what-if's extra rule (`also`), which lane K reads itself. */
+export interface CheckedVariant { readonly methods: ReadonlyArray<{ choice: string; option: string }>; readonly purchases: readonly string[]; readonly also?: ReadonlyArray<z.infer<typeof alsoRuleSchema>> | undefined }
+type Option = { readonly key: string; readonly status: Status; readonly rows: readonly DatedRow[]; readonly inputsRevision: number; readonly variant: CheckedVariant }
 
 /** A goal's lower bound from bounds.ts: raw value, source, and its derivation in plan terms. */
 export interface GoalBound { readonly value: RawMetric; readonly source: BoundSource; readonly certificate?: BoundCertificate }
@@ -19,6 +23,11 @@ export interface CheckReport {
   readonly violations: ReadonlyArray<{ readonly code: string; readonly about: readonly string[] }>
   /** One raw value per goal, in the goal's unit; span-over gives one span per group in scope. */
   readonly goals: readonly RawMetric[]
+  /**
+   * The checker's own measures Generate reads beside the goals: 'bought:<purchase>' (person-h or periods used),
+   * stored on the option, and 'span:<group>' (h), a group lead's value. A group never out has no span entry.
+   */
+  readonly metrics?: ReadonlyArray<{ readonly id: string; readonly value: number; readonly unit: string }>
 }
 export type CheckPlan = (plan: { readonly inputs: PlanInputs; readonly variant: Option['variant']; readonly rows: readonly DatedRow[] }) => CheckReport
 
@@ -31,8 +40,9 @@ export type VerifyCertificate = (inputs: PlanInputs, variant: Option['variant'],
  * Lane K's re-derivation of a "proven optimal" goal's bound (check/optimal.ts verifyBound): it `proves` when
  * lane K's own lower bound, from the inputs, reaches `bound.value` (net of the threshold, in the goal's
  * unit) at the goal's resolution. It does not read the certificate. Required wherever such a claim is stored.
+ * `goal` is a plan goal's id, or a group lead's own goal (its group's outage, in `unit`).
  */
-export type VerifyBound = (inputs: PlanInputs, variant: Option['variant'], goal: number, bound: { readonly value: number }) => { readonly proves: boolean }
+export type VerifyBound = (inputs: PlanInputs, variant: Option['variant'], goal: number | { readonly group: string; readonly unit: string }, bound: { readonly value: number }) => { readonly proves: boolean }
 
 /**
  * Checker findings that come from the inputs, not from a schedule: lane K's input codes and the readiness
@@ -75,12 +85,29 @@ export const goalStatuses = (goals: PlanInputs['goals'], grid: PlanInputs['setti
   return { goals: statuses, conflicts }
 }
 
+type LeadLine = Extract<NonNullable<Extract<Status, { word: 'validated feasible' }>['lead']>, { word: string }>
+const unproven = (goal: GoalStatus, keepBound: boolean): GoalStatus =>
+  ({ word: 'best found under budget', goal: goal.goal, value: goal.value, unit: goal.unit, ...(keepBound && goal.bound !== undefined ? { bound: goal.bound } : {}) })
+const unprovenLead = (lead: LeadLine): LeadLine => ({ word: 'best found under budget', group: lead.group, value: lead.value, unit: lead.unit })
+
 /**
  * Every "proven optimal" goal re-derived by lane K: the first one it does not prove, and every later goal
  * (goal order), becomes "best found under budget". A bound lane K does not prove is dropped: not a fact.
+ * With a what-if's lead the lead rule replaces goal order (adversary part 2 check, fix C): only the lead may
+ * stay proven, a plan goal through `verify`, a group's own line through `verifyLead` (lane K's bound on the
+ * lead's own goal, the first of the list it was solved with). Without `verifyLead` a group lead is not proven.
  */
-export const verifiedGoals = (status: Status, verify: (goal: number, bound: { readonly value: number }) => { readonly proves: boolean }): Status => {
+export const verifiedGoals = (status: Status, verify: (goal: number, bound: { readonly value: number }) => { readonly proves: boolean }, verifyLead?: (bound: { readonly value: number }) => { readonly proves: boolean }): Status => {
   if (status.word !== 'validated feasible') return status
+  const lead = status.lead
+  if (lead !== undefined) {
+    const goals = status.goals.map((goal): GoalStatus => {
+      if (goal.word !== 'proven optimal') return goal
+      return 'goal' in lead && lead.goal === goal.goal && verify(goal.goal, goal.bound).proves ? goal : unproven(goal, false)
+    })
+    const line = 'group' in lead && lead.word === 'proven optimal' && verifyLead?.(lead.bound).proves !== true ? unprovenLead(lead) : lead
+    return parse({ ...status, goals, lead: line })
+  }
   let broken = false
   const goals = status.goals.map((goal): GoalStatus => {
     if (goal.word !== 'proven optimal') { broken = true; return goal }
@@ -102,6 +129,27 @@ export const feasibleStatus = (goals: PlanInputs['goals'], run: RunBasis, raw: r
   const words = goalStatuses(goals, run.grid, raw, bounds)
   return { status: parse({ word: 'validated feasible', goals: words.goals, run }), conflicts: words.conflicts }
 }
+
+/**
+ * A what-if's status back on the plan's goal ids (design §0.3). `solved` has one line per goal of the list
+ * it was solved with, the lead first (goalStatuses: goal order). `planGoalOf(p)` names the plan goal at
+ * position p, undefined for a group lead. The lead keeps its word: a plan goal's in its own line, a group's in
+ * `lead`; every other goal reads best found at that cost, its bound kept. Without a lead, `solved` as it is.
+ */
+export const onPlanGoals = (solved: Status, lead: { readonly goal: number } | { readonly group: string } | undefined, planGoalOf: (position: number) => number | undefined): Status => {
+  if (solved.word !== 'validated feasible' || lead === undefined) return solved
+  const goals: GoalStatus[] = []
+  solved.goals.forEach((line, p) => {
+    const goal = planGoalOf(p)
+    if (goal === undefined) return
+    goals[goal] = p === 0 ? { ...line, goal } : unproven({ ...line, goal }, true)
+  })
+  const first = solved.goals[0]!
+  const leadLine = 'goal' in lead ? { goal: lead.goal }
+    : first.word === 'proven optimal' ? { word: first.word, group: lead.group, value: first.value, unit: first.unit, bound: first.bound }
+      : { word: first.word, group: lead.group, value: first.value, unit: first.unit, ...(first.bound === undefined ? {} : { bound: first.bound }) }
+  return parse({ word: solved.word, goals, run: solved.run, lead: leadLine })
+}
 export const infeasibleStatus = (cause: Certificate, run: RunBasis): Status => parse({ word: 'proven infeasible', cause, run })
 export const unresolvedStatus = (run: RunBasis, attempt?: { job: string; wouldFinish: string; pastWindowHours: number }): Status =>
   parse({ word: 'unresolved', run, ...(attempt === undefined ? {} : { attempt }) })
@@ -109,14 +157,22 @@ export const cancelledStatus = (run: RunBasis): Status => parse({ word: 'cancell
 export const refusedStatus = (word: 'invalid input' | 'unsupported feature', problems: ReadonlyArray<{ about: readonly string[]; code: string }>): Status =>
   parse({ word, problems: problems.slice(0, 16).map(problem => ({ about: problem.about.slice(0, 4), code: problem.code })) })
 
-/** A status is a proof claim when it says proven infeasible or proves a goal optimal. */
-export const claimsProof = (status: Status): boolean =>
-  status.word === 'proven infeasible' || (status.word === 'validated feasible' && status.goals.some(goal => goal.word === 'proven optimal'))
+/** A group lead's own line says "proven optimal" (a goal lead's word is in its goal line). */
+const leadProven = (status: Extract<Status, { word: 'validated feasible' }>): boolean =>
+  status.lead !== undefined && 'group' in status.lead && status.lead.word === 'proven optimal'
 
-/** Removes proof words: proven goals become best found without their bound; a refusal becomes "unresolved". */
+/** A status is a proof claim when it says proven infeasible or proves a goal optimal, a group lead's own line included. */
+export const claimsProof = (status: Status): boolean =>
+  status.word === 'proven infeasible' || (status.word === 'validated feasible' && (status.goals.some(goal => goal.word === 'proven optimal') || leadProven(status)))
+
+/**
+ * Removes proof words: proven goals, and a group lead's own line, become best found without their bound; a
+ * refusal becomes "unresolved".
+ */
 export const withoutProof = (status: Status): Status => {
   if (status.word === 'validated feasible') {
-    return parse({ ...status, goals: status.goals.map(goal => (goal.word === 'proven optimal' ? { word: 'best found under budget' as const, goal: goal.goal, value: goal.value, unit: goal.unit } : goal)) })
+    const lead = status.lead !== undefined && 'group' in status.lead && status.lead.word === 'proven optimal' ? unprovenLead(status.lead) : status.lead
+    return parse({ ...status, goals: status.goals.map(goal => (goal.word === 'proven optimal' ? unproven(goal, false) : goal)), ...(lead === undefined ? {} : { lead }) })
   }
   if (status.word === 'proven infeasible') return parse({ word: 'unresolved', run: status.run })
   return status

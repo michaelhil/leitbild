@@ -47,7 +47,7 @@ describe('Needs your attention', () => {
     const answer = cards[cards.length - 1]!
     expect(answer.title).toBe('Option 1: validated feasible.')
     expect(answer.steps).toEqual([warning])
-    expect(answer.actions).toEqual(['why-finish'])
+    expect(answer.actions).toEqual(['why-finish', 'why-recommended'])
   })
 
   test('a stale option claims no status; above the certified size Generate is refused in words', () => {

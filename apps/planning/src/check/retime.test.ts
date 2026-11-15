@@ -87,3 +87,27 @@ describe('what is not a re-timing is refused, never judged', () => {
     expect(judgeRetiming(plan([limit('L', 7)]), none, planned, planned, ['T']).ok).toBe(false)
   })
 })
+
+describe('a re-timing that runs past the window is judged as the window', () => {
+  // W at a high estimate of 50 h: W Mon 07:00Z to Wed 09:00Z, R Wed 09:00Z-10:00Z, past the window end Wed
+  // 06:00Z. The work is judged on the plan's calendars continued past the window (the operator and helper
+  // work around the clock); the first job past the end is W, and the work would end at R's finish, Wed 10:00Z.
+  const long = (rules: PlanInputs['rules']): PlanInputs => {
+    const base = plan(rules)
+    return { ...base, jobs: base.jobs.map(job => job.key === 'W' ? { ...job, duration: { ...job.duration, range: { low: 1, high: 50 } } } : job) }
+  }
+  const past = [rowOf('T', 6, 7), rowOf('W', 7, 57), rowOf('R', 57, 58)]
+  test('no rule breaks first: the window, at W, the work ending Wed 10:00Z', () => {
+    expect(judgeRetiming(long([limit('L', 60)]), none, planned, past, ['W'])).toEqual({ ok: true, outcome: { holds: false, window: { by: at(58) }, job: 'W' } })
+  })
+  test('a rule that breaks before the window end comes first: G out 52 h runs past 7 h at Mon 13:00Z', () => {
+    expect(judgeRetiming(long([limit('L', 7)]), none, planned, past, ['W'])).toMatchObject({ ok: true, outcome: { holds: false, rule: 'L', job: 'R', by: { value: 45, unit: 'h' } } })
+  })
+  test('rows past the window that do not match the high estimate are still refused', () => {
+    expect(judgeRetiming(long([]), none, planned, [rowOf('T', 6, 7), rowOf('W', 7, 56), rowOf('R', 57, 58)], ['W']).ok).toBe(false)
+  })
+  test('a protection rule broken is still refused, never judged', () => {
+    const shielded = { kind: 'protected' as const, key: 'P', equipment: ['X'], words: 'X is never worked', source: planner }
+    expect(judgeRetiming(plan([shielded]), none, planned, retimed, ['W']).ok).toBe(false)
+  })
+})

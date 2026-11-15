@@ -2,7 +2,7 @@
 // A refused option says its cause in hours, from the Module's refusal (explain, ask refusal), never only
 // "none is validated feasible".
 import { hoursNumber, hoursText, type Mark } from './format.ts'
-import type { OptionView, PlanModel } from './model.ts'
+import { planOptions, type OptionView, type PlanModel } from './model.ts'
 import { certificateText, goalResult, statusView, type Context } from './status-text.ts'
 
 export interface Outcome {
@@ -77,9 +77,12 @@ export const stoppedEarly = (option: OptionView): string | null => {
   return ({ memory: 'at the memory limit', cpu: 'when its computing time ran out', cancelled: 'because it was cancelled', ended: 'because the solver process ended' } as Record<string, string>)[option.status.run.stoppedBy] ?? null
 }
 
-/** The current options' outcomes; options made before the latest change claim nothing and are left out. */
+/**
+ * The current options' outcomes; options made before the latest change claim nothing and are left out, and
+ * so are what-ifs, which answer on their own cards and never stand for the plan.
+ */
 export const outcomes = (model: PlanModel, context: Context): readonly Outcome[] =>
-  (model.options?.items ?? []).filter(option => option.fresh).map(option => outcomeOf(option, model, context))
+  planOptions(model).filter(option => option.fresh).map(option => outcomeOf(option, model, context))
 
 /**
  * A refused option's cause in one short line, for the options table: the proof's own hours where it has them
@@ -114,7 +117,7 @@ export const outcomeBanner = (model: PlanModel, context: Context, where: 'on the
       : `No option can be recommended: none is validated feasible. See why ${where}.`
   const lines: string[] = []
   // A search that stopped early may have missed a better plan: said where the planner looks first.
-  const early = (model.options?.items ?? []).filter(option => option.fresh).map(stoppedEarly).find(reason => reason !== null)
+  const early = planOptions(model).filter(option => option.fresh).map(stoppedEarly).find(reason => reason !== null)
   if (early !== undefined) lines.unshift(`The search stopped early, ${early}: ${recommended === undefined ? 'a plan may still exist' : 'this option may not be the best'}. Generate again.`)
   return { title, lines, recommended: recommended !== undefined }
 }

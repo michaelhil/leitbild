@@ -9,8 +9,10 @@
 
   // The latest options, each with its status rendered from structure, its warnings beside the status,
   // and a baseline only for an option that is validated feasible on the current inputs.
-  let { options, recommended, context, refusals = {}, selected = null, busy = false, onSelect, onBaseline, onPick }: {
+  let { options, whatIfs = 0, recommended, context, refusals = {}, selected = null, busy = false, onSelect, onBaseline, onPick }: {
     options: readonly OptionView[]
+    /** How many what-ifs are kept apart from these options, on their own cards. */
+    whatIfs?: number
     recommended: string | null
     context: Context
     /** Each refused option's refusal in the Module's words; shown as a list under its status. */
@@ -31,6 +33,7 @@
 <section class="options" aria-labelledby="options-title">
   <h2 id="options-title">Options</h2>
   <p class="hint">Goals in order: {goalOrderShort(context.inputs.goals, context).join(' · ')}. Their full wording is in Rules and goals.</p>
+  {#if whatIfs > 0}<p class="hint">{whatIfs === 1 ? 'One what-if is' : `${whatIfs} what-ifs are`} kept apart from these options, on {whatIfs === 1 ? 'its own card' : 'their own cards'} under “What-ifs” on the Schedule view.</p>{/if}
   {#if options.length === 0}
     <p class="hint">No options yet. Generate makes them.</p>
   {/if}

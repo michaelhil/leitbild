@@ -3,12 +3,14 @@
 // World is only read, through its planning-facts query.
 import type { PlanningSubject } from '@leitbild/contracts'
 import type { Edit } from '../plan/edit-schema.ts'
-import { isRequestError, refusalAuthority, refusalNearest, refusalText, RUN, type GenerateInput, type PlanningClient } from './api.ts'
+import { isRequestError, refusalAuthority, refusalNearest, refusalText, RUN, type ExplainResult, type GenerateInput, type PlanningClient } from './api.ts'
+import { rungRequest, type BuysPage, type RungView } from './ladder.ts'
+import { whatIfRequest, type WhatIfVariant } from './what-if.ts'
 import { finishChain, mostLimiting, whyStart, type FinishStep, type Part, type WhyStart } from './explain-text.ts'
 import { createTimeFormat } from './format.ts'
 import { createNames, namesInEdits, type DatedRow, type PlanModel, type RunChoice } from './model.ts'
 import type { Preview } from './preview.ts'
-import { loadPlan, loadRows } from './read-plan.ts'
+import { loadPlan, loadRows, readAll } from './read-plan.ts'
 import type { Context } from './status-text.ts'
 
 export interface Shown {
@@ -50,6 +52,16 @@ export const weakensRule = (model: PlanModel, edits: readonly Edit[]): string | 
 
 /** Says what the screen is waiting for, e.g. "Reading World values…", while an action runs. */
 export type Progress = (text: string) => void
+
+/** While another plan holds the one solver, a rung is tried again after this wait, at most this many times in all. */
+export const busyWaitMs = 20_000
+export const busyTries = 3
+
+/** Waits, or stops waiting at once when the request is cancelled. */
+const pause = (ms: number, signal: AbortSignal): Promise<void> => new Promise(done => {
+  const timer = setTimeout(done, ms)
+  signal.addEventListener('abort', () => { clearTimeout(timer); done() }, { once: true })
+})
 
 export const createPlanActions = (client: PlanningClient, planId: string, progress: Progress = () => {}) => {
   /** Every current option the Module proved impossible, with its refusal in words and hours. */
@@ -140,6 +152,47 @@ export const createPlanActions = (client: PlanningClient, planId: string, progre
       const item = result.items.find(entry => entry.job === job)
       return item === undefined ? { why: null, notice: result.lines.join(' ') } : { why: whyStart(item, context, rows.find(row => row.job === job)), notice: null }
     },
+    /** "What overtime buys": the rungs and the rows between them, every page. */
+    buys: async (): Promise<readonly BuysPage[]> => readAll(client, planId, 'buys'),
+    /**
+     * Works out the rungs still to solve, lowest first, one Generate each, kept beside the options already
+     * there, so each rung starts from the one below. While another plan holds the solver, it waits and tries
+     * again, and says so; it stops at the first other refusal, which it returns.
+     */
+    solveRungs: async (model: PlanModel, rungs: ReadonlyArray<Pick<RungView, 'name' | 'label' | 'buy'>>, signal: AbortSignal, keep: string | null, wait: (ms: number) => Promise<void> = ms => pause(ms, signal)): Promise<Shown & { readonly error: unknown }> => {
+      let error: unknown = null
+      outer: for (const [index, rung] of rungs.entries()) {
+        for (let attempt = 1; ; attempt += 1) {
+          progress(`Working out what overtime buys: ${rung.name} (${index + 1} of ${rungs.length})…`)
+          try {
+            await client.generate(planId, model.revision, rungRequest(rung), signal)
+            break
+          } catch (cause) {
+            if (signal.aborted) { error = cause; break outer }
+            if (isRequestError(cause) && cause.code === 'solver_busy' && attempt < busyTries) {
+              progress(`Planning is generating another plan; trying “${rung.name}” again in a moment.`)
+              await wait(busyWaitMs)
+              continue
+            }
+            error = cause
+            break outer
+          }
+        }
+      }
+      const notice = signal.aborted ? 'Cancelled. The rungs worked out before the stop are kept.' : null
+      return { ...await load(keep, notice), error: signal.aborted ? null : error }
+    },
+    /** One what-if, kept beside the options already there; returns the plan read again and the what-if's key. */
+    whatIf: async (model: PlanModel, variant: WhatIfVariant, signal: AbortSignal, keep: string | null): Promise<Shown & { readonly asked: string | null }> => {
+      const result = await client.generate(planId, model.revision, whatIfRequest(variant), signal)
+      const label = (variant.label ?? '').slice(0, 80)
+      const asked = result.options.find(option => option.label === label)?.key ?? null
+      return { ...await load(keep), asked }
+    },
+    /** Why the recommended option is recommended, in the Module's words. */
+    whyRecommended: async (option: string): Promise<ExplainResult> => client.explain(planId, { ask: 'recommended', option }),
+    /** What differs between an option and the same option in the set made before the latest change. */
+    versus: async (option: string): Promise<ExplainResult> => client.explain(planId, { ask: 'versus', option, versus: { previous: option } }),
     baseline: async (model: PlanModel, option: string, name: string, note: string): Promise<Shown> => {
       await client.baseline(planId, model.revision, { option, name, ...(note === '' ? {} : { note }) })
       return load(option, `Baseline “${name}” saved.`)

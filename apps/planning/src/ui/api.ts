@@ -107,6 +107,10 @@ export const refusalAuthority = (error: PlanningRequestError): string | null => 
   return error.code === 'needs_authority' || error.code === 'below_minimum' ? authorityWords : null
 }
 
+/** A part of Planning this version does not have yet (501 not_built): said as "not available yet", never as a fault. */
+export const isNotBuilt = (error: unknown): boolean => isRequestError(error) && error.code === 'not_built'
+export const notBuiltWords = 'This is not available yet in this version of Planning.'
+
 /** The nearest allowed time a refusal names, if any. */
 export const refusalNearest = (error: PlanningRequestError): string | null =>
   typeof error.details?.nearestAllowed === 'string' ? error.details.nearestAllowed : null
@@ -163,6 +167,7 @@ export const refusalText = (error: unknown, name: KeyNames = () => 'an item in t
         return issues.length > 0 ? `This change is not valid: ${issues.join('; ')}.` : 'This change is not valid for this plan.'
       }
       case 'plan_not_found': return 'This plan is no longer in this Workspace.'
+      case 'not_built': return notBuiltWords
       default: return error.message
     }
   }

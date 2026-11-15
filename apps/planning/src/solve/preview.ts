@@ -5,7 +5,7 @@ import { checkPlan, type CheckRow } from '../check/check.ts'
 import { planningError } from '../errors.ts'
 import type { Plan, PlanInputs } from '../plan/schema.ts'
 import { nameOf } from '../plan/summary.ts'
-import { compile, type CompileIndex } from './compile.ts'
+import { compile, withExtraRules, type CompileIndex } from './compile.ts'
 import { dateSchedule, undate, type DatedRow } from './date.ts'
 import { finishOf, nearestFit, prepare, repair, type Prepared } from './decode.ts'
 import { totalFloat, withFloat } from './float.ts'
@@ -27,8 +27,9 @@ export const scheduleOf = (prep: Prepared, index: CompileIndex, option: Option, 
   throw planningError(409, 'option_stale', found.reason === 'no-row' ? `The option has no row for ${found.job}; generate again` : `The option's row for ${found.job} no longer fits the plan; generate again`, { about: [found.job] })
 }
 
+/** The option's own compile: its methods, the purchases it may use, and a what-if's extra rule after the plan's. */
 export const compiled = (inputs: PlanInputs, option: Option) => {
-  const result = compile(inputs, { methods: option.variant.methods, buy: option.variant.purchases })
+  const result = compile(withExtraRules(inputs, option.variant.also), { methods: option.variant.methods, buy: option.variant.purchases })
   if (!result.ok) throw planningError(409, 'option_stale', 'The plan no longer compiles for this option; generate again', { about: [option.key] })
   return { ...result, prep: prepare(result.problem) }
 }

@@ -3,12 +3,13 @@
 // one-sentence answer about the recommended option.
 import { simulationNow } from './edit-forms.ts'
 import { sizeBand, sizeRefusalWords } from '../plan/summary.ts'
-import { sourceMark, type Mark } from './format.ts'
-import type { AttentionKind, PlanModel } from './model.ts'
+import type { Robust } from '../plan/schema.ts'
+import { quantityText, sourceMark, type Mark } from './format.ts'
+import { planOptions, type AttentionKind, type OptionView, type PlanModel } from './model.ts'
 import { outcomes, stoppedEarly } from './outcome.ts'
 import { goalResult, statusView, type Context } from './status-text.ts'
 
-export type CardAction = 'open-workspace' | 'link-run' | 'refresh' | 'add-work' | 'generate' | 'why-finish' | 'align-window'
+export type CardAction = 'open-workspace' | 'link-run' | 'refresh' | 'add-work' | 'generate' | 'why-finish' | 'why-recommended' | 'align-window'
 
 export interface Card {
   readonly mark: Mark
@@ -42,6 +43,47 @@ export const simulationOutsideWindow = (inputs: PlanModel['inputs'], wallNowMs: 
   const at = Date.parse(sim)
   const now = inputs.settings.dataDate === null ? wallNowMs : Date.parse(inputs.settings.dataDate)
   return at >= Date.parse(window.end) || (at < Date.parse(window.start) && at < now - 86_400_000) ? sim : null
+}
+
+/**
+ * The pessimistic card (design §4.2, S4): the option's own schedule re-timed with every ranged job at its high
+ * estimate, then each alone, in the same order with the same crews and nothing earlier, and checked. It says
+ * whether every hard rule still holds and, where one breaks, which rule, at which job and by how much: the
+ * checker's own figures. It claims nothing about a schedule searched again at those estimates.
+ */
+export const pessimisticCard = (option: OptionView, context: Context): Card | null => {
+  const robust = option.robust
+  if (robust === undefined || !option.fresh || option.status.word !== 'validated feasible') return null
+  const { names, format } = context
+  // The first thing the re-timed schedule breaks: a hard rule, by how much, or the window, by when.
+  const breaks = (outcome: Robust['allPessimistic']): string | null => {
+    if (outcome.holds) return null
+    if ('window' in outcome) return `${names.job(outcome.job)} would run past the window end, to ${format.when(outcome.window.by)}`
+    return `${names.job(outcome.job)} breaks “${names.rule(outcome.rule)}” by ${quantityText(outcome.by.value, outcome.by.unit)}`
+  }
+  const together = breaks(robust.allPessimistic)
+  const alone = robust.single.flatMap(entry => {
+    const text = breaks(entry.outcome)
+    return text === null ? [] : [`${names.job(entry.job)} alone at its high estimate: ${text}.`]
+  })
+  const holding = robust.single.length - alone.length
+  const how = 'Re-timed in the same order with the same crews, nothing earlier, and checked. A plan made again at those estimates may do better.'
+  if (together === null && alone.length === 0) {
+    return {
+      mark: { shape: '✓', word: 'Pessimistic estimates' },
+      title: `At every high estimate, ${option.label} still keeps every hard rule and fits the window.`,
+      text: how, steps: [], actions: [],
+    }
+  }
+  return {
+    mark: { shape: '!', word: 'Pessimistic estimates' },
+    title: together === null
+      ? `With every ranged job at its high estimate together, ${option.label} still holds; some alone do not.`
+      : `With every ranged job at its high estimate, ${option.label} does not hold: ${together}.`,
+    text: how,
+    steps: [...alone, ...holding > 0 && alone.length > 0 ? [`${holding} other ranged ${holding === 1 ? 'job holds' : 'jobs hold'} alone at its high estimate.`] : []],
+    actions: [],
+  }
 }
 
 export const attentionCards = (model: PlanModel, context: Context, wallNowMs: number = Date.now()): readonly Card[] => {
@@ -106,7 +148,7 @@ export const attentionCards = (model: PlanModel, context: Context, wallNowMs: nu
     // A refused option's cause is said in the options table and, in full, in its detail: not a third time here.
     cards.push({ mark: outcome.mark, title: `${outcome.label}: ${outcome.word}.`, text: outcome.word === 'proven infeasible' ? 'Not possible. The options table says why.' : outcome.cause, steps: [], actions: [] })
   }
-  const early = (model.options?.items ?? []).filter(option => option.fresh).map(stoppedEarly).find(reason => reason !== null)
+  const early = planOptions(model).filter(option => option.fresh).map(stoppedEarly).find(reason => reason !== null)
   if (early !== undefined) {
     cards.push({ mark: { shape: '!', word: 'Stopped early' }, title: `The search stopped early, ${early}.`, text: 'The options shown may not be the best possible. Generate again.', steps: [], actions: ['generate'] })
   }
@@ -125,8 +167,10 @@ export const attentionCards = (model: PlanModel, context: Context, wallNowMs: nu
         ? `${first.name}: ${goalResult(first)}.`
         : recommended.fresh ? `${view.sentence} ${view.details.join(' ')}`.trim() : '',
       steps: warnings,
-      actions: recommended.fresh && recommended.status.word === 'validated feasible' ? ['why-finish'] : ['generate'],
+      actions: recommended.fresh && recommended.status.word === 'validated feasible' ? ['why-finish', 'why-recommended'] : ['generate'],
     })
+    const pessimistic = pessimisticCard(recommended, context)
+    if (pessimistic !== null) cards.push(pessimistic)
   } else if (inputs.jobs.length > 0 && model.options === null) {
     cards.push({ mark: { shape: '▶', word: 'Generate' }, title: 'No plan has been generated yet.', text: 'Generate makes dated options from the jobs, crews and rules, and says how good each one is.', steps: [], actions: ['generate'] })
   }

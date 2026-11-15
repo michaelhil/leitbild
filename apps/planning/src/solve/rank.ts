@@ -3,6 +3,9 @@
 //   key = x when the step is 0, else floor(x / step).
 // A key depends only on the option itself, so adding an option changes the recommendation only when
 // the new option is itself the best. Exact ties are broken by option key. The engine ranks through here.
+// The options table's facts are here too: dominance, and why the recommended option ranks first.
+
+import type { Caveat, PlanInputs } from '../plan/schema.ts'
 
 /** A raw goal metric in the goal's unit: one number, or one span per group for span-over. */
 export type RawMetric = number | readonly number[]
@@ -64,3 +67,50 @@ export const rankOptions = <T extends Rankable>(options: readonly T[]): T[] => [
 
 /** The recommended option: the first feasible one in rank order, if any. */
 export const recommend = <T extends Rankable>(options: readonly T[]): T | undefined => rankOptions(options).find(option => option.feasible)
+
+/**
+ * Dominance (design §4.1): the keys of the feasible options that another feasible option is no worse than on
+ * every goal key and better on one, in input order. They are folded on the screen, never deleted. Callers
+ * leave lead what-ifs out: they are cards, never folded.
+ */
+export const dominatedKeys = (options: readonly Rankable[]): string[] => {
+  const feasible = options.filter(option => option.feasible)
+  const beats = (a: Rankable, b: Rankable): boolean => {
+    let better = false
+    for (let k = 0; k < Math.max(a.keys.length, b.keys.length); k++) {
+      const d = (a.keys[k] ?? 0) - (b.keys[k] ?? 0)
+      if (d > EPSILON) return false
+      if (d < -EPSILON) better = true
+    }
+    return better
+  }
+  return feasible.filter(option => feasible.some(other => other !== option && beats(other, option))).map(option => option.key)
+}
+
+/** An option's ranking keys and, per goal, its excess in the goal's unit (goalExcess): what "why recommended" is said from. */
+export interface RankFacts extends Rankable { readonly excess: readonly number[] }
+
+/**
+ * Why the recommended option ranks first (design §4.2): against the best other feasible option, the first
+ * goal on which their keys differ, and the differences in the goals' units (recommended minus other, so
+ * negative is better) on that goal and every later one. `tie`: equal on every key, first by option key only.
+ * Undefined when no other option is feasible. Callers leave lead what-ifs out.
+ */
+export const recommendedBecause = (options: readonly RankFacts[], recommended: string):
+  { readonly versus: string; readonly goal: number; readonly differences: ReadonlyArray<{ readonly goal: number; readonly by: number }> } | { readonly versus: string; readonly tie: true } | undefined => {
+  const chosen = options.find(option => option.key === recommended)
+  if (chosen === undefined || !chosen.feasible) return undefined
+  const other = rankOptions(options.filter(option => option.key !== recommended)).find(option => option.feasible)
+  if (other === undefined) return undefined
+  const goal = chosen.keys.findIndex((key, k) => Math.abs(key - (other.keys[k] ?? 0)) > EPSILON)
+  if (goal < 0) return { versus: other.key, tie: true }
+  const differences = chosen.excess.flatMap((excess, k) => (k < goal ? [] : [{ goal: k, by: excess - (other.excess[k] ?? 0) }]))
+  return { versus: other.key, goal, differences }
+}
+
+/** What the method options an option uses leave unpriced (their caveats, as the plan states them), per method option with any. */
+export const unpricedCaveats = (inputs: Pick<PlanInputs, 'methods'>, methods: ReadonlyArray<{ readonly choice: string; readonly option: string }>): Array<{ readonly choice: string; readonly option: string; readonly caveats: readonly Caveat[] }> =>
+  methods.flatMap(pick => {
+    const caveats = inputs.methods.find(choice => choice.key === pick.choice)?.options.find(option => option.key === pick.option)?.caveats
+    return caveats === undefined || caveats.length === 0 ? [] : [{ choice: pick.choice, option: pick.option, caveats }]
+  })

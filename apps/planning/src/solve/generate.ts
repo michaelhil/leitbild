@@ -3,25 +3,34 @@
 // Planning makes no World writes; nothing here calls World. A cancel keeps, per variant, the better of
 // the stored and the new option: an old option is replaced only by a new one that is validated feasible
 // on the current revision and ranks better, or when the old one is stale (never a demotion).
+// A what-if may add one hard rule (`also`, appended to the plan's rules, never replacing one) and may solve a
+// goal first (`lead`: a plan goal, or a group's outage); its option keeps the plan's goal ids. With `keep` the
+// new options join the stored ones, each sub-solve starting from the best stored option that buys no more.
 import type { z } from 'zod'
 import type { generateInputSchema } from '../api/contract.ts'
 import { planningError } from '../errors.ts'
 import { optionSetSchema, type CertifiedSize, type PlanInputs, type Status } from '../plan/schema.ts'
 import { jobsPerSolve, sizeBand, sizeRefusalWords } from '../plan/summary.ts'
+import { timeUnitMs } from '../time/units.ts'
 import { bounds } from './bounds.ts'
-import { compile, formulationOf, methodCombinations, type Buy, type CompileIndex, type MethodPick } from './compile.ts'
-import { dateSchedule, slotInstant, undate } from './date.ts'
+import { compile, formulationOf, methodCombinations, permittedPurchases, withExtraRules, type Buy, type CompileIndex, type MethodPick } from './compile.ts'
+import { dateSchedule, slotInstant, undate, type DatedRow } from './date.ts'
 import { finishOf, prepare } from './decode.ts'
 import { totalFloat, withFloat } from './float.ts'
 import { estimateMemoryMb, SOLVER_CPU_CAP_CORES } from './pool.ts'
-import type { Engine, EngineResult, NormalizedProblem } from './problem.ts'
-import { compareOptions, goalKeys, type RawMetric } from './rank.ts'
-import { cancelledStatus, feasibleStatus, infeasibleStatus, inputProblems, refusedStatus, unresolvedStatus, type CheckPlan, type VerifyCertificate, verifiedGoals, type VerifyBound } from './status.ts'
+import type { Engine, EngineResult, NormalizedProblem, Schedule } from './problem.ts'
+import { compareOptions, goalExcess, goalKey, goalKeys, type Rankable, type RankFacts, type RawMetric } from './rank.ts'
+import { retimingCount, robustOf, type JudgeRetimed } from './retime.ts'
+import { cancelledStatus, feasibleStatus, infeasibleStatus, inputProblems, onPlanGoals, refusedStatus, unresolvedStatus, type CheckPlan, type CheckReport, type VerifyCertificate, verifiedGoals, type VerifyBound } from './status.ts'
 
 type OptionSet = z.infer<typeof optionSetSchema>
 type Option = OptionSet['options'][number]
 type Actor = OptionSet['by']
 export type GenerateInput = z.infer<typeof generateInputSchema>
+/** A what-if's one extra hard rule, as stored on its option. */
+export type AlsoRule = NonNullable<Option['variant']['also']>[number]
+/** What a what-if solves first, as stored on its option. */
+export type Lead = NonNullable<Option['variant']['lead']>
 
 /**
  * The certified size (G2, A8), decided on 15 Nov (the owner delegated the scale decision): Planning is
@@ -70,6 +79,8 @@ export interface GenerateDeps {
   readonly verifyBound: VerifyBound
   /** Runs each sub-solve; by default in this process on `engine` and these checks. Production: the pool's child. */
   readonly subSolver?: SubSolver
+  /** Lane K's judgement of a re-timed schedule, for the in-process sub-solver (the child has its own). */
+  readonly judgeRetimed?: JudgeRetimed
   readonly certifiedSize?: CertifiedSize
   readonly now?: () => string
 }
@@ -97,45 +108,94 @@ export interface GenerateResult {
   readonly dropped: CompileIndex['dropped']
 }
 
-interface Variant { readonly key: string; readonly label: string; readonly combos: MethodPick[][]; readonly buy: Buy }
+/** A what-if as one variant: what it asks (`buy`, `also`, `lead`) and the method combinations it solves. */
+export interface WhatIf { readonly buy: Buy; readonly also?: readonly AlsoRule[]; readonly lead?: Lead }
+interface Variant extends WhatIf { readonly key: string; readonly label: string; readonly combos: MethodPick[][] }
 
 const slug = (text: string): string => text.normalize('NFKD').replace(/[^A-Za-z0-9._-]+/g, '-').replace(/^[^A-Za-z0-9]+/, '').slice(0, 64).replace(/-+$/, '') || 'option'
 
+/** FNV-1a over the text, 32 bits as 8 hex digits: the same short name in every process. */
+const digest = (text: string): string => {
+  let hash = 0x811c9dc5
+  for (let i = 0; i < text.length; i++) hash = Math.imul(hash ^ text.charCodeAt(i), 0x01000193) >>> 0
+  return hash.toString(16).padStart(8, '0')
+}
+/** What an extra rule asks, without its key, words or source: two rules that ask the same are one what-if. */
+const ruleContent = (rule: AlsoRule) => (rule.kind === 'span-limit'
+  ? { kind: rule.kind, group: rule.group, limitMs: rule.limit.value * timeUnitMs[rule.limit.unit], singleEntry: rule.singleEntry }
+  : { kind: rule.kind, job: rule.job, finishBy: Date.parse(rule.finishBy) })
+
 /**
- * Increment 2 what-if inputs the contract takes before this solver builds them: refused, never ignored, so an
- * "at most 48 h out" what-if is never stored as an ordinary option. Lane S lifts each as it builds it.
+ * An option's key (design §4.1): a function of its method picks (as asked, in the plan's method order), the
+ * purchases it may use, its extra rule and its lead. The plain options (every allowed purchase, no rule, no
+ * lead) keep their method key, so the default options are the top rung; anything else adds a digest of what
+ * it asks. The same what-if asked again has the same key and replaces itself. At most 49 characters, so the
+ * service's set suffix fits.
  */
-const notBuiltWords: Readonly<Record<'also' | 'lead' | 'keep', string>> = { also: 'an extra rule', lead: 'a goal solved first', keep: 'adding to the options already there' }
-const refuseNotBuilt = (input: GenerateInput): void => {
-  const fields = (['also', 'lead'] as const).filter(field => (input.variants ?? []).some(variant => variant[field] !== undefined))
-  const asked = [...fields, ...(input.keep === undefined ? [] : ['keep' as const])]
-  if (asked.length > 0) throw planningError(501, 'not_built', `A what-if with ${asked.map(field => notBuiltWords[field]).join(' or ')} is not built in this version of Planning`, { fields: asked })
+export const optionKey = (inputs: PlanInputs, variant: WhatIf & { readonly methods: readonly MethodPick[] }): string => {
+  const picks = inputs.methods.flatMap(choice => variant.methods.filter(pick => pick.choice === choice.key).map(pick => pick.option))
+  const base = slug(picks.join('+') || 'plan').slice(0, 40).replace(/[-.]+$/, '')
+  const permitted = permittedPurchases(inputs, variant.buy).toSorted()
+  const standard = permittedPurchases(inputs, 'allowed').toSorted()
+  const asked = {
+    ...(permitted.join(' ') === standard.join(' ') ? {} : { buy: permitted }),
+    ...(variant.also === undefined ? {} : { also: variant.also.map(ruleContent) }),
+    ...(variant.lead === undefined ? {} : { lead: variant.lead }),
+  }
+  return Object.keys(asked).length === 0 ? base : `${base}-${digest(JSON.stringify(asked))}`
 }
 
 /** The variants of a request: given what-ifs, or one per method combination. */
 export const variantsOf = (inputs: PlanInputs, input: GenerateInput): Variant[] => {
-  refuseNotBuilt(input)
   const label = (combo: readonly MethodPick[]) => combo.map(pick => inputs.methods.find(choice => choice.key === pick.choice)?.options.find(option => option.key === pick.option)?.label ?? pick.option).join(', ') || inputs.settings.title
   const raw = input.variants === undefined
-    ? methodCombinations(inputs).map(combo => ({ key: slug(combo.map(pick => pick.option).join('+') || 'plan'), label: label(combo), combos: [combo], buy: 'allowed' as Buy }))
-    : input.variants.map((variant, i) => ({
-      key: slug(variant.label ?? `variant-${i + 1}`), label: variant.label ?? `What-if ${i + 1}`,
-      combos: methodCombinations(inputs, variant.methods ?? []), buy: (variant.buy ?? 'allowed') as Buy,
-    }))
+    ? methodCombinations(inputs).map(combo => ({ key: optionKey(inputs, { methods: combo, buy: 'allowed' }), label: label(combo), combos: [combo], buy: 'allowed' as Buy }))
+    : input.variants.map((variant, i) => {
+      const lead = variant.lead
+      if (lead !== undefined && 'goal' in lead && lead.goal >= inputs.goals.length) {
+        throw planningError(400, 'invalid_request', `This plan has ${inputs.goals.length} goal${inputs.goals.length === 1 ? '' : 's'}: a goal solved first is one of them, by its id from 0`, { expected: { lead: { goal: `0 to ${inputs.goals.length - 1}` } } })
+      }
+      const asked: WhatIf = { buy: (variant.buy ?? 'allowed') as Buy, ...(variant.also === undefined ? {} : { also: variant.also }), ...(lead === undefined ? {} : { lead }) }
+      return { ...asked, key: optionKey(inputs, { ...asked, methods: variant.methods ?? [] }), label: variant.label ?? `What-if ${i + 1}`, combos: methodCombinations(inputs, variant.methods ?? []) }
+    })
   const seen = new Map<string, number>()
   return raw.map(variant => {
     const count = seen.get(variant.key) ?? 0
     seen.set(variant.key, count + 1)
-    return count === 0 ? variant : { ...variant, key: `${variant.key.slice(0, 60)}-${count + 1}` }
+    return count === 0 ? variant : { ...variant, key: `${variant.key.slice(0, 52)}-${count + 1}` }
   })
 }
 
-const metricsOf = (problem: NormalizedProblem, index: CompileIndex, raw: readonly RawMetric[]): Option['metrics'] =>
-  raw.flatMap((value, k) => {
-    const unit = index.goals[k]!.unit
-    if (typeof value === 'number') return [{ id: `goal:${k}`, value, unit }]
-    return value.map((span, i) => ({ id: `goal:${k}:${index.spans[problem.goals[k]!.spans![i]!]!.group}`, value: span, unit }))
-  }).slice(0, 32)
+/** The goal "finish this group first" puts at the head: the group's outage, the span-over kind, threshold 0. */
+export const groupLeadGoal = (group: string): PlanInputs['goals'][number] => ({ metric: 'span-over', scope: { groups: [group] }, tolerance: { value: 0, unit: 'h' } })
+
+/**
+ * What a what-if is compiled on (design §4.2): `ruled`, the plan's rules with its extra rule appended;
+ * `solving`, the same with the goal list it is solved with, its lead first and then the plan's other goals in
+ * order (so a six-goal plan can lead with a seventh). `planGoalOf(p)` is the plan's goal id at compiled
+ * position p; undefined for a group lead (fix D: metric ids are remapped to the plan's ids). Lane K is given
+ * the plan's own inputs and the variant, and reads the extra rule from the variant.
+ */
+export const solveInputsOf = (inputs: PlanInputs, whatIf: Pick<WhatIf, 'also' | 'lead'>): { readonly ruled: PlanInputs; readonly solving: PlanInputs; readonly planGoalOf: (position: number) => number | undefined } => {
+  const ruled = withExtraRules(inputs, whatIf.also)
+  const lead = whatIf.lead
+  if (lead === undefined) return { ruled, solving: ruled, planGoalOf: position => position }
+  if ('group' in lead) return { ruled, solving: { ...ruled, goals: [groupLeadGoal(lead.group), ...inputs.goals] }, planGoalOf: position => (position === 0 ? undefined : position - 1) }
+  const order = [lead.goal, ...inputs.goals.flatMap((_, k) => (k === lead.goal ? [] : [k]))]
+  return { ruled, solving: { ...ruled, goals: order.map(k => inputs.goals[k]!) }, planGoalOf: position => order[position] }
+}
+
+/** The goal metrics stored on an option, by the plan's goal ids (a group lead's value is in its status), then lane K's 'bought:' measures. */
+const metricsOf = (problem: NormalizedProblem, index: CompileIndex, raw: readonly RawMetric[], planGoalOf: (position: number) => number | undefined, measures: CheckReport['metrics'] = []): Option['metrics'] => {
+  const goals = raw.flatMap((value, p) => {
+    const k = planGoalOf(p)
+    if (k === undefined) return []
+    const unit = index.goals[p]!.unit
+    if (typeof value === 'number') return [{ k, metric: { id: `goal:${k}`, value, unit } }]
+    return value.map((span, i) => ({ k, metric: { id: `goal:${k}:${index.spans[problem.goals[p]!.spans![i]!]!.group}`, value: span, unit } }))
+  })
+  return [...goals.toSorted((x, y) => x.k - y.k).map(entry => entry.metric).slice(0, 32), ...measures.filter(metric => metric.id.startsWith('bought:')).map(metric => ({ ...metric })).slice(0, 64)]
+}
 
 /** The raw goal metrics stored on an option, back in goal order. */
 export const rawOf = (option: Option, goals: number): RawMetric[] =>
@@ -145,10 +205,34 @@ export const rawOf = (option: Option, goals: number): RawMetric[] =>
     return option.metrics.filter(metric => metric.id.startsWith(`goal:${k}:`)).map(metric => metric.value)
   })
 
-const rankable = (option: Option, inputs: PlanInputs) => ({
+const rankGoals = (inputs: PlanInputs) => inputs.goals.map(goal => ({ threshold: goal.threshold?.value ?? 0, step: goal.tolerance.value }))
+
+/** An option as the options table ranks it (rank.ts): its keys on the plan's goals, in the plan's order. */
+export const rankableOf = (option: Option, inputs: PlanInputs): Rankable => ({
   key: option.key, feasible: option.status.word === 'validated feasible',
-  keys: goalKeys(rawOf(option, inputs.goals.length), inputs.goals.map(goal => ({ threshold: goal.threshold?.value ?? 0, step: goal.tolerance.value }))),
+  keys: goalKeys(rawOf(option, inputs.goals.length), rankGoals(inputs)),
 })
+
+/** An option's ranking keys with each goal's excess in its unit, for "why recommended" (rank.ts recommendedBecause). */
+export const factsOf = (option: Option, inputs: PlanInputs): RankFacts => {
+  const raw = rawOf(option, inputs.goals.length)
+  return { ...rankableOf(option, inputs), excess: rankGoals(inputs).map((goal, k) => goalExcess(raw[k] ?? 0, goal.threshold)) }
+}
+
+/**
+ * An option ranked on the goal list it was solved with: a what-if's lead first (a plan goal's key, or the
+ * group's outage in h), then the plan's other goals in order. Used between options of one what-if only.
+ */
+export const solvedRankable = (option: Option, inputs: PlanInputs): Rankable => {
+  const lead = option.variant.lead
+  const plain = rankableOf(option, inputs)
+  if (lead === undefined || !plain.feasible) return plain
+  if ('goal' in lead) return { ...plain, keys: [plain.keys[lead.goal]!, ...plain.keys.filter((_, k) => k !== lead.goal)] }
+  const line = option.status.word === 'validated feasible' ? option.status.lead : undefined
+  const value = line !== undefined && 'group' in line ? line.value : Infinity
+  return { ...plain, keys: [goalKey(goalExcess(value, 0), 0), ...plain.keys] }
+}
+const rankable = solvedRankable
 
 /**
  * Runs Generate. Refusals (above the certified size, too many sub-solves, memory) throw planning errors
@@ -171,8 +255,14 @@ const withOwnFloat = (inputs: PlanInputs, variant: Option['variant'], rows: Retu
 export interface SubSolveTask {
   readonly inputs: PlanInputs
   readonly revision: number
-  readonly variant: { readonly key: string; readonly label: string; readonly buy: Buy }
+  readonly variant: WhatIf & { readonly key: string; readonly label: string }
   readonly combo: readonly MethodPick[]
+  /**
+   * With `keep`: the rows of the best stored option with the same method picks, extra rule and lead, on this
+   * revision and formulation, that buys no more. The search starts from them, and they are kept, re-checked,
+   * unless the search beats them, so a higher rung solved after a lower one is never worse (design §4.1).
+   */
+  readonly start?: { readonly rows: readonly DatedRow[] }
   readonly budget: { readonly evals: number; readonly cpuMs: number; readonly wallMs: number }
   readonly seed: number
   /** The Generate's deadline (epoch ms): a solver child still running then is killed. */
@@ -188,8 +278,11 @@ export interface SubSolveOutcome {
   readonly rounded: CompileIndex['rounded']
   readonly dropped: CompileIndex['dropped']
 }
-/** What a sub-solve runs on: the search engine, lane K's checker and its re-verifications. */
-export interface SubSolveDeps { readonly engine: Engine; readonly check: CheckPlan; readonly verify: VerifyCertificate; readonly verifyBound: VerifyBound }
+/**
+ * What a sub-solve runs on: the search engine, lane K's checker and its re-verifications, and lane K's
+ * judgement of a re-timed schedule. Without `judgeRetimed` no option carries `robust` (not computed).
+ */
+export interface SubSolveDeps { readonly engine: Engine; readonly check: CheckPlan; readonly verify: VerifyCertificate; readonly verifyBound: VerifyBound; readonly judgeRetimed?: JudgeRetimed }
 /** Runs sub-solves: in this process (`subSolve`), or in a solver child process (pool.ts `subSolver`). */
 export type SubSolver = (task: SubSolveTask, signal: AbortSignal, stoppedByWho?: () => 'person' | 'host' | undefined) => Promise<SubSolveOutcome>
 
@@ -213,12 +306,19 @@ export const subSolve = (deps: SubSolveDeps): SubSolver => async (task, signal, 
   const started = performance.now()
   const { inputs, variant, combo, budget, seed } = task
   const formulation = formulationOf(inputs.settings.grid)
+  // Compile takes the extra rule after the plan's and the goals lead first (§4.2); lane K takes the plan's own
+  // inputs and reads the extra rule from the variant it is given.
+  const { ruled, solving, planGoalOf } = solveInputsOf(inputs, variant)
+  const asked = { ...(variant.also === undefined ? {} : { also: [...variant.also] }), ...(variant.lead === undefined ? {} : { lead: variant.lead }) }
   const base = { key: variant.key, label: variant.label.slice(0, 160), inputsRevision: task.revision }
-  const compiled = compile(inputs, { methods: [...combo], buy: variant.buy })
-  if (!compiled.ok) return { option: { ...base, variant: { methods: [...combo], purchases: [] }, status: refusedStatus(compiled.word, compiled.problems), rows: [], metrics: [] }, rounded: [], dropped: [] }
+  const compiled = compile(solving, { methods: [...combo], buy: variant.buy })
+  if (!compiled.ok) return { option: { ...base, variant: { methods: [...combo], purchases: [], ...asked }, status: refusedStatus(compiled.word, compiled.problems), rows: [], metrics: [] }, rounded: [], dropped: [] }
   const { problem, index } = compiled
   const outcome = (option: Option): SubSolveOutcome => ({ option, rounded: index.rounded, dropped: index.dropped })
-  const variantOut = { methods: [...combo], purchases: [...index.allowedPurchases] }
+  const stored = (purchases: readonly string[]) => ({ methods: [...combo], purchases: [...purchases], ...asked })
+  /** The variant lane K checks: methods, purchases and the extra rule (never the lead, which it reads from the status). */
+  const checked = (purchases: readonly string[]) => ({ methods: [...combo], purchases: [...purchases], ...(variant.also === undefined ? {} : { also: [...variant.also] }) })
+  const variantOut = checked(index.allowedPurchases)
   const runBasis = (result: Pick<EngineResult, 'stoppedBy' | 'evals' | 'cpuMs'>, granted: SubSolveTask['budget'] = budget) => {
     const who = result.stoppedBy === 'cancelled' ? stoppedByWho?.() : undefined
     return { grid: inputs.settings.grid, engine: deps.engine.name, formulation, seed, budget: { ...granted }, stoppedBy: result.stoppedBy, ...(who === undefined ? {} : { stoppedByWho: who }), evals: result.evals, cpuMs: Math.round(result.cpuMs) }
@@ -226,49 +326,103 @@ export const subSolve = (deps: SubSolveDeps): SubSolver => async (task, signal, 
   // Readiness blocks before any search: an input finding (a precondition not read from World, say) is
   // "invalid input" with the checker's cause, whatever a schedule would look like.
   const blockers = inputProblems(deps.check({ inputs, variant: variantOut, rows: [] }).violations)
-  if (blockers.length > 0) return outcome({ ...base, variant: variantOut, status: refusedStatus('invalid input', blockers), rows: [], metrics: [] })
+  if (blockers.length > 0) return outcome({ ...base, variant: stored(variantOut.purchases), status: refusedStatus('invalid input', blockers), rows: [], metrics: [] })
   const prep = prepare(problem)
   const found = bounds(problem, index, prep)
   // A refusal is stored as proof only when lane K re-verifies it with nothing left unverified.
   if (found.certificate !== undefined && deps.verify(inputs, variantOut, found.certificate).proves) {
-    return outcome({ ...base, variant: variantOut, status: infeasibleStatus(found.certificate, runBasis({ stoppedBy: 'done', evals: 0, cpuMs: 0 })), rows: [], metrics: [] })
+    return outcome({ ...base, variant: stored(variantOut.purchases), status: infeasibleStatus(found.certificate, runBasis({ stoppedBy: 'done', evals: 0, cpuMs: 0 })), rows: [], metrics: [] })
   }
   if (estimateMemoryMb(problem) > MEMORY_BUDGET_MB) throw planningError(413, 'above_certified_size', 'This plan is too large for the certified size', { estimateMb: Math.ceil(estimateMemoryMb(problem)) })
-  // The search ends in time for the work after it, which takes no longer than the work before it took: the
+  // The search ends in time for the work after it, which takes no longer than the work before it took, once
+  // for the plan found and once more for each re-check of a starting option and each re-timing: the
   // sub-solve answers by its time with its best checked result, never killed for running past it.
   const by = Math.min(task.answerBy ?? Infinity, task.deadlineAt ?? Infinity)
-  const searchBudget = searchBudgetBy(budget, by, SEARCH_STOP_LATENCY_MS + (performance.now() - started))
+  const retimings = deps.judgeRetimed === undefined ? 0 : retimingCount(inputs, index.jobs.flatMap(job => (job === null ? [] : [job])))
+  const after = 1 + (task.start === undefined ? 0 : 1) + retimings
+  const searchBudget = searchBudgetBy(budget, by, SEARCH_STOP_LATENCY_MS + (performance.now() - started) * after)
   // No time left to search: no plan, said as a search stopped by its time.
-  if (searchBudget.wallMs <= 0) return outcome({ ...base, variant: variantOut, status: unresolvedStatus(runBasis({ stoppedBy: 'wall', evals: 0, cpuMs: 0 }, searchBudget)), rows: [], metrics: [] })
-  const result = await deps.engine.solve(problem, { budget: { ...searchBudget, memoryMb: MEMORY_BUDGET_MB }, seed, signal: signal })
+  if (searchBudget.wallMs <= 0) return outcome({ ...base, variant: stored(variantOut.purchases), status: unresolvedStatus(runBasis({ stoppedBy: 'wall', evals: 0, cpuMs: 0 }, searchBudget)), rows: [], metrics: [] })
+  const startSchedule = task.start === undefined ? undefined : undate(prep, index, task.start.rows)
+  const initial: Schedule | undefined = startSchedule?.ok === true ? startSchedule.schedule : undefined
+  const result = await deps.engine.solve(problem, { budget: { ...searchBudget, memoryMb: MEMORY_BUDGET_MB }, seed, signal: signal, ...(initial === undefined ? {} : { initial }) })
   const run = runBasis(result, searchBudget)
-  const candidate = result.candidates[0]
-  if (candidate === undefined) return outcome({ ...base, variant: variantOut, status: result.stoppedBy === 'cancelled' ? cancelledStatus(run) : unresolvedStatus(run), rows: [], metrics: [] })
-  const late = problem.activities.flatMap((activity, a) => {
-    const finish = finishOf(prep, a, candidate.mode[a]!, candidate.start[a]!)
-    return finish < 0 || finish > activity.deadline ? [{ a, finish: finish < 0 ? problem.horizon : finish }] : []
-  })
-  if (late.length > 0) {
-    // Not a plan: the best attempt runs past the window. Its lateness is explanation only, not proof.
-    const worst = late.reduce((x, y) => (y.finish > x.finish ? y : x))
-    const job = index.jobs[worst.a] ?? problem.activities[worst.a]!.id
-    return outcome({
-      ...base, variant: variantOut, rows: [], metrics: [],
-      status: unresolvedStatus(run, { job, wouldFinish: slotInstant(index, worst.finish), pastWindowHours: (worst.finish - index.windowSlots) * index.slotMs / 3_600_000 }),
-    })
+
+  /**
+   * The checker's goal values in the order they were solved: the plan's goals as lane K reports them, the lead
+   * first. A group lead's value is lane K's own span of the group; a group never out has no span entry and,
+   * as lane K counts a span-over goal, is 0 h out.
+   */
+  const solvedOrder = (report: CheckReport): RawMetric[] => {
+    const lead = variant.lead
+    if (lead === undefined) return [...report.goals]
+    if ('goal' in lead) return solving.goals.map((_, p) => report.goals[planGoalOf(p)!]!)
+    const span = report.metrics?.find(metric => metric.id === `span:${lead.group}`)
+    return [[span?.value ?? 0], ...report.goals]
   }
-  const dated = dateSchedule(prep, index, candidate)
-  // Cost and order lists come from what the rows use (plus purchases already ordered, charged anyway).
-  const used = [...new Set([...dated.flatMap(row => row.uses.flatMap(use => (use.purchase === undefined ? [] : [use.purchase]))), ...index.purchases.filter(purchase => purchase.committed).map(purchase => purchase.key)])]
-  const planned = { methods: [...combo], purchases: index.allowedPurchases.filter(key => used.includes(key)) }
-  const rows = withOwnFloat(inputs, planned, dated)
-  const report = deps.check({ inputs, variant: planned, rows })
-  const problems = inputProblems(report.violations)
-  if (problems.length > 0) return outcome({ ...base, variant: planned, status: refusedStatus('invalid input', problems), rows: [], metrics: [] })
-  if (report.violations.length > 0) return outcome({ ...base, variant: variantOut, status: unresolvedStatus(run), rows: [], metrics: [] })
-  // Every "proven optimal" carries its bound's certificate; lane K re-derives the bound, or it reads "best found".
-  const status = verifiedGoals(feasibleStatus(inputs.goals, run, report.goals, found.goals).status, (goal, bound) => deps.verifyBound(inputs, planned, goal, bound))
-  return outcome({ ...base, variant: planned, status, rows, metrics: metricsOf(problem, index, report.goals) })
+  /** A validated feasible option from checked rows: goal words solved lead first, back on the plan's ids, each proof re-derived by lane K. */
+  const feasible = (rows: Option['rows'], planned: ReturnType<typeof checked>, report: CheckReport): Option => {
+    const raw = solvedOrder(report)
+    const solved = feasibleStatus(solving.goals, run, raw, found.goals).status
+    const lead = variant.lead
+    const group = lead !== undefined && 'group' in lead ? lead.group : undefined
+    const status = verifiedGoals(onPlanGoals(solved, lead, planGoalOf),
+      (goal, bound) => deps.verifyBound(inputs, planned, goal, bound),
+      group === undefined ? undefined : bound => deps.verifyBound(inputs, planned, { group, unit: groupLeadGoal(group).tolerance.unit }, bound))
+    return { ...base, variant: stored(planned.purchases), status, rows, metrics: metricsOf(problem, index, raw, planGoalOf, report.metrics) }
+  }
+  const usedBy = (rows: ReadonlyArray<Pick<DatedRow, 'uses'>>): string[] => [...new Set([...rows.flatMap(row => row.uses.flatMap(use => (use.purchase === undefined ? [] : [use.purchase]))), ...index.purchases.filter(purchase => purchase.committed).map(purchase => purchase.key)])]
+
+  /** The search's plan, or the status that says why there is none. */
+  const searched = (): Option => {
+    const candidate = result.candidates[0]
+    if (candidate === undefined) return { ...base, variant: stored(variantOut.purchases), status: result.stoppedBy === 'cancelled' ? cancelledStatus(run) : unresolvedStatus(run), rows: [], metrics: [] }
+    const late = problem.activities.flatMap((activity, a) => {
+      const finish = finishOf(prep, a, candidate.mode[a]!, candidate.start[a]!)
+      return finish < 0 || finish > activity.deadline ? [{ a, finish: finish < 0 ? problem.horizon : finish }] : []
+    })
+    if (late.length > 0) {
+      // Not a plan: the best attempt runs past the window. Its lateness is explanation only, not proof.
+      const worst = late.reduce((x, y) => (y.finish > x.finish ? y : x))
+      const job = index.jobs[worst.a] ?? problem.activities[worst.a]!.id
+      return {
+        ...base, variant: stored(variantOut.purchases), rows: [], metrics: [],
+        status: unresolvedStatus(run, { job, wouldFinish: slotInstant(index, worst.finish), pastWindowHours: (worst.finish - index.windowSlots) * index.slotMs / 3_600_000 }),
+      }
+    }
+    const dated = dateSchedule(prep, index, candidate)
+    // Cost and order lists come from what the rows use (plus purchases already ordered, charged anyway).
+    const used = usedBy(dated)
+    const planned = checked(index.allowedPurchases.filter(key => used.includes(key)))
+    const rows = withOwnFloat(ruled, planned, dated)
+    const report = deps.check({ inputs, variant: planned, rows })
+    const problems = inputProblems(report.violations)
+    if (problems.length > 0) return { ...base, variant: stored(planned.purchases), status: refusedStatus('invalid input', problems), rows: [], metrics: [] }
+    if (report.violations.length > 0) return { ...base, variant: stored(variantOut.purchases), status: unresolvedStatus(run), rows: [], metrics: [] }
+    // Every "proven optimal" carries its bound's certificate; lane K re-derives the bound, or it reads "best found".
+    return feasible(rows, planned, report)
+  }
+  /**
+   * The starting option's rows, re-checked by lane K on this sub-solve: an option when they keep every rule
+   * here with only the purchases this sub-solve may use. Their float stands: the same revision, rules and
+   * purchases give the same float.
+   */
+  const restarted = (): Option | undefined => {
+    if (task.start === undefined) return undefined
+    const used = usedBy(task.start.rows)
+    if (!used.every(key => index.allowedPurchases.includes(key))) return undefined
+    const planned = checked(index.allowedPurchases.filter(key => used.includes(key)))
+    const rows = task.start.rows.map(row => ({ ...row }))
+    const report = deps.check({ inputs, variant: planned, rows })
+    return report.violations.length === 0 ? feasible(rows, planned, report) : undefined
+  }
+  const own = searched()
+  const kept = restarted()
+  // Unless the search beats the starting option, the starting option stands (re-checked above).
+  const best = kept !== undefined && (own.status.word !== 'validated feasible' || compareOptions(rankable(kept, inputs), rankable(own, inputs)) <= 0) ? kept : own
+  if (best.status.word !== 'validated feasible' || deps.judgeRetimed === undefined) return outcome(best)
+  const robust = robustOf(inputs, best, deps.judgeRetimed, by - SEARCH_STOP_LATENCY_MS)
+  return outcome(robust === undefined ? best : { ...best, robust })
 }
 
 
@@ -297,6 +451,24 @@ export const generate = async (deps: GenerateDeps, request: GenerateRequest): Pr
   const dropped: Array<CompileIndex['dropped'][number]> = []
 
   const runSubSolve = deps.subSolver ?? subSolve(deps)
+  const keep = request.input.keep === true
+  const stored = request.previous?.options ?? []
+  // Proofs and comparisons stand only on the revision and formulation they were made on.
+  const sameBasis = (option: Option): boolean => option.inputsRevision === request.revision && (!('run' in option.status) || option.status.run.formulation === formulation)
+  const askedOf = (variant: Variant) => ({ ...(variant.also === undefined ? {} : { also: [...variant.also] }), ...(variant.lead === undefined ? {} : { lead: variant.lead }) })
+  const same = (x: unknown, y: unknown): boolean => JSON.stringify(x ?? null) === JSON.stringify(y ?? null)
+  /**
+   * With `keep`: the best stored option with these method picks, the same extra rule and lead, on this revision
+   * and formulation, validated feasible, whose purchases this sub-solve may all use (it buys no more).
+   */
+  const startFor = (variant: Variant, combo: readonly MethodPick[]): Option | undefined => {
+    if (!keep) return undefined
+    const permitted = new Set(permittedPurchases(inputs, variant.buy))
+    const candidates = stored.filter(option => sameBasis(option) && option.status.word === 'validated feasible'
+      && same(option.variant.methods, combo) && same(option.variant.also, variant.also) && same(option.variant.lead, variant.lead)
+      && option.variant.purchases.every(key => permitted.has(key)))
+    return candidates.sort((x, y) => compareOptions(rankable(x, inputs), rankable(y, inputs)))[0]
+  }
   let begun = 0
   const solveOne = async (variant: Variant, combo: MethodPick[]): Promise<Option> => {
     const evals = request.evals ?? Number.MAX_SAFE_INTEGER
@@ -306,7 +478,7 @@ export const generate = async (deps: GenerateDeps, request: GenerateRequest): Pr
     // Past the deadline a sub-solve is not run: it says so, as a search stopped by its time ("wall").
     if (remaining < MIN_SUB_SOLVE_MS) {
       const run = { grid: inputs.settings.grid, engine: deps.engine.name, formulation, seed, budget: { evals, cpuMs: 0, wallMs: 0 }, stoppedBy: 'wall' as const, evals: 0, cpuMs: 0 }
-      return { key: variant.key, label: variant.label.slice(0, 160), inputsRevision: request.revision, variant: { methods: combo, purchases: [] }, status: unresolvedStatus(run), rows: [], metrics: [] }
+      return { key: variant.key, label: variant.label.slice(0, 160), inputsRevision: request.revision, variant: { methods: combo, purchases: [], ...askedOf(variant) }, status: unresolvedStatus(run), rows: [], metrics: [] }
     }
     // Each sub-solve answers by its equal share of the time left (at least MIN_SUB_SOLVE_MS), its spawn, compile
     // and check included, so an earlier one's search never takes the time a later one needs for its own; the
@@ -314,7 +486,12 @@ export const generate = async (deps: GenerateDeps, request: GenerateRequest): Pr
     const slot = Math.min(remaining, Math.max(MIN_SUB_SOLVE_MS, remaining / left))
     const wall = Math.min(share.wallMs, slot * 0.9)
     const budget = { evals, cpuMs: Math.round(Math.min(share.cpuMs, wall * SOLVER_CPU_CAP_CORES)), wallMs: Math.round(wall) }
-    const outcome = await runSubSolve({ inputs, revision: request.revision, variant: { key: variant.key, label: variant.label, buy: variant.buy }, combo, budget, seed, deadlineAt, answerBy: Math.floor(now + slot) }, request.signal, request.stoppedByWho)
+    const start = startFor(variant, combo)
+    const task: SubSolveTask = {
+      inputs, revision: request.revision, variant: { key: variant.key, label: variant.label, buy: variant.buy, ...askedOf(variant) }, combo, budget, seed, deadlineAt, answerBy: Math.floor(now + slot),
+      ...(start === undefined ? {} : { start: { rows: start.rows } }),
+    }
+    const outcome = await runSubSolve(task, request.signal, request.stoppedByWho)
     rounded.push(...outcome.rounded.filter(entry => !rounded.some(known => known.about === entry.about && known.code === entry.code)))
     dropped.push(...outcome.dropped.filter(entry => !dropped.some(known => known.purchase === entry.purchase)))
     return outcome.option
@@ -334,8 +511,7 @@ export const generate = async (deps: GenerateDeps, request: GenerateRequest): Pr
   }
 
   // Never demote: per variant keep the stored option unless the new one is valid and ranks better, or the stored one is stale.
-  const stored = request.previous?.options ?? []
-  const validStored = (option: Option): boolean => option.inputsRevision === request.revision && option.status.word === 'validated feasible' && option.status.run.formulation === formulation
+  const validStored = (option: Option): boolean => sameBasis(option) && option.status.word === 'validated feasible'
   const kept: string[] = []
   const merged: Option[] = fresh.map(option => {
     const old = stored.find(candidate => candidate.key === option.key)
@@ -345,11 +521,19 @@ export const generate = async (deps: GenerateDeps, request: GenerateRequest): Pr
     kept.push(old.key)
     return old
   })
-  if (request.signal.aborted) {
-    for (const old of stored) if (!merged.some(option => option.key === old.key) && validStored(old)) { merged.push(old); kept.push(old.key) }
-  }
-  const ranked = merged.slice(0, 8).sort((x, y) => compareOptions(rankable(x, inputs), rankable(y, inputs)))
-  const recommended = ranked.find(option => option.status.word === 'validated feasible')
+  // With `keep` every stored option on this revision and formulation stays beside the new ones (a refusal
+  // too: the ladder reads it); without it, only on a stop, and only a valid one.
+  const stays = (old: Option): boolean => (keep ? sameBasis(old) : request.signal.aborted && validStored(old))
+  const extra = stored.filter(old => !merged.some(option => option.key === old.key) && stays(old))
+  // At most 8 options: the new ones first, then the stored plain options, then stored what-ifs, each in stored order.
+  const whatIf = (option: Option): boolean => option.variant.also !== undefined || option.variant.lead !== undefined
+  for (const old of [...extra.filter(option => !whatIf(option)), ...extra.filter(whatIf)]) { merged.push(old); kept.push(old.key) }
+  const set = merged.slice(0, 8)
+  // A lead what-if is a card, never ranked among the options or recommended (design §0.3): it comes last.
+  const plain = set.filter(option => option.variant.lead === undefined).sort((x, y) => compareOptions(rankableOf(x, inputs), rankableOf(y, inputs)))
+  const led = set.filter(option => option.variant.lead !== undefined).sort((x, y) => (x.key < y.key ? -1 : x.key > y.key ? 1 : 0))
+  const ranked = [...plain, ...led]
+  const recommended = plain.find(option => option.status.word === 'validated feasible')
   const optionSet = optionSetSchema.parse({
     at: deps.now?.() ?? new Date().toISOString(), by: request.by, options: ranked,
     ...(recommended === undefined ? {} : { recommended: recommended.key }),
