@@ -304,8 +304,12 @@ export const refusalLines = (cause: Certificate, inputs: PlanInputs, span?: Span
   // Say what the answer assumes may be bought (e.g. "days only": a tool day and a rebooking, no crew hours).
   const label = (key: string) => inputs.purchases.find(purchase => purchase.key === key)?.label ?? key
   const without = inputs.purchases.filter(purchase => !purchases.includes(purchase.key)).map(purchase => purchase.label)
-  const assumes = clip(`This answer allows ${purchases.length === 0 ? 'no purchases' : list(purchases.map(label))}${without.length === 0 ? '' : `, and not ${list(without)}`}.`)
-  return [...lines.slice(0, 19), assumes]
+  // Two sentences, each its own line, so neither is cut at the line length.
+  const assumes = purchases.length === 0 ? ['This request allowed no purchases.']
+    : [clip(`This request allowed: ${list(purchases.map(label))}.`), ...(without.length === 0 ? [] : [clip(`It did not allow: ${list(without)}.`)])]
+  // At most 20 lines: a long body gives up a middle line and keeps its last (as refusalBody itself does).
+  const room = 20 - assumes.length
+  return [...(lines.length <= room ? lines : [...lines.slice(0, room - 1), lines.at(-1)!]), ...assumes]
 }
 
 /**

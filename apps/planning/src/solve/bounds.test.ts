@@ -60,7 +60,7 @@ describe('V1 and V2 are proven infeasible with their cause', () => {
     const kept = fixture.purchases.filter(purchase => ['crane-fri', 'ect-friday'].includes(purchase.key)).map(purchase => purchase.label)
     const notKept = fixture.purchases.filter(purchase => !['crane-fri', 'ect-friday'].includes(purchase.key)).map(purchase => purchase.label)
     const and = (labels: string[]) => `${labels.slice(0, -1).join(', ')} and ${labels.at(-1)}`
-    expect(refusal.lines.at(-1)).toBe(`This answer allows ${and(kept)}, and not ${and(notKept)}.`)
+    expect(refusal.lines.slice(-2)).toEqual([`This request allowed: ${and(kept)}.`, `It did not allow: ${and(notKept)}.`])
   })
 
   test('V2 (swap, days only): refused by time, with the span energy count as a second proof', () => {
