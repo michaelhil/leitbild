@@ -1,23 +1,23 @@
-import { routeDistanceMeters, type GeoJsonPoint, type OperationalObject } from '../../../core/model/index.ts'
+import { roleClassForRoleSet, routeDistanceMeters, type CommandResult, type GeoJsonPoint, type OperationalObject } from '../../../core/model/index.ts'
 import type { ScenarioDefinition } from '../../../core/scenarios/definition.ts'
 import type { Actor } from '../../../core/simulation-runs/actors.ts'
 import { createDirectRoutingAdapter } from '../../../routing/direct-adapter.ts'
 import type { RoutingAdapter } from '../../../routing/protocol.ts'
-import { einsatzCommandIds } from '../capabilities.ts'
+import { einsatzCommandIds, einsatzQueryIds } from '../capabilities.ts'
 import type { UnitType } from '../config-schema.ts'
 import { trackDataSchema } from '../engine/combat-model.ts'
 import { einsatzDataSchema, type TaskData, type UnitData } from '../engine/model.ts'
-import { boardWords } from '../board/text.ts'
-import { createWall, openScreen, pastGuardMs, roleScreen, runFor, type Screen, type ScreenCall } from './board-harness.ts'
+import type { RecommendAnswer } from '../recommendation-schema.ts'
+import type { Situation, SituationCall, UnitOptions } from '../situation/schema.ts'
 import { borderConfig, sideTypes } from './border-harness.ts'
 import { openRun, type OpenRun } from './run-harness.ts'
 
 /**
  * Test-only demo plays of the halden-border Definitions on a real Run, every
- * Blue order given by taps on a Board screen holding a preset's roles. The
- * good dispatcher taps each unserved call in list order and sends its first
- * recommendation, confirming a divert; at a beat it gives the order the beat
- * names. Red, when a person plays it, gives its orders on its own preset's
+ * Blue order given through the dispatch Capabilities by a desk holding a
+ * preset's roles. The good dispatcher reads world.einsatz.situation, takes
+ * each unserved call in list order and sends its recommendation's ready
+ * order; at a beat it gives the order the beat names. Red, when a person plays it, gives its orders on its own preset's
  * roles. A play records what the objectives are judged on: when each task
  * closed, when Blue first identified an enemy shooter, the steps each side
  * lost, and every call each screen made; and what the pacing is judged on:
@@ -43,6 +43,58 @@ export interface RedOrder {
   readonly capabilityId: string
   readonly input: unknown | ((play: DemoContext) => unknown)
 }
+
+/** A command a desk gave and what the Run answered. */
+export interface ScreenCall {
+  readonly capabilityId: string
+  readonly input: unknown
+  readonly result: CommandResult
+}
+
+/** A desk: a screen holding a preset's roles, reading and ordering through the Capabilities, with every command it gave. */
+export interface Screen {
+  readonly actor: Actor
+  readonly calls: ReadonlyArray<ScreenCall>
+  readonly situation: () => Promise<Situation>
+  readonly recommend: (taskId: string) => Promise<RecommendAnswer | undefined>
+  readonly options: (unitId: string) => Promise<UnitOptions>
+  readonly command: (capabilityId: string, input: unknown) => Promise<CommandResult>
+}
+
+/** A screen of a role Run holding these roles, as core resolves its connection. */
+export const roleScreen = (run: OpenRun, ...roleIds: ReadonlyArray<string>): Actor => {
+  const declaration = run.run.roles()
+  if (declaration === null) throw new Error('A role screen needs a Run that declares roles')
+  return { id: `actor:screen-${roleIds.join('-')}` as Actor['id'], label: `Screen ${roleIds.join(', ')}`, role: roleClassForRoleSet(declaration, roleIds), roleIds }
+}
+
+export const openScreen = (run: OpenRun, actor: Actor): Screen => {
+  const calls: ScreenCall[] = []
+  return {
+    actor,
+    calls,
+    situation: () => run.query<Situation>(einsatzQueryIds.situation, {}, actor),
+    // A call outside the desk's queue has no recommendation for it.
+    recommend: taskId => run.query<RecommendAnswer>(einsatzQueryIds.recommend, { taskId }, actor).then(answer => answer, () => undefined),
+    options: unitId => run.query<UnitOptions>(einsatzQueryIds.unitOptions, { unitId }, actor),
+    command: async (capabilityId, input) => {
+      const result = await run.invoke(capabilityId, input, actor)
+      calls.push({ capabilityId, input, result })
+      return result
+    },
+  }
+}
+
+/** Moves the running Run clock on and waits until the Run has published what changed. */
+export const runFor = async (run: OpenRun, ms: number): Promise<void> => {
+  run.forward(ms)
+  await run.settle()
+}
+
+/** A call still short of what it needs: a requirement not filled or load not covered. */
+export const isUnserved = (call: SituationCall): boolean => call.needs.some(need => need.kind === 'requirement'
+  ? need.enRoute + need.onTask + need.completed < need.count
+  : need.covered < need.waiting)
 
 export interface DemoContext {
   readonly run: OpenRun
@@ -109,42 +161,21 @@ export const slowedRouting = (factor: number): RoutingAdapter => {
   }
 }
 
-/** A second tap on the highlighted unit lets it go, so the next tap on a call selects the call. */
-export const letGo = async (screen: Screen): Promise<void> => {
-  const selected = screen.view().selected
-  if (selected?.kind === 'unit') await screen.click({ kind: 'row', list: 'units', id: selected.id })
-}
-
 /**
  * One pass of the good dispatcher: every unserved call in list order is
- * tapped, and its first recommendation sent. A call a busy unit holds as its
- * next job is covered next and shows no button; the good dispatcher sends
- * another now, the first of the units the bar lists below it.
+ * taken, and its recommendation's ready order sent, until no call has a
+ * free unit proposed for it.
  */
 export const tapRecommendations = async (screen: Screen): Promise<void> => {
-  await letGo(screen)
   const tried = new Set<string>()
   for (let round = 0; round < 40; round++) {
-    const row = screen.view().workList.rows.find(entry => !entry.served && !tried.has(entry.id))
-    if (row === undefined) return
-    tried.add(row.id)
-    await screen.click({ kind: 'row', list: 'work', id: row.id })
-    const selected = screen.view().selected
-    const another = selected?.kind === 'task' && screen.view().commit.text.startsWith(boardWords.coveredNext) ? selected.alternatives[0] : undefined
-    if (another !== undefined) {
-      await screen.wait(pastGuardMs)
-      await screen.click({ kind: 'alternative', number: another.number })
-      continue
-    }
-    if (screen.view().commit.state !== 'ready') continue
-    await screen.wait(pastGuardMs)
-    await screen.click({ kind: 'commit' })
-    // A divert asks to confirm what it drops.
-    if (screen.view().commit.state === 'confirm') {
-      await screen.wait(pastGuardMs)
-      await screen.click({ kind: 'commit' })
-    }
-    tried.delete(row.id)
+    const call = (await screen.situation()).calls.find(entry => isUnserved(entry) && !tried.has(entry.id))
+    if (call === undefined) return
+    tried.add(call.id)
+    const answer = await screen.recommend(call.id)
+    if (answer?.proposal == null) continue
+    const result = await screen.command(einsatzCommandIds.order, answer.proposal.order)
+    if (result.ok) tried.delete(call.id)
   }
 }
 
@@ -188,9 +219,9 @@ export const playDemo = async (options: {
   const run = await openRun({ definition, routing })
   try {
     const actor = roleScreen(run, ...presets[0]!.roles)
-    const screen = await openScreen(run, createWall(), { actor })
+    const screen = openScreen(run, actor)
     const watchers = new Map<string, Screen>()
-    for (const id of options.watchers ?? []) watchers.set(id, await openScreen(run, createWall(), { actor: roleScreen(run, ...presetRoles(id)) }))
+    for (const id of options.watchers ?? []) watchers.set(id, openScreen(run, roleScreen(run, ...presetRoles(id))))
     const redPreset = presets.find(preset => preset.roles.length > 0 && preset.roles.every(roleId => run.run.roles()!.roles.find(role => role.id === roleId)?.sees?.includes(red) === true))
     const redActor: Actor | undefined = redPreset === undefined ? undefined : roleScreen(run, ...redPreset.roles)
     if (options.redDispatch === true && (redPreset === undefined || !watchers.has(redPreset.id))) throw new Error('A Red that dispatches needs its preset screen watched')
@@ -226,10 +257,10 @@ export const playDemo = async (options: {
     const beats = [...options.beats ?? []]
     const redOrders = [...options.red ?? []]
     const holds = (presetId: string, group: string) => presetRoles(presetId).includes(`group:${group}`)
-    /** A new row unserved on a preset's Calls list since the last look is a decision for that preset. */
-    const noteRows = () => {
+    /** A new call unserved on a preset's calls list since the last look is a decision for that preset. */
+    const noteRows = async () => {
       for (const [id, watching] of watched) {
-        const unserved = new Set(watching.view().workList.rows.filter(row => !row.served).map(row => row.id))
+        const unserved = new Set((await watching.situation()).calls.filter(isUnserved).map(row => row.id))
         if ([...unserved].some(rowId => !(unservedBefore.get(id)?.has(rowId) ?? false))) decisions[id]!.push(nowS())
         unservedBefore.set(id, unserved)
       }
@@ -267,8 +298,8 @@ export const playDemo = async (options: {
       }
     }
     for (let atS = 0; atS <= options.untilS; atS += stepS) {
-      if (atS > 0) await runFor(run, stepS * 1_000, [...watched.values()])
-      noteRows()
+      if (atS > 0) await runFor(run, stepS * 1_000)
+      await noteRows()
       for (const order of redOrders.filter(entry => entry.atS <= nowS())) {
         redOrders.splice(redOrders.indexOf(order), 1)
         if (redPreset !== undefined && watched.has(redPreset.id)) decisions[redPreset.id]!.push(nowS())
@@ -309,28 +340,23 @@ export const playDemo = async (options: {
   }
 }
 
-/** A beat: tap a unit of the Board's unit list, then one of its verbs. */
-export const unitVerb = async (screen: Screen, unitId: string, verb: 'recall' | 'hold'): Promise<void> => {
-  await screen.click({ kind: 'row', list: 'units', id: unitId })
-  await screen.click({ kind: 'verb', verb, id: unitId })
-  await letGo(screen)
+/** A beat: return a unit to base. */
+export const unitVerb = async (screen: Screen, unitId: string, verb: 'recall'): Promise<void> => {
+  if (verb === 'recall') await screen.command(einsatzCommandIds.recall, { unitId })
 }
 
-/** A beat: + on a busy unit's row, then the call it should take next. */
+/** A beat: a busy unit takes the call next, after its current job. */
 export const addToEnd = async (screen: Screen, unitId: string, taskId: string): Promise<void> => {
-  await screen.click({ kind: 'verb', verb: 'add', id: unitId })
-  await screen.wait(pastGuardMs)
-  await screen.click({ kind: 'row', list: 'work', id: taskId })
+  await screen.command(einsatzCommandIds.order, { units: [unitId], stops: [{ taskId }], when: 'after' })
 }
 
-/** A beat: tap a busy unit, then a call, and choose to add the call to the end of its chain. */
+/** A beat: the unit's options say it is busy and offer the call; the desk chooses after its current job, not now. */
 export const askThenAddToEnd = async (screen: Screen, unitId: string, taskId: string): Promise<void> => {
-  await screen.click({ kind: 'row', list: 'units', id: unitId })
-  await screen.wait(pastGuardMs)
-  await screen.click({ kind: 'row', list: 'work', id: taskId })
-  if (screen.view().commit.state !== 'choice') throw new Error(`Expected Do now or Add to end, the bar reads: ${screen.view().commit.text}`)
-  await screen.wait(pastGuardMs)
-  await screen.click({ kind: 'option', option: 'add-to-end' })
+  const options = await screen.options(unitId)
+  if (options.busy === null || !options.targets.some(target => 'taskId' in target.target && target.target.taskId === taskId)) {
+    throw new Error(`Expected ${unitId} busy with ${taskId} among its targets, its options read ${JSON.stringify(options)}`)
+  }
+  await addToEnd(screen, unitId, taskId)
 }
 
 export const commandIds = einsatzCommandIds

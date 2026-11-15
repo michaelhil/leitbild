@@ -18,6 +18,7 @@ export const actionBy = (draft: Draft, actor: EngineActor, verb: LastAction['ver
   atMs: draft.timeMs,
   ...(target === undefined ? {} : { target }),
   ...(cause === undefined ? {} : { cause }),
+  ...(actor.commandId === undefined ? {} : { commandId: actor.commandId }),
 })
 
 /**

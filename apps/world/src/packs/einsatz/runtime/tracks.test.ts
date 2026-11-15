@@ -90,7 +90,7 @@ describe('Einsatz track publication in a sided Run', () => {
         .toEqual(journalUpserts(run.journal).map(object => object.id).sort())
 
       // Blue's commander sends its scout away; once neither side has seen the other for 300 s, both tracks are dropped.
-      const sent = await run.invoke(ids.send, { units: ['unit:b1'], to: { point: geoPointFromLonLat(...kmEast(origin, -6)) } }, blueCommander)
+      const sent = await run.invoke(ids.order, { units: ['unit:b1'], stops: [{ point: geoPointFromLonLat(...kmEast(origin, -6)) }] }, blueCommander)
       expect(sent.ok).toBe(true)
       for (let minute = 0; minute < 20 && run.object('track:red:1') !== undefined; minute++) await runFor(run, 60_000)
       expect([run.object('track:blue:1'), run.object('track:red:1')]).toEqual([undefined, undefined])

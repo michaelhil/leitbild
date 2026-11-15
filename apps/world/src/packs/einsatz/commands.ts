@@ -1,5 +1,5 @@
 import { z } from 'zod'
-import type { ScenarioRole } from '../../core/model/index.ts'
+import type { CommandId, ScenarioRole } from '../../core/model/index.ts'
 import { commandInputSchemas, einsatzCommandIds, type CommandInput, type EinsatzCommandId } from './capabilities.ts'
 import { notInPicture, refused, type Refused } from './engine/intent-support.ts'
 import type { EngineActor, Intent } from './engine/intents.ts'
@@ -22,6 +22,8 @@ export interface CommandContext {
   readonly by: string
   /** An id no object of the Run holds, for the record a create adds. */
   readonly newId: (kind: 'unit' | 'task') => string
+  /** The command being run: the steps it gives and the units it orders name it, for `unit.undo`. */
+  readonly commandId?: CommandId
 }
 
 export type PreparedCommand = { readonly ok: true; readonly intent: Intent; readonly actor: EngineActor } | Refused
@@ -35,9 +37,9 @@ const commanded = (context: CommandContext, unitId: string): Refused | undefined
 }
 
 /**
- * Refused unless the record is in the viewer's picture. A send's target need
- * not be in the viewer's queue: a role may send its own units to any task it
- * sees, and the units it sends stay under its authority.
+ * Refused unless the record is in the viewer's picture. An order's target
+ * need not be in the viewer's queue: a role may order its own units to any
+ * task it sees, and the units it orders stay under its authority.
  */
 const seen = (context: CommandContext, id: string): Refused | undefined => {
   const record = context.state.units.get(id) ?? context.state.tasks.get(id)
@@ -83,36 +85,24 @@ const intentFor = (context: CommandContext, kind: EinsatzCommandId, payload: unk
   const parse = <K extends EinsatzCommandId>(id: K): CommandInput<K> => commandInputSchemas[id].parse(payload) as CommandInput<K>
   const ok = (intent: Intent, ...checks: ReadonlyArray<Refused | undefined>) => firstRefusal(...checks) ?? { ok: true as const, intent }
   switch (kind) {
-    case einsatzCommandIds.send: {
-      const input = parse(einsatzCommandIds.send)
-      return ok({ kind: 'send', ...input },
+    case einsatzCommandIds.order: {
+      const input = parse(einsatzCommandIds.order)
+      return ok({ kind: 'order', ...input },
         ...input.units.map(unitId => commanded(context, unitId)),
-        targetSeen(context, input.to),
-        ...(input.divert ?? []).map(entry => seen(context, entry.fromTaskId)))
+        ...input.stops.map(stop => targetSeen(context, stop)),
+        input.drops === undefined ? undefined : seen(context, input.drops))
     }
-    case einsatzCommandIds.queue: {
-      const input = parse(einsatzCommandIds.queue)
-      return ok({ kind: 'queue', ...input }, commanded(context, input.unitId), targetSeen(context, input.to))
+    case einsatzCommandIds.stopRemove: {
+      const input = parse(einsatzCommandIds.stopRemove)
+      return ok({ kind: 'stop.remove', ...input }, commanded(context, input.unitId))
     }
-    case einsatzCommandIds.stepRemove: {
-      const input = parse(einsatzCommandIds.stepRemove)
-      return ok({ kind: 'step.remove', ...input }, commanded(context, input.unitId))
-    }
-    case einsatzCommandIds.resume: {
-      const input = parse(einsatzCommandIds.resume)
-      return ok({ kind: 'resume', ...input }, commanded(context, input.unitId))
-    }
-    case einsatzCommandIds.clear: {
-      const input = parse(einsatzCommandIds.clear)
-      return ok({ kind: 'clear', ...input }, commanded(context, input.unitId))
+    case einsatzCommandIds.undo: {
+      const input = parse(einsatzCommandIds.undo)
+      return ok({ kind: 'undo', ...input }, commanded(context, input.unitId))
     }
     case einsatzCommandIds.recall: {
       const input = parse(einsatzCommandIds.recall)
-      return ok({ kind: 'recall', ...input }, commanded(context, input.unitId), input.fromTaskId === undefined ? undefined : seen(context, input.fromTaskId))
-    }
-    case einsatzCommandIds.hold: {
-      const input = parse(einsatzCommandIds.hold)
-      return ok({ kind: 'hold', ...input }, commanded(context, input.unitId))
+      return ok({ kind: 'recall', ...input }, commanded(context, input.unitId))
     }
     case einsatzCommandIds.unitCreate: {
       const input = parse(einsatzCommandIds.unitCreate)
@@ -159,5 +149,6 @@ export const prepareCommand = (context: CommandContext, kind: EinsatzCommandId, 
   if (!parsed.success) return inputIssues(parsed.error)
   const prepared = intentFor(context, kind, parsed.data)
   if (!prepared.ok) return prepared
-  return { ok: true, intent: prepared.intent, actor: actorFor(context.state.catalog, context.viewer, context.by) }
+  const actor = actorFor(context.state.catalog, context.viewer, context.by)
+  return { ok: true, intent: prepared.intent, actor: context.commandId === undefined ? actor : { ...actor, commandId: context.commandId } }
 }

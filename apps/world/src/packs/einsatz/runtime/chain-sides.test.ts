@@ -4,14 +4,14 @@ import { einsatzCommandIds as ids } from '../capabilities.ts'
 import { einsatzConfigSchema } from '../config-validation.ts'
 import { low, templates, types } from '../fixtures/engine-harness.ts'
 import { lonLat, openRun, screenOf, taskItem, unitItem, type OpenRun, type RoleRunDeclaration, type TaskItem, type UnitItem } from '../fixtures/run-harness.ts'
-import { einsatzSidedSelection } from '../fixtures/sided-run.ts'
+import { crewRoleId, einsatzSidedSelection } from '../fixtures/sided-run.ts'
 import { einsatzPackId } from '../ids.ts'
 
 /**
- * Job chains in a sided role Run with its clock running: who may give,
- * remove, pause, resume and clear a unit's steps, what a side may name as a
- * step's target, and an armed unit's move then engage chain, every call
- * through the Run's Capability path as a screen holding roles.
+ * Plans in a sided role Run with its clock running: who may give and
+ * remove a unit's stops, what a side may name as a stop's target, and an
+ * armed unit's move then engage plan, every call through the Run's
+ * Capability path as a screen holding roles.
  */
 
 const sides: ReadonlyArray<ScenarioSide> = [
@@ -19,29 +19,34 @@ const sides: ReadonlyArray<ScenarioSide> = [
   { id: 'south', label: 'South', colour: '#c62828' },
 ]
 const roles: ReadonlyArray<ScenarioRole> = [
-  { id: 'north-lead', label: 'North lead', class: 'operator', sees: ['north'] },
   { id: 'north-watch', label: 'North watch', class: 'operator', sees: ['north'] },
-  { id: 'south-lead', label: 'South lead', class: 'operator', sees: ['south'] },
   { id: 'control', label: 'Control', class: 'controller', sees: 'all' },
 ]
-/** Each side's lead commands its crews; North watch sees North's picture and commands nothing. */
-const selection = einsatzSidedSelection('chains', { side: 'north', role: 'north-lead' }, { side: 'south', role: 'south-lead' })
+/** Each side's crew group's role commands its units; North watch sees North's picture and commands nothing. */
+const northCrew = { side: 'north', crew: 'north-crew' }
+const southCrew = { side: 'south', crew: 'south-crew' }
+const selection = einsatzSidedSelection('chains', northCrew, southCrew)
 const declared: RoleRunDeclaration = { roles, sides, config: selection.config }
 const unitTypes = einsatzConfigSchema.parse(selection.config).unitTypes
 const gun = unitTypes.find(type => type.components.effector !== undefined)!.id
 const scout = unitTypes.find(type => type.components.sensor !== undefined && type.components.effector === undefined)!.id
 
+const crewRoles: ReadonlyArray<ScenarioRole> = [
+  { id: crewRoleId(northCrew), label: 'Crew north', class: 'operator', category: 'Crews', sees: ['north'] },
+  { id: crewRoleId(southCrew), label: 'Crew south', class: 'operator', category: 'Crews', sees: ['south'] },
+]
+const everyRole: RoleRunDeclaration = { ...declared, roles: [...roles, ...crewRoles] }
 const screens = {
-  lead: screenOf(declared, 'north-lead'),
-  watch: screenOf(declared, 'north-watch'),
-  south: screenOf(declared, 'south-lead'),
-  control: screenOf(declared, 'control'),
+  lead: screenOf(everyRole, crewRoleId(northCrew)),
+  watch: screenOf(everyRole, 'north-watch'),
+  south: screenOf(everyRole, crewRoleId(southCrew)),
+  control: screenOf(everyRole, 'control'),
 }
 
 /** A point this many metres north of the field's origin. */
 const north = (metres: number): [number, number] => lonLat(0.2, metres / 110_540)
 const point = (metres: number) => ({ type: 'Point', coordinates: north(metres) })
-const sided = <T extends UnitItem | TaskItem>(item: T, side: string): T => ({ ...item, side })
+const sided = <T extends UnitItem | TaskItem>(item: T, side: string): T => ({ ...item, side, ...(item.type === 'unit' ? { group: `${side}-crew` } : {}) })
 /**
  * North's scout, and South's 500 m north of it, which North identifies at
  * the first 2 s boundary; North's shooter 3 km south, out of its weapon's
@@ -77,49 +82,45 @@ const trackOf = (run: OpenRun, side: string): { readonly id: string; readonly la
 }
 
 describe('Einsatz job chains in a sided role Run', () => {
-  test('a role that does not command a unit is refused every chain command, naming the role it needs; the other side does not see the unit', async () => {
+  test('a role that does not command a unit is refused every plan command, naming the role it needs; the other side does not see the unit', async () => {
     await withRun(async run => {
-      await accepted(run, ids.send, { units: ['nc'], to: { taskId: 'tn' } })
-      await accepted(run, ids.queue, { unitId: 'nc', to: { point: point(-2_500) } })
-      const denied = 'unit_not_authorized: North watch does not command NC. It belongs to North lead: add that role to command it'
+      await accepted(run, ids.order, { units: ['nc'], stops: [{ taskId: 'tn' }] })
+      await accepted(run, ids.order, { units: ['nc'], stops: [{ point: point(-2_500) }], when: 'after' })
+      const denied = 'unit_not_authorized: North watch does not command NC. It belongs to Crew north: add that role to command it'
       const orders: ReadonlyArray<readonly [string, unknown]> = [
-        [ids.queue, { unitId: 'nc', to: { point: point(-2_600) } }],
-        [ids.stepRemove, { unitId: 'nc', stepId: 'step-2' }],
-        [ids.hold, { unitId: 'nc' }],
-        [ids.resume, { unitId: 'nc' }],
-        [ids.clear, { unitId: 'nc' }],
+        [ids.order, { units: ['nc'], stops: [{ point: point(-2_600) }], when: 'after' }],
+        [ids.stopRemove, { unitId: 'nc', stopId: 'step-2' }],
+        [ids.recall, { unitId: 'nc' }],
       ]
       for (const [capabilityId, input] of orders) {
         expect([capabilityId, (await run.refusal(capabilityId, input, screens.watch)).reason]).toEqual([capabilityId, denied])
         expect([capabilityId, (await run.refusal(capabilityId, input, screens.south)).reason]).toEqual([capabilityId, 'not_in_picture: Not in your picture'])
       }
       expect(steps(run, 'nc')).toEqual([['step-1', 'serve', 'active'], ['step-2', 'move', 'queued']])
-      expect(run.unit('nc').lastAction).toMatchObject({ verb: 'queue', by: 'North lead', stepId: 'step-2' })
+      expect(run.unit('nc').lastAction).toMatchObject({ verb: 'queue', by: 'Crew north', stepId: 'step-2' })
 
       // The role that commands it may do each of them.
-      await accepted(run, ids.hold, { unitId: 'nc' })
-      await accepted(run, ids.resume, { unitId: 'nc' })
-      await accepted(run, ids.stepRemove, { unitId: 'nc', stepId: 'step-2' })
-      await accepted(run, ids.clear, { unitId: 'nc' })
-      expect(run.unit('nc')).toMatchObject({ orders: [], lastAction: { verb: 'clear', by: 'North lead' } })
+      await accepted(run, ids.stopRemove, { unitId: 'nc', stopId: 'step-2' })
+      await accepted(run, ids.recall, { unitId: 'nc' })
+      expect(run.unit('nc')).toMatchObject({ orders: [], lastAction: { verb: 'recall', by: 'Crew north' } })
       healthy(run)
     })
   })
 
-  test('a side may not send or queue a unit to another side\'s track: refused as not in its picture, echoing nothing of it', async () => {
+  test('a side may not order a unit to another side\'s track: refused as not in its picture, echoing nothing of it', async () => {
     await withRun(async run => {
       run.forward(2_000)
       await run.settle()
       const theirs = trackOf(run, 'south')
       const ours = trackOf(run, 'north')
-      for (const [capabilityId, input] of [[ids.send, { units: ['ng'], to: { trackId: theirs.id } }], [ids.queue, { unitId: 'ng', to: { trackId: theirs.id } }]] as const) {
+      for (const [capabilityId, input] of [[ids.order, { units: ['ng'], stops: [{ trackId: theirs.id }] }], [ids.order, { units: ['ng'], stops: [{ trackId: theirs.id }], when: 'after' }]] as const) {
         expect([capabilityId, (await run.refusal(capabilityId, input, screens.lead)).reason]).toEqual([capabilityId, 'not_in_picture: Not in your picture'])
       }
       // An id no side holds reads the same, and a truth view is refused the other side's track as a cross-side reference.
-      expect((await run.refusal(ids.queue, { unitId: 'ng', to: { trackId: 'track:north:99' } }, screens.lead)).reason).toBe('not_in_picture: Not in your picture')
-      expect((await run.refusal(ids.send, { units: ['ng'], to: { trackId: theirs.id } }, screens.control)).reason).toBe('cross_side_reference: NG cannot engage another side\'s track')
+      expect((await run.refusal(ids.order, { units: ['ng'], stops: [{ trackId: 'track:north:99' }], when: 'after' }, screens.lead)).reason).toBe('not_in_picture: Not in your picture')
+      expect((await run.refusal(ids.order, { units: ['ng'], stops: [{ trackId: theirs.id }] }, screens.control)).reason).toBe('cross_side_reference: NG cannot engage another side\'s track')
       // South may not give North's shooter a step on North's track either.
-      expect((await run.refusal(ids.queue, { unitId: 'ng', to: { trackId: ours.id } }, screens.south)).reason).toBe('not_in_picture: Not in your picture')
+      expect((await run.refusal(ids.order, { units: ['ng'], stops: [{ trackId: ours.id }], when: 'after' }, screens.south)).reason).toBe('not_in_picture: Not in your picture')
       expect(run.unit('ng').orders).toEqual([])
       healthy(run)
     })
@@ -131,10 +132,10 @@ describe('Einsatz job chains in a sided role Run', () => {
       await run.settle()
       const track = trackOf(run, 'north')
       // Its weapon reaches the track only in the last 100 m of the move.
-      await accepted(run, ids.send, { units: ['ng'], to: { point: point(-1_400) } })
-      await accepted(run, ids.queue, { unitId: 'ng', to: { trackId: track.id } })
+      await accepted(run, ids.order, { units: ['ng'], stops: [{ point: point(-1_400) }] })
+      await accepted(run, ids.order, { units: ['ng'], stops: [{ trackId: track.id }], when: 'after' })
       expect(steps(run, 'ng')).toEqual([['step-1', 'move', 'active'], ['step-2', 'engage', 'queued']])
-      expect(run.unit('ng')).toMatchObject({ lastAction: { verb: 'queue', target: track.id, by: 'North lead', stepId: 'step-2' } })
+      expect(run.unit('ng')).toMatchObject({ lastAction: { verb: 'queue', target: track.id, by: 'Crew north', stepId: 'step-2' } })
       expect(run.unit('ng').engage).toBeUndefined()
       // A move sets off at once: it arrives when its leg is driven.
       expect(run.unit('ng').phase).toBe('en-route')
@@ -144,7 +145,7 @@ describe('Einsatz job chains in a sided role Run', () => {
       run.forward(120_000)
       await run.settle()
       expect(run.unit('ss').integrity).toBe('destroyed')
-      expect(run.unit('ng')).toMatchObject({ orders: [], alerts: [], lastAction: { verb: 'engage', target: track.id, by: 'North lead', cause: 'destroyed', stepId: 'step-2' } })
+      expect(run.unit('ng')).toMatchObject({ orders: [], alerts: [], lastAction: { verb: 'engage', target: track.id, by: 'Crew north', cause: 'destroyed', stepId: 'step-2' } })
       // The unit whose steps name North's track is in North's picture alone.
       expect(run.object('ng')?.audience).toEqual(['north'])
       healthy(run)

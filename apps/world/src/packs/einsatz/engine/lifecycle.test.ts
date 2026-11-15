@@ -141,12 +141,11 @@ describe('Einsatz unit lifecycle', () => {
     expect(loaded.code).toBe('unit_loaded')
     expect(loaded.reason).toBe('unit_loaded: U1 has 1 person on board, deliver first')
     expect((await refusalOf(state, send(['u1'], { taskId: 't2' }))).code).toBe('unit_loaded')
-    expect(unitOf(await run(state, { kind: 'hold', unitId: 'u1' }), 'u1')).toMatchObject({ phase: 'holding', paused: true, load: { [top]: 1 } })
 
     state = await run(state, send(['u2'], { taskId: 't2' }))
     state = await advance(state, start + 10_000)
     expect(taskOf(state, 't2').coverage.loads).toEqual([{ classId: middle, waiting: 1, covered: 1 }])
-    state = await run(state, { kind: 'recall', unitId: 'u2', fromTaskId: 't2' })
+    state = await run(state, { kind: 'recall', unitId: 'u2' })
     expect(unitOf(state, 'u2')).toMatchObject({ phase: 'returning', lastAction: { verb: 'recall', by: 'Controller' } })
     expect(unitOf(state, 'u2').taskId).toBeUndefined()
     expect(taskOf(state, 't2')).toMatchObject({ createdAtMs: start, loads: { [middle]: 1 }, alerts: [{ code: 'work_returned', message: 'U2 released from T2 · 1 person waiting' }] })
@@ -226,7 +225,7 @@ describe('Einsatz unit lifecycle', () => {
       send(['u1'], { taskId: 't1' }),
     ])
     const planned = await advance(sent, start + 2_000)
-    const intent = send(['u1'], { point: at(0.02, 0.01) }, [{ unitId: 'u1', fromTaskId: 't1' }])
+    const intent = send(['u1'], { point: at(0.02, 0.01) }, 't1')
     const routedOn = async (state: EngineState) => {
       const plan = planIntent(state, intent, controller)
       if (!plan.ok) throw new Error(plan.reason)
@@ -251,7 +250,8 @@ describe('Einsatz unit lifecycle', () => {
       newTask('t1', templates.load, at(0.01), { [low]: 1 }),
       send(['u1'], { taskId: 't1' }),
     ])
-    const again = await executeIntent(state, send(['u1'], { taskId: 't1' }), controller, ports)
+    expect((await refusalOf(state, send(['u1'], { taskId: 't1' }))).code).toBe('when_required')
+    const again = await executeIntent(state, send(['u1'], { taskId: 't1' }, 't1'), controller, ports)
     expect(again.ok && again.notes).toEqual(['U1 already mobilizing to T1'])
     expect(again.ok && again.transitions).toEqual([])
   })

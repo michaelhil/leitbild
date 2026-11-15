@@ -1,5 +1,10 @@
 import { describe, expect, test } from 'bun:test'
 import { join } from 'node:path'
+import { einsatzQueryIds } from '../src/packs/einsatz/capabilities.ts'
+import { renameDefinition } from '../src/packs/einsatz/fixtures/renaming.ts'
+import { openRun } from '../src/packs/einsatz/fixtures/run-harness.ts'
+import type { Situation } from '../src/packs/einsatz/situation/schema.ts'
+import emergency from '../src/scenarios/halden-emergency.scenario.json'
 
 // No asset type is built into Einsatz: its code, tests included, never names a
 // demo asset, role, place or casualty concept of a shipped Definition
@@ -79,5 +84,34 @@ describe('Einsatz vocabulary', () => {
       for (const match of demoMatches(located.map(entry => entry.token))) findings.push(`${path}:${located[match.index]!.line}: ${match.word}`)
     }
     expect(findings).toEqual([])
+  })
+})
+
+/** The words a situation shows: every label, code and word, by where it stands. */
+const shownWords = (situation: Situation) => ({
+  words: situation.words,
+  calls: situation.calls.map(call => [call.label, call.templateLabel, call.priority.label, call.priority.code, ...call.needs.map(need => need.label)]),
+  units: situation.units.map(unit => [unit.label, unit.typeLabel, unit.status.word, unit.group?.label ?? null, ...unit.properties.map(property => property.label)]),
+  sites: situation.sites.map(site => [site.label, site.typeLabel]),
+  columns: situation.features.propertyColumns.map(column => column.label),
+})
+
+describe('Einsatz generality', () => {
+  test('a renamed copy of the dispatch demo shows exactly the renamed words in its situation, so every word comes from configuration', async () => {
+    const renaming = renameDefinition(emergency)
+    const read = async (definition: unknown): Promise<Situation> => {
+      const run = await openRun({ definition, paused: true })
+      try { return await run.query<Situation>(einsatzQueryIds.situation, {}) } finally { await run.close() }
+    }
+    const [original, renamed] = [await read(emergency), await read(renaming.definition)]
+    const { words, ...rest } = shownWords(original)
+    // The configured words are renamed; a word the configuration leaves out stays the neutral one in both.
+    const configured = emergency.packs[0]!.config.lexicon as Readonly<Record<string, string>>
+    const translated = {
+      words: Object.fromEntries(Object.entries(words).map(([key, value]) => [key, key in configured ? renaming.text(value) : value])),
+      ...JSON.parse(JSON.stringify(rest, (_key, value) => typeof value === 'string' ? renaming.text(value) : value)),
+    }
+    expect(shownWords(renamed)).toEqual(translated)
+    expect(JSON.stringify(shownWords(renamed))).not.toContain('Dispatch')
   })
 })

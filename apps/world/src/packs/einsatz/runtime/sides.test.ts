@@ -4,11 +4,11 @@ import type { CommandId, ObjectAudience, ScenarioRole, ScenarioSide } from '../.
 import { compileScenarioDefinition } from '../../../core/scenarios/compiler.ts'
 import { createDirectRoutingAdapter } from '../../../routing/direct-adapter.ts'
 import { einsatzCommandIds as ids, einsatzQueryIds } from '../capabilities.ts'
-import type { Recommendation } from '../recommendation-schema.ts'
+import type { RecommendAnswer as Recommendation } from '../recommendation-schema.ts'
 import { low, start, templates, types } from '../fixtures/engine-harness.ts'
 import fixture from '../fixtures/engine.config.json'
 import { definitionOf, isoAt, lonLat, openRun, screenOf, taskItem, unitItem, type OpenRun, type RoleRunDeclaration, type TaskItem, type UnitItem } from '../fixtures/run-harness.ts'
-import { einsatzAdapterId, einsatzPackId, standingOrderBy } from '../ids.ts'
+import { einsatzAdapterId, einsatzPackId, groupRoleId, standingOrderBy } from '../ids.ts'
 import { einsatzPack } from '../pack.ts'
 import { refusalCode } from '../refusal.ts'
 import { causedBy, type Commander } from './adapter.ts'
@@ -26,20 +26,20 @@ const sides: ReadonlyArray<ScenarioSide> = [
   { id: 'south', label: 'South', colour: '#c62828' },
 ]
 const roles: ReadonlyArray<ScenarioRole> = [
-  { id: 'north-ground', label: 'North ground', class: 'operator', sees: ['north'] },
-  { id: 'north-air', label: 'North air', class: 'operator', sees: ['north'] },
-  { id: 'south-ground', label: 'South ground', class: 'operator', sees: ['south'] },
   { id: 'umpire', label: 'Umpire', class: 'operator', sees: 'all' },
   { id: 'control', label: 'Control', class: 'controller', sees: 'all' },
 ]
-const authority = [
-  { roleId: 'north-ground', units: { types: [types.roadCarrier, types.publicSite] }, taskTemplates: [templates.load, templates.report] },
-  { roleId: 'north-air', units: { types: [types.directCarrier] }, taskTemplates: [templates.report] },
-  { roleId: 'south-ground', units: { types: [types.roadCarrier] }, taskTemplates: [templates.load] },
+/** Each group becomes the operator role commanding its units: North's ground and air crews, South's ground crew. */
+const groups = [
+  { id: 'north-ground', label: 'North ground', category: 'Ground', side: 'north' },
+  { id: 'north-air', label: 'North air', category: 'Air', side: 'north' },
+  { id: 'south-ground', label: 'South ground', category: 'Ground', side: 'south' },
 ]
-const declared: RoleRunDeclaration = { roles, sides, config: { ...fixture, hostility: { north: ['south'], south: ['north'] }, authority } }
+const groupRoles: ReadonlyArray<ScenarioRole> = groups.map(group => ({ id: groupRoleId(group.id), label: group.label, class: 'operator', category: group.category, sees: [group.side] }))
+const declared: RoleRunDeclaration = { roles, sides, config: { ...fixture, hostility: { north: ['south'], south: ['north'] }, groups } }
+const everyRole: RoleRunDeclaration = { ...declared, roles: [...roles, ...groupRoles] }
 
-const sided = <T extends UnitItem | TaskItem>(item: T, side: string): T => ({ ...item, side })
+const sided = <T extends UnitItem | TaskItem>(item: T, side: string, group?: string): T => ({ ...item, side, ...(group === undefined ? {} : { group }) })
 /**
  * A North and a South carrier of the same type, the South one nearer the
  * North task; a North flyer; a public and a North site; tasks of both sides.
@@ -47,22 +47,22 @@ const sided = <T extends UnitItem | TaskItem>(item: T, side: string): T => ({ ..
  * still never commands.
  */
 const items = [
-  sided(unitItem('n1', types.roadCarrier, lonLat(0)), 'north'),
-  sided(unitItem('n2', types.directCarrier, lonLat(0)), 'north'),
-  sided(unitItem('s1', types.roadCarrier, lonLat(0.009)), 'south'),
+  sided(unitItem('n1', types.roadCarrier, lonLat(0)), 'north', 'north-ground'),
+  sided(unitItem('n2', types.directCarrier, lonLat(0)), 'north', 'north-air'),
+  sided(unitItem('s1', types.roadCarrier, lonLat(0.009)), 'south', 'south-ground'),
   unitItem('clinic', types.publicSite, lonLat(0.02)),
-  sided(unitItem('ncamp', types.sidedSite, lonLat(0.02, 0.001)), 'north'),
+  sided(unitItem('ncamp', types.sidedSite, lonLat(0.02, 0.001)), 'north', 'north-ground'),
   sided(taskItem('tn', templates.load, lonLat(0.01), { [low]: 1 }), 'north'),
   sided(taskItem('ts', templates.load, lonLat(0.011), { [low]: 1 }), 'south'),
   sided(taskItem('rn', templates.report, lonLat(0.005)), 'north'),
 ]
 
 const screens = {
-  northGround: screenOf(declared, 'north-ground'),
-  northAir: screenOf(declared, 'north-air'),
-  crossed: screenOf(declared, 'north-air', 'south-ground'),
-  umpire: screenOf(declared, 'umpire'),
-  control: screenOf(declared, 'control'),
+  northGround: screenOf(everyRole, groupRoleId('north-ground')),
+  northAir: screenOf(everyRole, groupRoleId('north-air')),
+  crossed: screenOf(everyRole, groupRoleId('north-air'), groupRoleId('south-ground')),
+  umpire: screenOf(everyRole, 'umpire'),
+  control: screenOf(everyRole, 'control'),
 }
 
 const withRun = async (options: Parameters<typeof openRun>[0], body: (run: OpenRun) => Promise<void>): Promise<void> => {
@@ -71,7 +71,7 @@ const withRun = async (options: Parameters<typeof openRun>[0], body: (run: OpenR
 }
 const withSidedRun = (body: (run: OpenRun) => Promise<void>) => withRun({ items, declared, paused: true }, body)
 
-const send = (units: ReadonlyArray<string>, to: unknown) => ({ units, to })
+const send = (units: ReadonlyArray<string>, to: unknown) => ({ units, stops: [to] })
 const recommendFor = (run: OpenRun, taskId: string, actor = screens.control) => run.query<Recommendation>(einsatzQueryIds.recommend, { taskId }, actor)
 const queryRefusal = async (run: OpenRun, taskId: string, actor: Parameters<OpenRun['query']>[2]): Promise<string> => {
   try {
@@ -81,12 +81,11 @@ const queryRefusal = async (run: OpenRun, taskId: string, actor: Parameters<Open
   }
   throw new Error(`Expected recommend for ${taskId} to be refused`)
 }
-const listed = (recommendation: Recommendation): string[] => [
-  ...recommendation.proposal.units.map(entry => entry.unitId),
-  ...recommendation.alternatives.map(entry => entry.unitId),
-  ...recommendation.ineligible.map(entry => entry.unitId),
-  ...recommendation.committed.map(entry => entry.unitId),
-].sort()
+const listed = (recommendation: Recommendation): string[] => [...new Set([
+  ...recommendation.proposal?.units.map(entry => entry.unitId) ?? [],
+  ...recommendation.alternatives.flatMap(entry => entry.units.map(unit => unit.unitId)),
+  ...recommendation.whyNot.map(entry => entry.unitId),
+])].sort()
 
 const compileIssues = async (definition: unknown): Promise<Array<{ readonly path: string; readonly code: unknown }>> => {
   try {
@@ -116,40 +115,39 @@ describe('Einsatz sides', () => {
       expect((await run.refusal(ids.unitCreate, create, screens.control)).reason).toBe('side_required: Name a side: north, south')
       expect((await run.refusal(ids.unitCreate, { ...create, side: 'east' }, screens.control)).reason).toBe('side_not_declared: Side "east" is not declared')
       expect((await run.refusal(ids.taskCreate, { template: templates.load, at: create.at, loads: { [low]: 1 }, label: 'Late' }, screens.control)).code).toBe('side_required')
-      expect(await run.invoke(ids.unitCreate, { ...create, side: 'south' }, screens.control)).toMatchObject({ ok: true })
+      expect(await run.invoke(ids.unitCreate, { ...create, side: 'south', group: 'south-ground' }, screens.control)).toMatchObject({ ok: true })
       expect(run.object('unit:1')).toMatchObject({ label: 'Reserve', audience: ['south'], packData: { side: 'south', lastAction: { verb: 'create', by: 'Control' } } })
     })
   })
 
-  test('a Run without sides writes no audience, and its roles all see everything', async () => {
-    const unsided: RoleRunDeclaration = { roles: roles.map(({ sees: _sees, ...role }) => role), config: { ...fixture, authority } }
+  test('a Run without sides writes no audience; there only a controller commands, since groups make no roles', async () => {
+    const unsided: RoleRunDeclaration = { roles: roles.map(({ sees: _sees, ...role }) => role), config: fixture }
     await withRun({ items: [unitItem('n1', types.roadCarrier, lonLat(0)), unitItem('n2', types.directCarrier, lonLat(0)), taskItem('tn', templates.load, lonLat(0.01), { [low]: 1 })], declared: unsided, paused: true }, async run => {
       expect(run.object('n1')?.audience).toBeUndefined()
-      const ground = screenOf(unsided, 'south-ground')
-      expect((await run.refusal(ids.send, send(['n2'], { taskId: 'tn' }), ground)).reason).toBe('unit_not_authorized: South ground does not command N2. It belongs to North air: add that role to command it')
-      expect(await run.invoke(ids.send, send(['n1'], { taskId: 'tn' }), ground)).toMatchObject({ ok: true })
-      expect(run.unit('n1').lastAction).toMatchObject({ verb: 'send', by: 'South ground' })
+      expect((await run.refusal(ids.order, send(['n2'], { taskId: 'tn' }), screenOf(unsided, 'umpire'))).reason).toBe('unit_not_authorized: Umpire does not command N2, and no operator role does')
+      expect(await run.invoke(ids.order, send(['n1'], { taskId: 'tn' }), screenOf(unsided, 'control'))).toMatchObject({ ok: true })
+      expect(run.unit('n1').lastAction).toMatchObject({ verb: 'send', by: 'Control' })
     })
   })
 })
 
-describe('Einsatz authority in a role Run', () => {
+describe('Einsatz group roles in a sided Run', () => {
   test('a side screen commands and asks only within its picture, and no refusal echoes what it cannot see', async () => {
     await withSidedRun(async run => {
       for (const input of [send(['s1'], { taskId: 'tn' }), send(['n1'], { taskId: 'ts' }), send(['n1'], { siteId: 's1' })]) {
-        expect((await run.refusal(ids.send, input, screens.northGround)).reason).toBe('not_in_picture: Not in your picture')
+        expect((await run.refusal(ids.order, input, screens.northGround)).reason).toBe('not_in_picture: Not in your picture')
       }
       expect((await run.refusal(ids.taskClose, { taskId: 'ts' }, screens.northGround)).reason).toBe('not_in_picture: Not in your picture')
       expect(await queryRefusal(run, 'ts', screens.northGround)).toBe('not_in_picture: Not in your picture')
-      expect((await run.refusal(ids.send, send(['n2'], { taskId: 'tn' }), screens.northGround)).reason)
+      expect((await run.refusal(ids.order, send(['n2'], { taskId: 'tn' }), screens.northGround)).reason)
         .toBe('unit_not_authorized: North ground does not command N2. It belongs to North air: add that role to command it')
-      expect((await run.refusal(ids.send, send(['n1'], { taskId: 'tn' }), screens.crossed)).reason)
+      expect((await run.refusal(ids.order, send(['n1'], { taskId: 'tn' }), screens.crossed)).reason)
         .toBe('unit_not_authorized: North air and South ground do not command N1. It belongs to North ground: add that role to command it')
-      expect(await queryRefusal(run, 'tn', screens.northAir)).toBe('task_not_in_role_queue: TN is not in the queue of North air')
+      expect(await queryRefusal(run, 'rn', screens.northAir)).toBe('task_not_in_role_queue: RN is not in the queue of North air')
       expect(refusalCode(await queryRefusal(run, 'tn', screens.umpire))).toBe('task_not_in_role_queue')
       expect((await run.refusal(ids.unitCreate, { type: types.roadCarrier, side: 'north', at: { type: 'Point', coordinates: lonLat(0) } }, screens.northGround)).reason)
         .toBe('role_controller_only: Creating a unit needs a controller role')
-      expect(await run.invoke(ids.send, send(['n1'], { taskId: 'tn' }), screens.northGround)).toMatchObject({ ok: true })
+      expect(await run.invoke(ids.order, send(['n1'], { taskId: 'tn' }), screens.northGround)).toMatchObject({ ok: true })
       expect(run.unit('n1').lastAction).toMatchObject({ verb: 'send', target: 'tn', by: 'North ground' })
     })
   })
@@ -157,7 +155,7 @@ describe('Einsatz authority in a role Run', () => {
   test('recommendations take candidates only from the task\'s side and the caller\'s commandable set', async () => {
     await withSidedRun(async run => {
       const asNorth = await recommendFor(run, 'tn', screens.northGround)
-      expect(asNorth.proposal.units.map(entry => entry.unitId)).toEqual(['n1'])
+      expect(asNorth.proposal?.units.map(entry => entry.unitId)).toEqual(['n1'])
       expect(listed(asNorth)).toEqual(['n1'])
       const asControl = await recommendFor(run, 'tn')
       expect(listed(asControl)).toEqual(['n1', 'n2'])
@@ -166,11 +164,11 @@ describe('Einsatz authority in a role Run', () => {
     })
   })
 
-  test('the same-side invariant holds for the Controller and the timeline: a cross-side send is refused', async () => {
-    const cue = { id: 'cross', at: { kind: 'after_scenario_start' as const, seconds: 5 }, actions: [{ type: 'invoke_capability' as const, capabilityId: ids.send, input: send(['s1'], { taskId: 'tn' }) }] }
+  test('the same-side invariant holds for the Controller and the timeline: a cross-side order is refused', async () => {
+    const cue = { id: 'cross', at: { kind: 'after_scenario_start' as const, seconds: 5 }, actions: [{ type: 'invoke_capability' as const, capabilityId: ids.order, input: send(['s1'], { taskId: 'tn' }) }] }
     await withRun({ items, declared, paused: true, timeline: { cues: [cue] } }, async run => {
-      expect((await run.refusal(ids.send, send(['s1'], { taskId: 'tn' }), screens.control)).reason).toBe('cross_side_reference: S1 cannot serve another side\'s TN')
-      expect((await run.refusal(ids.send, send(['s1'], { siteId: 'ncamp' }), screens.control)).reason).toBe('cross_side_reference: S1 cannot use another side\'s NCAMP')
+      expect((await run.refusal(ids.order, send(['s1'], { taskId: 'tn' }), screens.control)).reason).toBe('cross_side_reference: S1 cannot serve another side\'s TN')
+      expect((await run.refusal(ids.order, send(['s1'], { siteId: 'ncamp' }), screens.control)).reason).toBe('cross_side_reference: S1 cannot use another side\'s NCAMP')
       await run.run.runMaximumPace(isoAt(start + 10_000), { shouldStop: () => false })
       const results = run.journal.flatMap(event => event.type === 'command.result' && !event.result.ok ? [event.result.reason] : [])
       expect(results.map(refusalCode)).toContain('cross_side_reference')
@@ -181,11 +179,11 @@ describe('Einsatz authority in a role Run', () => {
 
   test('only a role whose queue holds a task closes it, since closing releases every unit on it; the side\'s other roles see it read-only', async () => {
     await withSidedRun(async run => {
-      expect(await run.invoke(ids.send, send(['n1'], { taskId: 'tn' }), screens.northGround)).toMatchObject({ ok: true })
-      expect((await run.refusal(ids.taskClose, { taskId: 'tn' }, screens.northAir)).reason).toBe('task_not_in_role_queue: TN is not in the queue of North air')
+      expect(await run.invoke(ids.order, send(['n1'], { taskId: 'tn' }), screens.northGround)).toMatchObject({ ok: true })
+      expect((await run.refusal(ids.taskClose, { taskId: 'rn' }, screens.northAir)).reason).toBe('task_not_in_role_queue: RN is not in the queue of North air')
       expect(run.unit('n1')).toMatchObject({ taskId: 'tn', lastAction: { verb: 'send', target: 'tn', by: 'North ground' } })
       expect(run.task('tn').closedAtMs).toBeUndefined()
-      expect(await run.invoke(ids.taskClose, { taskId: 'rn' }, screens.northAir)).toMatchObject({ ok: true })
+      expect(await run.invoke(ids.taskClose, { taskId: 'rn' }, screens.control)).toMatchObject({ ok: true })
       expect(await run.invoke(ids.taskClose, { taskId: 'tn' }, screens.northGround)).toMatchObject({ ok: true })
       expect(run.unit('n1')).toMatchObject({ phase: 'available', lastAction: { verb: 'release', target: 'tn', by: 'North ground' } })
     })
@@ -197,7 +195,7 @@ describe('Einsatz authority in a role Run', () => {
         .toBe('unit_not_authorized: North ground does not command CLINIC, and no operator role does')
       expect(run.unit('clinic')).toMatchObject({ accepting: true })
       expect(run.object('clinic')?.provenance).toEqual({ source: 'simulator', adapterId: einsatzAdapterId, externalId: 'clinic' })
-      const sent = await run.invoke(ids.send, send(['n1'], { taskId: 'tn' }), screens.northGround)
+      const sent = await run.invoke(ids.order, send(['n1'], { taskId: 'tn' }), screens.northGround)
       expect(run.object('n1')?.provenance.causedByCommandId).toBe(sent.commandId)
       expect(run.object('tn')?.provenance.causedByCommandId).toBe(sent.commandId)
       const closed = await run.invoke(ids.siteSet, { siteId: 'clinic', accepting: false }, screens.control)
@@ -209,7 +207,7 @@ describe('Einsatz authority in a role Run', () => {
 
   test('a role set spanning both sides stamps one command\'s id on the objects of each side it sees', async () => {
     await withSidedRun(async run => {
-      const moved = await run.invoke(ids.send, send(['n2', 's1'], { point: { type: 'Point', coordinates: lonLat(0.012) } }), screens.crossed)
+      const moved = await run.invoke(ids.order, send(['n2', 's1'], { point: { type: 'Point', coordinates: lonLat(0.012) } }), screens.crossed)
       expect(moved).toMatchObject({ ok: true })
       expect(['n2', 's1'].map(id => run.object(id)?.audience)).toEqual([['north'], ['south']])
       for (const id of ['n2', 's1']) {
@@ -235,19 +233,13 @@ describe('Einsatz authority in a role Run', () => {
 })
 
 describe('Einsatz configuration against the Scenario', () => {
+  /** The scene without groups, so only the roles the Scenario declares are held at once. */
+  const ungrouped = items.map(({ group: _group, ...item }) => item as UnitItem | TaskItem)
   const withConfig = (config: Record<string, unknown>, scenario: { readonly roles?: ReadonlyArray<ScenarioRole>; readonly sides?: ReadonlyArray<ScenarioSide> } = { roles, sides }) => ({
-    ...definitionOf(scenario.sides === undefined ? [] : items, undefined, scenario.roles === undefined ? undefined : { roles: scenario.roles, ...(scenario.sides === undefined ? {} : { sides: scenario.sides }), config: {} }),
-    packs: [{ id: einsatzPackId, config: { ...fixture, ...config }, items: scenario.sides === undefined ? [] : items }],
+    ...definitionOf(scenario.sides === undefined ? [] : ungrouped, undefined, scenario.roles === undefined ? undefined : { roles: scenario.roles, ...(scenario.sides === undefined ? {} : { sides: scenario.sides }), config: {} }),
+    packs: [{ id: einsatzPackId, config: { ...fixture, ...config }, items: scenario.sides === undefined ? [] : ungrouped }],
   })
   const config = 'packs.0.config'
-
-  test('authority names declared operator roles only, and needs declared roles', async () => {
-    expect(await compileIssues(withConfig({ authority: [...authority, { roleId: 'ghost', units: { all: true }, taskTemplates: [] }, { roleId: 'control', units: { all: true }, taskTemplates: [] }] }))).toEqual([
-      { path: `${config}.authority.3.roleId`, code: 'authority_unknown_role' },
-      { path: `${config}.authority.4.roleId`, code: 'controller_authority' },
-    ])
-    expect(await compileIssues(withConfig({ authority }, {}))).toEqual([{ path: `${config}.authority`, code: 'authority_without_roles' }])
-  })
 
   test('the labels of every declared role, held at once, fit lastAction.by, so a Run never writes an order it cannot read back', async () => {
     const labelled = (count: number): ReadonlyArray<ScenarioRole> => Array.from({ length: count }, (_, index) =>
@@ -258,10 +250,10 @@ describe('Einsatz configuration against the Scenario', () => {
 
   test('no role is labelled as lastAction.by names a standing order, so a person\'s order never reads as a reflex\'s', async () => {
     const reserved = roles.map((role, index) => index === 0 ? { ...role, label: standingOrderBy('withdraw') } : role)
-    expect(await compileIssues(withConfig({ authority }, { roles: reserved, sides }))).toEqual([{ path: config, code: 'role_label_reserved' }])
+    expect(await compileIssues(withConfig({}, { roles: reserved, sides }))).toEqual([{ path: config, code: 'role_label_reserved' }])
     // The words alone, not at the start, are a label like any other.
     const quoted = roles.map((role, index) => index === 0 ? { ...role, label: `North ${standingOrderBy('withdraw')}` } : role)
-    await expect(compileScenarioDefinition(withConfig({ authority }, { roles: quoted, sides }), [einsatzPack], { routing: createDirectRoutingAdapter() })).resolves.toBeDefined()
+    await expect(compileScenarioDefinition(withConfig({}, { roles: quoted, sides }), [einsatzPack], { routing: createDirectRoutingAdapter() })).resolves.toBeDefined()
   })
 
   test('hostility is between declared sides', async () => {

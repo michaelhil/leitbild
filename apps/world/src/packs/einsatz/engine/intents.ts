@@ -1,7 +1,7 @@
 import { z } from 'zod'
-import { idSchema, type GeoJsonPoint } from '../../../core/model/index.ts'
+import { commandIdSchema, idSchema, type CommandId, type GeoJsonPoint } from '../../../core/model/index.ts'
 import { configIdSchema, roeModes } from '../config-schema.ts'
-import { stepTargetSchema } from '../steps.ts'
+import { unitOrderInputSchema } from '../order-schema.ts'
 import type { Draft } from './draft.ts'
 import { pointSchema, propertyValueSchema, type Leg, type UnitRecord } from './model.ts'
 
@@ -9,11 +9,6 @@ import { pointSchema, propertyValueSchema, type Leg, type UnitRecord } from './m
  * Intents: what an actor asks the engine to do. Commands, scenario cues and
  * standing orders all arrive as intents and pass the same validation.
  */
-
-const distinct = (ids: ReadonlyArray<string>): boolean => new Set(ids).size === ids.length
-
-/** Where a send or a queued step leads: a task, a site (a unit that does not move), a point, or one of the unit's own side's tracks. */
-export const sendTargetSchema = stepTargetSchema
 
 const propertiesSchema = z.record(configIdSchema, propertyValueSchema)
 const loadsSchema = z.record(configIdSchema, z.number().int().min(1).max(1_000))
@@ -25,58 +20,78 @@ const reasonSchema = z.string().trim().min(1).max(500)
  * accept the same fields on the wire; a create's id is the runtime's to give.
  */
 export const intentFields = {
-  send: {
-    units: z.array(idSchema).min(1).max(20).refine(distinct, 'Each unit is named once'),
-    to: sendTargetSchema,
-    divert: z.array(z.object({ unitId: idSchema, fromTaskId: idSchema }).strict()).min(1).max(20).optional(),
+  /** `unitOrderInputSchema` (`order-schema.ts`): units, stops, and for a busy unit when it applies. */
+  order: unitOrderInputSchema.shape,
+  recall: { unitId: idSchema.describe('The unit to bring back to base.') },
+  undo: {
+    unitId: idSchema.describe('The unit whose order is taken back.'),
+    commandId: commandIdSchema.describe('The commandId the accepted world.einsatz.unit.order answered with; it must be the unit\'s latest order, else refused newer_order_exists.'),
   },
-  recall: { unitId: idSchema, fromTaskId: idSchema.optional() },
-  hold: { unitId: idSchema },
-  queue: { unitId: idSchema, to: sendTargetSchema },
-  /** `undo` takes back the step the unit's last order created, quietly: an active one is released without a work-returned alert. */
-  stepRemove: { unitId: idSchema, stepId: idSchema, undo: z.literal(true).optional() },
-  resume: { unitId: idSchema },
-  clear: { unitId: idSchema },
-  taskCreate: { template: configIdSchema, side: configIdSchema.optional(), at: pointSchema, loads: loadsSchema.optional(), label: labelSchema },
-  taskClose: { taskId: idSchema, reason: reasonSchema.optional() },
-  siteSet: { siteId: idSchema, accepting: z.boolean() },
-  unitCreate: { type: configIdSchema, side: configIdSchema.optional(), group: configIdSchema.optional(), at: pointSchema, base: pointSchema.optional(), label: labelSchema, properties: propertiesSchema.optional() },
-  unitAdjust: { unitId: idSchema, properties: propertiesSchema.refine(properties => Object.keys(properties).length > 0, 'Name at least one property'), reason: reasonSchema },
-  setRoe: { unitId: idSchema, roe: z.enum(roeModes) },
-  engage: { unitId: idSchema, trackId: idSchema },
+  stopRemove: {
+    unitId: idSchema.describe('The unit whose plan holds the stop.'),
+    stopId: idSchema.describe('The stop id, as world.einsatz.situation lists it in the unit\'s plan.'),
+  },
+  taskCreate: {
+    template: configIdSchema.describe('A task template id the configuration declares (world.einsatz.configuration).'),
+    priority: configIdSchema.optional().describe('A declared priority id; without it the template\'s priority, else the lowest declared.'),
+    side: configIdSchema.optional().describe('The task\'s side: required exactly when the Run declares sides.'),
+    at: pointSchema.describe('Where the task is, a GeoJSON point.'),
+    loads: loadsSchema.optional().describe('Counted load waiting there, per declared load class id, e.g. {"<class>": 1}.'),
+    label: labelSchema.describe('The task\'s label, e.g. "C-21 Harbour fall".'),
+  },
+  taskClose: {
+    taskId: idSchema.describe('The task to close.'),
+    reason: reasonSchema.optional().describe('Why, in words, recorded with the close.'),
+  },
+  siteSet: {
+    siteId: idSchema.describe('A site: a unit whose type receives load.'),
+    accepting: z.boolean().describe('Whether it accepts arrivals.'),
+  },
+  unitCreate: {
+    type: configIdSchema.describe('A unit type id the configuration declares.'),
+    side: configIdSchema.optional().describe('The unit\'s side: required exactly when the Run declares sides, unless the type is public.'),
+    group: configIdSchema.optional().describe('A declared group id: required once the configuration declares groups, unless the type is public.'),
+    at: pointSchema.describe('Where the unit is created, a GeoJSON point.'),
+    base: pointSchema.optional().describe('Where it returns to; where it is created unless given.'),
+    label: labelSchema.describe('The unit\'s label, e.g. "A7".'),
+    properties: propertiesSchema.optional().describe('Values of the type\'s declared properties by id; unnamed ones take the type\'s defaults.'),
+  },
+  unitAdjust: {
+    unitId: idSchema.describe('The unit to adjust.'),
+    properties: propertiesSchema.refine(properties => Object.keys(properties).length > 0, 'Name at least one property').describe('New values of declared properties by id.'),
+    reason: reasonSchema.describe('Why, in words, recorded with the change.'),
+  },
+  setRoe: {
+    unitId: idSchema.describe('A unit with an effector.'),
+    roe: z.enum(roeModes).describe('hold: never fire; return-fire: only on tracks whose unit fired in the last 60 s; free: on any eligible track.'),
+  },
+  engage: {
+    unitId: idSchema.describe('A unit with an effector.'),
+    trackId: idSchema.describe('One of the unit\'s own side\'s identified tracks.'),
+  },
 } as const
 
-/** Every divert names a unit of the send, once. */
-export const divertsNameSendUnits = (send: { readonly units: ReadonlyArray<string>; readonly divert?: ReadonlyArray<{ readonly unitId: string }> | undefined }): boolean =>
-  send.divert === undefined || (distinct(send.divert.map(entry => entry.unitId)) && send.divert.every(entry => send.units.includes(entry.unitId)))
-export const divertsNameSendUnitsIssue = { message: 'Every divert names a unit of the send, once', path: ['divert'] }
-
 /**
- * Send units to a task, a site, a point or a track, all or nothing: do it
- * now. The target becomes each unit's active step and the rest of its chain
- * stays queued behind it. Units not named in `divert` must be free; a divert
- * names the task the unit is released from, and removes only that step. A
- * divert to a site, point or track is a release and a move in one.
+ * Give units a plan, all or nothing (`orders.ts`). For a free unit the first
+ * stop starts now and the rest follow. A busy unit, one serving a task, needs
+ * `when`: `after` appends the stops behind its plan; `now` drops its current
+ * task (`drops` names it) and starts the first stop, keeping the steps it
+ * had queued behind the new ones. If any stop is refused, nothing changes.
  */
-export const sendIntentSchema = z.object({ kind: z.literal('send'), ...intentFields.send }).strict().refine(divertsNameSendUnits, divertsNameSendUnitsIssue)
+export const orderIntentSchema = z.object({ kind: z.literal('order'), ...intentFields.order }).strict()
+  .refine(intent => intent.drops === undefined || intent.when === 'now', { message: 'drops goes only with when "now"', path: ['drops'] })
 
-/** Release a unit from its task, if any, clear its chain and bring it back to base. */
+/** Release a unit from its task, if any, clear its plan and bring it back to base. */
 export const recallIntentSchema = z.object({ kind: z.literal('recall'), ...intentFields.recall }).strict()
-/** Pause a unit's chain: a moving unit stops where it is; work on task or at a site finishes, and no further step starts. */
-export const holdIntentSchema = z.object({ kind: z.literal('hold'), ...intentFields.hold }).strict()
-/** Add a step at the end of a unit's chain; a unit with no step, not paused, starts it at once, exactly as a send. */
-export const queueIntentSchema = z.object({ kind: z.literal('queue'), ...intentFields.queue }).strict()
-/** Remove one step; the active step is released as a recall releases it, and the next step starts. An undo puts it back quietly. */
-export const stepRemoveIntentSchema = z.object({ kind: z.literal('step.remove'), ...intentFields.stepRemove }).strict()
-/** Resume a paused unit's chain. */
-export const resumeIntentSchema = z.object({ kind: z.literal('resume'), ...intentFields.resume }).strict()
-/** Remove every step, releasing the active one; the unit stops where it is and its return standing order applies. */
-export const clearIntentSchema = z.object({ kind: z.literal('clear'), ...intentFields.clear }).strict()
+/** Take back the order of a command while none of it has been carried out (`orders.ts`). */
+export const undoIntentSchema = z.object({ kind: z.literal('undo'), ...intentFields.undo }).strict()
+/** Remove one stop; the active one is released as a recall releases it, and the next stop starts. */
+export const stopRemoveIntentSchema = z.object({ kind: z.literal('stop.remove'), ...intentFields.stopRemove }).strict()
 /**
- * Start the first queued step of an idle unit that is not paused. No command
- * asks for it: the engine runs it like a standing order as soon as a unit's
- * active step is done, so it passes the same validation. A step that can no
- * longer be carried out is skipped.
+ * Start the first queued step of an idle unit. No command asks for it: the
+ * engine runs it like a standing order as soon as a unit's active step is
+ * done, so it passes the same validation. A step that can no longer be
+ * carried out is skipped.
  */
 export const chainNextIntentSchema = z.object({ kind: z.literal('chain.next'), unitId: idSchema }).strict()
 
@@ -98,9 +113,10 @@ export const setRoeIntentSchema = z.object({ kind: z.literal('set-roe'), ...inte
 export const engageIntentSchema = z.object({ kind: z.literal('engage'), ...intentFields.engage }).strict()
 
 export const intentSchema = z.discriminatedUnion('kind', [
-  sendIntentSchema,
+  orderIntentSchema,
   recallIntentSchema,
-  holdIntentSchema,
+  undoIntentSchema,
+  stopRemoveIntentSchema,
   taskCreateIntentSchema,
   taskCloseIntentSchema,
   siteSetIntentSchema,
@@ -108,15 +124,11 @@ export const intentSchema = z.discriminatedUnion('kind', [
   unitAdjustIntentSchema,
   setRoeIntentSchema,
   engageIntentSchema,
-  queueIntentSchema,
-  stepRemoveIntentSchema,
-  resumeIntentSchema,
-  clearIntentSchema,
   chainNextIntentSchema,
 ])
 
 export type Intent = z.output<typeof intentSchema>
-export type SendIntent = z.output<typeof sendIntentSchema>
+export type OrderIntent = z.output<typeof orderIntentSchema>
 export type IntentOf<K extends Intent['kind']> = Extract<Intent, { kind: K }>
 
 /** Who acts. Roles, scenario cues and standing orders all act through this. */
@@ -129,6 +141,8 @@ export interface EngineActor {
   readonly by: string
   /** The units the actor commands; need and divert comparisons are taken over them. */
   readonly commandable: (unit: UnitRecord) => boolean
+  /** The command the actor gives, when it is one: the steps it gives and the units it orders name it, so `unit.undo` can take it back. */
+  readonly commandId?: CommandId
 }
 
 /** An actor that commands every unit: the Controller, open mode, scenario cues and standing orders. */

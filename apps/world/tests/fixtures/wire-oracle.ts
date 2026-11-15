@@ -34,10 +34,9 @@ import {
 } from '../../src/ui/simulation-run-client.ts'
 import { applySimulationRunEventBatchMessage } from '../../src/ui/simulation-run-events.ts'
 import { configureActiveWorkspace } from '../../src/ui/workspace-context.ts'
-import { createBoardController } from '../../src/packs/einsatz/board/controller.ts'
 import { einsatzQueryIds } from '../../src/packs/einsatz/capabilities.ts'
-import { configurationOutputSchema } from '../../src/packs/einsatz/config-schema.ts'
-import type { Recommendation } from '../../src/packs/einsatz/recommendation-schema.ts'
+import type { RecommendAnswer as Recommendation } from '../../src/packs/einsatz/recommendation-schema.ts'
+import type { Situation } from '../../src/packs/einsatz/situation/schema.ts'
 import { createRoleRunWorkspaces } from './role-runs.ts'
 import { waitForCondition } from '../helpers.ts'
 
@@ -311,46 +310,31 @@ export const createWireOracle = (declaration: RunRoles) => {
   }
 
   /**
-   * What the Einsatz Board would hold on a screen: a controller for its role
-   * set, fed what the screen held earlier, when given, then what it holds now,
-   * with the recommendations each snapshot asks for, answered as that screen.
-   * Two snapshots make the event log compare two record sets. Its whole
-   * state, as text to search.
+   * What the Einsatz dispatch surface would hold on a screen: the situation
+   * the screen reads, and the recommendation for each of its calls, answered
+   * as that screen, as text to search. `earlier` is what the screen held
+   * before; the surface keeps no history, so it adds nothing.
    */
   const boardText = async (screen: Screen, earlier?: Shown): Promise<string> => {
-    const now = shownOn(screen)
-    const configuration = configurationOutputSchema.parse(await asScreen(screen, async () => await querySimulationRunCapability<unknown>(opened().runId, einsatzQueryIds.configuration, {}))).config
-    const board = createBoardController({
-      config: configuration,
-      viewer: { class: roleClassForRoleSet(declaration, screen.roleIds), sees: seesForRoleSet(declaration, screen.roleIds), roles: declaration.roles.filter(role => screen.roleIds.includes(role.id)) },
-      declaredRoles: declaration.roles,
-      sides: declaration.sides ?? [],
-    })
-    const show = async (shown: Shown): Promise<void> => {
-      const asked = board.dispatch({ kind: 'snapshot', objects: shown.objects, currentTime: shown.currentTime, wallMs: 0 })
-      for (const effect of asked) {
-        if (effect.kind !== 'recommend') continue
-        // An earlier snapshot's task may have closed since; the panel reports a failed query as such.
-        let answer: unknown
-        try {
-          answer = await asScreen(screen, async () => await querySimulationRunCapability<unknown>(opened().runId, einsatzQueryIds.recommend, { taskId: effect.taskId }))
-        } catch (error) {
-          if (shown === now) throw error
-          board.dispatch({ kind: 'recommendation-failed', taskId: effect.taskId, key: effect.key, reason: error instanceof Error ? error.message : String(error), wallMs: 0 })
-          continue
-        }
-        board.dispatch({ kind: 'recommendation', taskId: effect.taskId, key: effect.key, answer, wallMs: 0 })
+    void earlier
+    shownOn(screen)
+    const situation = await asScreen(screen, async () => await querySimulationRunCapability<Situation>(opened().runId, einsatzQueryIds.situation, {}))
+    const answers: unknown[] = []
+    for (const call of situation.calls) {
+      // A call outside the screen's queue has no recommendation for it; the surface shows the refusal.
+      try {
+        answers.push(await asScreen(screen, async () => await querySimulationRunCapability<unknown>(opened().runId, einsatzQueryIds.recommend, { taskId: call.id })))
+      } catch (error) {
+        answers.push(error instanceof Error ? error.message : String(error))
       }
     }
-    if (earlier !== undefined) await show(earlier)
-    await show(now)
-    return JSON.stringify(board.view())
+    return JSON.stringify({ situation, answers })
   }
 
   /** Every unit a recommendation names: proposed, alternatives, ineligible and busy. */
-  const recommended = (recommendation: Recommendation): ReadonlyArray<string> => [
-    ...recommendation.proposal.units, ...recommendation.alternatives, ...recommendation.ineligible, ...recommendation.committed,
-  ].map(entry => entry.unitId).sort()
+  const recommended = (recommendation: Recommendation): ReadonlyArray<string> => [...new Set([
+    ...recommendation.proposal?.units ?? [], ...recommendation.alternatives.flatMap(entry => entry.units), ...recommendation.whyNot,
+  ].map(entry => entry.unitId))].sort()
 
   /**
    * Opens the Workspace, the server and a paused Run, and lets the client

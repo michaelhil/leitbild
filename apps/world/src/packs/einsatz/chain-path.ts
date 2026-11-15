@@ -12,7 +12,7 @@ import { ordersSchema, type Step } from './steps.ts'
  * draws as the unit's route; each queued step adds a straight segment from
  * where the leg ends, or the unit stands, to the step's target. An engage
  * step moves nothing and adds no segment. This module imports no engine, so
- * the Board and the Pack's map presentation run it in the browser.
+ * the dispatch surface and the Pack's map presentation run it in the browser.
  */
 
 const unitSchema = z.object({ type: z.literal('unit'), integrity: z.string(), orders: ordersSchema }).loose()
@@ -80,7 +80,7 @@ const pathColor = '#0a7daf'
  * How a queued segment is drawn: dashed and thin, beneath every operational
  * icon (the map draws its icons above Pack lines), so a straight segment that
  * crosses other units stays readable as a plan; faint for every unit, a
- * little stronger for the one the map selects (the Board's highlighted asset).
+ * little stronger for the one the map selects.
  * The active leg is the unit's route, drawn solid by the map.
  */
 export const pathLine = {

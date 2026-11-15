@@ -1,4 +1,6 @@
 import type { RoleSees, RunViewer, ScenarioRole } from '../../core/model/index.ts'
+import type { CommandOrigin } from '../../simulation/protocol.ts'
+import { aiByPrefix } from './ids.ts'
 import { commandsEveryUnit, type EngineActor } from './engine/intents.ts'
 import { notInPicture, refused, type Refused } from './engine/intent-support.ts'
 import type { Catalog, EngineState, TaskRecord, UnitRecord } from './engine/model.ts'
@@ -18,8 +20,8 @@ import {
  * recommendation candidates and controller-only checks read this one value;
  * none reads a role, side or caller another way.
  *
- * - `class`: a controller commands every unit and queues every task template;
- *   an operator commands what its roles' authority entries select.
+ * - `class`: a controller commands every unit and queues every task; an
+ *   operator commands the units of its groups' roles (sided Runs only).
  * - `sees`: the sides whose picture the caller holds, or the whole truth.
  * - `roles`: each held role as the Scenario declares it, in the order the
  *   caller holds them; none in open mode. A role commands and
@@ -28,8 +30,8 @@ import {
  *   role's sides. A side role commands only units of its sides, never a
  *   public one.
  *
- * It is a `PictureViewer`, so the engine and the Board read it through the
- * same picture rules.
+ * It is a `PictureViewer`, so the engine and the browser read it through
+ * the same picture rules.
  */
 export interface EinsatzViewer extends PictureViewer {
   readonly class: 'controller' | 'operator'
@@ -66,15 +68,17 @@ export const rolesText = (roles: ReadonlyArray<ScenarioRole>): string => listTex
 
 /**
  * Who `lastAction.by` names for a call: the labels of the roles the caller
- * holds, or, in open mode and for the Scenario timeline, the core actor.
+ * holds, or, in open mode and for the Scenario timeline, the core actor; an
+ * AI agent's actor marked as such (`ai:<actor id>`), so the dispatch surface
+ * can say an agent gave the order.
  */
-export const attributionOf = (viewer: EinsatzViewer, actorId: string): string =>
-  viewer.roles.length === 0 ? actorId : rolesText(viewer.roles)
+export const attributionOf = (viewer: EinsatzViewer, actorId: string, origin?: CommandOrigin): string =>
+  viewer.roles.length > 0 ? rolesText(viewer.roles) : origin === 'ai' ? `${aiByPrefix}${actorId}` : actorId
 
 /**
  * The configuration the shared picture rules read, per catalog. The rules
- * themselves live in `picture.ts`, which the Board loads in the browser, so
- * the engine and the Board apply one statement of who sees, commands and
+ * themselves live in `picture.ts`, which the browser may load, so the
+ * engine and the browser apply one statement of who sees, commands and
  * queues which record.
  */
 const pictureTypesByCatalog = new WeakMap<Catalog, PictureTypes>()
@@ -82,7 +86,6 @@ const pictureTypes = (catalog: Catalog): PictureTypes => {
   const known = pictureTypesByCatalog.get(catalog)
   if (known !== undefined) return known
   const types: PictureTypes = {
-    authority: catalog.config.authority,
     unitType: unitTypeId => {
       const type = catalog.types.get(unitTypeId)
       if (type === undefined) throw new Error(`Unit type ${unitTypeId} is not declared`)

@@ -8,9 +8,10 @@ import { panelBottomClearancePx, panelEdgeGapPx, panelLayoutFor, panelTopClearan
 
 /**
  * halden-border as a demo, played headless on a real Run with every Blue
- * order tapped on the Board of the first preset's screen. The good
- * dispatcher sends each call's first recommendation as it arrives and gives
- * the three orders the beats call for; a Blue that does nothing taps nothing.
+ * order given through the dispatch Capabilities by the first preset's desk.
+ * The good dispatcher sends each call's recommended order as it arrives and
+ * gives the three orders the beats call for; a Blue that does nothing gives
+ * none.
  * The objectives are judged from the Run's state, on the direct router and
  * on slowed routers standing in for road timings.
  */
@@ -158,12 +159,12 @@ describe('halden-border demo plays', () => {
   test('the good play has its pressure moments: an Add to end for two calls and no free car, a Do now or Add to end, and the civil and military halves busy at once', async () => {
     const outcome = await played('good')
     // The beats' two Add to end come first; later, a call with no free unit offers one on its own commit button, which the good dispatcher taps.
-    const queued = outcome.calls.filter(call => call.capabilityId.endsWith('.unit.queue'))
+    const queued = outcome.calls.filter(call => call.capabilityId.endsWith('.unit.order') && (call.input as { readonly when?: string }).when === 'after')
     expect(queued.map(call => call.atS).slice(0, 2)).toEqual([cueS('call-11'), cueS('call-12')])
     // Between Red's push and the end of the burst, both halves of the one-person screen act.
     const window = outcome.calls.filter(call => call.atS >= cueS('red-push-1') && call.atS <= cueS('call-12'))
     expect(window.some(call => call.capabilityId.endsWith('.unit.recall'))).toBe(true)
-    expect(window.filter(call => call.capabilityId.endsWith('.unit.send')).length).toBeGreaterThanOrEqual(4)
+    expect(window.filter(call => call.capabilityId.endsWith('.unit.order') && (call.input as { readonly when?: string }).when === undefined).length).toBeGreaterThanOrEqual(4)
   }, 120_000)
 
   test('the fighting reaches the civil desks: a top-priority call beside Objective KNUT arrives in the burst, as Red attacks, and a carrier reaches it', async () => {
@@ -192,7 +193,7 @@ describe('halden-border demo plays', () => {
     })
     expect(withCall.length).toBeGreaterThanOrEqual(2)
     for (const { unit, call } of withCall) {
-      const sent = outcome.calls.find(entry => entry.capabilityId === commandIds.send && (entry.input as { readonly to?: { readonly taskId?: string } }).to?.taskId === outcome.taskIds.get(call))
+      const sent = outcome.calls.find(entry => entry.capabilityId === commandIds.order && (entry.input as { readonly stops?: ReadonlyArray<{ readonly taskId?: string }> }).stops?.[0]?.taskId === outcome.taskIds.get(call))
       expect([call, (sent?.input as { readonly units?: ReadonlyArray<string> } | undefined)?.units]).toEqual([call, [outcome.unitIds.get(unit)!]])
       expect(outcome.closedAtS.has(call)).toBe(true)
     }
@@ -349,7 +350,7 @@ describe('halden-border Definitions as demos', () => {
 
 /** Red's cautious plan, given on Red's own roles: the scripted column's moves to its ambush and onto the heights. */
 const scriptedRedMoves = (): ReadonlyArray<RedOrder> => timelineOf(definition)
-  .filter(order => order.capabilityId === commandIds.send && (order.input as { readonly units: ReadonlyArray<string> }).units.every(unitId => start.units.get(unitId)?.side === red))
+  .filter(order => order.capabilityId === commandIds.order && (order.input as { readonly units: ReadonlyArray<string> }).units.every(unitId => start.units.get(unitId)?.side === red))
   .map(order => ({ atS: order.atS, capabilityId: order.capabilityId, input: order.input }))
 
 describe('halden-border with Red played by a person', () => {
@@ -363,7 +364,7 @@ describe('halden-border with Red played by a person', () => {
   const attack = redTask(provides => provides === shooterService)
   const scouting = redTask(provides => provides !== shooterService)
   const knut = attack.point.coordinates
-  const send = (atS: number, units: ReadonlyArray<string>, to: unknown): RedOrder => ({ atS, capabilityId: commandIds.send, input: { units, to } })
+  const send = (atS: number, units: ReadonlyArray<string>, to: unknown): RedOrder => ({ atS, capabilityId: commandIds.order, input: { units, stops: [to] } })
   const besideKnut = (east: number) => ({ point: { type: 'Point', coordinates: [knut[0] + east, knut[1] - 0.001] } })
   const attackers = humanStart.catalog.templates.get(attack.template)!.requires[0]!.count
 
@@ -377,9 +378,9 @@ describe('halden-border with Red played by a person', () => {
     send(30, scouts, { taskId: scouting.id }),
     send(30, shooters.slice(0, attackers), { taskId: attack.id }),
     ...shooters.slice(attackers, 4).map((unitId, index) => send(30, [unitId], besideKnut([-0.0006, 0.0006, 0.004][index]!))),
-    { atS: 540, capabilityId: commandIds.send, input: ({ units }: DemoContext) => ({
+    { atS: 540, capabilityId: commandIds.order, input: ({ units }: DemoContext) => ({
       units: units().filter(unit => shooters.includes(unit.id) && unit.integrity === 'healthy' && unit.taskId === undefined).map(unit => unit.id).slice(0, attackers),
-      to: { taskId: attack.id },
+      stops: [{ taskId: attack.id }],
     }) },
   ]
   const humanPlays = new Map<string, Promise<DemoOutcome>>()

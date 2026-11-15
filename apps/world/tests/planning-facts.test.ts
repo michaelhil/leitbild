@@ -275,7 +275,7 @@ describe('World planning facts', () => {
     await expect(read(roleRun, {})).rejects.toMatchObject({ status: 403, message: expect.stringContaining('without roles') })
     await expect(read(roleRun, { subjects: caseSubjects })).rejects.toMatchObject({ status: 403 })
     const run = await registry.create({ scenarioId: 'supply-run' })
-    await run.setAgentRestrictions(controller, { operationIds: ['world.einsatz.unit.send'], objects: [] }, 0)
+    await run.setAgentRestrictions(controller, { operationIds: ['world.einsatz.unit.order'], objects: [] }, 0)
     await expect(read(run, { subjects: caseSubjects })).rejects.toMatchObject({ status: 403, message: expect.stringContaining('einsatz operations are restricted') })
     await run.setAgentRestrictions(controller, { operationIds: [], objects: [{ objectId: objectIdSchema.parse('unit:truck-1'), deny: ['inspect'] }] }, 1)
     await expect(read(run, {})).rejects.toMatchObject({ status: 403 })

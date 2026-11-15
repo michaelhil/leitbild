@@ -2,7 +2,7 @@ import { configIssue, type ConfigCheck, type ConfigIssue, type ConfigPath } from
 import type { Condition, UnitProperty, UnitType } from './config-schema.ts'
 
 type NumberProperty = Extract<UnitProperty, { kind: 'number' }>
-const maxBoardProperties = 2
+const maxShownProperties = 2
 
 const inRange = (property: NumberProperty, value: number): boolean =>
   (property.min === undefined || value >= property.min) && (property.max === undefined || value <= property.max)
@@ -44,15 +44,15 @@ const sameMeaning = (property: UnitProperty, type: UnitType, first: { property: 
   return []
 }
 
-/** Defaults, bounds, board slots and cross-type meaning of every declared property. */
+/** Defaults, bounds, shown slots and cross-type meaning of every declared property. */
 export const consistentProperties: ConfigCheck = config => {
   const firstDeclaration = new Map<string, { property: UnitProperty; type: UnitType }>()
   return config.unitTypes.flatMap((type, index) => {
     const at: ConfigPath = ['unitTypes', index, 'properties']
-    const boardCount = type.properties.filter(property => property.board).length
+    const shownCount = type.properties.filter(property => property.show).length
     return [
-      ...(boardCount > maxBoardProperties
-        ? [configIssue(at, 'too_many_board_properties', `"${type.label}" shows ${boardCount} properties on the board; at most ${maxBoardProperties} may`)]
+      ...(shownCount > maxShownProperties
+        ? [configIssue(at, 'too_many_shown_properties', `"${type.label}" shows ${shownCount} properties; at most ${maxShownProperties} may`)]
         : []),
       ...type.properties.flatMap((property, entry) => {
         const first = firstDeclaration.get(property.id)

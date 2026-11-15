@@ -13,6 +13,10 @@ Parsing each historical document with the Scenario schema produces exactly the r
 
 The capture tool now retains the pinned Definition document along with new fixtures. It refuses capture when that dependency is missing or does not match the Run manifest.
 
+## Einsatz dispatch rework boundary
+
+The retained `einsatz-supply-run` checkpoint holds Einsatz state from before the dispatch rework (priorities, plans by `unit.order`, no `authority`, no pause). There is no migration: loading it must fail clearly with `einsatz_saved_state_invalid`, and the refusal test checks that its stored runtime file is not rewritten.
+
 ## Current PWR model boundary
 
 The owner authorized fresh PWR Runs for the 29 October 2026 controller and resolved component-library identity change. The retained `halden-loop` checkpoint belongs to model `47b82339adddd913ef20d24294ae9c595b104d1c10148bcfb5943bc30aeaf3ea`; it is historical evidence and must now fail clearly when loaded against the changed model. The refusal test checks that its stored runtime file is not rewritten. Its original capture, Scenario dependency and provenance remain intact.

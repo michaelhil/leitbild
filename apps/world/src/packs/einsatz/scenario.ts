@@ -36,6 +36,8 @@ export const taskItemSchema = z.object({
   ...itemBase,
   type: z.literal('task'),
   template: configIdSchema,
+  /** A declared priority; without one the template's, else the lowest. */
+  priority: configIdSchema.optional(),
   loads: z.record(configIdSchema, z.number().int().min(1).max(1_000)).optional(),
 }).strict()
 const itemSchema = z.discriminatedUnion('type', [unitItemSchema, taskItemSchema])
@@ -53,7 +55,7 @@ const intentOf = (item: Item): Intent => {
       ...(item.base === undefined ? {} : { base: geoPointFromLonLat(...item.base) }),
       ...(item.properties === undefined ? {} : { properties: item.properties }),
     }
-    : { kind: 'task.create', ...common, template: item.template, ...(item.loads === undefined ? {} : { loads: item.loads }) }
+    : { kind: 'task.create', ...common, template: item.template, ...(item.priority === undefined ? {} : { priority: item.priority }), ...(item.loads === undefined ? {} : { loads: item.loads }) }
 }
 
 /** The engine state of the objects authored so far, at the Scenario's start, on the sides it declares. */

@@ -7,19 +7,18 @@ import { einsatzConfigSchema } from './config-validation.ts'
 import { types } from './fixtures/engine-harness.ts'
 import fixture from './fixtures/engine.config.json'
 import { groupConfig as config, groupDeclaration as declared, groupDeclaredRoles as roles, groupItems as items, groups, placed } from './fixtures/groups-run.ts'
-import civilRoles from './fixtures/halden-civil-roles.scenario.json'
 import { renameDefinition } from './fixtures/renaming.ts'
 import { definitionOf, lonLat, openRun, screenOf, unitItem, type OpenRun, type RoleRunDeclaration, type TaskItem, type UnitItem } from './fixtures/run-harness.ts'
 import { groupOfRoleId, groupRoleId } from './ids.ts'
 import { einsatzPack } from './pack.ts'
-import type { Recommendation } from './recommendation-schema.ts'
+import type { RecommendAnswer as Recommendation } from './recommendation-schema.ts'
 import { refusalCode } from './refusal.ts'
 
 /**
- * Groups (owner amendment A9, item 4): every unit of a configuration that
- * declares groups belongs to exactly one, each group becomes an operator role
- * commanding exactly its units and queueing what they can serve, and a
- * configuration without groups runs exactly as before.
+ * Groups: every unit of a configuration that declares groups belongs to
+ * exactly one. In a Scenario with sides each group becomes an operator role
+ * commanding exactly its units and queueing what they can serve; without
+ * sides a group is a heading only and makes no role, so the Run stays open.
  */
 
 const screens = {
@@ -66,15 +65,17 @@ describe('Einsatz group declarations', () => {
       { id: 'group:guards', label: 'Guards', class: 'operator', category: 'Guards', sees: ['north'] },
       { id: 'group:raid', label: 'Raiders', class: 'operator', category: 'Haulers', sees: ['south'] },
     ])
-    // Without sides a group's role sees everything, and so declares no sees.
-    const unsided: RoleRunDeclaration = { roles: roles.map(({ sees: _sees, ...role }) => role), config: { ...fixture, groups: [{ id: 'all', label: 'Everyone', category: 'Crews' }] } }
-    const plain = await compile(definitionOf([placed(unitItem('a1', types.roadCarrier, lonLat(0)), { group: 'all' })], undefined, unsided))
-    expect(plain.roles?.at(-1)).toEqual({ id: 'group:all', label: 'Everyone', class: 'operator', category: 'Crews' })
+    // Without sides a group makes no role: the Run is open, with no role gate.
+    const open = await compile(definitionOf([placed(unitItem('a1', types.roadCarrier, lonLat(0)), { group: 'all' })]).valueOf() as never)
+      .then(() => 'compiled', (error: Error) => error.message)
+    expect(open).toContain('group_not_declared')
+    const unsided = { ...definitionOf([placed(unitItem('a1', types.roadCarrier, lonLat(0)), { group: 'all' })]), packs: [{ id: 'einsatz', config: { ...fixture, groups: [{ id: 'all', label: 'Everyone', category: 'Crews' }] }, items: [placed(unitItem('a1', types.roadCarrier, lonLat(0)), { group: 'all' })] }] }
+    const plain = await compile(unsided)
+    expect(plain.roles).toBeUndefined()
+    expect(plain.initialObjects.find(object => object.id === 'a1')?.packData).toMatchObject({ group: 'all' })
   })
 
-  test('groups need declared roles, and name a declared side exactly when the Scenario declares sides', async () => {
-    expect(await compileIssues({ ...definitionOf([], undefined, declared), roles: undefined, sides: undefined, packs: [{ id: 'einsatz', config: { ...fixture, groups: [{ id: 'g', label: 'G', category: 'C' }] }, items: [] }] }))
-      .toEqual([{ path: 'packs.0.config.groups', message: 'groups_without_roles: Groups become roles, but the Scenario declares none: declare roles, at least a controller, to play groups' }])
+  test('a group names a declared side exactly when the Scenario declares sides', async () => {
     const withGroups = (entries: ReadonlyArray<Record<string, unknown>>, sided = true) =>
       definitionOf([], undefined, sided ? { ...declared, config: { ...config, groups: entries } } : { roles: roles.map(({ sees: _sees, ...role }) => role), config: { ...fixture, groups: entries } })
     expect(await compileIssues(withGroups([{ id: 'g', label: 'G', category: 'C' }]))).toEqual([{ path: 'packs.0.config.groups.0.side', message: 'group_side_required: Group "g" needs a side: north, south' }])
@@ -84,7 +85,7 @@ describe('Einsatz group declarations', () => {
 
   test('only a declared group\'s own role takes the form group:<id>', async () => {
     const imitating = definitionOf(items, undefined, { ...declared, roles: [...roles, { id: 'group:ghost', label: 'Ghost', class: 'operator', sees: ['north'] }] })
-    expect(await compileIssues(imitating)).toEqual([{ path: 'packs.0.config', message: 'reserved_role_id: Role "group:ghost" takes the form of a group\'s role, but no group "ghost" is declared: rename the role' }])
+    expect(await compileIssues(imitating)).toEqual([{ path: 'packs.0.config', message: 'reserved_role_id: Role "group:ghost" takes the form of a group\'s role, but no group "ghost" makes one: rename the role' }])
     const taken = definitionOf(items, undefined, { ...declared, roles: [...roles, { id: 'group:guards', label: 'Guards', class: 'operator', sees: ['north'] }] })
     expect((await compileIssues(taken))[0]?.message).toStartWith('duplicate_role: Pack einsatz derives the role group:guards')
   })
@@ -121,39 +122,35 @@ describe('Einsatz group roles in a role Run', () => {
   test('a group\'s role commands exactly its group\'s units, and a refusal names the group that does', async () => {
     await withRun(async run => {
       expect(run.unit('a1').group).toBe('haul-a')
-      expect((await run.refusal(ids.hold, { unitId: 'a2' }, screens.haulB)).reason).toBe('unit_not_authorized: Haulers B does not command A2. It belongs to Haulers A: add that role to command it')
-      // North desk commands every North road carrier by its authority, beside the carrier's group.
-      expect((await run.refusal(ids.hold, { unitId: 'b1' }, screens.haulA)).reason).toBe('unit_not_authorized: Haulers A does not command B1. It belongs to North desk and Haulers B: add one of those roles to command it')
-      expect((await run.refusal(ids.hold, { unitId: 'a2' }, screens.desk)).reason).toBe('unit_not_authorized: North desk does not command A2. It belongs to Haulers A: add that role to command it')
-      expect((await run.refusal(ids.hold, { unitId: 'r1' }, screens.haulA)).reason).toBe('not_in_picture: Not in your picture')
-      expect(await run.invoke(ids.send, { units: ['a1'], to: { taskId: 'load' } }, screens.haulA)).toMatchObject({ ok: true })
+      expect((await run.refusal(ids.recall, { unitId: 'a2' }, screens.haulB)).reason).toBe('unit_not_authorized: Haulers B does not command A2. It belongs to Haulers A: add that role to command it')
+      expect((await run.refusal(ids.recall, { unitId: 'b1' }, screens.haulA)).reason).toBe('unit_not_authorized: Haulers A does not command B1. It belongs to Haulers B: add that role to command it')
+      // A declared operator role that is no group's commands no unit.
+      expect((await run.refusal(ids.recall, { unitId: 'a2' }, screens.desk)).reason).toBe('unit_not_authorized: North desk does not command A2. It belongs to Haulers A: add that role to command it')
+      expect((await run.refusal(ids.recall, { unitId: 'r1' }, screens.haulA)).reason).toBe('not_in_picture: Not in your picture')
+      expect(await run.invoke(ids.order, { units: ['a1'], stops: [{ taskId: 'load' }] }, screens.haulA)).toMatchObject({ ok: true })
       expect(run.unit('a1').lastAction).toMatchObject({ verb: 'send', target: 'load', by: 'Haulers A' })
       // A role set commands the union of its groups.
-      expect(await run.invoke(ids.hold, { unitId: 'b1' }, screens.bothHaulers)).toMatchObject({ ok: true })
-      expect(run.unit('b1').lastAction).toMatchObject({ verb: 'hold', by: 'Haulers A and Haulers B' })
+      expect(await run.invoke(ids.order, { units: ['b1'], stops: [{ point: { type: 'Point', coordinates: lonLat(0.003) } }] }, screens.bothHaulers)).toMatchObject({ ok: true })
+      expect(run.unit('b1').lastAction).toMatchObject({ verb: 'move', by: 'Haulers A and Haulers B' })
     })
   })
 
-  test('a group\'s role gives its own unit every job-chain order, and is refused each of them on another group\'s unit, naming that group', async () => {
+  test('a group\'s role gives its own unit every plan order, and is refused each of them on another group\'s unit, naming that group', async () => {
     await withRun(async run => {
       const point = (east: number) => ({ type: 'Point', coordinates: lonLat(east) })
-      expect(await run.invoke(ids.send, { units: ['a1'], to: { point: point(0.006) } }, screens.haulA)).toMatchObject({ ok: true })
-      expect(await run.invoke(ids.send, { units: ['b1'], to: { point: point(0.007) } }, screens.haulB)).toMatchObject({ ok: true })
+      expect(await run.invoke(ids.order, { units: ['a1'], stops: [{ point: point(0.006) }] }, screens.haulA)).toMatchObject({ ok: true })
+      expect(await run.invoke(ids.order, { units: ['b1'], stops: [{ point: point(0.007) }] }, screens.haulB)).toMatchObject({ ok: true })
       const own: ReadonlyArray<readonly [string, unknown]> = [
-        [ids.queue, { unitId: 'a1', to: { point: point(0.008) } }],
-        [ids.stepRemove, { unitId: 'a1', stepId: 'step-2' }],
-        [ids.hold, { unitId: 'a1' }],
-        [ids.resume, { unitId: 'a1' }],
-        [ids.clear, { unitId: 'a1' }],
+        [ids.order, { units: ['a1'], stops: [{ point: point(0.008) }], when: 'after' }],
+        [ids.stopRemove, { unitId: 'a1', stopId: 'step-2' }],
+        [ids.recall, { unitId: 'a1' }],
       ]
       for (const [capabilityId, input] of own) expect([capabilityId, (await run.invoke(capabilityId, input, screens.haulA)).ok]).toEqual([capabilityId, true])
-      expect(run.unit('a1')).toMatchObject({ orders: [], lastAction: { verb: 'clear', by: 'Haulers A' } })
+      expect(run.unit('a1')).toMatchObject({ orders: [], lastAction: { verb: 'recall', by: 'Haulers A' } })
       const others: ReadonlyArray<readonly [string, unknown]> = [
-        [ids.queue, { unitId: 'b1', to: { point: point(0.008) } }],
-        [ids.stepRemove, { unitId: 'b1', stepId: 'step-1' }],
-        [ids.hold, { unitId: 'b1' }],
-        [ids.resume, { unitId: 'b1' }],
-        [ids.clear, { unitId: 'b1' }],
+        [ids.order, { units: ['b1'], stops: [{ point: point(0.008) }], when: 'after' }],
+        [ids.stopRemove, { unitId: 'b1', stopId: 'step-1' }],
+        [ids.recall, { unitId: 'b1' }],
       ]
       for (const [capabilityId, input] of others) {
         const refusal = await run.refusal(capabilityId, input, screens.haulA)
@@ -167,17 +164,18 @@ describe('Einsatz group roles in a role Run', () => {
     await withRun(async run => {
       const listedFor = async (taskId: string, actor: Parameters<OpenRun['query']>[2]) => {
         const answer = await recommendation(run, taskId, actor)
-        return [...answer.proposal.units, ...answer.alternatives, ...answer.ineligible, ...answer.committed].map(entry => entry.unitId).sort()
+        return [...answer.proposal?.units ?? [], ...answer.alternatives.flatMap(entry => entry.units), ...answer.whyNot].map(entry => entry.unitId).filter((id, index, all) => all.indexOf(id) === index).sort()
       }
       expect(await listedFor('load', screens.haulA)).toEqual(['a1', 'a2'])
       expect(await listedFor('load', screens.haulB)).toEqual(['b1'])
-      expect((await recommendation(run, 'pair', screens.guards)).proposal.units.map(entry => entry.unitId)).toEqual(['g1'])
+      expect((await recommendation(run, 'pair', screens.guards)).proposal?.units.map(entry => entry.unitId)).toEqual(['g1'])
       // Carriers carry nothing a load-less pair task holds; a guard carries no load; nobody's group serves a report.
       expect(await recommendRefusal(run, 'pair', screens.haulA)).toBe('task_not_in_role_queue: PAIR is not in the queue of Haulers A')
       expect(refusalCode(await recommendRefusal(run, 'load', screens.guards))).toBe('task_not_in_role_queue')
       expect((await run.refusal(ids.taskClose, { taskId: 'note' }, screens.haulA)).code).toBe('task_not_in_role_queue')
-      // The declared role keeps its own queue beside the groups.
-      expect(await run.invoke(ids.taskClose, { taskId: 'note' }, screens.desk)).toMatchObject({ ok: true })
+      // Only the Controller's queue holds a report no group serves.
+      expect((await run.refusal(ids.taskClose, { taskId: 'note' }, screens.desk)).code).toBe('task_not_in_role_queue')
+      expect(await run.invoke(ids.taskClose, { taskId: 'note' }, screens.control)).toMatchObject({ ok: true })
     })
   })
 
@@ -189,8 +187,8 @@ describe('Einsatz group roles in a role Run', () => {
       expect(await run.invoke(ids.unitCreate, { type: types.roadCarrier, side: 'north', group: 'guards', at, label: 'Spare' }, screens.control)).toMatchObject({ ok: true })
       expect(run.object('unit:1')).toMatchObject({ label: 'Spare', packData: { group: 'guards', side: 'north' } })
       // Guards now hold a carrier too, so the carriage task is in their queue.
-      expect((await recommendation(run, 'load', screens.guards)).proposal.units.map(entry => entry.unitId)).toEqual(['unit:1'])
-      expect(await run.invoke(ids.hold, { unitId: 'unit:1' }, screens.guards)).toMatchObject({ ok: true })
+      expect((await recommendation(run, 'load', screens.guards)).proposal?.units.map(entry => entry.unitId)).toEqual(['unit:1'])
+      expect(await run.invoke(ids.order, { units: ['unit:1'], stops: [{ point: at }] }, screens.guards)).toMatchObject({ ok: true })
     })
   })
 
@@ -204,11 +202,10 @@ describe('Einsatz group roles in a role Run', () => {
     expect(compiled.initialObjects.find(object => object.id === 'a1')?.packData).toMatchObject({ group: renamed.id('group', 'haul-a') })
   })
 
-  test('without groups nothing changes: a role Definition without groups compiles to exactly its declared roles and its units name no group', async () => {
-    for (const definition of [civilRoles]) {
-      const compiled = await compile(definition)
-      expect<unknown>(compiled.roles).toEqual(definition.roles)
-      expect(compiled.initialObjects.filter(object => object.packId === 'einsatz').some(object => 'group' in (object.packData as object))).toBe(false)
-    }
+  test('without groups nothing changes: a sided Definition without groups compiles to exactly its declared roles and its units name no group', async () => {
+    const plain = { ...declared, config: { ...config, groups: [] } }
+    const compiled = await compile(definitionOf(items.map(item => item.type === 'unit' ? { ...item, group: undefined } : item), undefined, plain))
+    expect<unknown>(compiled.roles).toEqual(roles)
+    expect(compiled.initialObjects.filter(object => object.packId === 'einsatz').some(object => 'group' in (object.packData as object))).toBe(false)
   })
 })

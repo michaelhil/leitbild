@@ -9,21 +9,20 @@
   ],
   "world": {"startsAt": "2026-09-03T18:00:00.000Z", "environment": {"city": "Halden", "model": "Fictional emergency dispatch exercise; no real patient data"}},
   "view": {"map": {"center": [11.3985, 59.1275], "zoom": 12.4}},
-  "roles": [{"id": "controller", "label": "Controller", "class": "controller"}],
-  "rolePresets": [
-    {"id": "all-desks", "label": "All desks (one dispatcher)", "roles": ["group:ambulance", "group:air-ambulance", "group:police", "group:fire"]},
-    {"id": "ambulance-desk", "label": "Ambulance desk", "roles": ["group:ambulance", "group:air-ambulance"]},
-    {"id": "police-fire-desk", "label": "Police and fire desk", "roles": ["group:police", "group:fire"]}
-  ],
   "packs": [
     {
       "id": "einsatz",
       "config": {
-        "lexicon": {"workList": "Calls", "unitBoard": "Units", "noWork": "No calls waiting", "close": "Close call", "send": "Dispatch", "hold": "Stop", "on-task": "On scene", "at-site": "Handing over"},
+        "lexicon": {"calls": "Calls", "units": "Units", "noCalls": "No calls waiting", "close": "Close call", "send": "Dispatch", "on-task": "On scene", "at-site": "Handing over"},
+        "priorities": [
+          {"id": "p1", "label": "Emergency", "code": "P1", "responseTargetS": 480},
+          {"id": "p2", "label": "Urgent", "code": "P2", "responseTargetS": 720},
+          {"id": "p3", "label": "Non-urgent", "code": "P3"}
+        ],
         "loadClasses": [
-          {"id": "acute", "label": "Acute", "code": "P1", "noun": {"one": "patient", "other": "patients"}},
-          {"id": "urgent", "label": "Urgent", "code": "P2", "noun": {"one": "patient", "other": "patients"}},
-          {"id": "routine", "label": "Non-urgent", "code": "P3", "noun": {"one": "patient", "other": "patients"}}
+          {"id": "acute", "label": "Acute", "code": "A", "noun": {"one": "patient", "other": "patients"}},
+          {"id": "urgent", "label": "Urgent", "code": "U", "noun": {"one": "patient", "other": "patients"}},
+          {"id": "routine", "label": "Non-urgent", "code": "N", "noun": {"one": "patient", "other": "patients"}}
         ],
         "unitTypes": [
           {
@@ -64,7 +63,7 @@
             "icon": "fire-extinguisher",
             "tags": ["fire"],
             "components": {"mobility": {"mode": "road", "speedFactor": 0.8, "mobilizeS": 60}, "service": {"provides": ["fire-suppression"], "onSceneS": 480}},
-            "properties": [{"id": "waterL", "label": "Water", "kind": "number", "unit": "l", "min": 0, "max": 10000, "default": 3000, "board": true}],
+            "properties": [{"id": "waterL", "label": "Water", "kind": "number", "unit": "l", "min": 0, "max": 10000, "default": 3000, "show": true}],
             "standingOrders": {"return": {"afterIdleS": 60}}
           },
           {
@@ -83,47 +82,47 @@
           }
         ],
         "taskTemplates": [
-          {"id": "medical", "label": "Medical call", "icon": "heart-pulse"},
+          {"id": "medical", "label": "Medical call", "icon": "heart-pulse", "priority": "p2"},
           {
             "id": "road-accident",
             "label": "Road accident",
             "icon": "car-front",
-            "priorityClass": "urgent",
+            "priority": "p2",
             "requires": [{"provides": "policing", "count": 1, "label": {"one": "patrol car", "other": "patrol cars"}}]
           },
           {
             "id": "public-order",
             "label": "Public order",
             "icon": "siren",
-            "priorityClass": "urgent",
+            "priority": "p2",
             "requires": [{"provides": "policing", "count": 2, "label": {"one": "patrol car", "other": "patrol cars"}}]
           },
           {
             "id": "road-hazard",
             "label": "Road hazard",
             "icon": "traffic-cone",
-            "priorityClass": "routine",
+            "priority": "p3",
             "requires": [{"provides": "policing", "count": 1, "label": {"one": "patrol car", "other": "patrol cars"}}]
           },
           {
             "id": "police-call",
             "label": "Police call",
             "icon": "shield-alert",
-            "priorityClass": "urgent",
+            "priority": "p2",
             "requires": [{"provides": "policing", "count": 1, "label": {"one": "patrol car", "other": "patrol cars"}}]
           },
           {
             "id": "building-fire",
             "label": "Building fire",
             "icon": "flame",
-            "priorityClass": "acute",
+            "priority": "p1",
             "requires": [{"provides": "fire-suppression", "count": 1, "label": {"one": "fire engine", "other": "fire engines"}, "where": [{"property": "waterL", "atLeast": 2000}]}]
           },
           {
             "id": "outdoor-fire",
             "label": "Outdoor fire",
             "icon": "flame-kindling",
-            "priorityClass": "urgent",
+            "priority": "p2",
             "requires": [{"provides": "fire-suppression", "count": 1, "label": {"one": "fire engine", "other": "fire engines"}, "where": [{"property": "waterL", "atLeast": 1000}]}]
           }
         ],
@@ -210,7 +209,7 @@
           {
             "type": "invoke_capability",
             "capabilityId": "world.einsatz.task.create",
-            "input": {"template": "medical", "label": "C-4 Rødsberg ankle", "at": {"type": "Point", "coordinates": [11.41, 59.113]}, "loads": {"routine": 1}}
+            "input": {"template": "medical", "label": "C-4 Rødsberg ankle", "priority": "p3", "at": {"type": "Point", "coordinates": [11.41, 59.113]}, "loads": {"routine": 1}}
           }
         ]
       },
@@ -222,7 +221,7 @@
           {
             "type": "invoke_capability",
             "capabilityId": "world.einsatz.task.create",
-            "input": {"template": "medical", "label": "C-5 Fortress chest pain", "at": {"type": "Point", "coordinates": [11.398, 59.117]}, "loads": {"acute": 1}}
+            "input": {"template": "medical", "label": "C-5 Fortress chest pain", "priority": "p1", "at": {"type": "Point", "coordinates": [11.398, 59.117]}, "loads": {"acute": 1}}
           }
         ]
       },
@@ -258,7 +257,7 @@
           {
             "type": "invoke_capability",
             "capabilityId": "world.einsatz.task.create",
-            "input": {"template": "medical", "label": "C-8 Os fall", "at": {"type": "Point", "coordinates": [11.4, 59.112]}, "loads": {"routine": 1}}
+            "input": {"template": "medical", "label": "C-8 Os fall", "priority": "p3", "at": {"type": "Point", "coordinates": [11.4, 59.112]}, "loads": {"routine": 1}}
           }
         ]
       },
@@ -306,7 +305,7 @@
           {
             "type": "invoke_capability",
             "capabilityId": "world.einsatz.task.create",
-            "input": {"template": "medical", "label": "C-12 Sauøy cut hand", "at": {"type": "Point", "coordinates": [11.365, 59.115]}, "loads": {"routine": 1}}
+            "input": {"template": "medical", "label": "C-12 Sauøy cut hand", "priority": "p3", "at": {"type": "Point", "coordinates": [11.365, 59.115]}, "loads": {"routine": 1}}
           }
         ]
       },
@@ -318,7 +317,7 @@
           {
             "type": "invoke_capability",
             "capabilityId": "world.einsatz.task.create",
-            "input": {"template": "medical", "label": "C-13 Tistedal cardiac arrest", "at": {"type": "Point", "coordinates": [11.435, 59.133]}, "loads": {"acute": 1}}
+            "input": {"template": "medical", "label": "C-13 Tistedal cardiac arrest", "priority": "p1", "at": {"type": "Point", "coordinates": [11.435, 59.133]}, "loads": {"acute": 1}}
           }
         ]
       },
@@ -390,7 +389,7 @@
           {
             "type": "invoke_capability",
             "capabilityId": "world.einsatz.task.create",
-            "input": {"template": "medical", "label": "C-19 Harbour steps fall", "at": {"type": "Point", "coordinates": [11.386, 59.1215]}, "loads": {"routine": 1}}
+            "input": {"template": "medical", "label": "C-19 Harbour steps fall", "priority": "p3", "at": {"type": "Point", "coordinates": [11.386, 59.1215]}, "loads": {"routine": 1}}
           }
         ]
       },
@@ -462,10 +461,7 @@
         ],
         "completion": {
           "kind": "acknowledge"
-        },
-        "roles": [
-          "controller"
-        ]
+        }
       },
       {
         "id": "ems-board",
@@ -495,10 +491,7 @@
         ],
         "completion": {
           "kind": "acknowledge"
-        },
-        "roles": [
-          "group:ambulance"
-        ]
+        }
       },
       {
         "id": "ems-arrival",
@@ -523,10 +516,7 @@
             "objectId": "unit:amb-4",
             "status": "on-task"
           }
-        },
-        "roles": [
-          "group:ambulance"
-        ]
+        }
       },
       {
         "id": "police",
@@ -546,10 +536,7 @@
         ],
         "completion": {
           "kind": "acknowledge"
-        },
-        "roles": [
-          "group:police"
-        ]
+        }
       },
       {
         "id": "fire",
@@ -569,10 +556,7 @@
         ],
         "completion": {
           "kind": "acknowledge"
-        },
-        "roles": [
-          "group:fire"
-        ]
+        }
       },
       {
         "id": "debrief",

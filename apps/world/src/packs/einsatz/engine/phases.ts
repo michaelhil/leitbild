@@ -1,6 +1,6 @@
 import { afterActive, refreshChains, skipSteps } from './chain-steps.ts'
 import { engagementActive, engagementDue, runEngagement } from './combat.ts'
-import { assignedTo, coverageOf, isDone, loadAllocation, rankOf } from './coverage.ts'
+import { assignedTo, coverageOf, isDone, loadAllocation } from './coverage.ts'
 import { closeDraft, openDraft, putUnit, recordTask, setMotion, stageTask, taskIn, unitIn, type Draft } from './draft.ts'
 import { clearAlerts, raiseAlert, templateOf, unitTypeOf, workReturnedCode, type EngineState, type LastAction, type TaskRecord, type Transition, type UnitRecord } from './model.ts'
 import { advanceProgress, hasArrived, legEnd, legPosition, msToArrival, speedFactor } from './movement.ts'
@@ -15,7 +15,8 @@ import { loadText } from './wording.ts'
  * a reflex. Units move through the closed phases: `mobilizing`
  * (turnout, from `mobility.mobilizeS`), `en-route`, `on-task` (from
  * `service.onSceneS`; a unit without a service spends no time on task),
- * `holding` (stopped by order, or waiting with load to deliver),
+ * `holding` (stopped at the end of a move or an engagement order, or waiting
+ * with load to deliver),
  * `transporting`, `at-site` (queued, then handing over for
  * `receiving.handoverS` in one of the site's FIFO slots), `returning` and
  * `available`. `destroyed` units take no further part.
@@ -41,7 +42,7 @@ export const releaseFromTask = (draft: Draft, unit: UnitRecord, action: LastActi
   return patch(unit, { taskId: undefined, lastAction: action })
 }
 
-/** Recomputes coverage and rank of open tasks, closes done ones and records every task that changed. */
+/** Recomputes coverage of open tasks, closes done ones and records every task that changed. */
 export const refreshTasks = (draft: Draft): void => {
   for (const task of [...draft.tasks.values()].sort(byId)) {
     if (task.closedAtMs !== undefined) {
@@ -49,7 +50,7 @@ export const refreshTasks = (draft: Draft): void => {
       continue
     }
     const assigned = assignedTo(draft.units.values(), task)
-    const current = patch(task, { coverage: coverageOf(draft.catalog, task, assigned), rank: rankOf(draft.catalog, task) })
+    const current = patch(task, { coverage: coverageOf(draft.catalog, task, assigned) })
     if (!isDone(draft.catalog, current, current.coverage)) {
       recordTask(draft, current)
       continue

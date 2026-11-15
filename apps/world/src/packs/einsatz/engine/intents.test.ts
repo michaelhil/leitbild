@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'bun:test'
 import { geoPointFromLonLat, meters, type IsoTimestamp } from '../../../core/model/index.ts'
 import type { RoutePort } from './movement.ts'
-import { advance, at, config, controller, emptyState, low, middle, newTask, newUnit, refusalOf, run, runAll, send, start, taskOf, templates, top, types, unitOf } from '../fixtures/engine-harness.ts'
+import { advance, at, config, controller, emptyState, first, low, middle, newTask, newUnit, refusalOf, run, runAll, send, start, taskOf, templates, third, top, types, unitOf } from '../fixtures/engine-harness.ts'
 import { refusalCode } from '../refusal.ts'
 import { advanceEngine, executeIntent } from './engine.ts'
 import { intentSchema } from './intents.ts'
@@ -58,12 +58,12 @@ describe('Einsatz release and move', () => {
 
   test('a committed unit moved to a point is released, its task reopens, and it is free', async () => {
     const state = await committed()
-    expect((await refusalOf(state, send(['u1'], { point: at(0.02) }))).code).toBe('unit_committed')
-    const moved = await run(state, send(['u1'], { point: at(0.02) }, [{ unitId: 'u1', fromTaskId: 't1' }]))
+    expect((await refusalOf(state, send(['u1'], { point: at(0.02) }))).code).toBe('when_required')
+    const moved = await run(state, send(['u1'], { point: at(0.02) }, 't1'))
     expect(unitOf(moved, 'u1')).toMatchObject({ phase: 'en-route', lastAction: { verb: 'move' } })
     expect(unitOf(moved, 'u1').taskId).toBeUndefined()
     expect(taskOf(moved, 't1')).toMatchObject({ alerts: [{ code: 'work_returned' }], coverage: { loads: [{ classId: middle, waiting: 1, covered: 0 }] } })
-    expect(unitOf(await run(moved, { kind: 'hold', unitId: 'u1' }), 'u1').phase).toBe('holding')
+    expect(unitOf(await run(moved, send(['u1'], { point: at(0.03) })), 'u1').phase).toBe('en-route')
   })
 
   test('a unit on task may be moved or recalled but not diverted to another task', async () => {
@@ -75,10 +75,10 @@ describe('Einsatz release and move', () => {
     ])
     state = await advance(state, start + 3_000)
     expect(unitOf(state, 'u1').phase).toBe('on-task')
-    expect((await refusalOf(state, send(['u1'], { taskId: 't2' }, [{ unitId: 'u1', fromTaskId: 't1' }]))).reason)
+    expect((await refusalOf(state, send(['u1'], { taskId: 't2' }, 't1'))).reason)
       .toBe('divert_after_arrival: U1 is working at T1; recall it or move it')
-    expect(unitOf(await run(state, send(['u1'], { point: at(0.02) }, [{ unitId: 'u1', fromTaskId: 't1' }])), 'u1').phase).toBe('en-route')
-    expect(unitOf(await run(state, { kind: 'recall', unitId: 'u1', fromTaskId: 't1' }), 'u1').phase).toBe('available')
+    expect(unitOf(await run(state, send(['u1'], { point: at(0.02) }, 't1')), 'u1').phase).toBe('en-route')
+    expect(unitOf(await run(state, { kind: 'recall', unitId: 'u1' }), 'u1').phase).toBe('available')
   })
 
   test('closing a task drops its waiting load and frees the units still committed to it', async () => {
@@ -92,9 +92,12 @@ describe('Einsatz release and move', () => {
   test('a report stays open until it is closed explicitly', async () => {
     let state = await runAll(emptyState(), [newTask('n1', templates.report, at(0))])
     state = await advance(state, start + 600_000)
-    expect(taskOf(state, 'n1')).toMatchObject({ rank: low })
+    expect(taskOf(state, 'n1')).toMatchObject({ priority: third })
     expect(taskOf(state, 'n1').closedAtMs).toBeUndefined()
-    expect((await refusalOf(state, newTask('n2', templates.load, at(0)))).code).toBe('priority_class_required')
+    state = await run(state, newTask('n2', templates.load, at(0)))
+    expect(taskOf(state, 'n2').priority).toBe(third)
+    state = await run(state, newTask('n3', templates.load, at(0), undefined, { priority: first }))
+    expect(taskOf(state, 'n3').priority).toBe(first)
     state = await run(state, { kind: 'task.close', taskId: 'n1' })
     expect(taskOf(state, 'n1').closedAtMs).toBe(start + 600_000)
   })
@@ -119,7 +122,7 @@ describe('Einsatz intent refusals', () => {
       ['unknown_unit_type: Unit type "nothing" is not declared', newUnit('x', 'nothing', at(0))],
       ['unknown_task_template: Task template "nothing" is not declared', newTask('x', 'nothing', at(0))],
       ['unknown_load_class: Load class "L9" is not declared', newTask('x', templates.load, at(0), { L9: 1 })],
-      ['priority_class_required: Call has no priority floor, so the task needs load', newTask('x', templates.load, at(0))],
+      ['unknown_priority: Priority "Q9" is not declared', newTask('x', templates.load, at(0), undefined, { priority: 'Q9' })],
       ['unknown_property: Carrier declares no property "payloadKg"', newUnit('x', types.roadCarrier, at(0), { properties: { payloadKg: 1 } })],
       ['property_kind_mismatch: Payload is a number property', { kind: 'unit.adjust', unitId: 'h1', properties: { payloadKg: true }, reason: 'Test' }],
       ['property_out_of_range: Payload 30000 is outside 0–20000 kg', { kind: 'unit.adjust', unitId: 'h1', properties: { payloadKg: 30_000 }, reason: 'Test' }],
