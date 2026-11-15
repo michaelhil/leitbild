@@ -59,6 +59,8 @@ export const pessimisticCard = (option: OptionView, context: Context): Card | nu
   const breaks = (outcome: Robust['allPessimistic']): string | null => {
     if (outcome.holds) return null
     if ('window' in outcome) return `${names.job(outcome.job)} would run past the window end, to ${format.when(outcome.window.by)}`
+    // The decision's words (lane S batch 2): the job, the crew or tool with no time left, and from when.
+    if ('unplaced' in outcome) return `${names.job(outcome.unplaced.job)} could not be done: ${names.resource(outcome.unplaced.resource)} has no time left after ${format.when(outcome.unplaced.after)}`
     return `${names.job(outcome.job)} breaks “${names.rule(outcome.rule)}” by ${quantityText(outcome.by.value, outcome.by.unit)}`
   }
   const together = breaks(robust.allPessimistic)
