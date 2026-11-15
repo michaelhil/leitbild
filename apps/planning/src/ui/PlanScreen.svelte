@@ -187,7 +187,7 @@
     const answer = compareAnswer
     if (answer.state !== 'answered') return answer
     if (compareOption === null || context === null) return { state: 'loading' }
-    const earlier = previousSet?.items.find(item => item.key === answer.facts.previous) ?? { label: 'an option of the earlier set', metrics: [] }
+    const earlier = previousSet?.items.find(item => item.key === answer.facts.previous) ?? { label: 'an option of the earlier set' }
     return { state: 'answered', facts: compareView(answer.facts, compareOption, earlier, context) }
   })
   /** The questions under the options table, each offered only where this plan can ask it. */

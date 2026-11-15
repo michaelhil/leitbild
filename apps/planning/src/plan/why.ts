@@ -99,11 +99,11 @@ const caveatFacts = (inputs: PlanInputs, option: Option, other: Option | undefin
     }
   }))
 
-const outageFacts = (inputs: PlanInputs, option: Option): RecommendedFacts['outage'] => {
-  const k = inputs.goals.findIndex(goal => goal.metric === 'span-over')
-  const line = goalsOf(option)[k]
-  return line === undefined ? undefined : { goal: k, word: line.word, value: line.value, unit: line.unit, ...(line.bound === undefined ? {} : { bound: line.bound.value }) }
-}
+/**
+ * Fix round G4: the outage fact is the proven floor of the longest outage {goal, group, hours}, only when lane K
+ * has stored one. Lane P wires that floor; until then there is no outage fact, and the screen leaves its line out.
+ */
+const outageFacts = (): RecommendedFacts['outage'] => undefined
 
 const goalFacts = (inputs: PlanInputs, option: Option, other?: Option): RecommendedFacts['goals'] => goalsOf(option).map(line => {
   const against = other === undefined ? undefined : goalsOf(other)[line.goal]?.value
@@ -129,7 +129,7 @@ const caveatLines = (inputs: PlanInputs, option: Option, other: Option | undefin
  * the caller `named` another option.
  */
 export const whyRecommended = (inputs: PlanInputs, recommended: Option, others: readonly Option[], named?: Option): { readonly lines: string[]; readonly facts: RecommendedFacts } => {
-  const outage = outageFacts(inputs, recommended)
+  const outage = outageFacts()
   const base = (against: Option | undefined) => ({ option: recommended.key, ...(against === undefined ? {} : { against: against.key }), caveats: caveatFacts(inputs, recommended, against), ...(outage === undefined ? {} : { outage }) })
   const policy = `Ranked by: every hard rule kept first, ${inputs.goals.map((goal, k) => `then ${goalName(inputs, k)}${goal.tolerance.value > 0 ? ` (in steps of ${valueWords(goal.tolerance.value, goal.tolerance.unit)})` : ''}`).join(', ')}.`
   const asked = named !== undefined && named.key !== recommended.key ? named : undefined

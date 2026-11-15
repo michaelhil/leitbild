@@ -70,7 +70,7 @@ export interface WhyView {
   readonly trade: string | null
   readonly goals: readonly WhyGoalRow[]
   readonly caveats: ReadonlyArray<{ readonly method: string; readonly line: string; readonly against: string | null; readonly words: string | null }>
-  /** What the option's status says about the plan's outage goal. */
+  /** The proven floor of the longest outage, when one is stored. */
   readonly outage: string | null
 }
 
@@ -102,18 +102,9 @@ export const whyView = (facts: RecommendedFacts, model: Pick<PlanModel, 'options
     : deciding === undefined || deciding.against === undefined
       ? 'They tie on every goal within its step, so either could be chosen; Planning lists this one first.'
       : `Decided on ${goalSubject(context, deciding.goal)}: ${quantityText(deciding.value, deciding.unit)} here against ${quantityText(deciding.against, deciding.unit)} for ${againstLabel}.`
-  // The proven floor of the longest outage, in hours (G4): only when the outage goal measures the outage itself
-  // (no guideline threshold) for one group, and has a bound. A guideline goal's bound says how far over the
-  // guideline it can be, not how short the outage can be, so its line is dropped.
-  const outage = (() => {
-    if (facts.outage === undefined) return null
-    const { goal, word, value, unit, bound } = facts.outage
-    const item = inputs.goals[goal]
-    const group = item?.scope?.groups?.length === 1 ? item.scope.groups[0]! : null
-    if (item === undefined || item.metric !== 'span-over' || item.threshold !== undefined || group === null || bound === undefined) return null
-    const name = context.names.group(group)
-    return word === 'proven optimal' ? `${name} is out for ${quantityText(value, unit)}: proven the shortest possible.` : `No plan has ${name} out for less than ${quantityText(bound, unit)}, proven; this one has it out for ${quantityText(value, unit)}.`
-  })()
+  // Fix round G4: the proven floor of the longest outage, in hours; with none stored the line is left out.
+  const outage = facts.outage === undefined ? null
+    : `Longest outage of ${context.names.group(facts.outage.group)}: no plan can make it shorter than ${quantityText(facts.outage.hours, 'h')} (proven).`
   return {
     against: againstLabel === null ? 'No other ranked option keeps every hard rule, so there is none to weigh it against.' : `Against “${againstLabel}”${named ? '' : ', the next in rank'}.`,
     againstLabel, decided, trade: tradeText(facts, context),
@@ -166,7 +157,7 @@ const shiftText = (was: { start: string; finish: string }, now: { start: string;
   return `finishes ${hoursText(Math.abs(finish))} ${finish > 0 ? 'later' : 'earlier'}`
 }
 
-export const compareView = (facts: VersusFacts, option: Pick<OptionView, 'label' | 'metrics'>, previous: Pick<OptionView, 'label' | 'metrics'>, context: Context): CompareView => {
+export const compareView = (facts: VersusFacts, option: Pick<OptionView, 'label'>, previous: Pick<OptionView, 'label'>, context: Context): CompareView => {
   const previousLabel = previous.label
   const { names, format, inputs } = context
   const signed = (by: number, unit: string) => Math.abs(by) < 1e-9 ? 'the same' : `${by > 0 ? '+' : '−'}${quantityText(Math.abs(by), unit)}`
@@ -183,12 +174,9 @@ export const compareView = (facts: VersusFacts, option: Pick<OptionView, 'label'
     name: goalWords(context, entry.goal), now: quantityText(entry.now, entry.unit), was: quantityText(entry.was, entry.unit), change: signed(entry.now - entry.was, entry.unit),
   })) ?? null
   const moved = facts.moved.map(entry => ({ job: names.job(entry.job), was: format.range(entry.was.start, entry.was.finish), now: format.range(entry.now.start, entry.now.finish), shift: shiftText(entry.was, entry.now) }))
-  // G5: an outage that grows under the guideline changes no goal, so each limited group's longest outage is shown.
-  const span = (of: Pick<OptionView, 'metrics'>, group: string) => of.metrics.find(metric => metric.id === `span:${group}`)
-  const outages = [...new Set(inputs.rules.flatMap(rule => rule.kind === 'span-limit' ? [rule.group] : []))].flatMap(group => {
-    const now = span(option, group), was = span(previous, group)
-    return now === undefined || was === undefined ? [] : [{ name: `Longest outage, ${names.group(group)}`, now: quantityText(now.value, now.unit), was: quantityText(was.value, was.unit), change: signed(now.value - was.value, now.unit) }]
-  })
+  // G5: an outage that grows under the guideline changes no goal, so each limited group's longest outage is
+  // shown, from the Module's `outages` facts (both options' own checker figures, in hours).
+  const outages = (facts.outages ?? []).map(entry => ({ name: `Longest outage, ${names.group(entry.group)}`, now: quantityText(entry.now, 'h'), was: quantityText(entry.was, 'h'), change: signed(entry.now - entry.was, 'h') }))
   const sameGoals = (goals === null || goals.every(row => row.change === 'the same')) && outages.every(row => row.change === 'the same')
   return {
     against: `“${option.label}” now, against “${previousLabel}” in the set made before the latest changes.`,

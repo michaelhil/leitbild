@@ -106,12 +106,13 @@ describe('the unplaced card, from the checker\'s own judgement', () => {
 describe('G3: every row whose two rungs have a plan says what sets the higher one\'s finish', () => {
   test('a "found" row carries its cause, and the row names its subject: the longest outage', () => {
     const model = modelOf(inputs)
-    // A typed row in the contract's own shape, with the higher rung's cause, as lane P now sends it.
+    // A row the contract now takes (fix round G3): a found row with the higher rung's cause.
     const crane = { kind: 'shift' as const, about: [{ kind: 'resource' as const, key: 'crane' }] }
-    const pages: BuysPage[] = [{ items: [
+    const pages = [page([
+      // or's frozen-case figures (R/or/report.md): 56.5 h at NOK 398,800 with overtime, 54 h at NOK 464,250 with a night.
       { rung: { rung: 0, buy: days, bought: [] } }, { rung: { rung: 1, buy: overtime, bought: [] } },
-      { row: { from: 0, to: 1, ends: { from: 'found', to: 'found' }, word: 'found', outage: -2.5, cost: 65_450, finish: crane } },
-    ] }]
+      { row: { from: 0, to: 1, ends: { from: 'found', to: 'found' }, word: 'found', outage: 54 - 56.5, cost: 464_250 - 398_800, finish: crane } },
+    ])]
     const view = ladderView(pages, model, context, null)
     expect(view.rows[0]!.finish).not.toBeNull()
     expect(view.rows[0]!.differences).toBe(`longest outage 2.5 h shorter · extra cost ${moneyText(65_450, 'NOK')} more`)
@@ -137,13 +138,15 @@ describe('G4: the T11 words', () => {
     const facts = recommendedFactsSchema.parse({
       option: 'swap', against: 'rebuild', deciding: 0, caveats: [],
       goals: [{ goal: 0, value: 0, against: 11, unit: 'h' }, { goal: 1, value: 474_750, against: 255_800, unit: 'NOK' }],
-      outage: { goal: 0, word: 'proven optimal', value: 0, unit: 'h', bound: 0 },
+      // No outage fact: lane K has stored no proven floor of the longest outage.
     })
     const view = whyView(facts, model, contextOf(model), false)
     expect(view.decided).toBe(`Decided on time over the 54 h guideline: 0 h here against 11 h for ${label('rebuild')}.`)
     expect(view.trade).toBe('The trade: +NOK 218,950 extra cost for −11 h over the 54 h guideline.')
-    // The guideline goal's 0 h bound says nothing about the outage's length, so no outage line is shown.
+    // With none stored, no outage line is said (goals review G4); with one, the floor in hours.
     expect(view.outage).toBeNull()
+    // Lane S's measured 49 h on the swap (coordinator decisions, "Lane U batch 2"), standing in for a stored floor.
+    expect(whyView({ ...facts, outage: { goal: 0, group: 'COOL-A', hours: 49 } }, model, contextOf(model), false).outage).toBe(`Longest outage of ${inputs.groups.find(group => group.key === 'COOL-A')!.label}: no plan can make it shorter than 49 h (proven).`)
     const text = readableText(renderHtml(WhyRecommended, { title: 'Why', policy: policyLines(contextOf(model)), answer: { state: 'answered', facts: view }, onClose: none }))
     expect(text).toContain('costs within NOK 25,000 of each other count as equal')
     expect(text).not.toContain('no plan does better than its bound')
@@ -151,12 +154,12 @@ describe('G4: the T11 words', () => {
 })
 
 describe('G5: the comparison measures the longest outage of each group with a span rule', () => {
-  test('an outage that grows under the guideline is shown, from the two options\' own checker figures', () => {
-    const was = optionOf('opt-1', 'Option 1', feasible(), { metrics: [{ id: 'span:COOL-A', value: 49, unit: 'h' }] })
-    const now = optionOf('opt-1', 'Option 1', feasible(), { metrics: [{ id: 'span:COOL-A', value: 51.5, unit: 'h' }] })
-    const facts = versusFactsSchema.parse({ option: 'opt-1', previous: 'opt-1', from: 2, to: 3, complete: true, changes: [], goals: [{ goal: 0, now: 0, was: 0, unit: 'h' }], methods: [], buys: { added: [], dropped: [] }, moved: [], movedMore: 0, added: [], removed: [] })
-    const view = compareView(facts, now, was, context)
-    expect(view.outages).toEqual([{ name: `Longest outage, ${inputs.groups.find(group => group.key === 'COOL-A')!.label}`, now: '51.5 h', was: '49 h', change: '+2.5 h' }])
+  test('each limited group\'s longest outage is shown, now and before, from the Module\'s outages facts', () => {
+    // or's frozen-case figures (R/or/report.md): 54 h with a night crew, 56.5 h without; a test input in the contract's shape.
+    const option = optionOf('opt-1', 'Option 1', feasible())
+    const facts = versusFactsSchema.parse({ option: 'opt-1', previous: 'opt-1', from: 2, to: 3, complete: true, changes: [], goals: [{ goal: 0, now: 2.5, was: 0, unit: 'h' }], outages: [{ group: 'COOL-A', now: 56.5, was: 54 }], methods: [], buys: { added: [], dropped: [] }, moved: [], movedMore: 0, added: [], removed: [] })
+    const view = compareView(facts, option, option, context)
+    expect(view.outages).toEqual([{ name: `Longest outage, ${inputs.groups.find(group => group.key === 'COOL-A')!.label}`, now: '56.5 h', was: '54 h', change: '+2.5 h' }])
     expect(view.same).toBe(false)
   })
 })

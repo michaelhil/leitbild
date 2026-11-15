@@ -75,7 +75,7 @@ describe('the structure the words come from (coordinator decision, lane P batch 
       option: swap.key, against: rebuild.key, deciding: 0,
       goals: [0, 1, 2].map(k => ({ goal: k, value: goal(swap, k), against: goal(rebuild, k), unit: line(swap, k)!.unit })),
       caveats: [{ choice: trainAInputs.methods[0]!.key, option: 'swap', label: caveat('swap').label, value: caveat('swap').value!, unit: caveat('swap').unit!, against: caveat('rebuild').value! }],
-      outage: { goal: 0, word: 'proven optimal', value: goal(swap, 0), unit: 'h', bound: line(swap, 0)!.bound!.value },
+      // Fix round G4: no outage fact until lane P gives lane K's stored proven floor {goal, group, hours}.
     })
     // Alone in the ranking: no comparison, no deciding goal.
     const alone = whyRecommended(trainAInputs, swap, []).facts
