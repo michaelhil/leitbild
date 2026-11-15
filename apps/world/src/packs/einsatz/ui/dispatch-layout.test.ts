@@ -1,9 +1,9 @@
 import { describe, expect, test } from 'bun:test'
+import { noMapCover } from '../../../ui/surface-panel-interaction.ts'
 import {
   dispatchMapCover,
   minMapWidthPx,
   narrowPanelPx,
-  noCover,
   panelEdgeGapPx,
   panelLayoutFor,
   screenPointOf,
@@ -36,15 +36,15 @@ describe('Dispatch panel layout', () => {
   })
 
   test('the map cover: the docked panel from the right, the open sheet from the bottom, the folded tab none', () => {
-    expect(dispatchMapCover(panelLayoutFor(1366, 900), { width: 480, height: 700 }, true)).toEqual({ ...noCover, right: 480 + panelEdgeGapPx })
-    expect(dispatchMapCover(panelLayoutFor(768, 1024), { width: 768, height: 400.4 }, true)).toEqual({ ...noCover, bottom: 401 })
-    expect(dispatchMapCover(panelLayoutFor(768, 1024), { width: 200, height: 44 }, false)).toEqual(noCover)
+    expect(dispatchMapCover(panelLayoutFor(1366, 900), { width: 480, height: 700 }, true)).toEqual({ ...noMapCover, right: 480 + panelEdgeGapPx })
+    expect(dispatchMapCover(panelLayoutFor(768, 1024), { width: 768, height: 400.4 }, true)).toEqual({ ...noMapCover, bottom: 401 })
+    expect(dispatchMapCover(panelLayoutFor(768, 1024), { width: 200, height: 44 }, false)).toEqual(noMapCover)
   })
 
   test('a row click pans only when the object lies under the panel, the bars or off the map', () => {
     const camera = { center: [11.4, 59.1] as const, zoom: 12, bearing: 0 }
     const size = { width: 1366, height: 900 }
-    const cover = { ...noCover, right: 492 }
+    const cover = { ...noMapCover, right: 492 }
     const centre = screenPointOf(camera, size, cover, [11.4, 59.1])
     expect(centre.x).toBeCloseTo((1366 - 492) / 2, 5)
     expect(shownClearOfPanel(camera, size, cover, [11.4, 59.1])).toBe(true)

@@ -1,6 +1,5 @@
-import type { GeoJsonPoint, ObjectId } from '../../../core/model/index.ts'
 import type { MapCover } from '../../../ui/surface-panel-contract.ts'
-import type { SurfacePanelProps } from '../../../ui/surface-panel-interaction.ts'
+import { noMapCover } from '../../../ui/surface-panel-interaction.ts'
 
 /**
  * Where the Dispatch panel lies over the map, and what it hands the World
@@ -17,39 +16,6 @@ import type { SurfacePanelProps } from '../../../ui/surface-panel-interaction.ts
  * observed size, so the map camera centres and fits in the part left clear,
  * and a row click pans the map only when the object lies out of that part.
  */
-
-// ——— The surface interface the panel codes against ———
-//
-// The World surface's armed feedback and two-option prompt (lane U1, in
-// `ui/surface-panel-interaction.ts`), named exactly as the surface declares
-// them. Until the surface declares them, the panel's props add them here;
-// once it does, `DispatchPanelProps` is `SurfacePanelProps` itself.
-
-/** One choice of a map prompt. */
-export interface MapPromptOption {
-  readonly label: string
-  readonly tone?: 'default' | 'warning'
-  readonly onConfirm: () => void
-}
-
-/** A prompt at a map point with one or two options, drawn offset above or beside the point, never under it; a tap elsewhere dismisses it without confirming. */
-export interface MapPrompt {
-  readonly point: GeoJsonPoint
-  readonly options: ReadonlyArray<MapPromptOption>
-}
-
-/** An armed unit's feedback: the map halos each target with its tag (at most 8 are given), dims every other object and, for a mouse, draws a line from `from` to the pointer. */
-export interface MapTargeting {
-  readonly from: ObjectId
-  readonly targets: ReadonlyArray<{ readonly id: ObjectId; readonly tag: string }>
-}
-
-export type DispatchPanelProps = Omit<SurfacePanelProps, 'onMapPrompt'> & {
-  /** Shows a prompt at a map point, or clears it with null. */
-  readonly onMapPrompt: (prompt: MapPrompt | null) => void
-  /** Shows an armed unit's targeting on the map, or clears it with null. */
-  readonly onMapTargeting: (targeting: MapTargeting | null) => void
-}
 
 // ——— Layout ———
 
@@ -72,9 +38,6 @@ export const panelTopClearancePx = 52
 export const panelBottomClearancePx = 52
 /** The most of the surface's height the open bottom sheet takes. */
 export const sheetMaxShare = 0.6
-/** Every tap target's least height and width. */
-export const tapPx = 44
-
 export type PanelLayout =
   | { readonly mode: 'docked'; readonly widthPx: number; readonly mapWidthPx: number }
   | { readonly mode: 'sheet'; readonly maxHeightPx: number }
@@ -92,12 +55,10 @@ export const panelLayoutFor = (surfaceWidthPx: number, surfaceHeightPx: number):
 /** Whether the bottom sheet shows open: the operator opened it, or something is selected. Folded, only the edge tab shows. */
 export const sheetOpen = (openedByOperator: boolean, somethingSelected: boolean): boolean => openedByOperator || somethingSelected
 
-export const noCover: MapCover = Object.freeze({ top: 0, right: 0, bottom: 0, left: 0 })
-
 /** How far the panel, observed at this size, reaches over the map: the docked panel from the right edge, the open sheet from the bottom, the folded tab nothing. */
 export const dispatchMapCover = (layout: PanelLayout, observed: { readonly width: number; readonly height: number }, open: boolean): MapCover => {
-  if (layout.mode === 'docked') return { ...noCover, right: observed.width > 0 ? Math.ceil(observed.width) + panelEdgeGapPx : 0 }
-  return open && observed.height > 0 ? { ...noCover, bottom: Math.ceil(observed.height) } : noCover
+  if (layout.mode === 'docked') return { ...noMapCover, right: observed.width > 0 ? Math.ceil(observed.width) + panelEdgeGapPx : 0 }
+  return open && observed.height > 0 ? { ...noMapCover, bottom: Math.ceil(observed.height) } : noMapCover
 }
 
 // ——— Row clicks pan only when the object is out of view ———

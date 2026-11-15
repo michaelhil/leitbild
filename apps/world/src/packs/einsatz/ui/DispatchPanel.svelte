@@ -7,7 +7,8 @@
   import { neutralLexicon } from '../lexicon.ts'
   import type { OrderWhen, Stop, UnitOrderInput } from '../order-schema.ts'
   import type { Situation, SituationCall, UnitOptions } from '../situation/schema.ts'
-  import { dispatchMapCover, panelBottomClearancePx, panelEdgeGapPx, panelLayoutFor, panelTopClearancePx, sheetOpen, shownClearOfPanel, type DispatchPanelProps, type MapPrompt } from './dispatch-layout.ts'
+  import type { MapPrompt, SurfacePanelProps } from '../../../ui/surface-panel-interaction.ts'
+  import { dispatchMapCover, panelBottomClearancePx, panelEdgeGapPx, panelLayoutFor, panelTopClearancePx, sheetOpen, shownClearOfPanel } from './dispatch-layout.ts'
   import { createIconCache, runEinsatzClient, situationIconIds, type CommandOutcome } from './einsatz-client.ts'
   import {
     busyPrompt,
@@ -50,7 +51,7 @@
    * hands the map the targeting (halos with ETA tags) and the Move or busy
    * prompt. Esc goes one level back, as the banner's and the card's × do.
    */
-  const props: DispatchPanelProps = $props()
+  const props: SurfacePanelProps = $props()
 
   const client = $derived(runEinsatzClient(props.simulationRunId))
   let situation = $state.raw<Situation | null>(null)

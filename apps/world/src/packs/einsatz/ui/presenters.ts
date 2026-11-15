@@ -5,7 +5,7 @@ import { neutralLexicon } from '../lexicon.ts'
 import type { Stop, UnitOrderInput } from '../order-schema.ts'
 import type { Eta, RecommendAnswer } from '../recommendation-schema.ts'
 import type { Situation, SituationCall, SituationSite, SituationUnit, StopVerb, UnitOptions, UnitTone } from '../situation/schema.ts'
-import type { MapTargeting } from './dispatch-layout.ts'
+import { mapTargetingMaxTargets, type MapTargeting } from '../../../ui/surface-panel-interaction.ts'
 import { selectedObjectOf, stopObjectId, type Selection } from './selection.ts'
 
 /**
@@ -28,8 +28,6 @@ import { selectedObjectOf, stopObjectId, type Selection } from './selection.ts'
 export const receiptUndoMs = 8_000
 /** The most receipts the footer keeps, newest on top. */
 export const maxReceipts = 3
-/** The most targets the map halos while a unit is armed. */
-export const maxHaloTargets = 8
 /** The icon a contact shows: it has no identified type. */
 export const contactIcon = 'circle-question-mark'
 
@@ -623,7 +621,7 @@ export const overview = (situation: Situation, selection: Selection, opened: Rea
 
 /**
  * What the map draws while a unit is armed: halos with ETA tags on the
- * nearest valid targets (at most `maxHaloTargets`), and a refused target's
+ * nearest valid targets (at most `mapTargetingMaxTargets`), and a refused target's
  * reason at that target while it is shown. Before the options arrive no
  * target carries a tag, but the unit is armed and a click still submits.
  */
@@ -635,7 +633,7 @@ export const targetingFor = (selection: Selection, options: UnitOptions | null):
     const id = stopObjectId(target.target)
     return id === null || id === refusal?.targetId ? [] : [{ id, tag: minutesText(target.etaS) }]
   })
-  return { from: objectIdSchema.parse(selection.unitId), targets: [...refused, ...valid].slice(0, maxHaloTargets).map(target => ({ id: objectIdSchema.parse(target.id), tag: target.tag })) }
+  return { from: objectIdSchema.parse(selection.unitId), targets: [...refused, ...valid].slice(0, mapTargetingMaxTargets).map(target => ({ id: objectIdSchema.parse(target.id), tag: target.tag })) }
 }
 
 /** The busy prompt's two options, once the unit's options say what its current job is; null until then. */

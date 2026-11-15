@@ -1,5 +1,6 @@
 import { describe, expect, test } from 'bun:test'
 import { objectIdSchema, type OperationalObject } from '../../../core/model/index.ts'
+import { mapTargetingMaxTargets } from '../../../ui/surface-panel-interaction.ts'
 import { einsatzPackId } from '../ids.ts'
 import { recommendAnswerSchema, type RecommendAnswer } from '../recommendation-schema.ts'
 import { situationSchema, unitOptionsSchema, type Situation, type UnitOptions } from '../situation/schema.ts'
@@ -15,7 +16,6 @@ import {
   dispatchWords,
   edgeTabText,
   emptySelectionText,
-  maxHaloTargets,
   maxReceipts,
   movePromptText,
   overview,
@@ -323,7 +323,7 @@ describe('Armed feedback, prompts and receipts', () => {
     const refused = sa('r1', { refusal: { targetId: 'depot-b', code: 'site_not_accepting', text: 'Depot B is closed', untilMs: 1 } })
     expect(targetingFor(refused, optionsFor('r1'))!.targets[0]).toEqual({ id: oid('depot-b'), tag: 'Depot B is closed' })
     const many = optionsFor('r1', { targets: Array.from({ length: 12 }, (_, index) => ({ target: { taskId: `job-${index}` }, verb: 'serve', label: `J-${index}`, etaS: index * 60 })) })
-    expect(targetingFor(sa('r1'), many)!.targets).toHaveLength(maxHaloTargets)
+    expect(targetingFor(sa('r1'), many)!.targets).toHaveLength(mapTargetingMaxTargets)
   })
 
   test('the busy prompt: After current job, and Now naming what it drops; the Move prompt in the lexicon\'s word', () => {
