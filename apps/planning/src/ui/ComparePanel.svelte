@@ -51,6 +51,16 @@
     {/if}
     {#if view.same}<p>Nothing differs: the same values, methods, purchases and times.</p>{/if}
     <h3>Measures</h3>
+    {#if view.outages.length > 0}
+      <table class="compare-goals">
+        <thead><tr><th scope="col">Outage</th><th scope="col" class="number">Now</th><th scope="col" class="number">Before</th><th scope="col" class="number">Change</th></tr></thead>
+        <tbody>
+          {#each view.outages as outage (outage.name)}
+            <tr class:changed={outage.change !== 'the same'}><th scope="row">{outage.name}</th><td class="number">{outage.now}</td><td class="number">{outage.was}</td><td class="number">{outage.change}</td></tr>
+          {/each}
+        </tbody>
+      </table>
+    {/if}
     {#if view.goals === null}
       <p class="hint">{view.goalsNote}</p>
     {:else}

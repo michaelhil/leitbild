@@ -13,7 +13,7 @@
   import { glance } from './orientation.ts'
   import FinishPanel from './FinishPanel.svelte'
   import Ladder from './Ladder.svelte'
-  import { ladderView, type BuysPage } from './ladder.ts'
+  import { ladderView, rungRequest, type BuysPage } from './ladder.ts'
   import OptionsGlance from './OptionsGlance.svelte'
   import { optionsGlance, type ChoosePanel } from './options-glance.ts'
   import { outcomeBanner, refusalProof } from './outcome.ts'
@@ -43,7 +43,7 @@
   import { whatIfCard, whatIfChoices, type WhatIfKind, type WhatIfVariant } from './what-if.ts'
   import WhyRecommended from './WhyRecommended.svelte'
   import type { RecommendedFacts, VersusFacts } from '../api/contract.ts'
-  import { compareView, policyText, previousFor, previousRows, recommendedAnswer, versusAnswer, whyView, type Answer, type CompareView, type WhyView } from './why-text.ts'
+  import { compareView, policyLines, previousFor, previousRows, recommendedAnswer, versusAnswer, whyView, type Answer, type CompareView, type WhyView } from './why-text.ts'
   import WorkList from './WorkList.svelte'
 
   /**
@@ -92,6 +92,8 @@
   let choosing = $state<ChoosePanel | null>(null)
   let buys = $state<{ readonly state: 'loading' | 'ready' | 'not-built' | 'refused'; readonly pages: readonly BuysPage[]; readonly text: string | null }>({ state: 'loading', pages: [], text: null })
   let solving = $state(false)
+  /** The method whose ladder is shown; null for the first with rungs. */
+  let ladderMethod = $state<string | null>(null)
   let asking = $state(false)
   let whatIfKind = $state<WhatIfKind | null>(null)
   /** Why the last what-if got no answer, in planner words. */
@@ -160,7 +162,7 @@
   const detailOpen = $derived(choosing !== null || preview !== null || selectedJob !== null || finish !== null || (wide && view === 'schedule' && shown !== null))
   const compared = $derived(model !== null && context !== null ? optionsGlance(model, context) : null)
   const proof = $derived(model !== null && context !== null && shown?.status.word === 'proven infeasible' ? refusalProof(model.refusals[shown.key], context) : null)
-  const ladder = $derived(model !== null && context !== null && buys.state === 'ready' ? ladderView(buys.pages, model, context) : null)
+  const ladder = $derived(model !== null && context !== null && buys.state === 'ready' ? ladderView(buys.pages, model, context, ladderMethod) : null)
   // The what-ifs' cards, the one asked last first; each refused one with its proof.
   const whatIfs = $derived(model !== null && context !== null
     ? [...whatIfOptions(model)].sort((left, right) => Number(right.key === askedLast) - Number(left.key === askedLast)).map(option => whatIfCard(option, model!, context))
@@ -185,7 +187,7 @@
     const answer = compareAnswer
     if (answer.state !== 'answered') return answer
     if (compareOption === null || context === null) return { state: 'loading' }
-    const earlier = previousSet?.items.find(item => item.key === answer.facts.previous)?.label ?? 'an option of the earlier set'
+    const earlier = previousSet?.items.find(item => item.key === answer.facts.previous) ?? { label: 'an option of the earlier set', metrics: [] }
     return { state: 'answered', facts: compareView(answer.facts, compareOption, earlier, context) }
   })
   /** The questions under the options table, each offered only where this plan can ask it. */
@@ -335,7 +337,7 @@
   })
   /** Works out the rungs of "what overtime buys" still to solve, lowest first. */
   const solveLadder = (): void => {
-    const missing = ladder?.toSolve ?? []
+    const missing = context === null ? [] : (ladder?.toSolve ?? []).map(rung => ({ name: rung.name, request: rungRequest(rung, context) }))
     if (missing.length === 0 || model === null || generating !== null) return
     solving = true
     solve(async (current, signal) => {
@@ -441,7 +443,7 @@
     <div class="choose-panel">
       {#if choosing === 'ladder'}
         <Ladder view={ladder} state={buys.state} text={buys.text} busy={busy || generating !== null} {solving} selected={selectedOption} onSolve={solveLadder}
-          onFiner={() => { whatIfKind = 'out'; openChoice('whatif') }} onSelect={showOption} onPick={pick} onClose={() => { choosing = null }} />
+          onFiner={() => { whatIfKind = 'out'; openChoice('whatif') }} onSelect={showOption} onMethod={next => { ladderMethod = next }} onPick={pick} onClose={() => { choosing = null }} />
       {:else if choosing === 'whatif'}
         {#key whatIfKind}
           <WhatIfPanel {context} cards={whatIfs} proofs={whatIfProofs} kind={whatIfKind} selected={selectedOption} busy={busy || generating !== null} {asking} missing={whatIfMissing}
@@ -449,7 +451,7 @@
         {/key}
       {:else if choosing === 'why'}
         {#if recommendedOption}
-          <WhyRecommended title={`Why “${recommendedOption.label}” is recommended`} policy={policyText(context)} answer={whyShown} choices={whyChoices} against={whyAgainst} onAgainst={option => { whyAgainst = option; ask('why') }} onClose={() => { choosing = null }} />
+          <WhyRecommended title={`Why “${recommendedOption.label}” is recommended`} policy={policyLines(context)} answer={whyShown} choices={whyChoices} against={whyAgainst} onAgainst={option => { whyAgainst = option; ask('why') }} onClose={() => { choosing = null }} />
         {:else}
           <section class="why-panel"><div class="panel-heading"><h2 tabindex="-1">Why recommended</h2><button type="button" class="quiet" onclick={() => { choosing = null }}>Close</button></div><p class="hint">No option is recommended on the plan as it is now. Generate first.</p></section>
         {/if}

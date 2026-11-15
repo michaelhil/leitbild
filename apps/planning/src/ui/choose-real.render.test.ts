@@ -12,7 +12,7 @@ import { readableText, registerSvelte, renderHtml, routineBreaches } from './fix
 import { createTimeFormat, quantityText } from './format.ts'
 import { createNames, type OptionView } from './model.ts'
 import type { Context } from './status-text.ts'
-import { compareView, policyText, recommendedAnswer, versusAnswer, whyView } from './why-text.ts'
+import { compareView, policyLines, recommendedAnswer, versusAnswer, whyView } from './why-text.ts'
 
 registerSvelte()
 type Any = Component<Record<string, unknown>>
@@ -31,11 +31,11 @@ describe('on the real structured outputs', () => {
     if (answer.state !== 'answered') throw new Error('lane P answers with facts')
     const shown = whyView(answer.facts, model, context, false)
     const deciding = real.facts.goals.find(line => line.goal === real.facts.deciding)!
-    expect(shown.decided).toBe(`Decided on over the 54 h guideline: ${quantityText(deciding.value, deciding.unit)} against ${quantityText(deciding.against!, deciding.unit)}.`)
+    expect(shown.decided).toBe(`Decided on time over the 54 h guideline: ${quantityText(deciding.value, deciding.unit)} here against ${quantityText(deciding.against!, deciding.unit)} for ${rebuild.label}.`)
     // The trade puts each cost before the gains it buys, in each goal's own unit, from the two values in the facts.
     const cost = real.facts.goals.find(line => line.goal === 1)!
     expect(shown.trade).toMatch(new RegExp(`^The trade: \\+${quantityText(cost.value - cost.against!, cost.unit).replace(/[.+]/g, '\\$&')} extra cost for −`))
-    const text = readableText(renderHtml(WhyRecommended, { title: `Why “${swap.label}” is recommended`, policy: policyText(context), answer: { state: 'answered', facts: shown }, onClose: none }))
+    const text = readableText(renderHtml(WhyRecommended, { title: `Why “${swap.label}” is recommended`, policy: policyLines(context), answer: { state: 'answered', facts: shown }, onClose: none }))
     expect(text).toContain(`Against “${rebuild.label}”, the next in rank.`)
     expect(text).toContain(shown.trade!)
     // None of the Module's lines is on the screen.
@@ -50,7 +50,7 @@ describe('on the real structured outputs', () => {
     const real = versus({ inputs: trainAInputs, option: swap, previous: variantOf(rebuild, { key: swap.key, label: rebuild.label, revision: 2 }), plan })
     const answer = versusAnswer(explainResultSchema.parse({ lines: real.lines, items: [], versus: real.facts }))
     if (answer.state !== 'answered') throw new Error('lane P answers with facts')
-    const shown = compareView(answer.facts, view(swap), rebuild.label, context)
+    const shown = compareView(answer.facts, view(swap), view(rebuild), context)
     expect(shown.moved.length).toBe(real.facts.moved.length)
     expect(shown.moved.length).toBeGreaterThan(0)
     expect(shown.goals!.map(row => row.name)).toEqual(real.facts.goals!.map(line => context.inputs.goals[line.goal]!).map(goal => goal.metric === 'span-over' ? 'Over the 54 h guideline' : goal.metric === 'extra-cost' ? 'Extra cost' : 'Equipment-hours out of service'))

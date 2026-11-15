@@ -67,6 +67,17 @@ export const goalShort = (goal: Goal, context: Context): string => {
 export const goalStep = (goal: Goal): string | null =>
   goal.tolerance.value === 0 ? null : `compared in steps of ${quantityText(goal.tolerance.value, goal.tolerance.unit)}`
 
+/**
+ * A goal's full words, as the goals editor and "why recommended" say it: what it aims at, and what its step
+ * means. "Keep the extra cost as small as possible; costs within NOK 25,000 of each other count as equal".
+ */
+export const goalAimText = (goal: Goal, context: Context): string => {
+  const aim = goal.metric === 'finish' ? 'Finish the last job as early as possible' : `Keep the ${goalName(goal, context)} as small as possible`
+  if (goal.tolerance.value === 0) return aim
+  const step = quantityText(goal.tolerance.value, goal.tolerance.unit)
+  return `${aim}; ${goal.metric === 'extra-cost' ? 'costs' : 'values'} within ${step} of each other count as equal`
+}
+
 /** One sentence per goal in priority order, e.g. "1. Time over the 54 h guideline …: 0 h." */
 export const goalOrderText = (goals: readonly Goal[], context: Context): readonly string[] =>
   goals.map((goal, index) => {

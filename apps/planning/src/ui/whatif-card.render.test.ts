@@ -83,7 +83,7 @@ describe('the what-if builder', () => {
   })
 
   test('"finish this group first" leads with the group; "cheapest that keeps every rule" leads with the plan\'s extra-cost goal, by its id', () => {
-    expect(built({ kind: 'first', group: 'AFW-A' }).variant).toEqual({ label: `Finish ${afw.label} first`, lead: { group: 'AFW-A' } })
+    expect(built({ kind: 'first', group: 'AFW-A' }).variant).toEqual({ label: `${afw.label} first, with its shortest outage`, lead: { group: 'AFW-A' } })
     expect(built({ kind: 'cheapest' }).variant).toEqual({ label: 'Cheapest that keeps every rule', lead: { goal: costGoal } })
     // The id follows the goal, wherever it stands in the order.
     const reordered = { ...inputs, goals: [inputs.goals[costGoal]!, ...inputs.goals.filter((_, index) => index !== costGoal)] }
@@ -130,9 +130,9 @@ describe('a what-if is a card, never a row', () => {
   test('finish a group first: the card reads status.lead, the group\'s outage, proven; no plan goal is proven', () => {
     const model = withWhatIfs()
     const card = whatIfCard(model.options!.items[2]!, model, contextOf(model))
-    expect(card.status.goals[0]).toEqual({ name: `${afw.label} out (solved first)`, value: '7.5 h', mark: { shape: '✓', word: 'proven optimal' }, distance: '' })
+    expect(card.status.goals[0]).toEqual({ name: `Shortest outage for ${afw.label} (solved first)`, value: '7.5 h', mark: { shape: '✓', word: 'proven optimal' }, distance: '' })
     expect(card.status.goals.slice(1).map(goal => goal.mark.word)).toEqual([`best found with ${afw.label} first`, `best found with ${afw.label} first`])
-    expect(card.question).toBe(`Asked: ${afw.label} back as soon as possible, then the plan's goals in order.`)
+    expect(card.question).toBe(`Asked: the shortest outage for ${afw.label} first, then the plan's goals in order.`)
     const text = readableText(renderHtml(WhatIfCard, { card, onSelect: none }))
     expect(text.split('proven optimal').length - 1).toBe(1)
   })

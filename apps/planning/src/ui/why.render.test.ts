@@ -14,7 +14,7 @@ import { createNames, type DatedRow, type OptionView, type PlanModel } from './m
 import { optionsGlance } from './options-glance.ts'
 import type { Context } from './status-text.ts'
 import { methodPicks, unpricedOf } from './unpriced.ts'
-import { compareView, noPreviousWords, policyText, previousFor, previousRows, recommendedAnswer, tradeText, versusAnswer, whyView } from './why-text.ts'
+import { compareView, noPreviousWords, policyLines, previousFor, previousRows, recommendedAnswer, tradeText, versusAnswer, whyView } from './why-text.ts'
 
 registerSvelte()
 type Any = Component<Record<string, unknown>>
@@ -59,7 +59,7 @@ const facts = recommendedFactsSchema.parse({
 describe('why recommended', () => {
   test('the plan\'s own rule in words: every hard rule, then the goals in order with their steps', () => {
     const step = inputs.goals[1]!.tolerance.value
-    expect(policyText(contextOf(twoMethods()))).toBe(`Every hard rule must hold. Then, in order: 1. Over the 54 h guideline · 2. Extra cost, compared in steps of ${moneyText(step, 'NOK')} · 3. Equipment-hours out of service.`)
+    expect(policyLines(contextOf(twoMethods()))[2]).toBe(`2. Keep the extra cost as small as possible; costs within ${moneyText(step, 'NOK')} of each other count as equal.`)
   })
 
   test('the deciding goal and the trade in planner words, from the facts: "+NOK … extra cost for −11 h over the guideline"', () => {
@@ -70,12 +70,13 @@ describe('why recommended', () => {
     expect(tradeText(facts, context)).toBe('The trade: +NOK 218,950 extra cost for −11 h over the 54 h guideline.')
     const view = whyView(facts, model, context, false)
     expect(view.against).toBe(`Against “${rebuild.label}”, the next in rank.`)
-    expect(view.decided).toBe('Decided on over the 54 h guideline: 0 h against 11 h.')
+    expect(view.decided).toBe(`Decided on time over the 54 h guideline: 0 h here against 11 h for ${rebuild.label}.`)
     expect(view.goals.map(goal => [goal.name, goal.value, goal.against, goal.deciding])).toEqual([
       ['Over the 54 h guideline', '0 h', '11 h', true], ['Extra cost', 'NOK 474,750', 'NOK 255,800', false],
     ])
-    expect(view.outage).toBe('Over the 54 h guideline: 0 h, proven optimal: no plan does better than its bound, 0 h.')
-    const text = readableText(renderHtml(WhyRecommended, { title: `Why “${swap.label}” is recommended`, policy: policyText(context), answer: { state: 'answered', facts: view }, onClose: none }))
+    // The guideline goal's bound is no floor of the outage itself, so no outage line is said (goals review G4).
+    expect(view.outage).toBeNull()
+    const text = readableText(renderHtml(WhyRecommended, { title: `Why “${swap.label}” is recommended`, policy: policyLines(context), answer: { state: 'answered', facts: view }, onClose: none }))
     for (const part of [view.decided!, view.trade!, '◆ Decided here', caveatText(swap), `against ${quantityText(caveat(rebuild).value!, caveat(rebuild).unit!)} for “${rebuild.label}”`, caveat(swap).words]) expect(text).toContain(part)
     expect(routineBreaches(text, identifiers(model.inputs), [])).toEqual([])
   })
@@ -84,7 +85,7 @@ describe('why recommended', () => {
     const lines = ['A line the screen must not show.']
     expect(recommendedAnswer({ lines, items: [] })).toEqual({ state: 'not-built' })
     expect(recommendedAnswer({ lines, items: [], recommended: facts })).toEqual({ state: 'answered', facts })
-    const text = readableText(renderHtml(WhyRecommended, { title: 'Why', policy: '', answer: { state: 'not-built' }, onClose: none }))
+    const text = readableText(renderHtml(WhyRecommended, { title: 'Why', policy: [], answer: { state: 'not-built' }, onClose: none }))
     expect(text).toContain('The deciding goal and the trade it made are not available yet in this version of Planning.')
     expect(text).not.toMatch(/501|not_built/)
   })
@@ -97,7 +98,7 @@ describe('why recommended', () => {
     const tie = whyView(recommendedFactsSchema.parse({ option: 'swap', against: 'rebuild', goals: [{ goal: 0, value: 0, against: 0, unit: 'h' }], caveats: [] }), model, context, true)
     expect([tie.against, tie.decided]).toEqual([`Against “${rebuild.label}”.`, 'They tie on every goal within its step, so either could be chosen; Planning lists this one first.'])
     const choices = [{ value: '', label: 'The next in rank' }, { value: 'rebuild', label: rebuild.label }]
-    expect(readableText(renderHtml(WhyRecommended, { title: 'Why', policy: '', answer: { state: 'loading' }, choices, against: '', onAgainst: none, onClose: none }))).toContain('Weigh it against')
+    expect(readableText(renderHtml(WhyRecommended, { title: 'Why', policy: [], answer: { state: 'loading' }, choices, against: '', onAgainst: none, onClose: none }))).toContain('Weigh it against')
   })
 
   test('each option\'s unpriced caveat is in the options table; a method left to the search is read from its schedule', () => {
@@ -140,7 +141,7 @@ describe('what differs from the earlier options', () => {
   test('the measures that changed and the jobs that moved, from the facts', () => {
     const { model, versus, option, pull } = t12()
     const context = contextOf(model)
-    const view = compareView(versus, option, 'Option 1', context)
+    const view = compareView(versus, option, option, context)
     expect(view.changes).toEqual([`Changed job ${pull.title}: duration`])
     expect(view.goals!.map(goal => [goal.name, goal.now, goal.was, goal.change])).toEqual([['Over the 54 h guideline', '0 h', '0 h', 'the same'], ['Extra cost', 'NOK 0', 'NOK 0', 'the same']])
     expect(view.moved.map(entry => [entry.job, entry.shift])).toEqual([[pull.title, 'finishes 2 h later'], [model.inputs.jobs.find(job => job.key === 'SWA-RTS')!.title, 'starts 2 h later']])
@@ -158,13 +159,13 @@ describe('what differs from the earlier options', () => {
       methods: [{ choice: method.key, now: 'swap', was: 'rebuild' }],
       buys: { added: [purchase.key], dropped: [] }, moved: [], movedMore: 3, added: [], removed: ['GONE-1', 'GONE-2'],
     })
-    const view = compareView(changed, option, 'Option 1', context)
+    const view = compareView(changed, option, option, context)
     expect(view.goals).toBeNull()
     expect(view.goalsNote).toBe('The goals themselves changed, so their values are not compared.')
     expect(view.methods).toEqual([`${method.label}: ${model.inputs.methods[0]!.options.find(entry => entry.key === 'swap')!.label}, was ${model.inputs.methods[0]!.options.find(entry => entry.key === 'rebuild')!.label}.`])
     expect(view.buys).toEqual([`Now buys ${purchase.label}.`])
     expect([view.more, view.removed, view.incomplete]).toEqual(['3 more jobs moved.', '2 jobs of the earlier set are no longer in the plan.', 'Some earlier changes are no longer in the plan\'s history, so this list is not complete.'])
-    expect(compareView(versusFactsSchema.parse({ ...changed, goals: [{ goal: 1, now: 474_750, was: 464_250, unit: 'NOK' }], buys: { added: [], dropped: [] }, movedMore: 0, removed: [] }), option, 'Option 1', context).goals)
+    expect(compareView(versusFactsSchema.parse({ ...changed, goals: [{ goal: 1, now: 474_750, was: 464_250, unit: 'NOK' }], buys: { added: [], dropped: [] }, movedMore: 0, removed: [] }), option, option, context).goals)
       .toEqual([{ name: 'Extra cost', now: 'NOK 474,750', was: 'NOK 464,250', change: '+NOK 10,500' }])
   })
 

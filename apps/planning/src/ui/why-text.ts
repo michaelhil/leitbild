@@ -7,7 +7,7 @@ import type { RecommendedFacts, VersusFacts } from '../api/contract.ts'
 import { noPreviousWords, type ExplainResult } from './api.ts'
 import { hoursText, quantityText, type Mark } from './format.ts'
 import type { OptionView, PlanModel } from './model.ts'
-import { goalShort, goalStep, statusMark, type Context } from './status-text.ts'
+import { goalAimText, goalName, goalShort, statusMark, type Context } from './status-text.ts'
 
 /** Where a question to the Module stands. `none`: there is nothing to compare with (no earlier set). */
 export type Answer<T> =
@@ -22,19 +22,33 @@ export const recommendedAnswer = (result: ExplainResult): Answer<RecommendedFact
 export const versusAnswer = (result: ExplainResult): Answer<VersusFacts> => result.versus === undefined ? { state: 'not-built' } : { state: 'answered', facts: result.versus }
 
 /**
- * The plan's policy in one sentence: "Every hard rule must hold. Then, in order: 1. Over the 54 h guideline
- * · 2. Extra cost, compared in steps of NOK 25,000 · 3. Equipment-hours out of service."
+ * The plan's policy, one line each: every hard rule first, then each goal in its full words with what its
+ * step means. "2. Keep the extra cost as small as possible; costs within NOK 25,000 of each other count as equal."
  */
-export const policyText = (context: Context): string =>
-  `Every hard rule must hold. Then, in order: ${context.inputs.goals.map((goal, index) => {
-    const step = goalStep(goal)
-    return `${index + 1}. ${goalShort(goal, context)}${step === null ? '' : `, ${step}`}`
-  }).join(' · ')}.`
+export const policyLines = (context: Context): readonly string[] =>
+  ['Every hard rule must hold.', ...context.inputs.goals.map((goal, index) => `${index + 1}. ${goalAimText(goal, context)}.`)]
 
-const lower = (text: string): string => `${text.charAt(0).toLowerCase()}${text.slice(1)}`
 const goalWords = (context: Context, goal: number): string => {
   const item = context.inputs.goals[goal]
   return item === undefined ? 'a goal no longer in this plan' : goalShort(item, context)
+}
+/** What a goal measures, without its groups, for a sentence: "time over the 54 h guideline", "extra cost". */
+const goalSubject = (context: Context, goal: number): string => {
+  const item = context.inputs.goals[goal]
+  if (item === undefined) return 'a goal no longer in this plan'
+  const { scope: _scope, ...unscoped } = item
+  return goalName(unscoped, context)
+}
+/** A goal's difference in a trade: "+NOK 50,400 extra cost", "−13 h over the 54 h guideline". */
+const tradeWords = (context: Context, goal: number, by: number, unit: string, signed: boolean): string => {
+  const item = context.inputs.goals[goal]
+  const amount = `${signed ? by > 0 ? '+' : '−' : ''}${quantityText(Math.abs(by), unit)}`
+  const subject = item === undefined ? 'on a goal no longer in this plan'
+    : item.metric === 'span-over' ? item.threshold === undefined ? 'of outage' : `over the ${quantityText(item.threshold.value, item.threshold.unit)} guideline`
+      : item.metric === 'extra-cost' ? 'extra cost'
+        : item.metric === 'unavailable-hours' ? 'of equipment out of service'
+          : item.metric === 'finish' ? 'on the finish of the last job' : 'of lateness'
+  return `${amount} ${subject}`
 }
 const labelOf = (model: Pick<PlanModel, 'options'>, key: string): string => model.options?.items.find(option => option.key === key)?.label ?? 'another option'
 
@@ -69,12 +83,12 @@ export const tradeText = (facts: RecommendedFacts, context: Context): string | n
     if (line === undefined || line.against === undefined || line.value === line.against) return []
     return [{ goal, by: line.value - line.against, unit: line.unit }]
   })
-  const said = (entry: { goal: number; by: number; unit: string }) => `${entry.by > 0 ? '+' : '−'}${quantityText(Math.abs(entry.by), entry.unit)} ${lower(goalWords(context, entry.goal))}`
+  const said = (entry: { goal: number; by: number; unit: string }) => tradeWords(context, entry.goal, entry.by, entry.unit, true)
   const costs = differences.filter(entry => entry.by > 0).map(said)
   const gains = differences.filter(entry => entry.by < 0).map(said)
   const list = (items: readonly string[]) => items.length <= 1 ? items.join('') : `${items.slice(0, -1).join(', ')} and ${items.at(-1)}`
   if (costs.length > 0 && gains.length > 0) return `The trade: ${list(costs)} for ${list(gains)}.`
-  if (gains.length > 0) return `No goal is worse; it is better by ${list(differences.map(entry => `${quantityText(Math.abs(entry.by), entry.unit)} ${lower(goalWords(context, entry.goal))}`))}.`
+  if (gains.length > 0) return `No goal is worse; it is better by ${list(differences.map(entry => tradeWords(context, entry.goal, entry.by, entry.unit, false)))}.`
   if (costs.length > 0) return `Differences, each within its goal's step: ${list(costs)}.`
   return null
 }
@@ -87,12 +101,18 @@ export const whyView = (facts: RecommendedFacts, model: Pick<PlanModel, 'options
   const decided = facts.against === undefined ? null
     : deciding === undefined || deciding.against === undefined
       ? 'They tie on every goal within its step, so either could be chosen; Planning lists this one first.'
-      : `Decided on ${lower(goalWords(context, deciding.goal))}: ${quantityText(deciding.value, deciding.unit)} against ${quantityText(deciding.against, deciding.unit)}.`
-  const outage = facts.outage === undefined ? null : (() => {
+      : `Decided on ${goalSubject(context, deciding.goal)}: ${quantityText(deciding.value, deciding.unit)} here against ${quantityText(deciding.against, deciding.unit)} for ${againstLabel}.`
+  // The proven floor of the longest outage, in hours (G4): only when the outage goal measures the outage itself
+  // (no guideline threshold) for one group, and has a bound. A guideline goal's bound says how far over the
+  // guideline it can be, not how short the outage can be, so its line is dropped.
+  const outage = (() => {
+    if (facts.outage === undefined) return null
     const { goal, word, value, unit, bound } = facts.outage
-    const head = `${goalWords(context, goal)}: ${quantityText(value, unit)}`
-    if (word === 'proven optimal') return `${head}, proven optimal: no plan does better${bound === undefined ? '' : ` than its bound, ${quantityText(bound, unit)}`}.`
-    return `${head}, best found${bound === undefined ? '; no bound is proven' : `; no plan can be below ${quantityText(bound, unit)}`}.`
+    const item = inputs.goals[goal]
+    const group = item?.scope?.groups?.length === 1 ? item.scope.groups[0]! : null
+    if (item === undefined || item.metric !== 'span-over' || item.threshold !== undefined || group === null || bound === undefined) return null
+    const name = context.names.group(group)
+    return word === 'proven optimal' ? `${name} is out for ${quantityText(value, unit)}: proven the shortest possible.` : `No plan has ${name} out for less than ${quantityText(bound, unit)}, proven; this one has it out for ${quantityText(value, unit)}.`
   })()
   return {
     against: againstLabel === null ? 'No other ranked option keeps every hard rule, so there is none to weigh it against.' : `Against “${againstLabel}”${named ? '' : ', the next in rank'}.`,
@@ -125,6 +145,8 @@ export interface CompareView {
   readonly incomplete: string | null
   /** Each goal's value now and before; null when the goals themselves changed. */
   readonly goals: readonly CompareGoalRow[] | null
+  /** The longest outage of each group with a span rule, now and before, from the two options' own checker figures. */
+  readonly outages: readonly CompareGoalRow[]
   readonly goalsNote: string | null
   readonly methods: readonly string[]
   readonly buys: readonly string[]
@@ -144,9 +166,10 @@ const shiftText = (was: { start: string; finish: string }, now: { start: string;
   return `finishes ${hoursText(Math.abs(finish))} ${finish > 0 ? 'later' : 'earlier'}`
 }
 
-export const compareView = (facts: VersusFacts, option: Pick<OptionView, 'label'>, previousLabel: string, context: Context): CompareView => {
+export const compareView = (facts: VersusFacts, option: Pick<OptionView, 'label' | 'metrics'>, previous: Pick<OptionView, 'label' | 'metrics'>, context: Context): CompareView => {
+  const previousLabel = previous.label
   const { names, format, inputs } = context
-  const signed = (by: number, unit: string) => by === 0 ? 'the same' : `${by > 0 ? '+' : '−'}${quantityText(Math.abs(by), unit)}`
+  const signed = (by: number, unit: string) => Math.abs(by) < 1e-9 ? 'the same' : `${by > 0 ? '+' : '−'}${quantityText(Math.abs(by), unit)}`
   const methods = facts.methods.map(entry => {
     const method = inputs.methods.find(choice => choice.key === entry.choice)
     const label = (key: string) => method?.options.find(item => item.key === key)?.label ?? 'a method option no longer in this plan'
@@ -160,12 +183,18 @@ export const compareView = (facts: VersusFacts, option: Pick<OptionView, 'label'
     name: goalWords(context, entry.goal), now: quantityText(entry.now, entry.unit), was: quantityText(entry.was, entry.unit), change: signed(entry.now - entry.was, entry.unit),
   })) ?? null
   const moved = facts.moved.map(entry => ({ job: names.job(entry.job), was: format.range(entry.was.start, entry.was.finish), now: format.range(entry.now.start, entry.now.finish), shift: shiftText(entry.was, entry.now) }))
-  const sameGoals = goals === null || goals.every(row => row.change === 'the same')
+  // G5: an outage that grows under the guideline changes no goal, so each limited group's longest outage is shown.
+  const span = (of: Pick<OptionView, 'metrics'>, group: string) => of.metrics.find(metric => metric.id === `span:${group}`)
+  const outages = [...new Set(inputs.rules.flatMap(rule => rule.kind === 'span-limit' ? [rule.group] : []))].flatMap(group => {
+    const now = span(option, group), was = span(previous, group)
+    return now === undefined || was === undefined ? [] : [{ name: `Longest outage, ${names.group(group)}`, now: quantityText(now.value, now.unit), was: quantityText(was.value, was.unit), change: signed(now.value - was.value, now.unit) }]
+  })
+  const sameGoals = (goals === null || goals.every(row => row.change === 'the same')) && outages.every(row => row.change === 'the same')
   return {
     against: `“${option.label}” now, against “${previousLabel}” in the set made before the latest changes.`,
     changes: facts.changes.map(change => change.summary),
     incomplete: facts.complete ? null : 'Some earlier changes are no longer in the plan\'s history, so this list is not complete.',
-    goals, goalsNote: goals === null ? 'The goals themselves changed, so their values are not compared.' : null,
+    goals, outages, goalsNote: goals === null ? 'The goals themselves changed, so their values are not compared.' : null,
     methods, buys, moved,
     more: facts.movedMore === 0 ? null : `${facts.movedMore} more ${facts.movedMore === 1 ? 'job moved' : 'jobs moved'}.`,
     added: facts.added.map(names.job),

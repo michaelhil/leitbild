@@ -1,11 +1,12 @@
 // The pessimistic card (design §4.2, §7 AttentionColumn; robust {allPessimistic, single[]}): the recommended
 // option re-timed with every ranged job at its high estimate, then each alone, as the checker judged it. It
-// names the rule broken, the job and by how much, or the job that would run past the window end and when.
+// names the rule broken, the job and by how much, or the job that would run past the window end and when. The
+// unplaced job is tested on the real stored Train A case in fix-round-u.render.test.ts.
 import { describe, expect, test } from 'bun:test'
 import type { Component } from 'svelte'
 import { robustSchema } from '../plan/schema.ts'
 import { attentionCards, pessimisticCard } from './attention.ts'
-import { identifiers, modelOf, trainACaseInputs, trainAPlanned } from './fixtures/plans.ts'
+import { identifiers, trainAPlanned } from './fixtures/plans.ts'
 import { readableText, registerSvelte, renderHtml, routineBreaches } from './fixtures/svelte-ssr.ts'
 import { createTimeFormat } from './format.ts'
 import { createNames, type PlanModel } from './model.ts'
@@ -42,8 +43,8 @@ describe('the pessimistic card', () => {
     })
     const cards = attentionCards(model, contextOf(model))
     const card = cards.find(item => item.mark.word === 'Pessimistic estimates')!
-    expect(card.title).toBe(`With every ranged job at its high estimate, Option 1 does not hold: ${name(model, 'SWA-RTS')} breaks “${name(model, 'R2')}” by 3 h.`)
-    expect(card.steps).toEqual([`${name(model, 'SWA-PUMP-OUT')} alone at its high estimate: ${name(model, 'SWA-RTS')} breaks “${name(model, 'R2')}” by 3 h.`, '1 other ranged job holds alone at its high estimate.'])
+    expect(card.title).toBe(`With every job with an estimate range at its high estimate, Option 1 does not hold: ${name(model, 'SWA-RTS')} breaks “${name(model, 'R2')}” by 3 h.`)
+    expect(card.steps).toEqual([`${name(model, 'SWA-PUMP-OUT')} alone at its high estimate: ${name(model, 'SWA-RTS')} breaks “${name(model, 'R2')}” by 3 h.`, '1 other job with an estimate range holds alone at its high estimate.'])
     // It follows the recommended option's own card.
     expect(cards.indexOf(card)).toBe(cards.findIndex(item => item.title === 'Option 1: validated feasible.') + 1)
     const text = readableText(renderHtml(AttentionColumn, { cards, onAction: none }))
@@ -56,7 +57,7 @@ describe('the pessimistic card', () => {
     const by = new Date(Date.parse(end) + 2 * 3_600_000).toISOString()
     const model = withRobust({ allPessimistic: { holds: false, window: { by }, job: 'SWA-RTS' }, single: [] })
     const card = pessimisticCard(model.options!.items[0]!, contextOf(model))!
-    expect(card.title).toBe(`With every ranged job at its high estimate, Option 1 does not hold: ${name(model, 'SWA-RTS')} would run past the window end, to ${contextOf(model).format.when(by)}.`)
+    expect(card.title).toBe(`With every job with an estimate range at its high estimate, Option 1 does not hold: ${name(model, 'SWA-RTS')} would run past the window end, to ${contextOf(model).format.when(by)}.`)
   })
 
   test('no card for an option without a re-timing, a stale one, or one that is not validated feasible', () => {
@@ -64,30 +65,5 @@ describe('the pessimistic card', () => {
     expect(pessimisticCard(model.options!.items[0]!, contextOf(model))).toBeNull()
     const stale = withRobust({ allPessimistic: { holds: true }, single: [] })
     expect(pessimisticCard({ ...stale.options!.items[0]!, fresh: false }, contextOf(stale))).toBeNull()
-  })
-})
-
-describe('a re-timed job that cannot be placed (the stored Train A case)', () => {
-  test('"<job> could not be done: <crew> has no time left after <instant>", from the frozen case', () => {
-    // Lane S's checked run on the flagship (solve/retime.test.ts): with the tube cleaning at its high estimate,
-    // the eddy-current test has no team time left. The team's only time is its booked Wednesday period, so the
-    // instant after which none remains is that period's end, read here from the case.
-    const inputs = trainACaseInputs()
-    const team = inputs.resources.find(resource => resource.key === 'ect-team')!
-    const after = inputs.calendars.find(calendar => calendar.key === team.calendar)!.periods.at(-1)!.end
-    const unplaced = { holds: false, unplaced: { job: 'CCWHXA-ECT', resource: team.key, after } }
-    const planned = trainAPlanned()
-    const option = { ...planned.options!.items[0]!, robust: robustSchema.parse({ allPessimistic: unplaced, single: [{ job: 'CCWHXA-CLEAN', outcome: unplaced }] }) }
-    const model: PlanModel = modelOf(inputs, { options: { ...planned.options!, items: [option] } })
-    const context = contextOf(model)
-    const card = pessimisticCard(option, context)!
-    const job = (key: string) => inputs.jobs.find(entry => entry.key === key)!.title
-    const words = `${job('CCWHXA-ECT')} could not be done: ${team.label} has no time left after ${context.format.when(after)}`
-    expect(context.format.when(after)).toBe('Wed 18 Nov 19:00')
-    expect(card.title).toBe(`With every ranged job at its high estimate, Option 1 does not hold: ${words}.`)
-    expect(card.steps).toEqual([`${job('CCWHXA-CLEAN')} alone at its high estimate: ${words}.`])
-    const text = readableText(renderHtml(AttentionColumn, { cards: attentionCards(model, context), onAction: none }))
-    expect(text).toContain(words)
-    expect(routineBreaches(text, identifiers(inputs), [])).toEqual([])
   })
 })

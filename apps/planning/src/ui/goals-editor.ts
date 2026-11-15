@@ -4,7 +4,7 @@
 // first change it saved this session, so "Undo goal changes made since you opened this plan" can put it back, through the preview again.
 import type { Edit } from '../plan/edit-schema.ts'
 import type { Goal } from './model.ts'
-import { goalOrderText, goalShort, type Context } from './status-text.ts'
+import { goalAimText, goalShort, type Context } from './status-text.ts'
 
 /** One goal row as the editor holds it: the saved goal it came from, and the values typed for it. */
 export interface GoalDraft {
@@ -61,7 +61,7 @@ export const goalsLabel = (goals: readonly Goal[], context: Context, words = 'Ne
 export interface GoalRow {
   readonly index: number
   readonly short: string
-  /** "Least extra cost (compared in steps of NOK 25,000)": the full wording, said once, here. */
+  /** "Keep the extra cost as small as possible; costs within NOK 25,000 of each other count as equal". */
   readonly full: string
   /** The threshold's unit, or null for a goal without one. */
   readonly thresholdUnit: string | null
@@ -72,7 +72,7 @@ export const goalRows = (draft: readonly GoalDraft[], saved: readonly Goal[], co
   draft.map((row, index) => {
     const goal = saved[row.from]!
     return {
-      index, short: goalShort(goal, context), full: goalOrderText([goal], context)[0]!.replace(/^1\. /, ''),
+      index, short: goalShort(goal, context), full: goalAimText(goal, context),
       thresholdUnit: goal.threshold?.unit ?? null, stepUnit: goal.tolerance.unit,
     }
   })

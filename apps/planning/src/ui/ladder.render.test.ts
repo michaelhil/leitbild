@@ -67,30 +67,30 @@ describe('what overtime buys', () => {
   test('each rung is named by what it buys, from the plan\'s purchases; ordered crew time is said on the lowest rung', () => {
     const { model, pages } = swapLadder()
     const context = contextOf(model)
-    const view = ladderView(pages, model, context)
+    const view = ladderView(pages, model, context, null)
     const label = (key: string) => model.inputs.purchases.find(purchase => purchase.key === key)!.label
     expect(view.rungs.map(rung => rung.name)).toEqual(['Days only', `+ ${label('ot-mech')} and ${label('ot-elec')}`, `+ ${label('contractor-nights')}`])
     // A night crew already ordered is in every rung; the lowest rung says so.
     const inputs = { ...model.inputs, purchases: model.inputs.purchases.map(purchase => purchase.key === 'contractor-nights' ? { ...purchase, ordered: { at: '2026-11-12T08:00:00Z', by: { kind: 'human' as const } } } : purchase) }
     const ordered = modelOf(inputs)
     const [days] = buyLists(inputs)
-    expect(ladderView([page([{ rung: { rung: 0, buy: [...days, 'contractor-nights'], bought: [] } }])], ordered, contextOf(ordered)).rungs[0]!.name).toBe(`Days only, with ${label('contractor-nights')} already ordered`)
+    expect(ladderView([page([{ rung: { rung: 0, buy: [...days, 'contractor-nights'], bought: [] } }])], ordered, contextOf(ordered), null).rungs[0]!.name).toBe(`Days only, with ${label('contractor-nights')} already ordered`)
     // Each rung is solved by one Generate with its own buy list, kept beside the options already there.
-    expect(view.rungs[2]!.label).toBe(`Rung 3 of 3: ${view.rungs[2]!.name}`)
-    expect(rungRequest(view.rungs[2]!)).toEqual({ variants: [{ label: view.rungs[2]!.label, buy: [...buyLists(model.inputs)[2]] }], keep: true })
+    // The top rung is a plain Generate kept beside the rest: the default options (lane S, U1).
+    expect(rungRequest(view.rungs[2]!, contextOf(model))).toEqual({ keep: true })
   })
 
   test('a row says the Module\'s word exactly, then the hours and money between the two rungs', () => {
     const { model, pages } = swapLadder()
-    const view = ladderView(pages, model, contextOf(model))
+    const view = ladderView(pages, model, contextOf(model), null)
     expect(view.rows.map(row => row.word)).toEqual(['makes it possible', 'found'])
     // 54 h against 56.5 h is 2.5 h shorter; NOK 464,250 against NOK 398,800 is NOK 65,450 more.
-    expect(view.rows[1]!.differences).toBe(`${hoursText(or.overtime.span - or.nights.span)} shorter outage · ${moneyText(or.nights.cost - or.overtime.cost, 'NOK')} more`)
-    expect(view.rows[1]!.differences).toBe('2.5 h shorter outage · NOK 65,450 more')
+    expect(view.rows[1]!.differences).toBe(`longest outage ${hoursText(or.overtime.span - or.nights.span)} shorter · extra cost ${moneyText(or.nights.cost - or.overtime.cost, 'NOK')} more`)
+    expect(view.rows[1]!.differences).toBe('longest outage 2.5 h shorter · extra cost NOK 65,450 more')
     expect(view.rows[0]!.differences).toBeNull()
     const text = readableText(renderHtml(Ladder, { view, state: 'ready', onSolve: none, onFiner: none, onSelect: none, onClose: none }))
     expect(text).toMatch(/makes it possible\s+2 Rung 2: \+ /)
-    expect(text).toContain('found 2.5 h shorter outage · NOK 65,450 more')
+    expect(text).toContain('found: longest outage 2.5 h shorter · extra cost NOK 65,450 more')
     expect(text).not.toMatch(/buys nothing/i)
     // The rung's own outcome: its status word, its longest outage against the plan's limit, and its extra cost.
     expect(text).toContain(`Longest outage ${hoursText(or.nights.span)} of 72 h · Extra cost ${moneyText(or.nights.cost, 'NOK')}`)
@@ -109,7 +109,7 @@ describe('what overtime buys', () => {
     const crew = model.inputs.resources.find(resource => resource.key === 'mech-station')!.crewSize!
     expect(evening * crew).toBe(12)
     const [, , all] = buyLists(model.inputs)
-    const uses = (bought: unknown[]) => ladderView([page([{ rung: { rung: 0, buy: [...buyLists(model.inputs)[0]], option: 'rung-1', bought: [] } }, { rung: { rung: 1, buy: [...all], option: 'rung-2', bought } }])], model, context).rungs[1]!.uses
+    const uses = (bought: unknown[]) => ladderView([page([{ rung: { rung: 0, buy: [...buyLists(model.inputs)[0]], option: 'rung-1', bought: [] } }, { rung: { rung: 1, buy: [...all], option: 'rung-2', bought } }])], model, context, null).rungs[1]!.uses
     expect(uses([{ id: 'bought:ot-mech', value: evening * crew, unit: 'person-h' }, { id: 'bought:contractor-nights', value: 1, unit: 'periods' }]))
       .toEqual([`${label('ot-mech')}: 12 person-hours`, `${label('contractor-nights')}: 1 night`])
     // The nights are overnight periods in the plan zone (19:00 to 07:00 local), so they are said as nights.
@@ -133,10 +133,10 @@ describe('what overtime buys', () => {
       { row: { from: 1, to: 2, ends: { from: 'proven', to: 'proven' }, word: 'proven: no gain', outage: 0, cost: 0, finish: crane } },
     ])]
     const context = contextOf(model)
-    const view = ladderView(pages, model, context)
+    const view = ladderView(pages, model, context, null)
     const text = readableText(renderHtml(Ladder, { view, state: 'ready', onSolve: none, onFiner: none, onSelect: none, onClose: none }))
     const craneName = model.inputs.resources.find(resource => resource.key === 'crane')!.label
-    expect(text).toMatch(new RegExp(`proven: no gain the same outage · the same extra cost What sets the finish: ${craneName.replace(/[()]/g, '\\$&')} is not on shift`))
+    expect(text).toMatch(new RegExp(`proven: no gain: the same longest outage · the same extra cost What sets the finish: ${craneName.replace(/[()]/g, '\\$&')} is not on shift`))
     expect(text).toContain('not solved')
     expect(text).not.toMatch(/buys nothing/i)
     // The rung still to work out says so, and one button works out the missing rung, lowest first.

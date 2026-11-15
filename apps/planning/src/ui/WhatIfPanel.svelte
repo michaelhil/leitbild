@@ -37,7 +37,7 @@
 
   const explain: Readonly<Record<WhatIfKind, string>> = {
     out: 'Adds one shorter outage limit for this what-if only. The plan\'s own rules stay in force beside it.',
-    first: 'Brings this group back as soon as possible first, then solves the plan\'s goals in order.',
+    first: 'Gives this group the shortest outage it can have, first, then solves the plan\'s goals in order. For a group still in service, the shortest outage is not the earliest return.',
     cheapest: 'Solves the extra cost first, keeping every hard rule; the other goals follow at that cost, and a guideline breach is shown, not hidden.',
   }
   const ask = (): void => {

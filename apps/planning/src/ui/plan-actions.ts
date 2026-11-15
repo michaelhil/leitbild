@@ -4,7 +4,7 @@
 import type { PlanningSubject } from '@leitbild/contracts'
 import type { Edit } from '../plan/edit-schema.ts'
 import { isRequestError, refusalAuthority, refusalNearest, refusalText, RUN, type ExplainResult, type GenerateInput, type PlanningClient } from './api.ts'
-import { rungRequest, type BuysPage, type RungView } from './ladder.ts'
+import type { BuysPage } from './ladder.ts'
 import { whatIfRequest, type WhatIfVariant } from './what-if.ts'
 import { finishChain, mostLimiting, whyStart, type FinishStep, type Part, type WhyStart } from './explain-text.ts'
 import { createTimeFormat } from './format.ts'
@@ -159,13 +159,13 @@ export const createPlanActions = (client: PlanningClient, planId: string, progre
      * there, so each rung starts from the one below. While another plan holds the solver, it waits and tries
      * again, and says so; it stops at the first other refusal, which it returns.
      */
-    solveRungs: async (model: PlanModel, rungs: ReadonlyArray<Pick<RungView, 'name' | 'label' | 'buy'>>, signal: AbortSignal, keep: string | null, wait: (ms: number) => Promise<void> = ms => pause(ms, signal)): Promise<Shown & { readonly error: unknown }> => {
+    solveRungs: async (model: PlanModel, rungs: ReadonlyArray<{ readonly name: string; readonly request: GenerateInput }>, signal: AbortSignal, keep: string | null, wait: (ms: number) => Promise<void> = ms => pause(ms, signal)): Promise<Shown & { readonly error: unknown }> => {
       let error: unknown = null
       outer: for (const [index, rung] of rungs.entries()) {
         for (let attempt = 1; ; attempt += 1) {
           progress(`Working out what overtime buys: ${rung.name} (${index + 1} of ${rungs.length})…`)
           try {
-            await client.generate(planId, model.revision, rungRequest(rung), signal)
+            await client.generate(planId, model.revision, rung.request, signal)
             break
           } catch (cause) {
             if (signal.aborted) { error = cause; break outer }
