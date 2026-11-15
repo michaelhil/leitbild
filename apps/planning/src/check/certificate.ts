@@ -246,3 +246,65 @@ export const verifyCertificate = (inputs: PlanInputs, variant: CheckVariant, cer
   }
   return { proves: problems.length === 0 && unverified.length === 0, ok: problems.length === 0, problems, unverified, refutedByTime, figures }
 }
+
+/**
+ * A span refusal's figures (V1): the rule it names and the least span it states. They stand only when the
+ * rule is a span limit of the plan or of the what-if (`also`), lane K's own least span for its group with
+ * that rule lifted (the shortest the other rules allow from any opening, in every case of the variant's
+ * optional rebookings) is the figure stated, at the grid's resolution, and that figure exceeds the rule's
+ * limit. "61.5 h against 72 h" proves nothing; "61.5 h against the 40 h asked" does. The figure to show is
+ * `checkerLeastHours`, lane K's own.
+ */
+export const verifySpanRefusal = (inputs: PlanInputs, variant: CheckVariant, claim: { readonly rule: string; readonly leastHours: number }): { readonly proves: boolean; readonly reasons: readonly string[]; readonly checkerLeastHours?: number } => {
+  const named = [...inputs.rules, ...(variant.also ?? [])].find(rule => rule.key === claim.rule)
+  if (named === undefined || named.kind !== 'span-limit') return { proves: false, reasons: [`'${claim.rule}' is not a span limit of the plan or of this what-if.`] }
+  const lifted = prepare({ ...inputs, rules: inputs.rules.filter(rule => rule.key !== claim.rule) }, { ...variant, also: (variant.also ?? []).filter(rule => rule.key !== claim.rule) })
+  if (!lifted.ok) return { proves: false, reasons: lifted.problems.map(problem => problem.words) }
+  const context = lifted.context
+  const { inputs: effective, grid } = context
+  const supportersOf = (item: string, seen: ReadonlySet<string> = new Set()): string[] => (effective.equipment.find(entry => entry.key === item)?.supportedBy ?? [])
+    .filter(key => !seen.has(key)).flatMap(key => [key, ...supportersOf(key, new Set([...seen, item, key]))])
+  const covered = new Set(effective.equipment.filter(item => item.group === named.group).flatMap(item => [item.key, ...supportersOf(item.key)]))
+  const active = [...context.active].map(key => context.jobs.get(key)!)
+  const covering = (kinds: ReadonlyArray<Job['kind']>) => active.filter(job => kinds.includes(job.kind) && job.equipment.some(item => covered.has(item))).map(job => job.key)
+  let least = Infinity
+  for (const world of worldsOf(context)) {
+    const timed = propagate(context, world)
+    if (timed.ok) least = Math.min(least, timed.shortestSpan(covering(['tag-out', 'test']), covering(['test'])))
+  }
+  if (!Number.isFinite(least)) return { proves: false, reasons: [`No schedule of this variant opens ${named.group} even without '${named.words}', so the span is not the cause.`] }
+  const leastHours = least * grid.slotMs / hourMs
+  const limitHours = named.limit.value * ({ s: 1 / 3_600, min: 1 / 60, h: 1, d: 24 } as const)[named.limit.unit]
+  const resolution = grid.slotMs / hourMs
+  const reasons = [
+    ...(Math.abs(leastHours - claim.leastHours) < resolution / 2 ? [] : [`The checker's least span for this group is ${leastHours} h, not the ${claim.leastHours} h stated.`]),
+    ...(leastHours > limitHours + 1e-9 ? [] : [`A least span of ${leastHours} h does not exceed the ${limitHours} h limit of '${named.words}', so it proves nothing.`]),
+  ]
+  return { proves: reasons.length === 0, reasons, checkerLeastHours: leastHours }
+}
+
+/** One method combination's refusal: its picks, the purchases it allowed, and its cause. */
+export interface MethodCause {
+  readonly methods: CheckVariant['methods']
+  readonly purchases: readonly string[]
+  readonly cause: Certificate
+}
+
+/**
+ * A what-if (or any variant sent without methods) is refused only when every method combination of the plan
+ * is (V1): each needs a cause that lane K proves on that combination, with the what-if's own extra rules.
+ * `missing` and `failing` name the combinations ("choice: option") without one, or whose cause does not prove.
+ */
+export const verifyEveryMethod = (inputs: PlanInputs, also: CheckVariant['also'], causes: readonly MethodCause[]): { readonly proves: boolean; readonly missing: readonly string[]; readonly failing: readonly string[] } => {
+  const combinations = inputs.methods.reduce<Array<Array<{ readonly choice: string; readonly option: string }>>>(
+    (combos, choice) => combos.flatMap(combo => choice.options.map(option => [...combo, { choice: choice.key, option: option.key }])), [[]])
+  const name = (combo: CheckVariant['methods']) => combo.map(pick => `${pick.choice}: ${pick.option}`).join(', ') || 'the plan'
+  const same = (left: CheckVariant['methods'], right: CheckVariant['methods']) => left.length === right.length && left.every(pick => right.some(other => other.choice === pick.choice && other.option === pick.option))
+  const missing: string[] = [], failing: string[] = []
+  for (const combo of combinations) {
+    const given = causes.find(entry => same(entry.methods, combo))
+    if (given === undefined) { missing.push(name(combo)); continue }
+    if (!verifyCertificate(inputs, { methods: combo, purchases: given.purchases, also }, given.cause).proves) failing.push(name(combo))
+  }
+  return { proves: missing.length === 0 && failing.length === 0, missing, failing }
+}

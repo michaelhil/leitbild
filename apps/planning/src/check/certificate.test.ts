@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'bun:test'
 import { planInputsSchema, planSchema, type PlanInputs } from '../plan/schema.ts'
 import { verifyBound } from './optimal.ts'
-import { verifyCertificate } from './certificate.ts'
+import { verifyCertificate, verifyEveryMethod, verifySpanRefusal } from './certificate.ts'
 import type { CheckVariant } from './check.ts'
 import { recheckOption } from './recheck.ts'
 import { trainAInputs } from '../../tests/harness/train-a-case.ts'
@@ -144,4 +144,52 @@ describe("lane S's real generate", () => {
     // its chain ends Fri 15:00, before the window end: the checker's own time logic rules out every case
     expect(verified.refutedByTime.length).toBeGreaterThan(0)
   }, 30_000)
+})
+
+describe("V1: a what-if's span refusal on the flagship (the walk's 40 h, after 48 h)", async () => {
+  // The walk asked "at most 40 h out" for the Train A cooling chain after a validated 48 h answer for the swap.
+  // The causes here are lane S's bounds() on each method with the what-if's rule, verified by lane K alone.
+  const { trainAInputs: flagshipInputs } = await import('../solve/fixtures/train-a-case.ts')
+  const flagship = flagshipInputs({ read: true })
+  const { compile } = await import('../solve/compile.ts')
+  const { bounds } = await import('../solve/bounds.ts')
+  const { withExtraRules } = await import('../solve/keys.ts')
+  const own = flagship.rules.find(rule => rule.kind === 'span-limit' && rule.group === 'COOL-A')!
+  const asked = (hours: number) => [{ kind: 'span-limit' as const, key: `what-if-COOL-A-${hours}h`, group: 'COOL-A', limit: { value: hours, unit: 'h' as const }, singleEntry: own.kind === 'span-limit' && own.singleEntry, words: `What-if: back within ${hours} h.`, source: { by: 'planner' as const } }]
+  const methodsOf = (option: string) => [{ choice: 'SWA-method', option }]
+  /** lane S's refusal for one method under the what-if, with the purchases it allowed; undefined when none. */
+  const refusal = (hours: number, option: string) => {
+    const compiled = compile(withExtraRules(flagship, asked(hours)), { methods: methodsOf(option), buy: 'allowed' })
+    if (!compiled.ok) throw new Error(compiled.word)
+    const found = bounds(compiled.problem, compiled.index)
+    return found.certificate === undefined ? undefined : { methods: methodsOf(option), purchases: compiled.index.allowedPurchases, cause: found.certificate, span: found.span }
+  }
+  const variantOf = (hours: number, option: string) => ({ methods: methodsOf(option), purchases: refusal(hours, option)?.purchases ?? [], also: asked(hours) })
+
+  test('a span cause named against the plan\'s 72 h rule proves nothing: its least span, 61.5 h, does not exceed 72 h', () => {
+    // the walk's card: "The shortest span this plan allows is 61.5 h, against 72 h"
+    const rebuild = refusal(40, 'rebuild')!
+    expect(rebuild.span).toMatchObject({ rule: 'R2', limitHours: 72, leastHours: 61.5 })
+    const named = verifySpanRefusal(flagship, variantOf(40, 'rebuild'), { rule: 'R2', leastHours: 61.5 })
+    expect(named.proves).toBe(false)
+    expect(named.reasons.join(' ')).toContain('72 h')
+  })
+  test('against the what-if\'s own 40 h rule the same least span proves it, on lane K\'s own figure', () => {
+    expect(verifySpanRefusal(flagship, variantOf(40, 'rebuild'), { rule: 'what-if-COOL-A-40h', leastHours: 61.5 })).toMatchObject({ proves: true, checkerLeastHours: 61.5 })
+    // a figure that is not lane K's least span is not proof, even above the limit
+    expect(verifySpanRefusal(flagship, variantOf(40, 'rebuild'), { rule: 'what-if-COOL-A-40h', leastHours: 70 }).proves).toBe(false)
+  })
+  test('the 40 h what-if is proven only if every method is: the rebuild\'s cause alone is not enough', () => {
+    const rebuild = refusal(40, 'rebuild')!, swap = refusal(40, 'swap')!
+    expect(verifyEveryMethod(flagship, asked(40), [rebuild])).toMatchObject({ proves: false, missing: ['SWA-method: swap'] })
+    expect(verifyEveryMethod(flagship, asked(40), [rebuild, swap])).toMatchObject({ proves: true, missing: [], failing: [] })
+  })
+  test('at 48 h the swap has no refusal (its least span is under 48 h), so the 48 h what-if is never proven infeasible', () => {
+    expect(refusal(48, 'swap')).toBeUndefined()
+    expect(verifyEveryMethod(flagship, asked(48), [refusal(48, 'rebuild')!]).proves).toBe(false)
+  })
+  test('a cause proven for one method is not checked as another method\'s', () => {
+    const rebuild = refusal(40, 'rebuild')!
+    expect(verifyEveryMethod(flagship, asked(40), [rebuild, { ...rebuild, methods: methodsOf('swap') }])).toMatchObject({ proves: false, failing: ['SWA-method: swap'] })
+  })
 })
