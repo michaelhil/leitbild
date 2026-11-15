@@ -554,3 +554,52 @@ describe("bought crew time: the checker's own 'bought:<purchase>' count", () => 
     expect(result.metrics.some(metric => metric.id === 'bought:spare')).toBe(false)
   })
 })
+
+describe('V2: after an input change a stored word is an out-of-date fact, never relabelled', () => {
+  const run = { grid: '30min' as const, engine: 'double', formulation: 'f-1', seed: 1, budget: { evals: 1, cpuMs: 1, wallMs: 1 }, stoppedBy: 'done' as const, evals: 1, cpuMs: 1 }
+  const inputs = plan({ equipment: [item('X')], jobs: [tag('X-TAG', ['X']), testJob('X-TEST', ['X'])] })
+  // A chain the plan does not have (the test does not follow the tag-out): the certificate fails on any inputs.
+  const wrongChain = { kind: 'chain' as const, jobs: ['X-TEST', 'X-TAG'], workHours: 30, calendars: [], availableHours: 1, from: '2026-11-16T06:00:00Z', by: '2026-11-16T07:00:00Z' }
+  const refusedAt = (revision: number, inputsRevision: number) => planSchema.parse({
+    id: '00000000-0000-4000-8000-000000000007', workspaceId: '00000000-0000-4000-8000-0000000000aa', revision, createdAt: '2026-11-11T00:00:00Z', updatedAt: '2026-11-11T00:00:00Z', inputs,
+    options: { at: '2026-11-11T00:00:00Z', by: { kind: 'agent' }, options: [{ key: 'r', label: 'Refused', variant: noVariant, status: { word: 'proven infeasible', cause: wrongChain, run }, rows: [], metrics: [], inputsRevision }] },
+    baselines: [], changes: [], droppedChanges: 0,
+  })
+  test('on the inputs it was made for, a certificate that fails is refuted: shown as unresolved', () => {
+    const plan = refusedAt(3, 3)
+    expect(recheckOption(plan, plan.options!.options[0]!, 'f-1')).toMatchObject({ standing: 'refuted', shownAs: 'unresolved', usable: false })
+  })
+  test('after an input change the same refusal keeps its word as an out-of-date fact, not "unresolved"', () => {
+    const plan = refusedAt(4, 3)
+    const result = recheckOption(plan, plan.options!.options[0]!, 'f-1')
+    expect(result).toMatchObject({ standing: 'out-of-date', usable: false, baselineAllowed: false, reasons: ['inputs-changed'] })
+    expect(result.shownAs).toBeUndefined()
+    expect(result.certificate).toBeUndefined()   // not re-verified on inputs it was not made for
+  })
+  test('a proven-optimal goal on an out-of-date option stays a stored fact: not re-derived, never usable', () => {
+    const chain = { ...inputs, jobs: [{ ...tag('A', ['X']), kind: 'work' as const, equipment: [] }] }
+    const proven = planSchema.parse({
+      id: '00000000-0000-4000-8000-000000000008', workspaceId: '00000000-0000-4000-8000-0000000000aa', revision: 4, createdAt: '2026-11-11T00:00:00Z', updatedAt: '2026-11-11T00:00:00Z', inputs: chain,
+      options: { at: '2026-11-11T00:00:00Z', by: { kind: 'agent' }, options: [{ key: 'o', label: 'Option', variant: noVariant, status: { word: 'validated feasible', run, goals: [{ word: 'proven optimal', goal: 0, value: 5, unit: 'h', bound: { value: 5, source: 'logic+calendars', certificate: { kind: 'zero' } } }] }, rows: [{ ...opsRow('A', '2026-11-16T06:00:00Z'), float: { workingHours: 0, limitedBy: { kind: 'window-end' as const } } }], metrics: [], inputsRevision: 3 }] },
+      baselines: [], changes: [], droppedChanges: 0,
+    })
+    expect(recheckOption(proven, proven.options!.options[0]!, 'f-1')).toMatchObject({ standing: 'out-of-date', usable: false, baselineAllowed: false, bestFoundGoals: [], optimality: [] })
+  })
+  test('the walk\'s case: the flagship\'s days-only refusal after the 30 h rebuild estimate is out of date, still "proven infeasible"', async () => {
+    const { generate } = await import('../solve/generate.ts')
+    const { searchEngine } = await import('../solve/search.ts')
+    const { laneKCheck, laneKVerify, laneKVerifyBound } = await import('../solve/fixtures/lane-k.ts')
+    const { trainAInputs } = await import('../solve/fixtures/train-a-case.ts')
+    const { formulationOf } = await import('../solve/compile.ts')
+    const flagship = trainAInputs({ read: true })
+    const set = (await generate({ engine: searchEngine(), check: laneKCheck, verify: laneKVerify, verifyBound: laneKVerifyBound }, { inputs: flagship, revision: 1, previous: null, input: { variants: [{ label: 'Days only', buy: 'no-extra-crew-hours' }] }, by: { kind: 'service', name: 'test' }, signal: new AbortController().signal, seed: 1, evals: 300 })).optionSet
+    const refused = set.options[0]!
+    expect(refused.status.word).toBe('proven infeasible')
+    // the walk's edit: the rebuild estimated at 30 h (revision 2)
+    const edited = { ...flagship, jobs: flagship.jobs.map(job => job.key === 'SWA-REBUILD' ? { ...job, duration: { ...job.duration, value: 30 } } : job) }
+    const stored = planSchema.parse({ id: '00000000-0000-4000-8000-000000000009', workspaceId: '00000000-0000-4000-8000-0000000000aa', revision: 2, createdAt: '2026-11-11T00:00:00Z', updatedAt: '2026-11-11T00:00:00Z', inputs: edited, options: set, baselines: [], changes: [], droppedChanges: 0 })
+    const result = recheckOption(stored, stored.options!.options[0]!, formulationOf(flagship.settings.grid))
+    expect(result).toMatchObject({ standing: 'out-of-date', usable: false, baselineAllowed: false, reasons: ['inputs-changed'] })
+    expect(result.shownAs).toBeUndefined()
+  }, 60_000)
+})
