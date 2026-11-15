@@ -1,5 +1,6 @@
 // Status words (A4 and the adversary r2 items 2-3). Only the status schema's words; "proven optimal" at
-// the goal's resolution and only when every earlier goal is proven; the gap is in the goal's unit. Every
+// the goal's resolution and only when every earlier goal is proven (in a what-if with a lead: only the lead,
+// adversary part 2 check, fixes B and C); the gap is in the goal's unit. Every
 // status shown is re-checked against the current inputs, and a stored proof is reused only when the
 // option's inputs revision and formulation both equal the current ones. Prose is never built here.
 import { goalResolution, statusSchema, type BoundCertificate, type Certificate, type GoalWord, type PlanInputs, type Status } from '../plan/schema.ts'
@@ -75,12 +76,29 @@ export const goalStatuses = (goals: PlanInputs['goals'], grid: PlanInputs['setti
   return { goals: statuses, conflicts }
 }
 
+type LeadLine = Extract<NonNullable<Extract<Status, { word: 'validated feasible' }>['lead']>, { word: string }>
+const unproven = (goal: GoalStatus, keepBound: boolean): GoalStatus =>
+  ({ word: 'best found under budget', goal: goal.goal, value: goal.value, unit: goal.unit, ...(keepBound && goal.bound !== undefined ? { bound: goal.bound } : {}) })
+const unprovenLead = (lead: LeadLine): LeadLine => ({ word: 'best found under budget', group: lead.group, value: lead.value, unit: lead.unit })
+
 /**
  * Every "proven optimal" goal re-derived by lane K: the first one it does not prove, and every later goal
  * (goal order), becomes "best found under budget". A bound lane K does not prove is dropped: not a fact.
+ * With a what-if's lead the lead rule replaces goal order (adversary part 2 check, fix C): only the lead may
+ * stay proven, a plan goal through `verify`, a group's own line through `verifyLead` (lane K's bound on the
+ * lead's own goal, the first of the list it was solved with). Without `verifyLead` a group lead is not proven.
  */
-export const verifiedGoals = (status: Status, verify: (goal: number, bound: { readonly value: number }) => { readonly proves: boolean }): Status => {
+export const verifiedGoals = (status: Status, verify: (goal: number, bound: { readonly value: number }) => { readonly proves: boolean }, verifyLead?: (bound: { readonly value: number }) => { readonly proves: boolean }): Status => {
   if (status.word !== 'validated feasible') return status
+  const lead = status.lead
+  if (lead !== undefined) {
+    const goals = status.goals.map((goal): GoalStatus => {
+      if (goal.word !== 'proven optimal') return goal
+      return 'goal' in lead && lead.goal === goal.goal && verify(goal.goal, goal.bound).proves ? goal : unproven(goal, false)
+    })
+    const line = 'group' in lead && lead.word === 'proven optimal' && verifyLead?.(lead.bound).proves !== true ? unprovenLead(lead) : lead
+    return parse({ ...status, goals, lead: line })
+  }
   let broken = false
   const goals = status.goals.map((goal): GoalStatus => {
     if (goal.word !== 'proven optimal') { broken = true; return goal }
@@ -109,14 +127,22 @@ export const cancelledStatus = (run: RunBasis): Status => parse({ word: 'cancell
 export const refusedStatus = (word: 'invalid input' | 'unsupported feature', problems: ReadonlyArray<{ about: readonly string[]; code: string }>): Status =>
   parse({ word, problems: problems.slice(0, 16).map(problem => ({ about: problem.about.slice(0, 4), code: problem.code })) })
 
-/** A status is a proof claim when it says proven infeasible or proves a goal optimal. */
-export const claimsProof = (status: Status): boolean =>
-  status.word === 'proven infeasible' || (status.word === 'validated feasible' && status.goals.some(goal => goal.word === 'proven optimal'))
+/** A group lead's own line says "proven optimal" (a goal lead's word is in its goal line). */
+const leadProven = (status: Extract<Status, { word: 'validated feasible' }>): boolean =>
+  status.lead !== undefined && 'group' in status.lead && status.lead.word === 'proven optimal'
 
-/** Removes proof words: proven goals become best found without their bound; a refusal becomes "unresolved". */
+/** A status is a proof claim when it says proven infeasible or proves a goal optimal, a group lead's own line included. */
+export const claimsProof = (status: Status): boolean =>
+  status.word === 'proven infeasible' || (status.word === 'validated feasible' && (status.goals.some(goal => goal.word === 'proven optimal') || leadProven(status)))
+
+/**
+ * Removes proof words: proven goals, and a group lead's own line, become best found without their bound; a
+ * refusal becomes "unresolved".
+ */
 export const withoutProof = (status: Status): Status => {
   if (status.word === 'validated feasible') {
-    return parse({ ...status, goals: status.goals.map(goal => (goal.word === 'proven optimal' ? { word: 'best found under budget' as const, goal: goal.goal, value: goal.value, unit: goal.unit } : goal)) })
+    const lead = status.lead !== undefined && 'group' in status.lead && status.lead.word === 'proven optimal' ? unprovenLead(status.lead) : status.lead
+    return parse({ ...status, goals: status.goals.map(goal => (goal.word === 'proven optimal' ? unproven(goal, false) : goal)), ...(lead === undefined ? {} : { lead }) })
   }
   if (status.word === 'proven infeasible') return parse({ word: 'unresolved', run: status.run })
   return status

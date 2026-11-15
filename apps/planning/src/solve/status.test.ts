@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'bun:test'
 import { planInputsSchema, statusSchema, type PlanInputs } from '../plan/schema.ts'
 import fragmentJson from '../plan/fixtures/train-a.fragment.json'
-import { feasibleStatus, goalGap, goalStatuses, redundancyWarning, showStatus, withoutProof, type CheckPlan, verifiedGoals } from './status.ts'
+import { claimsProof, feasibleStatus, goalGap, goalStatuses, redundancyWarning, showStatus, withoutProof, type CheckPlan, verifiedGoals } from './status.ts'
 
 const inputs: PlanInputs = planInputsSchema.parse(fragmentJson)
 const run = { grid: '30min' as const, engine: 'lahc-1', formulation: 'F1', seed: 1, budget: { evals: 1, cpuMs: 1, wallMs: 1 }, stoppedBy: 'cpu' as const, evals: 1, cpuMs: 1 }
@@ -115,5 +115,49 @@ describe('redundancy warning beside the status (adversary r2 item 7)', () => {
   test('a keep-in-service rule naming them removes the warning', () => {
     const ruled = withFunction(planInputsSchema.parse({ ...pair, rules: [{ kind: 'keep-in-service', key: 'K', members: [{ equipment: 'MFWA' }, { equipment: 'MFWB' }], atLeast: 1, words: 'One feed pump in service.', source: { by: 'planner' } }] }), 'main-feedwater')
     expect(redundancyWarning(ruled, rows)).toBeUndefined()
+  })
+})
+
+describe('a what-if\'s lead in the proof helpers (adversary part 2 check, fixes B and C)', () => {
+  const span = (value: number) => ({ value, source: 'logic+calendars' as const, certificate: { kind: 'least-span' as const, spans: [{ group: 'AFW-A', hours: value }] } })
+  const cost = { value: 425_050, source: 'fixed-costs' as const, certificate: { kind: 'fixed-costs' as const, items: [{ key: 'swap', amount: 425_050 }] } }
+  const found = (goal: number, value: number, unit: string) => ({ word: 'best found under budget' as const, goal, value, unit })
+  // "Finish AFW A first": the group's own line leads, proven at its least span; no plan goal is proven.
+  const groupLed = statusSchema.parse({ word: 'validated feasible', run, goals: [found(0, 2, 'h'), found(1, 464_250, 'NOK'), found(2, 230, 'h')], lead: { word: 'proven optimal', group: 'AFW-A', value: 20, unit: 'h', bound: span(20) } })
+  // "Cheapest that keeps every rule": the plan's goal 1 leads and is proven; goal 0 before it is not.
+  const costLed = statusSchema.parse({ word: 'validated feasible', run, goals: [found(0, 2, 'h'), { word: 'proven optimal', goal: 1, value: 425_050, unit: 'NOK', bound: cost }, found(2, 230, 'h')], lead: { goal: 1 } })
+
+  test('B: an out-of-date group what-if reads "best found", its bound dropped', () => {
+    const plain = withoutProof(groupLed)
+    expect(plain.word === 'validated feasible' && plain.lead).toEqual({ word: 'best found under budget', group: 'AFW-A', value: 20, unit: 'h' })
+    const shown = showStatus({ key: 'afw-first', status: groupLed, rows: [], inputsRevision: 3, variant: { methods: [], purchases: [] } }, { inputs, revision: 4, formulation: 'F1' }, clean, proves)
+    expect(shown.status.word === 'validated feasible' && shown.status.lead !== undefined && 'word' in shown.status.lead ? shown.status.lead.word : undefined).toBe('best found under budget')
+  })
+
+  test('B: a group lead\'s proof is a proof claim; a goal lead\'s too', () => {
+    expect(claimsProof(groupLed)).toBe(true)
+    expect(claimsProof(withoutProof(groupLed))).toBe(false)
+    expect(claimsProof(costLed)).toBe(true)
+  })
+
+  test('C: verifiedGoals keeps a valid proof on lead {goal: 1}, with goal 0 not proven before it', () => {
+    const asked: number[] = []
+    const kept = verifiedGoals(costLed, goal => { asked.push(goal); return { proves: true } })
+    expect(kept).toEqual(costLed)
+    expect(asked).toEqual([1])
+    // Not re-derived by lane K: best found, the bound dropped.
+    const dropped = verifiedGoals(costLed, () => ({ proves: false }))
+    expect(dropped.word === 'validated feasible' && dropped.goals[1]).toEqual(found(1, 425_050, 'NOK'))
+  })
+
+  test('C: a group lead\'s proof stands only when lane K re-derives its bound on the lead\'s own goal', () => {
+    const leads: number[] = []
+    expect(verifiedGoals(groupLed, proves, bound => { leads.push(bound.value); return { proves: true } })).toEqual(groupLed)
+    expect(leads).toEqual([20])
+    const refused = verifiedGoals(groupLed, proves, () => ({ proves: false }))
+    expect(refused.word === 'validated feasible' && refused.lead).toEqual({ word: 'best found under budget', group: 'AFW-A', value: 20, unit: 'h' })
+    // No way to re-derive it given: never stored as proven.
+    const unasked = verifiedGoals(groupLed, proves)
+    expect(unasked.word === 'validated feasible' && unasked.lead !== undefined && 'word' in unasked.lead ? unasked.lead.word : undefined).toBe('best found under budget')
   })
 })
