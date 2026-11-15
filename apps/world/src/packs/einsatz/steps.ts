@@ -44,11 +44,11 @@ const pointSchema: z.ZodType<GeoJsonPoint> = geoJsonPointSchema
 
 /** Where a step leads: a task, a site (a unit that does not move; a delivery needs one that receives load), a point on open ground or one of the unit's own side's tracks. */
 export const stepTargetSchema = z.union([
-  z.object({ taskId: idSchema }).strict(),
-  z.object({ siteId: idSchema }).strict(),
-  z.object({ point: pointSchema }).strict(),
-  z.object({ trackId: idSchema }).strict(),
-])
+  z.object({ taskId: idSchema.describe('A task id: serve it, or pick up the load waiting there.') }).strict(),
+  z.object({ siteId: idSchema.describe('A site id (a unit that does not move): deliver the load carried there where it receives load, else go there.') }).strict(),
+  z.object({ point: pointSchema.describe('A GeoJSON point on open ground: go there.') }).strict(),
+  z.object({ trackId: idSchema.describe('One of the unit\'s own side\'s tracks: engage it (armed units only).') }).strict(),
+]).describe('One stop: exactly one of taskId, siteId, point or trackId.')
 export type StepTarget = z.output<typeof stepTargetSchema>
 
 /** The verb a target gives: a site is a delivery while the unit carries load, otherwise a go-to. */
