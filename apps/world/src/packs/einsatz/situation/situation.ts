@@ -150,6 +150,7 @@ const callRow = (state: EngineState, viewer: EinsatzViewer, task: TaskRecord, ro
     priority: priorityRefOf(state, task.priority),
     waitingS: Math.max(0, (state.timeMs - task.createdAtMs) / 1_000),
     ...(overdue === undefined ? {} : { overdue }),
+    ...(task.observed === undefined ? {} : { observed: { by: task.observed.by, at: new Date(task.observed.atMs).toISOString() } }),
     needs: [
       ...task.coverage.requirements.map((entry, index) => {
         const requirement = template.requires[index]!

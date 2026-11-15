@@ -101,7 +101,10 @@ export interface OpenRun {
 /**
  * A Run of the Einsatz engine fixture configuration with these items, or a
  * role Run as declared, or of a whole Scenario Definition: running unless
- * `paused`, or restored from a checkpoint.
+ * `paused`, or restored from a checkpoint. `others` are objects of other
+ * Packs the Run holds beside, with no runtime of their own (a Drone Pack
+ * observer). The Run has the Einsatz interaction handlers, as a Run of a
+ * Scenario with the Einsatz Pack does.
  */
 export const openRun = async (options: ({
   readonly items: ReadonlyArray<UnitItem | TaskItem>
@@ -111,6 +114,7 @@ export const openRun = async (options: ({
   readonly paused?: boolean
   readonly routing?: RoutingAdapter
   readonly restore?: RestorePoint
+  readonly others?: ReadonlyArray<OperationalObject>
 }): Promise<OpenRun> => {
   const direct = createDirectRoutingAdapter()
   const definition = 'definition' in options ? options.definition : definitionOf(options.items, options.timeline, options.declared)
@@ -124,7 +128,8 @@ export const openRun = async (options: ({
   )
   let saved: unknown = options.restore === undefined ? null : structuredClone(options.restore.runtimeState)
   const stateStore = createSimulationRunStateStore()
-  stateStore.hydrate(options.restore?.snapshot ?? { objects: compiled.initialObjects, seq: 0 })
+  const initialObjects = [...compiled.initialObjects, ...options.others ?? []]
+  stateStore.hydrate(options.restore?.snapshot ?? { objects: initialObjects, seq: 0 })
   const simulationRunId = 'run-einsatz-open' as SimulationRunId
   const connection = await createRuntimeHub([adapter]).connect({
     simulationRunId,
@@ -134,7 +139,7 @@ export const openRun = async (options: ({
       scenarioId: compiled.id,
       runtimeIds: [einsatzRuntimeId],
       world: compiled.world,
-      initialObjects: compiled.initialObjects,
+      initialObjects,
       connections: [],
       runtimeConfigByRuntimeId: { [einsatzRuntimeId]: compiled.packConfigs[einsatzPackId] },
       runtimeConfig: {},
@@ -161,6 +166,7 @@ export const openRun = async (options: ({
       ...(compiled.timeline === undefined ? {} : { timeline: compiled.timeline }),
     },
     roleAwarePackIds: [einsatzPackId],
+    interactionHandlers: einsatzPack.interactions?.handlers ?? [],
     runtimeCapabilities: [
       ...adapter.capabilities.map(capability => ({ packId: einsatzPackId, runtimeId: einsatzRuntimeId, capability })),
       ...worldCoreCapabilities.map(capability => ({ packId: 'world', runtimeId: 'world.core', capability })),

@@ -141,6 +141,10 @@ const callRowSchema = z.object({
   priority: priorityRefSchema,
   waitingS: seconds.describe('Seconds since the task was created.'),
   overdue: z.boolean().optional().describe('Whether it has waited past its priority\'s response target; present only when the priority declares one.'),
+  observed: z.object({
+    by: text.describe('The observer\'s label, e.g. a drone of the Drone Pack.'),
+    at: z.string().datetime().describe('The Run time it observed the task at.'),
+  }).strict().optional().describe('The latest observation of the task by another Pack\'s sensor; present once observed.'),
   needs: z.array(needSchema).describe('What the task needs, with coverage.'),
   assigned: z.array(z.object({
     unitId: idSchema.describe('The unit id.'),

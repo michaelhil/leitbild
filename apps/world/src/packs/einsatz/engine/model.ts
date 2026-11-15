@@ -157,6 +157,12 @@ export const taskDataSchema = z.object({
   closedAtMs: simulationMs.optional(),
   lastAction: lastActionSchema.optional(),
   alerts: alertsSchema,
+  /**
+   * The latest observation of the task by another Pack's sensor
+   * (`interactions/drone-observation.ts`): the observer's label then, and
+   * the Run time it observed at. Absent until the first.
+   */
+  observed: z.object({ by: z.string().min(1), atMs: simulationMs }).strict().optional(),
 }).strict()
 
 export const einsatzDataSchema = z.discriminatedUnion('type', [unitDataSchema, taskDataSchema])

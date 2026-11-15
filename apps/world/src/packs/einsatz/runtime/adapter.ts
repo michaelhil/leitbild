@@ -1,5 +1,5 @@
 import { einsatzQueryState } from '../read-policy.ts'
-import { nowIso, type CommandEnvelope, type CommandResult, type GeoJsonPoint, type IsoTimestamp, type ObjectAudience, type ObjectId, type OperationalObject, type Provenance, type RoleSees } from '../../../core/model/index.ts'
+import { nowIso, type CommandEnvelope, type CommandResult, type GeoJsonPoint, type InteractionSignal, type IsoTimestamp, type ObjectAudience, type ObjectId, type OperationalObject, type Provenance, type RoleSees } from '../../../core/model/index.ts'
 import { defaultSimulationRunRuntimePolicy } from '../../../core/simulation-runs/runtime-persistence-policy.ts'
 import type { RoutingAdapter } from '../../../routing/protocol.ts'
 import type { PackCommandContext, PackRuntimeAdapter, PackRuntimeConnection, PackRuntimeConnectionConfig, PackRuntimeEvent, PackRuntimeEventHandler, PackRuntimeHealth, PackRuntimeQuery } from '../../../simulation/protocol.ts'
@@ -19,6 +19,7 @@ import { hasLoad } from '../engine/rules.ts'
 import { recommend } from '../recommend.ts'
 import { refusal, refusalCode } from '../refusal.ts'
 import { readEinsatzPlanningSource } from '../planning-source.ts'
+import { judgeObservation, observeTask, reconnaissanceObservationSignalType } from '../interactions/drone-observation.ts'
 import { actorFor, attributionOf, resolveViewer } from '../viewer.ts'
 import { removeRecords } from './removal.ts'
 import { einsatzAdapterId, einsatzPackId, einsatzRuntimeId } from '../ids.ts'
@@ -333,6 +334,25 @@ const connectEinsatz = async (config: PackRuntimeConnectionConfig, routing: Rout
   }
 
   /**
+   * Records an observation the Run committed on the task it observed, as
+   * `judgeObservation` judges it against the Run's objects, the same verdict
+   * the interaction handler's notice gives. Queued behind the work under way,
+   * never awaited by the Run's commit. Signals reach only a runtime a Run
+   * hosts, and a Run always gives its projection (`objectById`).
+   */
+  const recordObservation = (signal: InteractionSignal): void => {
+    const objectById = config.objectById
+    if (objectById === undefined) return
+    const verdict = judgeObservation(signal, objectById)
+    if (verdict.kind !== 'observed') return
+    void serialize(async () => {
+      if (unavailable() || !current.tasks.has(verdict.taskId)) return
+      const observed = observeTask(current, verdict.taskId, verdict.observed)
+      commit(observed.state, observed.transitions)
+    }).catch(error => fault('observation', error, 'failed'))
+  }
+
+  /**
    * One wall-time tick. It has no caller to report to: a fault has already
    * failed the runtime in `advance`, and recording it again changes nothing,
    * so runtime health is where it shows.
@@ -376,6 +396,7 @@ const connectEinsatz = async (config: PackRuntimeConnectionConfig, routing: Rout
       for (const event of events) {
         if (event.type === 'object.deleted' && (current.units.has(event.objectId) || current.tasks.has(event.objectId))) deletedByRun.add(event.objectId)
         if (event.type === 'object.upserted' && event.object.packId === einsatzPackId) heldByRun.add(event.object.id)
+        if (event.type === 'interaction.signal.received' && event.signal.type === reconnaissanceObservationSignalType) recordObservation(event.signal)
       }
     },
     setClock: () => serialize(() => advance(clockMs())),
