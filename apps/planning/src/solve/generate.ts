@@ -101,8 +101,20 @@ interface Variant { readonly key: string; readonly label: string; readonly combo
 
 const slug = (text: string): string => text.normalize('NFKD').replace(/[^A-Za-z0-9._-]+/g, '-').replace(/^[^A-Za-z0-9]+/, '').slice(0, 64).replace(/-+$/, '') || 'option'
 
+/**
+ * Increment 2 what-if inputs the contract takes before this solver builds them: refused, never ignored, so an
+ * "at most 48 h out" what-if is never stored as an ordinary option. Lane S lifts each as it builds it.
+ */
+const notBuiltWords: Readonly<Record<'also' | 'lead' | 'keep', string>> = { also: 'an extra rule', lead: 'a goal solved first', keep: 'adding to the options already there' }
+const refuseNotBuilt = (input: GenerateInput): void => {
+  const fields = (['also', 'lead'] as const).filter(field => (input.variants ?? []).some(variant => variant[field] !== undefined))
+  const asked = [...fields, ...(input.keep === undefined ? [] : ['keep' as const])]
+  if (asked.length > 0) throw planningError(501, 'not_built', `A what-if with ${asked.map(field => notBuiltWords[field]).join(' or ')} is not built in this version of Planning`, { fields: asked })
+}
+
 /** The variants of a request: given what-ifs, or one per method combination. */
 export const variantsOf = (inputs: PlanInputs, input: GenerateInput): Variant[] => {
+  refuseNotBuilt(input)
   const label = (combo: readonly MethodPick[]) => combo.map(pick => inputs.methods.find(choice => choice.key === pick.choice)?.options.find(option => option.key === pick.option)?.label ?? pick.option).join(', ') || inputs.settings.title
   const raw = input.variants === undefined
     ? methodCombinations(inputs).map(combo => ({ key: slug(combo.map(pick => pick.option).join('+') || 'plan'), label: label(combo), combos: [combo], buy: 'allowed' as Buy }))

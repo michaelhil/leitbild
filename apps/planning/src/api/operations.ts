@@ -393,6 +393,9 @@ export const createPlanningOperations = (ports: PlanningOperationsPorts) => {
   const purchasesUsed = (option: Option): readonly string[] => [...new Set(option.rows.flatMap(row => row.uses.flatMap(use => use.purchase === undefined ? [] : [use.purchase])))]
 
   const generateOnce = async (workspaceId: WorkspaceId, planId: string, input: z.infer<typeof generateInputSchema>, expectedRevision: number | undefined, access: AccessContext, signal: AbortSignal): Promise<GenerateResult> => {
+    // `keep` does not reach the solver yet: refused, never dropped. Lane P lifts this when it passes keep on
+    // (the solver refuses it too until lane S builds it).
+    if (input.keep !== undefined) throw planningError(501, 'not_built', 'Adding what-ifs to the options already there is not built in this version of Planning', { fields: ['keep'] })
     const guard = { expectedRevision, required: true }
     const plan = await readGuarded(workspaceId, planId, guard)
     if (sizeBand(plan.inputs, certifiedSize) === 'refused') {

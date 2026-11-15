@@ -61,6 +61,8 @@ export const createRealSolver = (pool: SolverPool): SolverPort => {
       } finally { generating = false }
     },
     explain: async ({ inputs, option, ask, job }) => {
+      // Increment 2 asks: refused, never answered with the finish chain, until lane P builds them.
+      if (ask === 'recommended' || ask === 'versus') throw planningError(501, 'not_built', `Explaining ${ask === 'recommended' ? 'why an option is recommended' : 'what differs from the previous options'} is not built in this version of Planning`, { ask })
       const { problem, index, prep } = compiled(inputs, option)
       if (ask === 'refusal') {
         if (option.status.word !== 'proven infeasible') {
