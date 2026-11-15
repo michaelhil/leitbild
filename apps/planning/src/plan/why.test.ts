@@ -65,3 +65,20 @@ describe('why the recommended option ranks first', () => {
     expect(tied).toContain('They tie on every goal within its step, so either may be chosen; Planning lists \'Swap in refurbished spare\' first.')
   })
 })
+
+describe('the structure the words come from (coordinator decision, lane P batch 2, 3)', () => {
+  test('recommended: the options, the deciding goal, each goal of both, the caveats and the outage goal\'s status', async () => {
+    const { whyRecommended } = await import('./why.ts')
+    const line = (option: Option, k: number) => option.status.word === 'validated feasible' ? option.status.goals[k]! : undefined
+    const caveat = (option: string) => trainAInputs.methods[0]!.options.find(entry => entry.key === option)!.caveats![0]!
+    expect(whyRecommended(trainAInputs, swap, [rebuild]).facts).toEqual({
+      option: swap.key, against: rebuild.key, deciding: 0,
+      goals: [0, 1, 2].map(k => ({ goal: k, value: goal(swap, k), against: goal(rebuild, k), unit: line(swap, k)!.unit })),
+      caveats: [{ choice: trainAInputs.methods[0]!.key, option: 'swap', label: caveat('swap').label, value: caveat('swap').value!, unit: caveat('swap').unit!, against: caveat('rebuild').value! }],
+      outage: { goal: 0, word: 'proven optimal', value: goal(swap, 0), unit: 'h', bound: line(swap, 0)!.bound!.value },
+    })
+    // Alone in the ranking: no comparison, no deciding goal.
+    const alone = whyRecommended(trainAInputs, swap, []).facts
+    expect([alone.against, alone.deciding, alone.goals.every(entry => entry.against === undefined)]).toEqual([undefined, undefined, true])
+  })
+})

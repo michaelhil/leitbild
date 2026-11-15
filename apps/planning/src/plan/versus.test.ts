@@ -68,3 +68,27 @@ describe('what differs from an option of the previous set', () => {
     expect(compare(variantOf(swap, { revision: 4 }), swap)).toContain('No job moved.')
   })
 })
+
+describe('the structure the words come from (coordinator decision, lane P batch 2, 3)', () => {
+  test('versus: revisions, changes, goals while comparable, method, purchases and jobs, the largest shifts first', async () => {
+    const { versus } = await import('./versus.ts')
+    const facts = versus({ inputs: trainAInputs, option: current, previous: swap, plan: { revision: 4, changes: plan.changes, droppedChanges: 0 } }).facts
+    const before = new Map(swap.rows.map(row => [row.job, row]))
+    const moved = rebuild.rows.filter(row => before.has(row.job) && (before.get(row.job)!.start !== row.start || before.get(row.job)!.finish !== row.finish))
+    expect(facts).toMatchObject({
+      option: current.key, previous: swap.key, from: 3, to: 4, complete: true, changes: [{ revision: 4, summary: 'Change 4' }],
+      goals: [0, 1, 2].map(k => ({ goal: k, now: goal(rebuild, k), was: goal(swap, k) })),
+      methods: [{ choice: trainAInputs.methods[0]!.key, now: 'rebuild', was: 'swap' }],
+      buys: { added: rebuild.variant.purchases.filter(key => !swap.variant.purchases.includes(key)), dropped: swap.variant.purchases.filter(key => !rebuild.variant.purchases.includes(key)) },
+      movedMore: moved.length - 6,
+      added: rebuild.rows.filter(row => !before.has(row.job)).map(row => row.job),
+      removed: swap.rows.filter(row => !rebuild.rows.some(entry => entry.job === row.job)).map(row => row.job),
+    })
+    expect(facts.moved).toHaveLength(6)
+    const first = facts.moved[0]!
+    expect([first.now.start, first.was.start]).toEqual([rebuild.rows.find(row => row.job === first.job)!.start, before.get(first.job)!.start])
+    // The goals changed since: no goal values in the structure either.
+    const reordered = [...plan.changes.slice(0, 3), { ...plan.changes[3]!, kinds: ['goals' as const] }]
+    expect(versus({ inputs: trainAInputs, option: current, previous: swap, plan: { revision: 4, changes: reordered, droppedChanges: 0 } }).facts.goals).toBeUndefined()
+  })
+})

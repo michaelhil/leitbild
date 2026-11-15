@@ -68,18 +68,57 @@ const outageLine = (inputs: PlanInputs, option: Option): string | undefined => {
   return gap > resolution / 2 ? `${head}, best found; it could be up to ${valueWords(gap, line.unit)} better.` : `${head}, best found.`
 }
 
+/**
+ * The structure the words are generated from, in the shape coordinator decision "Lane P batch 2" 3 gives for
+ * explain's `recommended` field (lane A lands it in api/contract.ts). Goals by the plan's ids; values are the
+ * stored goal values (net of thresholds), in each goal's unit; `against` is the compared option's.
+ */
+export interface RecommendedFacts {
+  readonly option: string
+  readonly against?: string
+  readonly deciding?: number
+  readonly goals: ReadonlyArray<{ readonly goal: number; readonly value: number; readonly against?: number; readonly unit: string }>
+  readonly caveats: ReadonlyArray<{ readonly choice: string; readonly option: string; readonly label: string; readonly value?: number; readonly unit?: string; readonly against?: number }>
+  readonly outage?: { readonly goal: number; readonly word: GoalLine['word']; readonly value: number; readonly unit: string; readonly bound?: number }
+}
+
+/** The method options both picks name for each choice: the compared one only where it differs. */
+const methodPicks = (inputs: PlanInputs, option: Option, other: Option | undefined) => inputs.methods.flatMap(choice => {
+  const pick = (of: Option | undefined) => {
+    const key = of?.variant.methods.find(entry => entry.choice === choice.key)?.option
+    return choice.options.find(entry => entry.key === key)
+  }
+  const own = pick(option), theirs = pick(other)
+  if (own === undefined) return []
+  const compared = theirs === undefined || theirs.key === own.key ? undefined : theirs
+  return [{ choice, own, compared, labels: [...new Set([...(own.caveats ?? []), ...(compared?.caveats ?? [])].map(caveat => caveat.label))] }]
+})
+
+const caveatFacts = (inputs: PlanInputs, option: Option, other: Option | undefined): RecommendedFacts['caveats'] =>
+  methodPicks(inputs, option, other).flatMap(({ choice, own, compared, labels }) => labels.map(label => {
+    const mine = own.caveats?.find(entry => entry.label === label), theirs = compared?.caveats?.find(entry => entry.label === label)
+    return {
+      choice: choice.key, option: own.key, label,
+      ...(mine?.value === undefined || mine.unit === undefined ? {} : { value: mine.value, unit: mine.unit }),
+      ...(theirs?.value === undefined ? {} : { against: theirs.value }),
+    }
+  }))
+
+const outageFacts = (inputs: PlanInputs, option: Option): RecommendedFacts['outage'] => {
+  const k = inputs.goals.findIndex(goal => goal.metric === 'span-over')
+  const line = goalsOf(option)[k]
+  return line === undefined ? undefined : { goal: k, word: line.word, value: line.value, unit: line.unit, ...(line.bound === undefined ? {} : { bound: line.bound.value }) }
+}
+
+const goalFacts = (inputs: PlanInputs, option: Option, other?: Option): RecommendedFacts['goals'] => goalsOf(option).map(line => {
+  const against = other === undefined ? undefined : goalsOf(other)[line.goal]?.value
+  return { goal: line.goal, value: line.value, ...(against === undefined ? {} : { against }), unit: line.unit }
+})
+
 /** The method caveats the ranking does not price, for the recommended option and the one it is compared with. */
 const caveatLines = (inputs: PlanInputs, option: Option, other: Option | undefined): string[] =>
-  inputs.methods.flatMap(choice => {
-    const pick = (of: Option | undefined) => {
-      const key = of?.variant.methods.find(entry => entry.choice === choice.key)?.option
-      return choice.options.find(entry => entry.key === key)
-    }
-    const own = pick(option), theirs = other === undefined ? undefined : pick(other)
-    if (own === undefined) return []
-    const compared = theirs === undefined || theirs.key === own.key ? undefined : theirs
-    const labels = [...new Set([...(own.caveats ?? []), ...(compared?.caveats ?? [])].map(caveat => caveat.label))]
-    return labels.map(label => {
+  methodPicks(inputs, option, other).flatMap(({ own, compared, labels }) =>
+    labels.map(label => {
       const value = (method: typeof own) => {
         const caveat = method.caveats?.find(entry => entry.label === label)
         if (caveat === undefined) return `none stated with '${method.label}'`
@@ -87,22 +126,24 @@ const caveatLines = (inputs: PlanInputs, option: Option, other: Option | undefin
         return `${caveat.value === undefined || caveat.unit === undefined ? caveat.words : valueWords(caveat.value, caveat.unit)} with '${method.label}'${agreed}`
       }
       return `Not in the ranking: ${label}: ${value(own)}${compared === undefined ? '' : `, against ${value(compared)}`}.`
-    })
-  })
+    }))
 
 /**
- * Why `recommended` ranks first. `others` are the set's other fresh options: the next in rank among those
- * validated feasible and without a lead is the comparison, unless the caller `named` another option.
+ * Why `recommended` ranks first, in words and as the structure they come from. `others` are the set's other
+ * fresh options: the next in rank among those validated feasible and without a lead is the comparison, unless
+ * the caller `named` another option.
  */
-export const whyRecommendedLines = (inputs: PlanInputs, recommended: Option, others: readonly Option[], named?: Option): string[] => {
+export const whyRecommended = (inputs: PlanInputs, recommended: Option, others: readonly Option[], named?: Option): { readonly lines: string[]; readonly facts: RecommendedFacts } => {
+  const outage = outageFacts(inputs, recommended)
+  const base = (against: Option | undefined) => ({ option: recommended.key, ...(against === undefined ? {} : { against: against.key }), caveats: caveatFacts(inputs, recommended, against), ...(outage === undefined ? {} : { outage }) })
   const policy = `Ranked by: every hard rule kept first, ${inputs.goals.map((goal, k) => `then ${goalName(inputs, k)}${goal.tolerance.value > 0 ? ` (in steps of ${valueWords(goal.tolerance.value, goal.tolerance.unit)})` : ''}`).join(', ')}.`
   const asked = named !== undefined && named.key !== recommended.key ? named : undefined
   if (asked?.variant.lead !== undefined) {
     const lead = asked.variant.lead
-    return fitLines([policy, `'${asked.label}' is a what-if that solves ${'goal' in lead ? goalName(inputs, lead.goal, true) : `the outage of ${nameOf(inputs, lead.group)}`} first: it is not ranked with the options.`])
+    return { lines: fitLines([policy, `'${asked.label}' is a what-if that solves ${'goal' in lead ? goalName(inputs, lead.goal, true) : `the outage of ${nameOf(inputs, lead.group)}`} first: it is not ranked with the options.`]), facts: { ...base(undefined), against: asked.key, goals: goalFacts(inputs, recommended) } }
   }
   if (asked !== undefined && asked.status.word !== 'validated feasible') {
-    return fitLines([policy, `'${asked.label}' ${asked.status.word === 'proven infeasible' ? 'is proven infeasible' : `has no plan that keeps every hard rule (${asked.status.word})`}, so it is not ranked.`])
+    return { lines: fitLines([policy, `'${asked.label}' ${asked.status.word === 'proven infeasible' ? 'is proven infeasible' : `has no plan that keeps every hard rule (${asked.status.word})`}, so it is not ranked.`]), facts: { ...base(undefined), against: asked.key, goals: goalFacts(inputs, recommended) } }
   }
   const keys = new Map([recommended, ...others].map(option => [option.key, keysOf(inputs, option)]))
   const candidates = others.filter(option => option.key !== recommended.key && ranked(option))
@@ -115,7 +156,7 @@ export const whyRecommendedLines = (inputs: PlanInputs, recommended: Option, oth
   const tail = [...caveatLines(inputs, recommended, other), ...[outageLine(inputs, recommended)].filter((line): line is string => line !== undefined)]
   if (other === undefined) {
     const refused = others.filter(option => option.key !== recommended.key && option.variant.lead === undefined && option.status.word !== 'validated feasible').length
-    return fitLines([policy, `'${recommended.label}' is the only ranked option that keeps every hard rule${refused === 0 ? '' : `; ${refused} other${refused === 1 ? ' does' : 's do'} not`}.`, ...tail])
+    return { lines: fitLines([policy, `'${recommended.label}' is the only ranked option that keeps every hard rule${refused === 0 ? '' : `; ${refused} other${refused === 1 ? ' does' : 's do'} not`}.`, ...tail]), facts: { ...base(undefined), goals: goalFacts(inputs, recommended) } }
   }
   const mine = keys.get(recommended.key)!, theirs = keys.get(other.key)!
   const deciding = mine.findIndex((value, index) => differ(value, theirs[index]!))
@@ -123,7 +164,8 @@ export const whyRecommendedLines = (inputs: PlanInputs, recommended: Option, oth
   const value = (option: Option, k: number) => values(option)[k]?.value ?? 0
   const words = (option: Option, k: number) => valueWords(value(option, k), values(option)[k]?.unit ?? goalUnit(inputs, k))
   const head = asked === undefined ? `Next in rank: '${other.label}'.` : `Against '${other.label}':`
-  if (deciding < 0) return fitLines([policy, head, `They tie on every goal within its step, so either may be chosen; Planning lists '${recommended.label}' first.`, ...tail])
+  const facts = { ...base(other), ...(deciding < 0 ? {} : { deciding }), goals: goalFacts(inputs, recommended, other) }
+  if (deciding < 0) return { lines: fitLines([policy, head, `They tie on every goal within its step, so either may be chosen; Planning lists '${recommended.label}' first.`, ...tail]), facts }
   // Earlier goals equal within their step, though their values differ.
   const within = inputs.goals.slice(0, deciding).flatMap((goal, k) => differ(value(recommended, k), value(other, k))
     ? [`Within one step of ${valueWords(goal.tolerance.value, goal.tolerance.unit)} on ${goalName(inputs, k, true)}: ${words(recommended, k)} and ${words(other, k)}.`] : [])
@@ -134,5 +176,6 @@ export const whyRecommendedLines = (inputs: PlanInputs, recommended: Option, oth
   const gains = order.filter(k => value(recommended, k) < value(other, k) - EPSILON).map(k => `${valueWords(value(other, k) - value(recommended, k), unit(k))} ${betterWords(inputs, k, true)}`)
   const costs = order.filter(k => value(recommended, k) > value(other, k) + EPSILON).map(k => `${valueWords(value(recommended, k) - value(other, k), unit(k))} ${betterWords(inputs, k, false)}`)
   const trade = gains.length === 0 ? [] : [costs.length === 0 ? `It gains ${listWords(gains)}, and is no worse on any goal.` : `The trade: ${listWords(gains)}, for ${listWords(costs)}.`]
-  return fitLines([policy, head, ...within, decided, ...trade, ...tail])
+  return { lines: fitLines([policy, head, ...within, decided, ...trade, ...tail]), facts }
 }
+export const whyRecommendedLines = (inputs: PlanInputs, recommended: Option, others: readonly Option[], named?: Option): string[] => whyRecommended(inputs, recommended, others, named).lines

@@ -17,14 +17,40 @@ const shifted = (value: number, later: string, earlier: string): string => `${va
 /** At most this many moved jobs are named; the rest are counted. */
 const movedShown = 6
 
-export const versusLines = (input: {
+/**
+ * The structure the words are generated from, in the shape coordinator decision "Lane P batch 2" 3 gives for
+ * explain's `versus` field (lane A lands it in api/contract.ts). `goals` only when the plan's goal ids still
+ * name the same goals; `moved` the largest shifts first, `movedMore` the rest; job and purchase keys.
+ */
+export interface VersusFacts {
+  readonly option: string
+  readonly previous: string
+  readonly from: number
+  readonly to: number
+  readonly complete: boolean
+  readonly changes: ReadonlyArray<{ readonly revision: number; readonly summary: string }>
+  readonly goals?: ReadonlyArray<{ readonly goal: number; readonly now: number; readonly was: number; readonly unit: string }>
+  readonly methods: ReadonlyArray<{ readonly choice: string; readonly now: string; readonly was: string }>
+  readonly buys: { readonly added: readonly string[]; readonly dropped: readonly string[] }
+  readonly moved: ReadonlyArray<{ readonly job: string; readonly now: { readonly start: string; readonly finish: string }; readonly was: { readonly start: string; readonly finish: string } }>
+  readonly movedMore: number
+  readonly added: readonly string[]
+  readonly removed: readonly string[]
+}
+/** At most this many input changes are listed in the facts; the history has them all. */
+const changesListed = 8
+
+export const versusLines = (input: Parameters<typeof versus>[0]): string[] => versus(input).lines
+
+/** What differs between the two options, in words and as the structure they come from. */
+export const versus = (input: {
   readonly inputs: PlanInputs
   /** The option of the current set, fresh on the plan's revision. */
   readonly option: Option
   /** The option of the previous set it is compared with. */
   readonly previous: Option
   readonly plan: Pick<Plan, 'revision' | 'changes' | 'droppedChanges'>
-}): string[] => {
+}): { readonly lines: string[]; readonly facts: VersusFacts } => {
   const { inputs, option, previous, plan } = input
   const zone = inputs.settings.timeZone
   const from = previous.inputsRevision, to = plan.revision
@@ -40,8 +66,16 @@ export const versusLines = (input: {
     ...(changes.length > 4 ? [`…and ${changes.length - 4} more changes: read the history.`] : []),
     ...(complete ? [] : [`The history no longer holds every change since revision ${from}.`]),
   ]
+  const frame = { option: option.key, previous: previous.key, from, to, complete, changes: changes.slice(0, changesListed).map(change => ({ revision: change.revision, summary: change.summary })) }
   const nowStatus = option.status, thenStatus = previous.status
-  if (nowStatus.word !== 'validated feasible' || thenStatus.word !== 'validated feasible') return fitLines([head, ...status, ...changeLines])
+  if (nowStatus.word !== 'validated feasible' || thenStatus.word !== 'validated feasible') {
+    return { lines: fitLines([head, ...status, ...changeLines]), facts: { ...frame, methods: [], buys: { added: [], dropped: [] }, moved: [], movedMore: 0, added: [], removed: [] } }
+  }
+  const comparable = complete && !goalsChanged
+  const goalFacts = comparable ? nowStatus.goals.flatMap(goal => {
+    const was = thenStatus.goals[goal.goal]
+    return was === undefined ? [] : [{ goal: goal.goal, now: goal.value, was: was.value, unit: goal.unit }]
+  }) : undefined
 
   // Goal values, by the plan's goal ids, only when those ids still name the same goals.
   const goalLines = goalsChanged ? ['The goals changed since, so goal values are not compared.']
@@ -64,12 +98,15 @@ export const versusLines = (input: {
       ]
 
   // The method picked and the purchases used.
-  const methodLines = inputs.methods.flatMap(choice => {
+  const methodFacts = inputs.methods.flatMap(choice => {
     const pick = (of: Option) => of.variant.methods.find(entry => entry.choice === choice.key)?.option
     const now = pick(option), then = pick(previous)
-    if (now === undefined || then === undefined || now === then) return []
-    const label = (key: string) => choice.options.find(entry => entry.key === key)?.label ?? key
-    return [`${choice.label}: '${label(now)}', was '${label(then)}'.`]
+    return now === undefined || then === undefined || now === then ? [] : [{ choice: choice.key, now, was: then }]
+  })
+  const methodLines = methodFacts.map(({ choice, now, was }) => {
+    const method = inputs.methods.find(entry => entry.key === choice)!
+    const label = (key: string) => method.options.find(entry => entry.key === key)?.label ?? key
+    return `${method.label}: '${label(now)}', was '${label(was)}'.`
   })
   const added = option.variant.purchases.filter(key => !previous.variant.purchases.includes(key))
   const dropped = previous.variant.purchases.filter(key => !option.variant.purchases.includes(key))
@@ -103,5 +140,12 @@ export const versusLines = (input: {
   const room = Math.max(0, Math.min(movedShown, 20 - fixed.length - jobLines.length - 2))
   const movedLines = moved.length === 0 ? (joined.length === 0 && left.length === 0 ? ['No job moved.'] : [])
     : [`${moved.length} job${moved.length === 1 ? '' : 's'} moved${moved.length === 1 ? ':' : '; the largest shifts first:'}`, ...moved.slice(0, room).map(movedLine), ...(moved.length > room ? [`…and ${moved.length - room} more: read the schedule.`] : [])]
-  return fitLines([...fixed, ...movedLines, ...jobLines])
+  return {
+    lines: fitLines([...fixed, ...movedLines, ...jobLines]),
+    facts: {
+      ...frame, ...(goalFacts === undefined ? {} : { goals: goalFacts }), methods: methodFacts, buys: { added, dropped },
+      moved: moved.slice(0, movedShown).map(({ row, was }) => ({ job: row.job, now: { start: row.start, finish: row.finish }, was: { start: was.start, finish: was.finish } })),
+      movedMore: Math.max(0, moved.length - movedShown), added: joined, removed: left,
+    },
+  }
 }
