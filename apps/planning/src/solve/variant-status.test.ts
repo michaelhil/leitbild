@@ -33,6 +33,22 @@ describe('F1: a what-if without methods is refused only when every method is', (
     }
   })
 
+  test('stopped after rebuild is refused and before swap runs: never "proven infeasible" (recheck R1)', async () => {
+    const stop = new AbortController()
+    const stopping: SubSolver = async (task, signal, who) => {
+      const outcome = await answering({ rebuild: refused, swap: open })(task, signal, who)
+      if (task.combo[0]!.option === 'rebuild') stop.abort()
+      return outcome
+    }
+    const ran: string[] = []
+    const recording: SubSolver = async (task, signal, who) => { ran.push(task.combo[0]!.option); return stopping(task, signal, who) }
+    const result = await generate({ ...deps, subSolver: recording }, { inputs: flagship, revision: 1, previous: null, input: { variants: [{ label: 'At most 40 h out' }] }, by, signal: stop.signal, stoppedByWho: () => 'person' })
+    expect(ran).toEqual(['rebuild'])
+    const option = result.optionSet.options[0]!
+    expect(option.status.word).toBe('cancelled')
+    expect(option.status.word === 'cancelled' && option.status.run.stoppedByWho).toBe('person')
+  })
+
   test('both methods proven infeasible: proven infeasible, the same option in either order', async () => {
     const [first, second] = await Promise.all([flagship, reversed].map(async inputs => (await whatIf(inputs, answering({ rebuild: refused, swap: refused }))).optionSet.options[0]!))
     expect(first!.status.word).toBe('proven infeasible')
