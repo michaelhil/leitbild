@@ -11,12 +11,8 @@ export const uniqueIds: ConfigCheck = config => [
   ...repeatedValues(config.taskTemplates.map(template => template.id), index => ['taskTemplates', index, 'id'], 'Task template'),
   ...config.taskTemplates.flatMap((template, index) =>
     repeatedValues(template.requires.map(requirement => requirement.provides), entry => ['taskTemplates', index, 'requires', entry, 'provides'], 'Requirement')),
-  ...repeatedValues(config.authority.map(entry => entry.roleId), index => ['authority', index, 'roleId'], 'Authority for role'),
-  ...config.authority.flatMap((entry, index) => [
-    ...('types' in entry.units ? repeatedValues(entry.units.types, listItem(['authority', index, 'units', 'types']), 'Unit type') : []),
-    ...('tags' in entry.units ? repeatedValues(entry.units.tags, listItem(['authority', index, 'units', 'tags']), 'Tag') : []),
-    ...repeatedValues(entry.taskTemplates, listItem(['authority', index, 'taskTemplates']), 'Task template'),
-  ]),
+  ...repeatedValues(config.priorities.map(priority => priority.id), index => ['priorities', index, 'id'], 'Priority'),
+  ...repeatedValues(config.priorities.map(priority => priority.code), index => ['priorities', index, 'code'], 'Priority code', 'duplicate_code'),
   ...Object.entries(config.hostility).flatMap(([side, hostile]) => repeatedValues(hostile, listItem(['hostility', side]), 'Hostile side')),
   ...repeatedValues(config.groups.map(group => group.id), index => ['groups', index, 'id'], 'Group'),
 ]
@@ -38,10 +34,10 @@ const uniqueWithinType = (type: UnitType, at: ConfigPath): ConfigIssue[] => {
 const notDeclared = (what: string) => (value: string) => `${what} "${value}" is not declared`
 const notTagged = (value: string) => `No unit type is tagged "${value}"`
 
-/** Every load class, unit type, task template and tag a declaration names exists. */
+/** Every load class, priority, task template and tag a declaration names exists. */
 export const knownReferences: ConfigCheck = config => {
   const loadClasses = new Set(config.loadClasses.map(loadClass => loadClass.id))
-  const types = new Set(config.unitTypes.map(type => type.id))
+  const priorities = new Set(config.priorities.map(priority => priority.id))
   const templates = new Map(config.taskTemplates.map(template => [template.id, template]))
   const tags = new Set(config.unitTypes.flatMap(type => type.tags))
   return [
@@ -55,17 +51,15 @@ export const knownReferences: ConfigCheck = config => {
         ...stepLossReferences(type, ['unitTypes', index, 'standingOrders', 'onStepLost'], loadClasses, templates),
       ]
     }),
-    ...config.taskTemplates.flatMap((template, index) => template.priorityClass === undefined || loadClasses.has(template.priorityClass) ? []
-      : [configIssue(['taskTemplates', index, 'priorityClass'], 'unknown_load_class', notDeclared('Load class')(template.priorityClass))]),
-    ...config.authority.flatMap((entry, index) => [
-      ...('types' in entry.units ? undeclaredValues(entry.units.types, types, ['authority', index, 'units', 'types'], 'unknown_unit_type', notDeclared('Unit type')) : []),
-      ...('tags' in entry.units ? undeclaredValues(entry.units.tags, tags, ['authority', index, 'units', 'tags'], 'unknown_tag', notTagged) : []),
-      ...undeclaredValues(entry.taskTemplates, new Set(templates.keys()), ['authority', index, 'taskTemplates'], 'unknown_task_template', notDeclared('Task template')),
-    ]),
+    ...config.taskTemplates.flatMap((template, index) => template.priority === undefined || priorities.has(template.priority) ? []
+      : [configIssue(['taskTemplates', index, 'priority'], 'unknown_priority', notDeclared('Priority')(template.priority))]),
+    ...(config.taskTemplates.length > 0 && config.priorities.length === 0
+      ? [configIssue(['priorities'], 'priorities_required', 'Task templates are declared, so declare priorities, highest first: every task ranks by one')]
+      : []),
   ]
 }
 
-/** A step loss creates a task from a declared template; a template without a priority floor needs load to rank it. */
+/** A step loss creates a task from a declared template, with load of declared classes. */
 const stepLossReferences = (type: UnitType, at: ConfigPath, loadClasses: ReadonlySet<string>, templates: ReadonlyMap<string, TaskTemplate>): ConfigIssue[] => {
   const order = type.standingOrders?.onStepLost
   if (order === undefined) return []
@@ -74,9 +68,6 @@ const stepLossReferences = (type: UnitType, at: ConfigPath, loadClasses: Readonl
   return [
     ...(template === undefined ? [configIssue([...at, 'createTask'], 'unknown_task_template', notDeclared('Task template')(order.createTask))] : []),
     ...loads.filter(id => !loadClasses.has(id)).map(id => configIssue([...at, 'perStep', id], 'unknown_load_class', notDeclared('Load class')(id))),
-    ...(template !== undefined && template.priorityClass === undefined && loads.length === 0
-      ? [configIssue([...at, 'perStep'], 'priority_class_required', `"${template.label}" has no priority floor, so each step lost must create load`)]
-      : []),
   ]
 }
 

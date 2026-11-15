@@ -1,5 +1,10 @@
 {
-  "lexicon": { "workList": "Jobs", "on-task": "Working" },
+  "lexicon": { "calls": "Jobs", "on-task": "Working" },
+  "priorities": [
+    { "id": "Q1", "label": "First", "code": "Q1" },
+    { "id": "Q2", "label": "Second", "code": "Q2" },
+    { "id": "Q3", "label": "Third", "code": "Q3" }
+  ],
   "loadClasses": [
     { "id": "L1", "label": "Critical", "code": "C1", "noun": { "one": "person", "other": "people" } },
     { "id": "L2", "label": "Serious", "code": "C2", "noun": { "one": "person", "other": "people" } },
@@ -16,7 +21,7 @@
         "carry": { "capacity": 1, "classes": ["L1", "L2", "L3"] }
       },
       "properties": [
-        { "id": "liftKg", "label": "Lift", "kind": "number", "unit": "kg", "min": 0, "max": 1000, "default": 400, "board": true }
+        { "id": "liftKg", "label": "Lift", "kind": "number", "unit": "kg", "min": 0, "max": 1000, "default": 400, "show": true }
       ],
       "standingOrders": { "deliver": "nearest-accepting", "return": { "afterIdleS": 60 } }
     },
@@ -49,7 +54,7 @@
         "service": { "provides": ["haul"], "onSceneS": 5 }
       },
       "properties": [
-        { "id": "payloadKg", "label": "Payload", "kind": "number", "unit": "kg", "min": 0, "max": 20000, "default": 300, "board": true }
+        { "id": "payloadKg", "label": "Payload", "kind": "number", "unit": "kg", "min": 0, "max": 20000, "default": 300, "show": true }
       ],
       "standingOrders": { "return": { "afterIdleS": 30 } }
     },
@@ -94,7 +99,7 @@
       "id": "rescue",
       "label": "Rescue",
       "icon": "life-buoy",
-      "priorityClass": "L2",
+      "priority": "Q2",
       "requires": [
         { "provides": "aid", "count": 1, "label": { "one": "lifting carrier", "other": "lifting carriers" }, "where": [{ "property": "liftKg", "atLeast": 500 }] }
       ]
@@ -103,7 +108,7 @@
       "id": "haul",
       "label": "Haul",
       "icon": "package",
-      "priorityClass": "L2",
+      "priority": "Q2",
       "requires": [
         { "provides": "haul", "count": 1, "label": { "one": "hauler", "other": "haulers" }, "where": [{ "property": "payloadKg", "atLeast": 500 }] }
       ]
@@ -112,9 +117,9 @@
       "id": "watch",
       "label": "Watch",
       "icon": "eye",
-      "priorityClass": "L2",
+      "priority": "Q2",
       "requires": [{ "provides": "guard", "count": 2, "label": { "one": "guard", "other": "guards" } }]
     },
-    { "id": "note", "label": "Note", "icon": "message-square", "priorityClass": "L3" }
+    { "id": "note", "label": "Note", "icon": "message-square", "priority": "Q3" }
   ]
 }

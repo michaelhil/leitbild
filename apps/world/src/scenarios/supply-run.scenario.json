@@ -1,7 +1,7 @@
 {
   "id": "supply-run",
   "title": "Supply run",
-  "description": "A fictional 30-minute logistics exercise in Halden: keep kitchens, shelters, a clinic and a pumping station supplied from two depots, Tosterød in the west and Brekke in the east, with trucks of different payloads. A routine request needs a truck of at least 500 kg and an urgent bulk request a heavy truck of at least 1,000 kg; only Truck 2 and Truck 4 are heavy. Truck 2 joins at 2 minutes, the 300 kg Truck 1 is upgraded to 600 kg at 3 and a hired 700 kg Truck 5 joins at 5½. Three choices matter: divert Truck 2 from a routine request to the pumping station; give the scout camp and the farm shop to Truck 3 in one chain, so Truck 4 stays home for the clinic; and add the guest harbour to the end of a busy truck's chain rather than send Truck 4 across town. Places and requests are invented for the exercise. How to play: tap a request to see the suggested truck, then tap the suggestion to send it; a divert asks you to confirm. Or tap one of your trucks to highlight it, then tap a request; a busy truck offers Do now or Add to end, or only Add to end once it is unloading. For a chain, tap Truck 3, then R-5, then the + on Truck 3 and R-6.",
+  "description": "A fictional 30-minute logistics exercise in Halden: keep kitchens, shelters, a clinic and a pumping station supplied from two depots, Tosterød in the west and Brekke in the east, with trucks of different payloads. A routine request needs a truck of at least 500 kg and an urgent bulk request a heavy truck of at least 1,000 kg; only Truck 2 and Truck 4 are heavy. Truck 2 joins at 2 minutes, the 300 kg Truck 1 is upgraded to 600 kg at 3 and a hired 700 kg Truck 5 joins at 5½. Three choices matter: divert Truck 2 from a routine request to the pumping station; give the scout camp and the farm shop to Truck 3 in one plan, so Truck 4 stays home for the clinic; and add the guest harbour after a busy truck's current job rather than send Truck 4 across town. Places and requests are invented for the exercise. How to play: tap a request, then Send to send the suggested truck. Or tap a truck, tap Send, then tap a request on the map; a busy truck asks whether to go After current job or Now. For two requests in one plan, tap Truck 3, Send and R-5, then + Add stop and R-6.",
   "objectives": ["Get a heavy truck to every urgent bulk request within 4 minutes of the request.", "Let no request wait more than 10 minutes for a truck."],
   "world": {"startsAt": "2026-09-03T08:00:00.000Z", "environment": {"city": "Halden", "model": "Fictional logistics exercise"}},
   "view": {"map": {"center": [11.3775, 59.1315], "zoom": 12.7}},
@@ -9,10 +9,10 @@
     {
       "id": "einsatz",
       "config": {
-        "lexicon": {"workList": "Supply requests", "unitBoard": "Vehicles", "noWork": "No requests waiting", "close": "Close request", "send": "Send", "hold": "Stop", "on-task": "Unloading"},
-        "loadClasses": [
-          {"id": "P1", "label": "Urgent", "code": "P1", "noun": {"one": "pallet", "other": "pallets"}},
-          {"id": "P2", "label": "Routine", "code": "P2", "noun": {"one": "pallet", "other": "pallets"}}
+        "lexicon": {"calls": "Supply requests", "units": "Vehicles", "noCalls": "No requests waiting", "close": "Close request", "send": "Send", "on-task": "Unloading"},
+        "priorities": [
+          {"id": "P1", "label": "Urgent", "code": "P1"},
+          {"id": "P2", "label": "Routine", "code": "P2"}
         ],
         "unitTypes": [
           {"id": "depot", "label": "Depot", "icon": "warehouse", "tags": ["logistics"], "public": true, "components": {}},
@@ -22,7 +22,7 @@
             "icon": "truck",
             "tags": ["logistics"],
             "components": {"mobility": {"mode": "road"}, "service": {"provides": ["supply"], "onSceneS": 180}},
-            "properties": [{"id": "payloadKg", "label": "Payload", "kind": "number", "unit": "kg", "min": 0, "max": 20000, "default": 1000, "board": true}],
+            "properties": [{"id": "payloadKg", "label": "Payload", "kind": "number", "unit": "kg", "min": 0, "max": 20000, "default": 1000, "show": true}],
             "standingOrders": {"return": {"afterIdleS": 60}}
           }
         ],
@@ -31,14 +31,14 @@
             "id": "supply",
             "label": "Supply request",
             "icon": "package",
-            "priorityClass": "P2",
+            "priority": "P2",
             "requires": [{"provides": "supply", "count": 1, "label": {"one": "supply truck", "other": "supply trucks"}, "where": [{"property": "payloadKg", "atLeast": 500}]}]
           },
           {
             "id": "bulk",
             "label": "Bulk request",
             "icon": "container",
-            "priorityClass": "P1",
+            "priority": "P1",
             "requires": [{"provides": "supply", "count": 1, "label": {"one": "heavy truck", "other": "heavy trucks"}, "where": [{"property": "payloadKg", "atLeast": 1000}]}]
           }
         ]

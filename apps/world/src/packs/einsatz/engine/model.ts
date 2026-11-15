@@ -1,6 +1,6 @@
 import { z } from 'zod'
-import { geoJsonLineStringSchema, geoJsonPointSchema, idSchema, type GeoJsonPoint, type RouteImpact } from '../../../core/model/index.ts'
-import { configIdSchema, roeModes, type EinsatzConfig, type LoadClass, type TaskTemplate, type UnitType } from '../config-schema.ts'
+import { commandIdSchema, geoJsonLineStringSchema, geoJsonPointSchema, idSchema, type GeoJsonPoint, type RouteImpact } from '../../../core/model/index.ts'
+import { configIdSchema, roeModes, type EinsatzConfig, type LoadClass, type Priority, type TaskTemplate, type UnitType } from '../config-schema.ts'
 import { validateEinsatzConfig } from '../config-validation.ts'
 import { unitPhases } from '../lexicon.ts'
 import { orderByMaxLength, ordersSchema } from '../steps.ts'
@@ -31,12 +31,12 @@ export const legSchema = z.object({
 }).strict()
 export type Leg = z.output<typeof legSchema>
 
-export const actionVerbs = ['create', 'send', 'divert', 'move', 'deliver', 'recall', 'hold', 'release', 'adjust', 'set', 'close', 'engage', 'queue', 'remove', 'resume', 'clear'] as const
+export const actionVerbs = ['create', 'send', 'divert', 'move', 'deliver', 'recall', 'release', 'adjust', 'set', 'close', 'engage', 'queue', 'remove', 'undo'] as const
 /**
  * The last order a record received: what, towards which object, by whom and
  * why, at which Run time. An order that adds or removes a step of the unit's
- * chain names it in `stepId`: a send or queue names the step it created, so
- * its caller can undo it with `unit.step.remove`.
+ * plan names it in `stepId`. The command `unit.undo` names is the unit's
+ * `lastCommand`, never this record, which standing orders overwrite.
  */
 export const lastActionSchema = z.object({
   verb: z.enum(actionVerbs),
@@ -125,8 +125,13 @@ export const unitDataSchema = z.object({
   orders: ordersSchema,
   /** The number of the last step the unit was given; absent before its first. Step ids never repeat on a unit. */
   stepSerial: z.number().int().positive().optional(),
-  /** Paused by `unit.hold`: the unit starts no further step and runs no deliver or return order until `unit.resume` or a new order. It keeps the phase it stood in, or holds where the hold stopped it. */
-  paused: z.literal(true).optional(),
+  /**
+   * The latest command that changed the unit's plan, which `unit.undo` must
+   * name: the first stop an order gave the unit (`stepId`; an undo is
+   * refused once the plan no longer holds it, and a command that gave no
+   * stop has none), and the task the order dropped, which an undo gives back.
+   */
+  lastCommand: z.object({ id: commandIdSchema, stepId: idSchema.optional(), drops: idSchema.optional() }).strict().optional(),
 }).strict()
 
 const tally = z.number().int().nonnegative()
@@ -137,7 +142,7 @@ export const loadCoverageSchema = z.object({ classId: configIdSchema, waiting: t
 export const coverageSchema = z.object({ requirements: z.array(requirementCoverageSchema), loads: z.array(loadCoverageSchema) }).strict()
 export type TaskCoverage = z.output<typeof coverageSchema>
 
-/** A task's `packData`: located, counted demand on a side, with the coverage and rank the engine derives on each transition. */
+/** A task's `packData`: located, counted demand on a side, of a declared priority, with the coverage the engine derives on each transition. */
 export const taskDataSchema = z.object({
   type: z.literal('task'),
   template: configIdSchema,
@@ -148,11 +153,17 @@ export const taskDataSchema = z.object({
   loads: countsSchema,
   pickedUp: countsSchema,
   served: countsSchema,
-  rank: configIdSchema,
+  priority: configIdSchema,
   coverage: coverageSchema,
   closedAtMs: simulationMs.optional(),
   lastAction: lastActionSchema.optional(),
   alerts: alertsSchema,
+  /**
+   * The latest observation of the task by another Pack's sensor
+   * (`interactions/drone-observation.ts`): the observer's label then, and
+   * the Run time it observed at. Absent until the first.
+   */
+  observed: z.object({ by: z.string().min(1), atMs: simulationMs }).strict().optional(),
 }).strict()
 
 export const einsatzDataSchema = z.discriminatedUnion('type', [unitDataSchema, taskDataSchema])
@@ -169,14 +180,15 @@ export interface UnitMotion {
   readonly reflexAttemptMs?: number
 }
 
-/** The configuration indexed for lookups. Load classes keep their declared priority order, highest first. */
+/** The configuration indexed for lookups. Load classes and priorities keep their declared order; priorities are highest first. */
 export interface Catalog {
   readonly config: EinsatzConfig
   readonly types: ReadonlyMap<string, UnitType>
   readonly templates: ReadonlyMap<string, TaskTemplate>
   readonly classes: ReadonlyArray<LoadClass>
   readonly classIds: ReadonlyArray<string>
-  readonly classRank: ReadonlyMap<string, number>
+  readonly priorities: ReadonlyArray<Priority>
+  readonly priorityRank: ReadonlyMap<string, number>
 }
 
 /** Indexes a configuration; one that cannot run as written is an error, never partly used. */
@@ -189,7 +201,8 @@ export const createCatalog = (config: EinsatzConfig): Catalog => {
     templates: new Map(config.taskTemplates.map(template => [template.id, template])),
     classes: config.loadClasses,
     classIds: config.loadClasses.map(loadClass => loadClass.id),
-    classRank: new Map(config.loadClasses.map((loadClass, index) => [loadClass.id, index])),
+    priorities: config.priorities,
+    priorityRank: new Map(config.priorities.map((priority, index) => [priority.id, index])),
   }
 }
 
@@ -235,15 +248,17 @@ export const templateOf = (catalog: Catalog, task: Pick<TaskRecord, 'id' | 'temp
   return template
 }
 
-/** Lower is more urgent: the index of a load class in declared priority order. */
-export const classRankOf = (catalog: Catalog, classId: string): number => {
-  const rank = catalog.classRank.get(classId)
-  if (rank === undefined) throw new Error(`Load class ${classId} is not declared`)
+/** Lower is more urgent: the index of a priority in declared order, highest first. */
+export const priorityRankOf = (catalog: Catalog, priorityId: string): number => {
+  const rank = catalog.priorityRank.get(priorityId)
+  if (rank === undefined) throw new Error(`Priority ${priorityId} is not declared`)
   return rank
 }
 
-/** Whether class `a` is strictly lower in priority than class `b`. */
-export const isLowerClass = (catalog: Catalog, a: string, b: string): boolean => classRankOf(catalog, a) > classRankOf(catalog, b)
+export const priorityOf = (catalog: Catalog, priorityId: string): Priority => catalog.priorities[priorityRankOf(catalog, priorityId)]!
+
+/** Whether priority `a` is strictly higher (more urgent) than priority `b`. */
+export const isHigherPriority = (catalog: Catalog, a: string, b: string): boolean => priorityRankOf(catalog, a) < priorityRankOf(catalog, b)
 
 export const motionOf = (state: Pick<EngineState, 'motion'>, unitId: string): UnitMotion => {
   const motion = state.motion.get(unitId)

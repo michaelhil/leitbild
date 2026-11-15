@@ -1,19 +1,20 @@
-import { routeDistanceMeters, type RouteImpact } from '../../../core/model/index.ts'
+import type { RouteImpact } from '../../../core/model/index.ts'
 import { standingOrderBy } from '../ids.ts'
 import { refusalCode } from '../refusal.ts'
-import { planChainNext, planClear, planQueue, planResume, planStepRemove, skipHead } from './chain.ts'
+import { planChainNext, planStopRemove, skipHead } from './chain.ts'
 import { chainBy } from './chain-steps.ts'
+import { nearestAcceptingSite } from './delivery.ts'
 import { planEngage, planSetRoe } from './engagement-orders.ts'
 import { closeDraft, openDraft, putUnit, setMotion, unitIn } from './draft.ts'
 import { refused, type Refused } from './intent-support.ts'
 import { commandsEveryUnit, type EngineActor, type Intent, type Plan, type RouteNeed } from './intents.ts'
 import { motionOf, raiseAlert, unitTypeOf, type EngineState, type Leg, type Transition, type UnitRecord } from './model.ts'
 import { prepareLeg, type RoutePort } from './movement.ts'
-import { planHold, planRecall, planSend } from './orders.ts'
+import { planRecall } from './orders.ts'
 import { settle, stepUntil } from './phases.ts'
+import { planOrder, planUndo } from './plan-order.ts'
 import { planSiteSet, planTaskClose, planTaskCreate, planUnitAdjust, planUnitCreate } from './records.ts'
 import { orderFailedCode, type DueReflex, type Reflex } from './reflexes.ts'
-import { isDestroyed, isSite, linksToSite } from './rules.ts'
 import { patch, sameValue } from './values.ts'
 import { loadText } from './wording.ts'
 
@@ -41,9 +42,10 @@ export interface AdvanceOutcome {
 /** Validates an intent against the state: refused with `<code>: <message>`, or the routes it needs and how it applies. */
 export const planIntent = (state: EngineState, intent: Intent, actor: EngineActor): Plan => {
   switch (intent.kind) {
-    case 'send': return planSend(state, intent, actor)
+    case 'order': return planOrder(state, intent, actor)
     case 'recall': return planRecall(state, intent, actor)
-    case 'hold': return planHold(state, intent, actor)
+    case 'undo': return planUndo(state, intent, actor)
+    case 'stop.remove': return planStopRemove(state, intent, actor)
     case 'task.create': return planTaskCreate(state, intent, actor)
     case 'task.close': return planTaskClose(state, intent, actor)
     case 'site.set': return planSiteSet(state, intent, actor)
@@ -51,10 +53,6 @@ export const planIntent = (state: EngineState, intent: Intent, actor: EngineActo
     case 'unit.adjust': return planUnitAdjust(state, intent, actor)
     case 'set-roe': return planSetRoe(state, intent, actor)
     case 'engage': return planEngage(state, intent, actor)
-    case 'queue': return planQueue(state, intent, actor)
-    case 'step.remove': return planStepRemove(state, intent, actor)
-    case 'resume': return planResume(state, intent, actor)
-    case 'clear': return planClear(state, intent, actor)
     case 'chain.next': return planChainNext(state, intent, actor)
   }
 }
@@ -114,20 +112,11 @@ const runIntent = async (state: EngineState, intent: Intent, actor: EngineActor,
   return commitIntent(state, intent, actor, legs.legs)
 }
 
-/**
- * The nearest accepting site, by straight-line distance and then id, that
- * is public or the unit's side's and accepts every class it carries.
- */
+/** The deliver standing order: the load the unit holds, from where it stands, to the site `nearestAcceptingSite` names, as `predictedDelivery` foretells it. */
 const deliverIntent = (state: EngineState, unit: UnitRecord): { readonly ok: true; readonly intent: Intent } | Refused => {
-  const from = motionOf(state, unit.id).point
-  const sites = [...state.units.values()]
-    .filter(site => isSite(state.catalog, site) && site.accepting === true && !isDestroyed(site) && linksToSite(state.catalog, unit, site)
-      && Object.keys(unit.load).every(classId => unitTypeOf(state.catalog, site).components.receiving!.accepts.includes(classId)))
-    .map(site => ({ site, distance: routeDistanceMeters(from, motionOf(state, site.id).point) }))
-    .sort((a, b) => a.distance - b.distance || (a.site.id < b.site.id ? -1 : 1))
-  const nearest = sites[0]
-  if (nearest === undefined) return refused('site_not_accepting', `No site accepts ${loadText(state.catalog, unit.load)}`)
-  return { ok: true, intent: { kind: 'send', units: [unit.id], to: { siteId: nearest.site.id } } }
+  const site = nearestAcceptingSite(state, unit, motionOf(state, unit.id).point, unit.load)
+  if (site === undefined) return refused('site_not_accepting', `No site accepts ${loadText(state.catalog, unit.load)}`)
+  return { ok: true, intent: { kind: 'order', units: [unit.id], stops: [{ siteId: site.id }] } }
 }
 
 const orderWords: Readonly<Record<Reflex, string>> = { deliver: 'Deliver', return: 'Return', withdraw: 'Withdraw', chain: 'Next step' }

@@ -97,7 +97,7 @@ test('all eight owner selections survive discovered schema, preview, published s
       ['world.weather.set-enabled', { objectId: 'example:weather', enabled: false }],
       ['world.drone.set-gimbal', { droneId: 'example:drone', yawDeg: 15, pitchDeg: -20 }],
       ['world.situation-monitor.configuration.replace', { expectedRevision: 0, config: { sources: [], areas: [] } }],
-      ['world.einsatz.unit.hold', { unitId: 'unit:truck-3' }],
+      ['world.einsatz.unit.order', { units: ['unit:truck-3'], stops: [{ point: { type: 'Point', coordinates: [11.36, 59.14] } }] }],
       ['world.process-plant.control.write', { plantId: 'plant:halden-1', tagId: 'MOV-8000A', value: 0 }],
     ] as const) {
       const answer = await invoke(capabilityId, input, 'human', { resource })
@@ -139,7 +139,7 @@ test('all eight owner selections survive discovered schema, preview, published s
     expect((await invoke('world.simulation-run.read-object', { objectId: 'example:weather' }, 'ai', { resource })).body.result.packData.definition.enabled).toBe(false)
     expect((await invoke('world.electric-grid.asset.get', { gridId: 'grid:halden-four-unit', assetId: branch.id }, 'ai', { resource })).body.result.asset.state.availability).toBe(0.5)
     expect((await invoke('world.simulation-run.read-object', { objectId: 'example:drone' }, 'ai', { resource })).body.result.packData.payload).toMatchObject({ gimbalPitchDeg: -20, gimbalYawDeg: 15 })
-    expect((await invoke('world.simulation-run.read-object', { objectId: 'unit:truck-3' }, 'ai', { resource })).body.result.packData.paused).toBe(true)
+    expect((await invoke('world.simulation-run.read-object', { objectId: 'unit:truck-3' }, 'ai', { resource })).body.result.packData.orders).toMatchObject([{ kind: 'move', state: 'active' }])
     expect((await invoke('world.process-plant.signals.read', { plantId: 'plant:halden-1', signals: [{ tagId: 'MOV-8000A' }] }, 'ai', { resource })).body.result.signals[0].variable.value).toBe(0)
   } finally { await workspaces.shutdown(); await rm(dataDir, { recursive: true, force: true }) }
 })

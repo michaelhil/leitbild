@@ -281,7 +281,7 @@ describe('no card drops a row silently (Q15)', () => {
     expect(total).toBeGreaterThan(12)
     const rows = outcome.card.items.filter(item => item.subject !== undefined && 'objectId' in item.subject && !('alertId' in item.subject))
     expect(rows.length + outcome.card.more).toBe(total)
-    expect(outcome.card.adjusted).toContainEqual({ kind: 'layout', text: `${total - rows.length} of ${total} Tasks not shown` })
+    expect(outcome.card.adjusted).toContainEqual({ kind: 'layout', text: `${total - rows.length} of ${total} Calls not shown` })
   })
 
   test('a run-wide alerts card leads with every object\'s worst alert, the reactor trip first out, and counts the rest', async () => {

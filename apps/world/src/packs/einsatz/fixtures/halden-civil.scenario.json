@@ -14,15 +14,20 @@
       "id": "einsatz",
       "config": {
         "lexicon": {
-          "workList": "Calls",
-          "unitBoard": "Units",
-          "noWork": "No calls waiting",
+          "calls": "Calls",
+          "units": "Units",
+          "noCalls": "No calls waiting",
           "close": "Close call",
           "send": "Dispatch",
           "tracks": "Contacts",
           "on-task": "On scene",
           "at-site": "At hospital"
         },
+        "priorities": [
+          {"id": "acute", "label": "Acute", "code": "P1"},
+          {"id": "urgent", "label": "Urgent", "code": "P2"},
+          {"id": "routine", "label": "Non-urgent", "code": "P3"}
+        ],
         "loadClasses": [
           { "id": "acute", "label": "Acute", "code": "P1", "noun": { "one": "patient", "other": "patients" } },
           { "id": "urgent", "label": "Urgent", "code": "P2", "noun": { "one": "patient", "other": "patients" } },
@@ -74,7 +79,7 @@
               "service": { "provides": ["fire-suppression"], "onSceneS": 900 }
             },
             "properties": [
-              { "id": "waterL", "label": "Water", "kind": "number", "unit": "l", "min": 0, "max": 10000, "default": 3000, "board": true }
+              { "id": "waterL", "label": "Water", "kind": "number", "unit": "l", "min": 0, "max": 10000, "default": 3000, "show": true }
             ],
             "standingOrders": { "return": { "afterIdleS": 60 } }
           },
@@ -99,24 +104,24 @@
             "id": "public-order",
             "label": "Public order",
             "icon": "siren",
-            "priorityClass": "urgent",
+            "priority": "urgent",
             "requires": [{ "provides": "policing", "count": 2, "label": { "one": "patrol car", "other": "patrol cars" } }]
           },
           {
             "id": "road-accident",
             "label": "Road accident",
             "icon": "car-front",
-            "priorityClass": "urgent",
+            "priority": "urgent",
             "requires": [{ "provides": "policing", "count": 1, "label": { "one": "patrol car", "other": "patrol cars" } }]
           },
           {
             "id": "building-fire",
             "label": "Building fire",
             "icon": "flame",
-            "priorityClass": "acute",
+            "priority": "acute",
             "requires": [{ "provides": "fire-suppression", "count": 1, "label": { "one": "fire engine", "other": "fire engines" }, "where": [{ "property": "waterL", "atLeast": 2000 }] }]
           },
-          { "id": "report", "label": "Report", "icon": "message-square", "priorityClass": "routine" }
+          { "id": "report", "label": "Report", "icon": "message-square", "priority": "routine" }
         ]
       },
       "items": [
@@ -130,8 +135,8 @@
         { "type": "unit", "id": "unit:fire-1", "label": "Engine 1", "unitType": "fire-engine", "position": [11.4, 59.12] },
         { "type": "unit", "id": "site:kalnes", "label": "Kalnes hospital", "unitType": "hospital", "position": [11.023, 59.322] },
         { "type": "unit", "id": "site:halden-triage", "label": "Halden triage centre", "unitType": "triage-centre", "position": [11.384, 59.121] },
-        { "type": "task", "id": "task:e6-collision", "label": "C-1 E6 collision", "template": "medical", "position": [11.325, 59.19], "loads": { "acute": 1, "urgent": 1 } },
-        { "type": "task", "id": "task:tistedal", "label": "C-2 Tistedal", "template": "medical", "position": [11.45, 59.125], "loads": { "urgent": 1 } }
+        { "type": "task", "id": "task:e6-collision", "label": "C-1 E6 collision", "template": "medical", "position": [11.325, 59.19], "loads": { "acute": 1, "urgent": 1 }, "priority": "acute" },
+        { "type": "task", "id": "task:tistedal", "label": "C-2 Tistedal", "template": "medical", "position": [11.45, 59.125], "loads": { "urgent": 1 }, "priority": "urgent" }
       ]
     }
   ],
@@ -147,7 +152,7 @@
         "id": "industrial-fall",
         "at": { "kind": "after_scenario_start", "seconds": 360 },
         "title": "Fall at an industrial site",
-        "actions": [{ "type": "invoke_capability", "capabilityId": "world.einsatz.task.create", "input": { "template": "medical", "label": "C-4 Industrial site fall", "at": { "type": "Point", "coordinates": [11.39, 59.16] }, "loads": { "urgent": 1 } } }]
+        "actions": [{ "type": "invoke_capability", "capabilityId": "world.einsatz.task.create", "input": { "template": "medical", "label": "C-4 Industrial site fall", "at": { "type": "Point", "coordinates": [11.39, 59.16] }, "loads": { "urgent": 1 }, "priority": "urgent" } }]
       },
       {
         "id": "ferry-terminal-fire",
@@ -159,7 +164,7 @@
         "id": "aremark-arrest",
         "at": { "kind": "after_scenario_start", "seconds": 720 },
         "title": "Cardiac arrest in Aremark",
-        "actions": [{ "type": "invoke_capability", "capabilityId": "world.einsatz.task.create", "input": { "template": "medical", "label": "C-6 Aremark cardiac arrest", "at": { "type": "Point", "coordinates": [11.7, 59.24] }, "loads": { "acute": 1 } } }]
+        "actions": [{ "type": "invoke_capability", "capabilityId": "world.einsatz.task.create", "input": { "template": "medical", "label": "C-6 Aremark cardiac arrest", "at": { "type": "Point", "coordinates": [11.7, 59.24] }, "loads": { "acute": 1 }, "priority": "acute" } }]
       },
       {
         "id": "svinesund-accident",
@@ -183,7 +188,7 @@
         "id": "late-top-priority",
         "at": { "kind": "after_scenario_start", "seconds": 1500 },
         "title": "A late top-priority call while every ambulance is busy",
-        "actions": [{ "type": "invoke_capability", "capabilityId": "world.einsatz.task.create", "input": { "template": "medical", "label": "C-10 Brekke collapse", "at": { "type": "Point", "coordinates": [11.4, 59.1] }, "loads": { "acute": 1 } } }]
+        "actions": [{ "type": "invoke_capability", "capabilityId": "world.einsatz.task.create", "input": { "template": "medical", "label": "C-10 Brekke collapse", "at": { "type": "Point", "coordinates": [11.4, 59.1] }, "loads": { "acute": 1 }, "priority": "acute" } }]
       }
     ]
   }
