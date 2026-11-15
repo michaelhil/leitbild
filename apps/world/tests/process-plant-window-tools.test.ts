@@ -137,7 +137,7 @@ describe('a press on a Plant opens its overview display', () => {
   test('a press its Pack opens a display for opens it, unless a placement has the map; the map\'s disk takes the same presses', () => {
     expect(route).toMatch(/const opensDisplay = \(object: OperationalObject\): boolean => activePack\?\.packForObject\(object\)\.ui\?\.displayOnPress === true/)
     expect(route).toMatch(/if \(route\.kind === 'display'\) \{[^}]*if \(placementMode === null\) openDisplayFromPress\(route\.objectId\)/)
-    expect(route).toContain('takesDiskClicks={opensDisplay}')
+    expect(route).toContain('takesDiskClicks={object => opensDisplay(object) || ')
     expect(route).toMatch(/opensDisplay \}\)/)
     // On close the window gives focus back to the rail row the press came from, else to the map.
     const open = route.slice(route.indexOf('const openDisplayFromPress'), route.indexOf('const selectObject'))
