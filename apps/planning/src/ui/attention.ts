@@ -64,11 +64,12 @@ const windowLength = (context: Context): string => {
 export const pessimisticCard = (option: OptionView, context: Context): Card | null => {
   const field = option.robust
   if (field === undefined || !option.fresh || option.status.word !== 'validated feasible') return null
-  // The time ran out before the re-timings could be made: said so, never a card that is silently missing.
+  // The re-timings were not made, and why: said so, never a card that is silently missing.
   if ('notWorkedOut' in field) {
+    const why = field.notWorkedOut === 'time' ? 'the time ran out' : `re-timing could not place '${context.names.job(field.job)}'`
     return {
       mark: { shape: '?', word: 'Pessimistic estimates' },
-      title: `For ${option.label}, the pessimistic estimates were not worked out: the time ran out.`,
+      title: `For ${option.label}, the pessimistic estimates were not worked out: ${why}.`,
       text: 'Nothing is said about how this option holds at the high estimates.', steps: [], actions: [],
     }
   }
@@ -89,7 +90,7 @@ export const pessimisticCard = (option: OptionView, context: Context): Card | nu
     return text === null ? [] : [`${names.job(entry.job)} alone at its high estimate: ${text}.`]
   })
   const holding = robust.single.length - alone.length
-  const how = 'Re-timed in the same order with the same crews, nothing earlier, and checked. A plan made again at those estimates may do better.'
+  const how = 'Re-timed in the same order with the same crews, nothing earlier, and checked. Re-timed jobs may use any working time the option already buys. A plan made again at those estimates may do better.'
   if (together === null && alone.length === 0) {
     return {
       mark: { shape: '✓', word: 'Pessimistic estimates' },

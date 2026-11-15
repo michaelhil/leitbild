@@ -22,7 +22,8 @@ interface Planned { readonly variant: CheckedVariant; readonly rows: readonly Ro
  * refuses what is no re-timing (a job missing, earlier, or on other crews) and findings it does not judge.
  */
 export type JudgeRetimed = (plan: { readonly inputs: PlanInputs; readonly variant: CheckedVariant; readonly planned: readonly Row[]; readonly retimed: readonly UndatedFloat[]; readonly high: readonly string[] }) =>
-  { readonly ok: true; readonly outcome: Retimed } | { readonly ok: false; readonly problems: readonly string[] }
+  | { readonly ok: true; readonly outcome: Retimed; readonly spans?: ReadonlyArray<{ readonly rule: string; readonly hours: number; readonly margin: number }> }
+  | { readonly ok: false; readonly problems: readonly string[] }
 
 /** robust.single holds at most this many jobs (plan/schema.ts). */
 export const MAX_SINGLE_RETIMINGS = 12
@@ -42,6 +43,7 @@ export const rangedJobs = (inputs: PlanInputs, rows: ReadonlyArray<Pick<Row, 'jo
   return kept.sort((x, y) => x.order - y.order).map(entry => entry.key)
 }
 
+
 /** How many re-timings an option scheduling these jobs needs: every ranged job together, then each alone. */
 export const retimingCount = (inputs: PlanInputs, jobs: readonly string[]): number => {
   const ranged = rangedJobs(inputs, jobs.map(job => ({ job }))).length
@@ -56,13 +58,15 @@ export const atHigh = (inputs: PlanInputs, jobs: ReadonlySet<string>): PlanInput
 
 /**
  * The option's rows re-timed on `pessimistic` (the same plan with some jobs longer; both with the option's
- * extra rule): each job keeps its mode (its crews and bought time, read exactly on the planned inputs) and its
- * order, and starts no earlier than planned (repair's floors). A job that finds no slot with its crews and
- * tools before the horizon (a booked team's period missed, say) has no row, nor has any job that waits on it:
- * `rows` are the placed jobs, and lane K names the job that could not be placed, its crew and from when.
+ * extra rule): each job keeps its order and its crews and tools, and starts no earlier than planned (repair's
+ * floors). It keeps its mode (read exactly on the planned inputs) unless that leaves it no slot: then it takes
+ * the mode of the same crews and tools with the most working time, the option's bought time included, as the
+ * crews would work into time the option already buys. A job that still finds no slot before the horizon (a
+ * booked team's period missed, say) has no row, nor has any job that waits on it: `rows` are the placed jobs,
+ * `unplaced` the first such job whose own predecessors are placed, and lane K names its crew and from when.
  * Undefined when the rows do not read back on the planned inputs or the two compiles do not line up.
  */
-export const retimedRows = (planned: PlanInputs, pessimistic: PlanInputs, option: Planned): { readonly rows: UndatedFloat[] } | undefined => {
+export const retimedRows = (planned: PlanInputs, pessimistic: PlanInputs, option: Planned): { readonly rows: UndatedFloat[]; readonly unplaced?: string } | undefined => {
   const sub = { methods: option.variant.methods, buy: option.variant.purchases }
   const before = compile(planned, sub), after = compile(pessimistic, sub)
   if (!before.ok || !after.ok) return undefined
@@ -72,17 +76,35 @@ export const retimedRows = (planned: PlanInputs, pessimistic: PlanInputs, option
     && before.problem.activities.every((activity, a) => activity.id === after.problem.activities[a]!.id && activity.modes.length === after.problem.activities[a]!.modes.length)
   if (!same) return undefined
   const prep = prepare(after.problem)
-  const { decoded } = repair(prep, saved.schedule)
-  const placed = (a: number): boolean => decoded.finish[a]! >= 0 && decoded.finish[a]! < prep.H && decoded.start[a]! < prep.H
-  return { rows: dateSchedule(prep, after.index, { start: decoded.start, mode: decoded.mode }, placed) }
+  const placedIn = (decoded: ReturnType<typeof repair>['decoded']) => (a: number): boolean => decoded.finish[a]! >= 0 && decoded.finish[a]! < prep.H && decoded.start[a]! < prep.H
+  let { decoded } = repair(prep, saved.schedule)
+  const first = placedIn(decoded)
+  if (after.index.jobs.some((job, a) => job !== null && !first(a))) {
+    // A job left without a slot in its own mode: the same crews and tools in their widest mode, then again.
+    // Sound only because it buys nothing new: every mode of this compile is made of the option's own purchases
+    // (compiled with buy = the purchases it uses), so the job only works into time the option already buys.
+    const crews = (m: { readonly demands: ReadonlyArray<{ readonly resource: number }> }) => m.demands.map(demand => demand.resource).sort((x, y) => x - y).join(',')
+    const mode = Int32Array.from(saved.schedule.mode, (m, a) => {
+      if (after.index.jobs[a] === null || first(a)) return m
+      const modes = after.problem.activities[a]!.modes
+      const same = modes.flatMap((candidate, k) => (crews(candidate) === crews(modes[m]!) ? [k] : []))
+      return same.reduce((best, k) => (prep.cal[modes[k]!.calendar]!.list.length > prep.cal[modes[best]!.calendar]!.list.length ? k : best), m)
+    })
+    decoded = repair(prep, { start: saved.schedule.start, mode }).decoded
+  }
+  const placed = placedIn(decoded)
+  const lost = after.index.jobs.flatMap((job, a) => (job !== null && !placed(a) ? [a] : []))
+  const root = lost.filter(a => prep.preds[a]!.every(link => placed(link.from))).sort((x, y) => decoded.start[x]! - decoded.start[y]! || x - y)[0]
+  return { rows: dateSchedule(prep, after.index, { start: decoded.start, mode: decoded.mode }, placed), ...(root === undefined ? {} : { unplaced: after.index.jobs[root]! }) }
 }
 
 /**
  * The option's robust record on the plan's `inputs`: every ranged job high together, then each alone, each
  * judged by lane K, a job that could not be placed included. Never a part of one: `{notWorkedOut: 'time'}`
  * when the next re-timing would not end by `until` (epoch ms), judged by the longest so far and before the
- * first by `estimateMs` (the sub-solve's own measured compile and check time); undefined when a re-timing
- * cannot be made or is refused by lane K.
+ * first by `estimateMs` (the sub-solve's own measured compile and check time); `{notWorkedOut: 'unplaced', job}`
+ * when a re-timing left a job unplaced and lane K refused to name a crew without time for it; undefined when a
+ * re-timing cannot be made or lane K refuses it for another reason.
  */
 export const robustOf = (inputs: PlanInputs, option: Planned, judge: JudgeRetimed, until = Infinity, now: () => number = Date.now, estimateMs = 0): RobustField | undefined => {
   const jobs = rangedJobs(inputs, option.rows)
@@ -97,14 +119,20 @@ export const robustOf = (inputs: PlanInputs, option: Planned, judge: JudgeRetime
     const retimed = retimedRows(planned, withExtraRules(atHigh(inputs, new Set(high)), option.variant.also), option)
     const judged = retimed === undefined ? undefined : judge({ inputs, variant: option.variant, planned: option.rows, retimed: retimed.rows, high })
     longest = Math.max(longest, now() - started)   // never below the first estimate
-    return judged?.ok === true ? judged.outcome : undefined
+    // A job the re-timing could not place, for which lane K names no crew or tool without time: said so.
+    if (judged?.ok === false && retimed?.unplaced !== undefined) unplaced ??= retimed.unplaced
+    if (judged?.ok !== true) return undefined
+    // A re-timing that holds keeps lane K's spans against their limits, as given (V12).
+    return judged.outcome.holds && judged.spans !== undefined ? { ...judged.outcome, spans: judged.spans.map(span => ({ ...span })) } : judged.outcome
   }
+  let unplaced: string | undefined
+  const notWorkedOut = (): RobustField | undefined => (late ? { notWorkedOut: 'time' } : unplaced !== undefined ? { notWorkedOut: 'unplaced', job: unplaced } : undefined)
   const allPessimistic = once(jobs)
-  if (allPessimistic === undefined) return late ? { notWorkedOut: 'time' } : undefined
+  if (allPessimistic === undefined) return notWorkedOut()
   const single: Array<Robust['single'][number]> = []
   for (const job of jobs) {
     const outcome = once([job])
-    if (outcome === undefined) return late ? { notWorkedOut: 'time' } : undefined
+    if (outcome === undefined) return notWorkedOut()
     single.push({ job, outcome })
   }
   return { allPessimistic, single }

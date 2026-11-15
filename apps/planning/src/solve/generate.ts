@@ -250,6 +250,11 @@ export interface SubSolveTask {
    * search ends early enough for the work after it, so the answer comes in time on a CPU-capped machine too.
    */
   readonly answerBy?: number
+  /**
+   * Generate granted this sub-solve's search its share of the Generate, less than its slot allows: the slot has
+   * spare time, from which the re-timings' reserve is taken first. Otherwise the slot limits the search.
+   */
+  readonly shareCapped?: boolean
 }
 export interface SubSolveOutcome {
   readonly option: Option
@@ -316,17 +321,30 @@ export const subSolve = (deps: SubSolveDeps): SubSolver => async (task, signal, 
     return outcome({ ...base, variant: stored(variantOut.purchases), status: infeasibleStatus(found.certificate, runBasis({ stoppedBy: 'done', evals: 0, cpuMs: 0 })), rows: [], metrics: [] })
   }
   if (estimateMemoryMb(problem) > MEMORY_BUDGET_MB) throw planningError(413, 'above_certified_size', 'This plan is too large for the certified size', { estimateMb: Math.ceil(estimateMemoryMb(problem)) })
-  // The search ends in time for the work after it, measured here, on this machine and under its throttle:
-  // for the plan found, no longer than the work before the search took (the hotfix's rule); for the starting
-  // option's re-check and each re-timing, two compiles and one lane K check each, as long as this sub-solve's
-  // own compile and check took. The sub-solve answers by its time with its best checked result, never killed
-  // for running past it; a re-timing that would not end in time is not started (robustOf), and says so.
+  // The plan comes first, the pessimistic record second. The search ends in time for the work the plan needs
+  // after it, measured here, on this machine and under its throttle: no longer than the work before the search
+  // took (the hotfix's rule), and for a starting option's re-check two compiles and one lane K check, as long
+  // as this sub-solve's own compile and check took. The re-timings get a reserve (the same measured cost each)
+  // only when Generate's share, not the slot, capped this search (`shareCapped`): it comes out of the spare slot
+  // time first and only then off the search, so a sub-solve short of time never loses search to them. Either way each
+  // re-timing starts only when its estimate ends before the sub-solve must answer (robustOf), else the record
+  // says the time ran out. Never killed for running past its time.
   const by = Math.min(task.answerBy ?? Infinity, task.deadlineAt ?? Infinity)
-  const retimings = deps.judgeRetimed === undefined ? 0 : retimingCount(inputs, index.jobs.flatMap(job => (job === null ? [] : [job])))
-  const extraChecks = (task.start === undefined ? 0 : 1) + retimings
-  const perCheckMs = 2 * compileMs + checkMs
+  const usedBy = (rows: ReadonlyArray<Pick<DatedRow, 'uses'>>): string[] => [...new Set([...rows.flatMap(row => row.uses.flatMap(use => (use.purchase === undefined ? [] : [use.purchase]))), ...index.purchases.filter(purchase => purchase.committed).map(purchase => purchase.key)])]
+  // One re-timing is two compiles and lane K's judgement, a full check of rows: timed as an identity judgement
+  // of the starting option's own rows when there are any, else as the readiness check (lighter: under heavy
+  // load a record may then read that the time ran out).
+  const judgedMs = (() => {
+    if (task.start === undefined || deps.judgeRetimed === undefined) return undefined
+    const at = performance.now()
+    deps.judgeRetimed({ inputs, variant: checked(usedBy(task.start.rows).filter(key => index.allowedPurchases.includes(key))), planned: task.start.rows, retimed: task.start.rows, high: [] })
+    return performance.now() - at
+  })()
+  const perCheckMs = 2 * compileMs + (judgedMs ?? checkMs)
   const beforeSearchMs = performance.now() - started
-  const searchBudget = searchBudgetBy(budget, by, SEARCH_STOP_LATENCY_MS + beforeSearchMs + extraChecks * perCheckMs)
+  const planReserveMs = SEARCH_STOP_LATENCY_MS + beforeSearchMs + (task.start === undefined ? 0 : perCheckMs)
+  const retimings = deps.judgeRetimed === undefined || task.shareCapped !== true ? 0 : retimingCount(inputs, index.jobs.flatMap(job => (job === null ? [] : [job])))
+  const searchBudget = searchBudgetBy(budget, by, planReserveMs + retimings * perCheckMs)
   // No time left to search: no plan, said as a search stopped by its time.
   if (searchBudget.wallMs <= 0) return outcome({ ...base, variant: stored(variantOut.purchases), status: unresolvedStatus(runBasis({ stoppedBy: 'wall', evals: 0, cpuMs: 0 }, searchBudget)), rows: [], metrics: [] })
   const startSchedule = task.start === undefined ? undefined : undate(prep, index, task.start.rows)
@@ -359,7 +377,7 @@ export const subSolve = (deps: SubSolveDeps): SubSolver => async (task, signal, 
       group === undefined ? undefined : bound => deps.verifyBound(inputs, variantOut, { group, unit: groupLeadGoal(group).tolerance.unit }, bound))
     return { ...base, variant: stored(planned.purchases), status, rows, metrics: metricsOf(inputs, report, variant.also) }
   }
-  const usedBy = (rows: ReadonlyArray<Pick<DatedRow, 'uses'>>): string[] => [...new Set([...rows.flatMap(row => row.uses.flatMap(use => (use.purchase === undefined ? [] : [use.purchase]))), ...index.purchases.filter(purchase => purchase.committed).map(purchase => purchase.key)])]
+
 
   /** The search's plan, or the status that says why there is none. */
   const searched = (): Option => {
@@ -473,10 +491,11 @@ export const generate = async (deps: GenerateDeps, request: GenerateRequest): Pr
     // last answers by the deadline.
     const slot = Math.min(remaining, Math.max(MIN_SUB_SOLVE_MS, remaining / left))
     const wall = Math.min(share.wallMs, slot * 0.9)
+    const shareCapped = share.wallMs < slot * 0.9
     const budget = { evals, cpuMs: Math.round(Math.min(share.cpuMs, wall * SOLVER_CPU_CAP_CORES)), wallMs: Math.round(wall) }
     const start = startFor(variant, combo)
     const task: SubSolveTask = {
-      inputs, revision: request.revision, variant: { key: variant.key, label: variant.label, buy: variant.buy, ...askedOf(variant) }, combo, budget, seed, deadlineAt, answerBy: Math.floor(now + slot),
+      inputs, revision: request.revision, variant: { key: variant.key, label: variant.label, buy: variant.buy, ...askedOf(variant) }, combo, budget, seed, deadlineAt, answerBy: Math.floor(now + slot), shareCapped,
       ...(start === undefined ? {} : { start: { rows: start.rows } }),
     }
     const outcome = await runSubSolve(task, request.signal, request.stoppedByWho)

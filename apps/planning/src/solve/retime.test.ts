@@ -103,7 +103,8 @@ describe('the robust record', () => {
       const found = retimedRows(trimmed, atHigh(trimmed, new Set(high)), option)!
       const judgement = 'rows' in found ? judgeRetiming(trimmed, option.variant, option.rows, found.rows, high) : undefined
       if (judgement?.ok !== true) throw new Error('lane K judges each re-timing')
-      return judgement.outcome
+      // Stored as lane K gives it: a holding re-timing with lane K's spans against their limits (V12).
+      return judgement.outcome.holds && judgement.spans !== undefined ? { ...judgement.outcome, spans: [...judgement.spans] } : judgement.outcome
     }
     expect(robust.allPessimistic).toEqual(own(jobs))
     expect(robust.single).toEqual(jobs.map(job => ({ job, outcome: own([job]) })))
@@ -141,4 +142,42 @@ describe('re-timings within the sub-solve\'s time (fix round F3, lane S\'s part)
     expect(robustOf(trimmed, option, counting, Date.now() + 60_000, Date.now, 1)).toBeDefined()
     expect(calls).toBe(1 + rangedJobs(trimmed, option.rows).length)
   })
+})
+
+describe('a job its own mode cannot place, and what the record then says', () => {
+  test('the same crews take their widest mode: a weak swap (checked run, evals 500) gets lane K\'s full record', async () => {
+    const weak = (await generate(deps, { inputs: flagship, revision: 1, previous: null, input: { variants: [{ label: 'Swap', methods: swap }] }, by, signal: new AbortController().signal, seed: 1, evals: 500 })).optionSet.options[0]!
+    expect(weak.status.word).toBe('validated feasible')
+    const jobs = rangedJobs(flagship, weak.rows)
+    const field = robustOf(flagship, weak, laneKJudgeRetimed)
+    expect(field !== undefined && !('notWorkedOut' in field)).toBe(true)
+    // Every re-timing keeps the crews and starts nothing earlier, as lane K itself accepts it.
+    for (const high of [jobs, ...jobs.map(job => [job])]) {
+      const found = retimedRows(flagship, atHigh(flagship, new Set(high)), weak)!
+      expect(judgeRetiming(flagship, weak.variant, weak.rows, found.rows, high).ok).toBe(true)
+    }
+  }, 60_000)
+
+  test('a re-timing that leaves a job unplaced, which lane K will not pin on a crew, says so: "re-timing could not place" it', () => {
+    const found = retime(flagship, ['CCWHXA-CLEAN'])!
+    expect(found.unplaced).toBeDefined()
+    const job = retime(flagship, rangedJobs(flagship, option.rows))!.unplaced!
+    expect(robustOf(flagship, option, () => ({ ok: false, problems: ['no crew or tool named'] }))).toEqual({ notWorkedOut: 'unplaced', job })
+  })
+})
+
+describe('V12: a re-timing that holds keeps lane K\'s spans against their limits', () => {
+  test('each holding outcome carries lane K\'s own spans, as given; none is computed here (checked run: swap, evals 1,500)', async () => {
+    const longer = (await generate(deps, { inputs: flagship, revision: 1, previous: null, input: { variants: [{ label: 'Swap', methods: swap }] }, by, signal: new AbortController().signal, seed: 1, evals: 1_500 })).optionSet.options[0]!
+    const robust = record(robustOf(flagship, longer, laneKJudgeRetimed))
+    const holding = robust.single.filter(each => each.outcome.holds)
+    expect(holding.length).toBeGreaterThan(0)
+    for (const entry of holding) {
+      const found = retimedRows(flagship, atHigh(flagship, new Set([entry.job])), longer)!
+      const judgement = judgeRetiming(flagship, longer.variant, longer.rows, found.rows, [entry.job])
+      if (!judgement.ok || judgement.spans === undefined) throw new Error('lane K gives the spans of a re-timing that holds')
+      expect(judgement.spans.length).toBeGreaterThan(0)
+      expect(entry.outcome).toEqual({ holds: true, spans: [...judgement.spans] })
+    }
+  }, 60_000)
 })

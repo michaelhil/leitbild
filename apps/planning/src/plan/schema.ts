@@ -431,7 +431,9 @@ export const datedRowSchema = z.object({
  * none of that resource's time remains ("<job> could not be done: <crew> has no time left after <instant>").
  */
 const retimedSchema = z.union([
-  z.object({ holds: z.literal(true) }).strict(),
+  // It holds; `spans`: each span limit's longest span on the re-timing and its margin, lane K's figures (V12),
+  // one per span-limit rule, the plan's (at most 200) and the what-if's.
+  z.object({ holds: z.literal(true), spans: z.array(z.object({ rule: keySchema, hours: z.number().finite().nonnegative(), margin: z.number().finite() }).strict()).max(201).optional() }).strict(),
   z.object({ holds: z.literal(false), rule: keySchema, job: keySchema, by: z.object({ value: z.number().positive(), unit: timeUnitSchema }).strict() }).strict(),
   z.object({ holds: z.literal(false), window: z.object({ by: instantSchema }).strict(), job: keySchema }).strict(),
   z.object({ holds: z.literal(false), unplaced: z.object({ job: keySchema, resource: keySchema, after: instantSchema }).strict() }).strict(),
@@ -440,10 +442,14 @@ const retimedSchema = z.union([
 export const robustSchema = z.object({ allPessimistic: retimedSchema, single: z.array(z.object({ job: keySchema, outcome: retimedSchema }).strict()).max(12) }).strict()
 export type Robust = z.infer<typeof robustSchema>
 /**
- * The re-timings were not worked out because the sub-solve's time ran out before they could all be made: said
- * so, never left out silently, and never a part of the record.
+ * The re-timings were not worked out, said so, never left out silently, and never a part of the record:
+ * `time`, the sub-solve's time ran out before they could all be made; `unplaced`, re-timing could not place
+ * `job`, and lane K could not name one crew or tool that has no time left for it.
  */
-export const robustNotWorkedOutSchema = z.object({ notWorkedOut: z.literal('time') }).strict()
+export const robustNotWorkedOutSchema = z.union([
+  z.object({ notWorkedOut: z.literal('time') }).strict(),
+  z.object({ notWorkedOut: z.literal('unplaced'), job: keySchema }).strict(),
+])
 /** option.robust: the record, or why there is none. */
 export type RobustField = Robust | z.infer<typeof robustNotWorkedOutSchema>
 export const metricSchema = z.object({ id: z.string(), value: z.number(), unit: z.string() }).strict()

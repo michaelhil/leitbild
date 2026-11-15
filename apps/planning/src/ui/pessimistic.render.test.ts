@@ -34,11 +34,19 @@ describe('the pessimistic card', () => {
     expect(card.mark.word).toBe('Pessimistic estimates')
   })
 
+  test('when re-timing could not place a job, it says which', () => {
+    const planned = trainAPlanned()
+    const job = planned.inputs.jobs[0]!
+    const model: PlanModel = { ...planned, options: { ...planned.options!, items: planned.options!.items.map(option => ({ ...option, robust: robustNotWorkedOutSchema.parse({ notWorkedOut: 'unplaced', job: job.key }) })) } }
+    const card = pessimisticCard(model.options!.items[0]!, contextOf(model))!
+    expect(card.title).toBe(`For Option 1, the pessimistic estimates were not worked out: re-timing could not place '${job.title}'.`)
+  })
+
   test('when every re-timing holds, it says so, and how the re-timing was done', () => {
     const model = withRobust({ allPessimistic: { holds: true }, single: [{ job: 'SWA-PUMP-OUT', outcome: { holds: true } }] })
     const card = pessimisticCard(model.options!.items[0]!, contextOf(model))!
     expect(card.title).toBe('At every high estimate, Option 1 still keeps every hard rule and fits the window.')
-    expect(card.text).toBe('Re-timed in the same order with the same crews, nothing earlier, and checked. A plan made again at those estimates may do better.')
+    expect(card.text).toBe('Re-timed in the same order with the same crews, nothing earlier, and checked. Re-timed jobs may use any working time the option already buys. A plan made again at those estimates may do better.')
   })
 
   test('a broken rule is named with its job and by how much; a job alone that breaks one is listed', () => {
