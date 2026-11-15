@@ -156,6 +156,9 @@ const appendChange = (plan: Plan, change: Omit<Plan['changes'][number], 'seq'>):
 
 const editKinds = (edits: readonly Edit[]): Plan['changes'][number]['kinds'] => [...new Set(edits.map(edit => edit.edit))].slice(0, 16)
 
+/** The first of `candidates`, longest first, that fits whole; only if none does is the shortest cut, at a word. */
+const wholeWithin = (candidates: readonly string[], limit = 300): string => candidates.find(text => text.length <= limit) ?? clip(candidates.at(-1) ?? '', limit)
+
 /** Preview findings given whole (at most 600 characters each, 1,600 in all, 6 findings); later ones are left out first. */
 const wholeFindings = (texts: readonly string[]): string[] => {
   const kept: string[] = []
@@ -348,7 +351,7 @@ export const createPlanningOperations = (ports: PlanningOperationsPorts) => {
   }
 
   /** What a re-timed option breaks, by rule key and its limit: "R2 (72 h)", "D1 (due Thu 12:00)", "the window". */
-  const retimingBreaks = (violations: readonly CheckViolation[], inputs: PlanInputs): string => {
+  const retimingBreaks = (violations: readonly CheckViolation[], inputs: PlanInputs, shown: 0 | 1 | 2 = 2): string => {
     const zone = inputs.settings.timeZone
     const named = violations.map(violation => {
       const key = violation.code === 'protected-equipment' ? violation.about[1] : violation.about[0]
@@ -365,7 +368,7 @@ export const createPlanningOperations = (ports: PlanningOperationsPorts) => {
         case 'lock': return `the fixed start of ${name(0)}`
         case 'over-capacity': return `the capacity of ${name(0)}`
         case 'use-outside-calendar': case 'start-off-calendar': return `the shifts of ${name(0)}`
-        case 'release': return `the release time of ${name(0)}`
+        case 'release': return `the earliest start of ${name(0)}`
         case 'before-data-date': return 'the plan\'s now'
         default: return violation.code.replaceAll('-', ' ')
       }
@@ -373,7 +376,9 @@ export const createPlanningOperations = (ports: PlanningOperationsPorts) => {
     // A broken rule is said first: it is what a planner weighs; a crew clash or a link follows from the times.
     const ruled = (index: number) => inputs.rules.some(rule => rule.key === (violations[index]!.code === 'protected-equipment' ? violations[index]!.about[1] : violations[index]!.about[0])) ? 0 : 1
     const distinct = [...new Set(named.map((name, index) => ({ name, rank: ruled(index), index })).sort((left, right) => left.rank - right.rank || left.index - right.index).map(entry => entry.name))]
-    return distinct.length <= 2 ? distinct.join(' and ') : `${distinct.slice(0, 2).join(', ')} and ${distinct.length - 2} more`
+    // Fewer names when the sentence would not fit whole; with none, the count: the findings list names each.
+    if (shown === 0) return `${distinct.length} rule${distinct.length === 1 ? '' : 's'}, links or limits, listed with this preview`
+    return distinct.length <= shown ? distinct.join(' and ') : `${distinct.slice(0, shown).join(', ')} and ${distinct.length - shown} more`
   }
 
   /** The option's longest group span (h, from the span-over goal) and its extra cost (from the extra-cost goal). */
@@ -459,11 +464,14 @@ export const createPlanningOperations = (ports: PlanningOperationsPorts) => {
         const weakens = [...new Set(outcome.weakens.flatMap(weakening => weakening.about.slice(0, 1)))].slice(0, 6)
         const recommended = plan.options?.options.find(option => option.key === plan.options?.recommended)
         // An Assistant is told what a save would answer it (adversary recheck 5): it never gives the agreement.
-        const authority = outcome.weakens.length === 0 || input.authority !== undefined ? ''
-          : access.actor.kind === 'ai' ? ' A person must make this change in the plan screen: ask them.'
-            : ` Saving it needs a named person's agreement: ${outcome.weakens.slice(0, 2).map(weakening => weakeningWords(weakening, plan.inputs)).join(' ')}`
+        // The summary is never cut (walk 7, screenshot 06): each part is said whole, in its long form when the
+        // sentence fits 300 characters, else in a shorter one. What a short form leaves out is in the result's
+        // own fields: `violations`, `nearestAllowed`, `weakens`.
+        const authorities = outcome.weakens.length === 0 || input.authority !== undefined ? ['']
+          : access.actor.kind === 'ai' ? [' A person must make this change in the plan screen: ask them.']
+            : [` Saving it needs a named person's agreement: ${outcome.weakens.slice(0, 2).map(weakening => weakeningWords(weakening, plan.inputs)).join(' ')}`, ' Saving it needs a named person\'s agreement.']
         if (recommended === undefined || recommended.rows.length === 0) {
-          return writeResult(previewed, changeLines(outcome.changes, outcome.inputs), { preview: { saved: false, consequence: `Not saved.${authority} No schedule to re-time yet.`.trim(), violations: [], weakens } })
+          return writeResult(previewed, changeLines(outcome.changes, outcome.inputs), { preview: { saved: false, consequence: wholeWithin(authorities.map(authority => `Not saved.${authority} No schedule to re-time yet.`)), violations: [], weakens } })
         }
         const timed = await solver.preview({ inputs: outcome.inputs, option: recommended, ...(signal === undefined ? {} : { signal }) })
         const before = new Map(recommended.rows.map(row => [row.job, row]))
@@ -476,14 +484,17 @@ export const createPlanningOperations = (ports: PlanningOperationsPorts) => {
         const locked = timed.nearestAllowed?.job ?? (lockedKeys.length === 1 ? lockedKeys[0] : undefined)
         const findings = timed.lockFindings === undefined || timed.lockFindings.length === 0 ? timed.violations
           : [...timed.lockFindings, ...timed.violations.filter(violation => locked === undefined || !violation.about.includes(locked))]
-        const nearest = timed.nearestAllowed !== undefined ? ` The nearest allowed start for ${nameOf(outcome.inputs, timed.nearestAllowed.job)} is ${timeWords(timed.nearestAllowed.at, zone)}.`
-          : locked !== undefined && (timed.lockFindings?.length ?? 0) > 0 ? ` No start for ${nameOf(outcome.inputs, locked)} keeps every rule with the other jobs where the plan has them.` : ''
+        const nearests = timed.nearestAllowed !== undefined ? [` The nearest allowed start for ${nameOf(outcome.inputs, timed.nearestAllowed.job)} is ${timeWords(timed.nearestAllowed.at, zone)}.`, ` The nearest allowed start is ${timeWords(timed.nearestAllowed.at, zone)}.`]
+          : locked !== undefined && (timed.lockFindings?.length ?? 0) > 0 ? [` No start for ${nameOf(outcome.inputs, locked)} keeps every rule with the other jobs where the plan has them.`, ' No start keeps every rule with the other jobs where the plan has them.'] : ['']
         // A valid change is saved even when this option cannot keep a rule: every option made before it goes
-        // out of date, and Generate makes new ones (walk 2, R2-4).
-        const consequence = findings.length > 0 ? `Not saved yet. This option would break ${retimingBreaks(findings, outcome.inputs)}; generate new options after saving.${nearest}${authority}`
-          : `Not saved yet. ${moved.length === 0 ? 'No job moves' : `${moved.length} job${moved.length === 1 ? ' moves' : 's move'}`}; the last finish ${finish(timed.rows) === finish(recommended.rows) ? 'stays' : `moves from ${timeWords(finish(recommended.rows), zone)} to ${timeWords(finish(timed.rows), zone)}`}.${authority}`
+        // out of date, and Generate makes new ones (walk 2, R2-4). The breaks are shortened first (the findings
+        // list names each), then the nearest start, then the agreement.
+        const moves = `Not saved yet. ${moved.length === 0 ? 'No job moves' : `${moved.length} job${moved.length === 1 ? ' moves' : 's move'}`}; the last finish ${finish(timed.rows) === finish(recommended.rows) ? 'stays' : `moves from ${timeWords(finish(recommended.rows), zone)} to ${timeWords(finish(timed.rows), zone)}`}.`
+        const consequence = wholeWithin(findings.length === 0 ? authorities.map(authority => `${moves}${authority}`)
+          : authorities.flatMap(authority => nearests.flatMap(nearest => ([2, 1, 0] as const).map(shown =>
+            `Not saved yet. This option would break ${retimingBreaks(findings, outcome.inputs, shown)}; generate new options after saving.${nearest}${authority}`))))
         return writeResult(previewed, changeLines(outcome.changes, outcome.inputs), { preview: {
-          saved: false, consequence: clip(consequence, 300),
+          saved: false, consequence,
           // Whole, so a rule's words are never cut (walk 3, R3-6); within the 4 KB result, later findings go first.
           violations: wholeFindings(findings.map(violation => violation.words ?? `${violation.code.replaceAll('_', ' ').replaceAll('-', ' ')}: ${violation.about.map(key => nameOf(outcome.inputs, key)).join(', ')}`)),
           weakens,

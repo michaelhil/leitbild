@@ -392,6 +392,39 @@ describe('a lock is measured against the saved plan (walk 2, R2-5)', () => {
       expect(preview.body.result.preview.consequence).toBe(`Not saved yet. This option would break the link '${pull.title}' before '${install.title}'; generate new options after saving. The nearest allowed start for ${install.title} is Tue 16:00.`)
     } finally { await local.close() }
   })
+
+  test('the summary is never cut: with many breaks and long names each part is said whole, in a shorter form (walk 7, screenshot 06)', async () => {
+    const { createSolverDouble } = await import('./fixtures/doubles.ts')
+    const inner = createSolverDouble()
+    const title = (key: string) => trainA.jobs.find(job => job.key === key)!.title
+    // The longest names the case has, as a walk meets them.
+    const crew = [...trainA.resources].sort((left, right) => right.label.length - left.label.length)[0]!
+    const links = trainA.links.filter(entry => entry.type === 'FS').sort((left, right) => title(right.from).length + title(right.to).length - title(left.from).length - title(left.to).length).slice(0, 3)
+    const seal = trainA.jobs.find(job => job.key === 'CCWA-SEAL')!
+    // As the walk had it: a fixed start that breaks a crew's capacity and several links, with a nearest start.
+    const local = await createHarness({ solver: { ...inner, preview: async request => ({
+      rows: request.option.rows,
+      violations: [],
+      lockFindings: [
+        { code: 'over-capacity', about: [crew.key], words: `'${crew.label}' is booked 2 times at Tue 17 Nov 08:00; it has 1.` },
+        ...links.map(link => ({ code: 'link', about: [link.from, link.to], words: `'${title(link.to)}' must start after '${title(link.from)}' finishes; it is 5 h too early.` })),
+      ],
+      nearestAllowed: { job: seal.key, at: '2026-11-17T12:00:00Z' },
+    }) } })
+    try {
+      const created = await local.create('train-a-work-week')
+      await local.call('planning.plan.generate', { resource: created.id, input: {}, expectedRevision: 1 })
+      const preview = (await local.call('planning.plan.edit', { resource: created.id, input: { edits: [{ edit: 'job', key: seal.key, lock: '2026-11-17T07:00:00Z' }], preview: true } })).body.result.preview
+      const text: string = preview.consequence
+      // The long form (two breaks named, the job named in the nearest start) is over 300 characters here.
+      const long = `Not saved yet. This option would break the capacity of '${crew.label}', the link '${title(links[0]!.from)}' before '${title(links[0]!.to)}' and 2 more; generate new options after saving. The nearest allowed start for ${seal.title} is Tue 13:00.`
+      expect(long.length).toBeGreaterThan(300)
+      expect([text.length <= 300, text.includes('…'), text.endsWith('.')]).toEqual([true, false, true])
+      expect(text).toBe(`Not saved yet. This option would break the capacity of '${crew.label}' and 3 more; generate new options after saving. The nearest allowed start for ${seal.title} is Tue 13:00.`)
+      // What the shorter form leaves out is in the result's own fields.
+      expect([preview.violations.length, preview.nearestAllowed]).toEqual([4, '2026-11-17T12:00:00Z'])
+    } finally { await local.close() }
+  })
 })
 
 describe("Generate stores lane K's verdict from the solver child as it came, validated (memory decision, 11 Nov)", () => {
