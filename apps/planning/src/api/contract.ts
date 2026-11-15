@@ -191,9 +191,12 @@ export const buysRungSchema = z.object({
   rung: rungSchema, buy: z.array(keySchema).max(64), option: keySchema.optional(), bought: z.array(metricSchema).max(64),
 }).strict()
 /**
- * Where a row's rung stands: proven (validated feasible, proven optimal on the goal the row compares), found
- * (validated feasible, not proven on it), refused (proven infeasible, with a certificate) or unsolved (any
- * other status: stopped, unresolved, cancelled, invalid input).
+ * Where a row's rung stands: proven, found (validated feasible, not proven), refused (proven infeasible, with
+ * a certificate) or unsolved (any other status: stopped, unresolved, cancelled, invalid input).
+ * Proven: validated feasible, and its proof fixes the outage the row compares: the proven goal covers one
+ * group, its value is the checker's own figure for that group, and that figure is above the goal's threshold
+ * (or the threshold is 0). A span-over goal proven at 0 under its threshold does not prove the outage, so
+ * that rung is found. Lane K's rungStanding derives every end; nothing else does.
  */
 export const buysEndSchema = z.enum(['proven', 'found', 'refused', 'unsolved'])
 type BuysEnd = z.infer<typeof buysEndSchema>
