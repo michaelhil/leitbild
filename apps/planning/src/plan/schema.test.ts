@@ -636,6 +636,24 @@ describe('increment 2: re-timing, bought metrics and the previous option set', (
     expect(robustSchema.safeParse({ allPessimistic: { holds: true }, single: Array.from({ length: 13 }, () => ({ job: 'A', outcome: { holds: true } })) }).success).toBe(false)
   })
 
+  test('re-timing that first breaks the window says so: the job and the instant the work would end (lane K batch 2)', () => {
+    const past = { holds: false, window: { by: '2026-11-21T09:30:00Z' }, job: 'AFWA-RTS' }
+    const robust = (allPessimistic: object) => robustSchema.safeParse({ allPessimistic, single: [{ job: 'AFWA-RTS', outcome: past }] }).success
+    expect(robust(past)).toBe(true)
+    expect(robust({ ...past, window: { by: '2026-11-21T10:30:00+01:00' } })).toBe(true)
+    // One broken item: a rule or the window, never both, and the window names an instant, not an amount.
+    expect(robust({ ...past, rule: 'R2' })).toBe(false)
+    expect(robust({ ...past, by: { value: 3, unit: 'h' } })).toBe(false)
+    expect(robust({ ...past, window: { by: { value: 3, unit: 'h' } } })).toBe(false)
+    expect(robust({ ...past, window: { by: 'Sat 10:30' } })).toBe(false)
+    expect(robust({ ...past, window: {} })).toBe(false)
+    expect(robust({ ...past, window: { by: past.window.by, end: past.window.by } })).toBe(false)
+    const { job: _job, ...unnamed } = past
+    expect(robust(unnamed)).toBe(false)
+    expect(robust({ holds: true, window: past.window })).toBe(false)
+    expect(robust({ holds: false, rule: 'window', job: 'AFWA-RTS' })).toBe(false)
+  })
+
   test('an option takes one bought:<purchase> metric per purchase, beside its other measures', () => {
     const option = (count: number) => optionSchema.safeParse({ key: 'o', label: 'o', variant: { methods: [], purchases: [] }, status: { word: 'unresolved', run }, rows: [],
       metrics: Array.from({ length: count }, (_, index) => ({ id: `bought:p${index}`, value: 1, unit: 'h' })), inputsRevision: 1 }).success
