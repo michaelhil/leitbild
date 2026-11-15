@@ -24,7 +24,7 @@ export const whatIfChoices = (context: Context): { readonly kinds: ReadonlyArray
   const groups = inputs.groups.map(group => ({ value: group.key, label: group.label }))
   const limited = inputs.rules.find(rule => rule.kind === 'span-limit')
   const kinds: Array<{ value: WhatIfKind; label: string }> = []
-  if (groups.length > 0) kinds.push({ value: 'out', label: 'At most … h out' }, { value: 'first', label: 'Finish this group first' })
+  if (groups.length > 0) kinds.push({ value: 'out', label: 'At most … h out' }, { value: 'first', label: 'Finish this group first, with its shortest outage' })
   if (inputs.goals.some(goal => goal.metric === 'extra-cost')) kinds.push({ value: 'cheapest', label: 'Cheapest that keeps every rule' })
   return { kinds, groups, group: limited?.kind === 'span-limit' ? limited.group : groups[0]?.value ?? '' }
 }
@@ -55,7 +55,7 @@ export const whatIfVariant = (ask: WhatIfAsk, context: Context): { readonly ok: 
   if (!inputs.groups.some(group => group.key === ask.group)) return { ok: false, problems: ['Choose a function group.'] }
   const group = groupLabel(context, ask.group)
   if (ask.kind === 'first') {
-    const label = `Finish ${group} first`
+    const label = `${group} first, with its shortest outage`
     return { ok: true, label, variant: { label, lead: { group: ask.group } } }
   }
   const hours = Number(ask.hours.trim().replace(',', '.'))
@@ -113,7 +113,7 @@ export const whatIfCard = (option: OptionView, model: PlanModel, context: Contex
       ? 'Asked: the cheapest plan that keeps every hard rule, then the plan\'s other goals in order.'
       : `Asked: ${inputs.goals[lead.goal] === undefined ? 'one goal' : lower(goalShort(inputs.goals[lead.goal]!, context))} first, then the plan's other goals in order.`
     : lead !== undefined
-      ? `Asked: ${groupLabel(context, lead.group)} back as soon as possible, then the plan's goals in order.`
+      ? `Asked: the shortest outage for ${groupLabel(context, lead.group)} first, then the plan's goals in order.`
       : also?.kind === 'span-limit'
         ? `Asked: every hard rule of the plan, and ${groupLabel(context, also.group)} out for at most ${quantityText(also.limit.value, also.limit.unit)}.`
         : also?.kind === 'due'
@@ -135,7 +135,7 @@ export const whatIfCard = (option: OptionView, model: PlanModel, context: Contex
     } else {
       const gap = solved.word === 'proven optimal' || solved.bound === undefined ? 0 : solved.value - solved.bound.value
       const leadLine: GoalLine = {
-        name: `${groupLabel(context, solved.group)} out (solved first)`, value: quantityText(solved.value, solved.unit), mark: goalMark(solved.word),
+        name: `Shortest outage for ${groupLabel(context, solved.group)} (solved first)`, value: quantityText(solved.value, solved.unit), mark: goalMark(solved.word),
         distance: gap > 0 ? `could be up to ${quantityText(gap, solved.unit)} shorter` : '',
       }
       status = { ...view, goals: [leadLine, ...rest(null)] }

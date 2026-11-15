@@ -48,14 +48,14 @@ const notBuilt = (message: string): Answer => ({ status: 501, body: { error: { c
 const generates = (calls: readonly Call[]) => calls.filter(call => call.capability === 'planning.plan.generate')
 
 describe('what overtime buys, worked out', () => {
-  test('the missing rungs are solved lowest first, one kept Generate each with its own buy list, at the plan\'s revision', async () => {
+  test('the missing rungs are solved lowest first, each by its own kept request, at the plan\'s revision', async () => {
     const model = trainAPlanned()
     const { client, calls } = host(model)
     const actions = createPlanActions(client, model.id)
-    const rungs = [{ name: 'Days only', label: 'Rung 1 of 2: Days only', buy: ['crane-fri', 'ect-friday'] }, { name: '+ Station mechanical overtime to 19:00', label: 'Rung 2 of 2: + Station mechanical overtime to 19:00', buy: ['crane-fri', 'ect-friday', 'ot-mech'] }]
+    const rungs = [{ name: 'Days only', request: { variants: [{ label: 'Days only', buy: ['crane-fri', 'ect-friday'] }], keep: true as const } }, { name: '+ Station mechanical overtime to 19:00', request: { keep: true as const } }]
     const shown = await actions.solveRungs(model, rungs, new AbortController().signal, 'opt-1')
     expect(shown.error).toBeNull()
-    expect(generates(calls).map(call => [call.expectedRevision, call.input])).toEqual(rungs.map(rung => [model.revision, { variants: [{ label: rung.label, buy: rung.buy }], keep: true }]))
+    expect(generates(calls).map(call => [call.expectedRevision, call.input])).toEqual(rungs.map(rung => [model.revision, rung.request]))
     expect(calls.every(call => call.capability.startsWith('planning.plan.'))).toBe(true)
   })
 
@@ -65,7 +65,7 @@ describe('what overtime buys, worked out', () => {
     const said: string[] = []
     const waits: number[] = []
     const actions = createPlanActions(client, model.id, text => { said.push(text) })
-    const shown = await actions.solveRungs(model, [{ name: 'Days only', label: 'Rung 1 of 1: Days only', buy: [] }], new AbortController().signal, null, async ms => { waits.push(ms) })
+    const shown = await actions.solveRungs(model, [{ name: 'Days only', request: { keep: true as const } }], new AbortController().signal, null, async ms => { waits.push(ms) })
     expect(shown.error).toBeNull()
     expect(generates(calls)).toHaveLength(2)
     expect(waits).toEqual([20_000])
@@ -76,7 +76,7 @@ describe('what overtime buys, worked out', () => {
     const model = trainAPlanned()
     const { client, calls } = host(model, [notBuilt('Adding what-ifs to the options already there is not built in this version of Planning')])
     const actions = createPlanActions(client, model.id)
-    const shown = await actions.solveRungs(model, [{ name: 'Days only', label: 'Rung 1 of 2: Days only', buy: [] }, { name: '+ overtime', label: 'Rung 2 of 2: + overtime', buy: ['ot-mech'] }], new AbortController().signal, null)
+    const shown = await actions.solveRungs(model, [{ name: 'Days only', request: { variants: [{ label: 'Days only', buy: [] }], keep: true as const } }, { name: '+ overtime', request: { keep: true as const } }], new AbortController().signal, null)
     expect(isNotBuilt(shown.error)).toBe(true)
     expect(generates(calls)).toHaveLength(1)
   })

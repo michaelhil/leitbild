@@ -50,7 +50,7 @@ describe('Train A on the plan screen', () => {
     const rules = screen(model, 'rules')
     const { limit, guideline, cost } = limitsOf(model)
     expect(rules).toContain(`out at most ${limit} h, from the first tag-out to the last passed test, as one continuous outage`)
-    expect(rules).toContain(`Least time over the ${guideline} h guideline for ${model.inputs.groups.find(group => group.key === 'COOL-A')!.label}`)
+    expect(rules).toContain(`Keep the time over the ${guideline} h guideline for ${model.inputs.groups.find(group => group.key === 'COOL-A')!.label} as small as possible`)
     const protectedKeys = model.inputs.rules.flatMap(rule => rule.kind === 'protected' ? rule.equipment : [])
     expect(protectedKeys.length).toBeGreaterThan(0)
     for (const key of protectedKeys) expect(rules).toContain(model.inputs.equipment.find(item => item.key === key)!.label)
@@ -59,7 +59,7 @@ describe('Train A on the plan screen', () => {
     expect(rules).toContain('§ Reference')
     expect(rules).toContain('Window: Mon 16 Nov 07:00 to Sat 21 Nov 07:00 (Europe/Oslo).')
     expect(rules).toContain('Work-control operator (one tag-out or restoration at a time): One at a time.')
-    expect(rules).toContain(`(compared in steps of NOK ${cost.toLocaleString('en-GB')})`)
+    expect(rules).toContain(`costs within NOK ${cost.toLocaleString('en-GB')} of each other count as equal`)
 
     const crews = screen(model, 'crews')
     // Shift and crane hours in words, in the plan zone (T1).

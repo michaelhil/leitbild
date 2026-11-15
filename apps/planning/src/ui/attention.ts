@@ -4,7 +4,7 @@
 import { simulationNow } from './edit-forms.ts'
 import { sizeBand, sizeRefusalWords } from '../plan/summary.ts'
 import type { Robust } from '../plan/schema.ts'
-import { quantityText, sourceMark, type Mark } from './format.ts'
+import { hoursText, quantityText, sourceMark, type Mark } from './format.ts'
 import { planOptions, type AttentionKind, type OptionView, type PlanModel } from './model.ts'
 import { outcomes, stoppedEarly } from './outcome.ts'
 import { goalResult, statusView, type Context } from './status-text.ts'
@@ -45,11 +45,21 @@ export const simulationOutsideWindow = (inputs: PlanModel['inputs'], wallNowMs: 
   return at >= Date.parse(window.end) || (at < Date.parse(window.start) && at < now - 86_400_000) ? sim : null
 }
 
+/** The window's length, how far past its end the checker continues the calendars: "5 days", or hours. */
+const windowLength = (context: Context): string => {
+  const window = context.inputs.settings.window
+  if (window === null) return 'the window\'s length'
+  const days = (Date.parse(window.end) - Date.parse(window.start)) / 86_400_000
+  return Number.isInteger(days) ? `${days} ${days === 1 ? 'day' : 'days'}` : hoursText(days * 24)
+}
+
 /**
- * The pessimistic card (design §4.2, S4): the option's own schedule re-timed with every ranged job at its high
- * estimate, then each alone, in the same order with the same crews and nothing earlier, and checked. It says
- * whether every hard rule still holds and, where one breaks, which rule, at which job and by how much: the
- * checker's own figures. It claims nothing about a schedule searched again at those estimates.
+ * The pessimistic card (design §4.2, S4): the option's own schedule re-timed with every job with an estimate
+ * range at its high estimate, then each alone, in the same order with the same crews and nothing earlier, and
+ * checked. It says whether every hard rule still holds and, where one breaks, which rule, at which job and by
+ * how much; or which job could not be done, the crew with no slot long enough left and from when: the checker's
+ * own figures. When the checker names no such crew, nothing is stored and the card claims nothing. It claims
+ * nothing about a schedule searched again at those estimates.
  */
 export const pessimisticCard = (option: OptionView, context: Context): Card | null => {
   const robust = option.robust
@@ -59,8 +69,9 @@ export const pessimisticCard = (option: OptionView, context: Context): Card | nu
   const breaks = (outcome: Robust['allPessimistic']): string | null => {
     if (outcome.holds) return null
     if ('window' in outcome) return `${names.job(outcome.job)} would run past the window end, to ${format.when(outcome.window.by)}`
-    // The decision's words (lane S batch 2): the job, the crew or tool with no time left, and from when.
-    if ('unplaced' in outcome) return `${names.job(outcome.unplaced.job)} could not be done: ${names.resource(outcome.unplaced.resource)} has no time left after ${format.when(outcome.unplaced.after)}`
+    // Lane K's words (fix round F3): the job, the crew or tool with no slot long enough left, from when, and
+    // how far past the window the checker looked: the window's own length.
+    if ('unplaced' in outcome) return `${names.job(outcome.unplaced.job)} could not be done: ${names.resource(outcome.unplaced.resource)} has no slot long enough left after ${format.when(outcome.unplaced.after)}, within ${windowLength(context)} after the window`
     return `${names.job(outcome.job)} breaks “${names.rule(outcome.rule)}” by ${quantityText(outcome.by.value, outcome.by.unit)}`
   }
   const together = breaks(robust.allPessimistic)
@@ -80,10 +91,10 @@ export const pessimisticCard = (option: OptionView, context: Context): Card | nu
   return {
     mark: { shape: '!', word: 'Pessimistic estimates' },
     title: together === null
-      ? `With every ranged job at its high estimate together, ${option.label} still holds; some alone do not.`
-      : `With every ranged job at its high estimate, ${option.label} does not hold: ${together}.`,
+      ? `With every job with an estimate range at its high estimate together, ${option.label} still holds; some alone do not.`
+      : `With every job with an estimate range at its high estimate, ${option.label} does not hold: ${together}.`,
     text: how,
-    steps: [...alone, ...holding > 0 && alone.length > 0 ? [`${holding} other ranged ${holding === 1 ? 'job holds' : 'jobs hold'} alone at its high estimate.`] : []],
+    steps: [...alone, ...holding > 0 && alone.length > 0 ? [`${holding} other ${holding === 1 ? 'job with an estimate range holds' : 'jobs with an estimate range hold'} alone at its high estimate.`] : []],
     actions: [],
   }
 }

@@ -9,7 +9,8 @@
   // the trade in each goal's unit, each goal side by side, what the method leaves unpriced, and the outage.
   let { title, policy, answer, choices = [], against = '', onAgainst, onClose }: {
     title: string
-    policy: string
+    /** The plan's rule, one line each: every hard rule, then each goal in its full words. */
+    policy: readonly string[]
     answer: Answer<WhyView>
     /** The other options it can be weighed against; '' is the next in rank. */
     choices?: ReadonlyArray<{ readonly value: string; readonly label: string }>
@@ -25,7 +26,7 @@
     <button type="button" class="quiet" onclick={onClose}>Close</button>
   </div>
   <h3>The rule it was chosen by</h3>
-  <p class="why-policy">{policy}</p>
+  <ul class="why-policy">{#each policy as line, index (index)}<li>{line}</li>{/each}</ul>
   {#if choices.length > 1 && onAgainst}
     <Choice label="Weigh it against" options={choices} bind:value={() => against, next => onAgainst?.(next)} />
   {/if}

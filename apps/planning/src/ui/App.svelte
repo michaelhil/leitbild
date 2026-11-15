@@ -187,6 +187,8 @@
     .ladder-difference { color: var(--ink-2); }
     .ladder-finish { display: block; color: var(--ink-2); font-size: 12px; }
     .finer { margin-top: 8px; }
+    .ladder-method { font-weight: 600; margin: 0 0 6px; }
+    .ladder-legend { padding: 0; }
     /* What-ifs: a card per answer, apart from the plan's options. */
     .what-if-cards { display: grid; gap: 10px; }
     .what-if-card { border: 1px dashed var(--estimate); border-radius: 6px; padding: 10px; background: var(--card); min-width: 0; }
@@ -194,7 +196,8 @@
     .what-if-head { margin: 0 0 4px; display: flex; flex-wrap: wrap; gap: 6px; align-items: baseline; }
     .what-if-apart { font-size: 12px; color: var(--estimate); margin-bottom: 6px; }
     .what-if-outage { font-size: 13px; margin: 4px 0; }
-    .why-policy { font-size: 13px; }
+    .why-policy { font-size: 13px; list-style: none; padding: 0; margin: 0 0 8px; }
+    .why-policy li { margin-bottom: 2px; }
     .why-decided { font-size: 13px; margin-bottom: 4px; }
     .why-trade { font-size: 13px; padding: 6px 8px; background: var(--accent-2); border-radius: 6px; }
     /* Goals side by side in the right column: the names wrap, the values stay whole. */

@@ -1,12 +1,14 @@
 <script lang="ts">
+  import Choice from './Choice.svelte'
   import type { NameKind } from './explain-text.ts'
-  import { finerTrade, type LadderView } from './ladder.ts'
+  import { finerTrade, ladderLegend, type LadderView } from './ladder.ts'
   import MarkTag from './MarkTag.svelte'
   import Said from './Said.svelte'
 
-  // "What overtime buys", beside the timeline: the rungs of bought crew time, lowest first, and between two
-  // rungs the Module's word for what the higher one gains, exactly as it gives it, with the hours and money.
-  let { view, state, text = null, busy = false, solving = false, selected = null, onSolve, onFiner, onSelect, onPick, onClose }: {
+  // "What overtime buys", beside the timeline: one ladder per method, its rungs of bought crew time lowest
+  // first, and between two rungs the Module's word for what the higher one gains, exactly as it gives it, with
+  // the hours and money and what sets the higher rung's finish. The planner switches method here.
+  let { view, state, text = null, busy = false, solving = false, selected = null, onSolve, onFiner, onSelect, onMethod, onPick, onClose }: {
     view: LadderView | null
     state: 'loading' | 'ready' | 'not-built' | 'refused'
     /** A refusal in planner words, for state "refused". */
@@ -17,6 +19,7 @@
     onSolve: () => void
     onFiner: () => void
     onSelect: (option: string) => void
+    onMethod?: ((method: string) => void) | undefined
     onPick?: ((kind: NameKind, key: string) => void) | undefined
     onClose: () => void
   } = $props()
@@ -29,6 +32,10 @@
     <h2 id="ladder-title" tabindex="-1">What overtime buys</h2>
     <button type="button" class="quiet" onclick={onClose}>Close</button>
   </div>
+  {#if view?.method?.label}<p class="ladder-method">For {view.method.label}</p>{/if}
+  {#if view !== null && view.methods.length > 1 && onMethod}
+    <Choice label="Method" options={view.methods} bind:value={() => view?.method?.value ?? '', next => onMethod?.(next)} />
+  {/if}
   <p class="hint">Each rung adds bought crew time to the one below. Rebookings and tool days are allowed on every rung.</p>
   {#if state === 'loading'}
     <p class="hint" aria-live="polite">Reading what overtime buys…</p>
@@ -43,7 +50,7 @@
         {@const row = rowInto(rung.rung)}
         {#if row}
           <li class="ladder-step">
-            <span class="ladder-word">{row.word}</span>{#if row.differences} <span class="ladder-difference">{row.differences}</span>{/if}
+            <span class="ladder-word">{row.word}{#if row.differences}:{/if}</span>{#if row.differences} <span class="ladder-difference">{row.differences}</span>{/if}
             {#if row.finish}<span class="ladder-finish">What sets the finish: <Said parts={row.finish} {onPick} quiet /></span>{/if}
           </li>
         {/if}
@@ -63,12 +70,14 @@
         </li>
       {/each}
     </ol>
+    {#if !view.rowsShown}<p class="hint">What each step gains is not available per method yet in this version of Planning.</p>{/if}
     {#if view.toSolve.length > 0}
       <div class="actions">
         <button type="button" class="primary" disabled={busy || solving} onclick={onSolve}>{view.toSolve.length === view.rungs.length ? 'Work out every rung' : `Work out the ${view.toSolve.length === 1 ? 'missing rung' : `${view.toSolve.length} missing rungs`}`}</button>
       </div>
-      <p class="hint">One Generate per rung, lowest first, so a rung starts from the one below it. The plan's own options stay.</p>
+      <p class="hint">One Generate per rung, lowest first, for every method, so a rung starts from the one below it. The plan's own options stay.</p>
     {/if}
+    <p class="legend ladder-legend">{ladderLegend}</p>
     <p class="hint finer">{finerTrade} <button type="button" class="link" onclick={onFiner}>Ask a what-if</button></p>
   {/if}
 </section>

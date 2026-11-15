@@ -1,7 +1,8 @@
-// "What overtime buys" (design §4.1): the rungs of bought crew time and the rows between two rungs, as
-// planning.plan.read section buys gives them. Each row's word is the Module's own, shown exactly; the
-// differences are the Module's, in hours and money; what each rung uses is the checker's own measure. A rung
-// is named by what it buys, from the plan's purchases. Nothing here compares or ranks options.
+// "What overtime buys" (design §4.1): one ladder per method, the rungs of bought crew time and the rows
+// between two rungs, as planning.plan.read section buys gives them. Each row's word is the Module's own, shown
+// exactly, with the higher rung's cause of the finish where it names one; the differences are the Module's, in
+// hours and money; what each rung uses is the checker's own measure. A rung is named by what it buys, from the
+// plan's purchases, and solved by lane S's per-method request. Nothing here compares or ranks options.
 import type { z } from 'zod'
 import type { buysRowSchema, buysRungSchema, sectionDataSchemas } from '../api/contract.ts'
 import type { PlanInputs } from '../plan/schema.ts'
@@ -17,45 +18,6 @@ import { goalShort, statusView, type Context } from './status-text.ts'
 export type BuysPage = z.infer<typeof sectionDataSchemas.buys>
 export type BuysRung = z.infer<typeof buysRungSchema>
 export type BuysRow = z.infer<typeof buysRowSchema>
-
-export interface RungView {
-  readonly rung: number
-  /** "1", "2", "3": the rung's place on the ladder as a person counts it. */
-  readonly step: string
-  /** "Days only", "+ Station mechanical overtime to 19:00": what this rung adds to the one below. */
-  readonly name: string
-  /** "Rung 2 of 3: + Station mechanical overtime to 19:00": the name its option has among the plan's options. */
-  readonly label: string
-  /** The purchase list its Generate sends, as the Module listed it. */
-  readonly buy: readonly string[]
-  /** Its option, when one is solved on the current plan; null while it is still to work out. */
-  readonly option: string | null
-  readonly mark: Mark | null
-  readonly tone: 'good' | 'refusal' | 'unknown' | 'warning'
-  /** "Longest outage 56.5 h of 72 h · Extra cost NOK 398,800", "Not possible: …", or what its status says. */
-  readonly outcome: string | null
-  /** The crew time it uses: "Station mechanical overtime to 19:00: 54 person-hours". */
-  readonly uses: readonly string[]
-  readonly stale: boolean
-}
-
-export interface LadderRowView {
-  readonly from: number
-  readonly to: number
-  /** The Module's word for the step, exactly: "makes it possible", "found", "proven: no gain", … */
-  readonly word: BuysRow['word']
-  /** "2.5 h shorter outage · NOK 65,450 more", or null when the row gives no differences. */
-  readonly differences: string | null
-  /** With "proven: no gain": what sets the finish on the higher rung, its names selectable. */
-  readonly finish: readonly Part[] | null
-}
-
-export interface LadderView {
-  readonly rungs: readonly RungView[]
-  readonly rows: readonly LadderRowView[]
-  /** The rungs still to work out, lowest first: the order they are solved in, so no rung is solved above an unsolved one. */
-  readonly toSolve: readonly RungView[]
-}
 
 /** What one stretch of bought time is, from its periods in the plan zone: a night, a day, or a period. */
 const periodWord = (inputs: PlanInputs, key: string, format: TimeFormat): { readonly one: string; readonly many: string } => {
@@ -120,11 +82,15 @@ const outcomeOf = (option: OptionView, model: PlanModel, context: Context): stri
   ].filter(part => part !== null).join(' · ')
 }
 
-/** A row's differences in words: the higher rung against the lower, in hours of outage and in money. */
+/**
+ * A row's differences in words, naming their subject, so a goal's "proven optimal" beside a row's "found" does
+ * not read as a contradiction: the higher rung's longest outage against the lower's, in hours, and its extra
+ * cost, in the plan's currency.
+ */
 export const differenceText = (row: Pick<BuysRow, 'outage' | 'cost'>, currency: string): string | null => {
   if (row.outage === undefined || row.cost === undefined) return null
-  const outage = row.outage < 0 ? `${hoursText(-row.outage)} shorter outage` : row.outage > 0 ? `${hoursText(row.outage)} longer outage` : 'the same outage'
-  const cost = row.cost > 0 ? `${moneyText(row.cost, currency)} more` : row.cost < 0 ? `${moneyText(-row.cost, currency)} less` : 'the same extra cost'
+  const outage = row.outage < 0 ? `longest outage ${hoursText(-row.outage)} shorter` : row.outage > 0 ? `longest outage ${hoursText(row.outage)} longer` : 'the same longest outage'
+  const cost = row.cost > 0 ? `extra cost ${moneyText(row.cost, currency)} more` : row.cost < 0 ? `extra cost ${moneyText(-row.cost, currency)} less` : 'the same extra cost'
   return `${outage} · ${cost}`
 }
 
@@ -139,15 +105,100 @@ const usesOf = (rung: BuysRung, context: Context): readonly string[] => {
   return crewTime.length > 0 && !crewTime.some(key => used.has(key)) ? [...lines, 'Uses none of the crew time it may buy.'] : lines
 }
 
-export const ladderView = (pages: readonly BuysPage[], model: PlanModel, context: Context): LadderView => {
+type MethodPick = { readonly choice: string; readonly option: string }
+/** Every combination of the plan's method options, in plan order (lane S's solve/compile.ts methodCombinations). */
+export const methodCombinations = (inputs: PlanInputs): ReadonlyArray<readonly MethodPick[]> =>
+  inputs.methods.reduce<MethodPick[][]>((combos, method) => combos.flatMap(combo => method.options.map(option => [...combo, { choice: method.key, option: option.key }])), [[]])
+const pickKey = (picks: readonly MethodPick[]): string => picks.map(pick => `${pick.choice}=${pick.option}`).sort().join('|')
+const pickLabel = (picks: readonly MethodPick[], inputs: PlanInputs): string =>
+  picks.map(pick => inputs.methods.find(choice => choice.key === pick.choice)?.options.find(option => option.key === pick.option)?.label ?? 'a method option no longer in this plan').join(', ')
+
+/** What a rung allows, for its option's label: "days only", or "with" and the crew time it buys. */
+const allowsOf = (rung: BuysRung, lowest: boolean, context: Context): string => {
+  const own = crewTimeIn(rung.buy, context.inputs)
+  if (lowest) return own.length === 0 ? 'days only' : `days only, with ${joinWords(own.map(context.names.purchase))} already ordered`
+  return `with ${joinWords(own.map(context.names.purchase))}`
+}
+
+export interface MethodChoice { readonly value: string; readonly label: string }
+
+export interface RungView {
+  readonly rung: number
+  /** "1", "2", "3": the rung's place on the ladder as a person counts it. */
+  readonly step: string
+  /** "Days only", "+ Station mechanical overtime to 19:00": what this rung adds to the one below. */
+  readonly name: string
+  /** What its option's label says it allows: "days only", "with Station mechanical overtime to 19:00". */
+  readonly allows: string
+  /** The top rung buys all crew time: its options are the plan's default options. */
+  readonly top: boolean
+  /** The purchase list its Generate sends, as the Module listed it. */
+  readonly buy: readonly string[]
+  /** Its option for the method shown, when one is solved on the current plan; null while it is still to work out. */
+  readonly option: string | null
+  readonly mark: Mark | null
+  readonly tone: 'good' | 'refusal' | 'unknown' | 'warning'
+  /** "Longest outage 56.5 h of 72 h · Extra cost NOK 398,800", "Not possible: …", or what its status says. */
+  readonly outcome: string | null
+  /** The crew time it uses: "Station mechanical overtime to 19:00: 54 person-hours". */
+  readonly uses: readonly string[]
+  readonly stale: boolean
+}
+
+export interface LadderRowView {
+  readonly from: number
+  readonly to: number
+  /** The Module's word for the step, exactly: "makes it possible", "found", "proven: no gain", … */
+  readonly word: BuysRow['word']
+  /** "longest outage 2.5 h shorter · extra cost NOK 65,450 more", or null when the row gives no differences. */
+  readonly differences: string | null
+  /** What sets the finish on the higher rung, its names selectable, on every row that names it. */
+  readonly finish: readonly Part[] | null
+}
+
+export interface LadderView {
+  readonly rungs: readonly RungView[]
+  readonly rows: readonly LadderRowView[]
+  /** The rungs still to work out, lowest first: the order they are solved in, so no rung is solved above an unsolved one. */
+  readonly toSolve: readonly RungView[]
+  /** The methods that have rungs, and the one shown. */
+  readonly methods: readonly MethodChoice[]
+  readonly method: MethodChoice | null
+  /**
+   * Whether the rows can be said for the method shown. The rows name no method, so with rungs of more than one
+   * method they cannot be attributed to one, and none is shown (the buys section needs `methods` on rows).
+   */
+  readonly rowsShown: boolean
+}
+
+/**
+ * One ladder per method (U3): the rung entries whose option uses the chosen method, and at a level with none,
+ * the entry still to work out. The first method with rungs is shown until the planner switches.
+ */
+export const ladderView = (pages: readonly BuysPage[], model: PlanModel, context: Context, method: string | null): LadderView => {
   const items = pages.flatMap(page => page.items)
-  const rungs = items.flatMap(item => 'rung' in item ? [item.rung] : []).sort((left, right) => left.rung - right.rung)
+  const entries = items.flatMap(item => 'rung' in item ? [item.rung] : [])
+  const optionOf = (entry: BuysRung) => entry.option === undefined ? undefined : model.options?.items.find(item => item.key === entry.option)
+  const keys = [...new Set(entries.flatMap(entry => { const option = optionOf(entry); return option === undefined ? [] : [pickKey(option.variant.methods)] }))]
+  const order = methodCombinations(context.inputs).map(pickKey)
+  const methods = keys.sort((left, right) => order.indexOf(left) - order.indexOf(right)).map(key => {
+    const option = entries.map(optionOf).find(item => item !== undefined && pickKey(item.variant.methods) === key)!
+    return { value: key, label: pickLabel(option.variant.methods, context.inputs) }
+  })
+  // Until the planner switches, the ladder of the recommended option's method is shown.
+  const recommended = model.options?.items.find(item => item.key === model.options?.recommended)
+  const chosen = methods.find(entry => entry.value === method) ?? methods.find(entry => recommended !== undefined && entry.value === pickKey(recommended.variant.methods)) ?? methods[0] ?? null
+  const levels = [...new Set(entries.map(entry => entry.rung))].sort((left, right) => left - right)
+  const top = levels.at(-1)
+  const rungs = levels.map(level => {
+    const at = entries.filter(entry => entry.rung === level)
+    return at.find(entry => { const option = optionOf(entry); return option !== undefined && chosen !== null && pickKey(option.variant.methods) === chosen.value }) ?? at.find(entry => entry.option === undefined) ?? { ...at[0]!, option: undefined, bought: [] }
+  })
   const views = rungs.map((rung, index): RungView => {
-    const option = rung.option === undefined ? undefined : model.options?.items.find(item => item.key === rung.option)
+    const option = optionOf(rung)
     const view = option === undefined ? null : statusView(option.status, context)
-    const name = rungName(rung, rungs[index - 1], context)
     return {
-      rung: rung.rung, step: String(rung.rung + 1), name, label: `Rung ${rung.rung + 1} of ${rungs.length}: ${name}`, buy: rung.buy,
+      rung: rung.rung, step: String(rung.rung + 1), name: rungName(rung, rungs[index - 1], context), allows: allowsOf(rung, index === 0, context), top: rung.rung === top, buy: rung.buy,
       option: option?.key ?? null, mark: view?.mark ?? null,
       tone: view === null || view.word === 'validated feasible' ? 'good' : view.word === 'proven infeasible' ? 'refusal' : view.word === 'unresolved' ? 'unknown' : 'warning',
       outcome: option === undefined ? null : outcomeOf(option, model, context),
@@ -155,16 +206,34 @@ export const ladderView = (pages: readonly BuysPage[], model: PlanModel, context
       stale: option !== undefined && !option.fresh,
     }
   })
-  const rows = items.flatMap(item => 'row' in item ? [item.row] : []).sort((left, right) => left.from - right.from).map((row): LadderRowView => ({
+  const rowsShown = methods.length <= 1
+  const rows = !rowsShown ? [] : items.flatMap(item => 'row' in item ? [item.row] : []).sort((left, right) => left.from - right.from).map((row): LadderRowView => ({
     from: row.from, to: row.to, word: row.word,
     differences: differenceText(row, context.inputs.settings.currency),
-    finish: row.word === 'proven: no gain' && row.finish !== undefined ? causeParts(row.finish, context) : null,
+    finish: row.finish === undefined ? null : causeParts(row.finish, context),
   }))
-  return { rungs: views, rows, toSolve: views.filter(rung => rung.option === null) }
+  return { rungs: views, rows, toSolve: views.filter(rung => rung.option === null), methods, method: chosen, rowsShown }
 }
 
-/** The one Generate a rung is solved by: its purchases, kept beside the options already there. */
-export const rungRequest = (rung: Pick<RungView, 'label' | 'buy'>) => ({ variants: [{ label: rung.label, buy: [...rung.buy] }], keep: true as const })
+/**
+ * The one Generate a rung is solved by (U1, lane S's solve/ladder.ts): below the top, one variant per method
+ * combination with the rung's buy list, labelled "<method>: <what it allows>"; the top rung is a plain Generate,
+ * so its options are the default options, with their keys and their method's label. Each is kept beside the
+ * options already there.
+ */
+export const rungRequest = (rung: Pick<RungView, 'top' | 'buy' | 'allows'>, context: Context): { readonly variants?: Array<{ readonly label: string; readonly methods: MethodPick[]; readonly buy: string[] }>; readonly keep: true } => {
+  if (rung.top) return { keep: true }
+  return {
+    variants: methodCombinations(context.inputs).map(combo => {
+      const methods = pickLabel(combo, context.inputs)
+      return { label: methods === '' ? `${rung.allows.charAt(0).toUpperCase()}${rung.allows.slice(1)}` : `${methods}: ${rung.allows}`, methods: combo.map(pick => ({ ...pick })), buy: [...rung.buy] }
+    }),
+    keep: true,
+  }
+}
 
 /** Under the rows: where a finer trade is asked. */
 export const finerTrade = 'For a finer trade, ask for “at most … h out”.'
+
+/** What each ladder word claims, in one line under the rows. */
+export const ladderLegend = 'makes it possible: the lower rung is proven impossible · found: a better plan was found, not proven best · proven: both rungs are proven best on the outage · proven: no gain: both proven, with the same outage · not found better: the search found no shorter outage · not solved: a rung stopped before it found a plan'
