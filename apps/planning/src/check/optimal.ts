@@ -10,20 +10,32 @@
 // - unavailable-hours: per item with a single tag-out, the least outage from that tag-out to its tests;
 // - extra-cost: what is charged whatever the plan does (the chosen method costs and ordered purchases).
 // Each goal's value is net of its threshold, as the status shows it.
+//
+// A what-if's lead (status.lead) replaces the goal order: with `lead {goal: k}` only goal k may be proven,
+// on its own bound (no earlier goal has to be); with `lead {group}` no plan goal may be, and the group's
+// own line is proven on the least span of that group (span-over scoped to it, threshold 0). Its value is
+// the checker's own `span:<group>` figure (recheck.ts compares the two).
 import { goalResolution, type PlanInputs, type Status } from '../plan/schema.ts'
-import { prepare, type CheckVariant, type Context } from './check.ts'
+import { prepare, type CheckResult, type CheckVariant, type Context } from './check.ts'
 import { propagate, resourceSlots, worldsOf } from './propagate.ts'
 
 type GoalStatus = Extract<Status, { word: 'validated feasible' }>['goals'][number]
 
-export interface OptimalCheck {
-  readonly goal: number
+interface Confirmation {
   readonly claimed: number
-  /** The checker's own lower bound, in the goal's unit and net of its threshold. */
+  /** The checker's own lower bound, in the line's unit and net of its threshold. */
   readonly bound: number
-  /** The claim is confirmed: the bound reaches the value at the goal's resolution. */
+  /** The claim is confirmed: the bound reaches the value at the line's resolution, and the line may be proven. */
   readonly proves: boolean
 }
+/** One "proven optimal" line re-derived: a plan goal by its id, or a group lead's own line. */
+export type OptimalCheck = ({ readonly goal: number } | { readonly group: string }) & Confirmation
+
+/**
+ * What a bound is for: a plan goal by its id, or a group lead's line ("finish this group first"), that
+ * group's span with threshold 0, in the line's unit (h, min or s).
+ */
+export type BoundTarget = number | { readonly group: string; readonly unit: string }
 
 const hourMs = 3_600_000
 const unitHours: Readonly<Record<string, number>> = { s: 1 / 3_600, min: 1 / 60, h: 1, d: 24 }
@@ -160,39 +172,74 @@ export const checkerBounds = (inputs: PlanInputs, variant: CheckVariant): number
   return inputs.goals.map((goal, index) => boundFor(prepared.context, index, goal.metric === 'extra-cost' ? inputs.settings.currency : goal.tolerance.unit) ?? 0)
 }
 
+/** A group's least span in `unit` (h, min or s), threshold 0: the bound of a group lead's line. */
+const groupBound = (context: Context, group: string, unit: string): number | undefined => {
+  if (!context.inputs.groups.some(entry => entry.key === group) || !isSpanUnit(unit)) return undefined
+  return rawBound(context, { metric: 'span-over', scope: { groups: [group] }, tolerance: { value: 0, unit: 'h' } }) / unitHours[unit]!
+}
+const isSpanUnit = (unit: string): boolean => unit === 'h' || unit === 'min' || unit === 's'
+
+/** The bound for a target, in its unit, with the target named for the reasons; undefined when there is none. */
+const targetBound = (context: Context, target: BoundTarget): { readonly own: number; readonly unit: string; readonly name: string } | { readonly missing: string } => {
+  if (typeof target !== 'number') {
+    const own = groupBound(context, target.group, target.unit)
+    if (own === undefined) return { missing: isSpanUnit(target.unit) ? `The plan has no group '${target.group}'.` : `A group's span is counted in h, min or s, not ${target.unit}.` }
+    return { own, unit: target.unit, name: `the span of group '${target.group}'` }
+  }
+  const definition = context.inputs.goals[target]
+  if (definition === undefined) return { missing: `The plan has no goal ${target}.` }
+  const unit = definition.metric === 'extra-cost' ? context.inputs.settings.currency : definition.tolerance.unit
+  return { own: boundFor(context, target, unit)!, unit, name: `goal ${target}` }
+}
+
+/** The checker's own figure for a group lead's line: its `span:<group>` (0 when it is never out), in `unit`. */
+export const groupLeadFigure = (check: Pick<CheckResult, 'metrics'>, group: string, unit: string): number | undefined =>
+  isSpanUnit(unit) ? (check.metrics.find(metric => metric.id === `span:${group}`)?.value ?? 0) / unitHours[unit]! : undefined
+
 /**
- * Lane S's port: does the checker's own bound for goal `goal` reach `bound.value` (net of the threshold, in
- * the goal's unit) at the goal's resolution? The solver's certificate is not needed and not trusted; it is
+ * Lane S's port: does the checker's own bound for `goal` reach `bound.value` (net of the threshold, in the
+ * goal's unit) at the goal's resolution? `goal` is a plan goal's id, or a group lead's line ({group, unit}:
+ * that group's least span, threshold 0). The solver's certificate is not needed and not trusted; it is
  * accepted for the record only.
  */
-export const verifyBound = (inputs: PlanInputs, variant: CheckVariant, goal: number, bound: { readonly value: number }): { readonly proves: boolean; readonly reasons: readonly string[]; readonly checkerBound?: number } => {
+export const verifyBound = (inputs: PlanInputs, variant: CheckVariant, goal: BoundTarget, bound: { readonly value: number }): { readonly proves: boolean; readonly reasons: readonly string[]; readonly checkerBound?: number } => {
   const prepared = prepare(inputs, variant)
   if (!prepared.ok) return { proves: false, reasons: prepared.problems.map(problem => problem.words) }
-  const definition = inputs.goals[goal]
-  if (definition === undefined) return { proves: false, reasons: [`The plan has no goal ${goal}.`] }
-  const unit = definition.metric === 'extra-cost' ? inputs.settings.currency : definition.tolerance.unit
-  const own = boundFor(prepared.context, goal, unit)
-  if (own === undefined) return { proves: false, reasons: [`The plan has no goal ${goal}.`] }
+  const target = targetBound(prepared.context, goal)
+  if ('missing' in target) return { proves: false, reasons: [target.missing] }
+  const { own, unit, name } = target
   const resolution = goalResolution(unit, inputs.settings.grid) ?? 0
   const proves = own >= bound.value - resolution / 2
-  return { proves, checkerBound: own, reasons: proves ? [] : [`The checker's own bound for goal ${goal} is ${own} ${unit}, below the claimed ${bound.value} ${unit}.`] }
+  return { proves, checkerBound: own, reasons: proves ? [] : [`The checker's own bound for ${name} is ${own} ${unit}, below the claimed ${bound.value} ${unit}.`] }
 }
 
 /**
- * Re-verifies every "proven optimal" goal of a validated feasible status. Goal order applies: once one is
- * not confirmed, no later goal is either (a later goal is proven only when every earlier one is).
+ * Re-verifies every "proven optimal" line of a validated feasible status, reading its lead. Without a lead
+ * goal order applies: once one is not confirmed, no later goal is either (a later goal is proven only when
+ * every earlier one is). With `lead {goal: k}` that rule is replaced: only goal k may be proven, on its own
+ * bound. With `lead {group}` no plan goal may be proven, and the group's line is checked on its least span.
+ * A line that may not be proven is listed as not proving, with its bound for the record.
  */
 export const verifyOptimality = (inputs: PlanInputs, variant: CheckVariant, status: Status): OptimalCheck[] => {
   if (status.word !== 'validated feasible') return []
   const prepared = prepare(inputs, variant)
+  const lead = status.lead
   const claims = status.goals.filter((goal): goal is GoalStatus => goal.word === 'proven optimal')
-  if (!prepared.ok) return claims.map(goal => ({ goal: goal.goal, claimed: goal.value, bound: 0, proves: false }))
+  const groupLine = lead !== undefined && 'group' in lead && lead.word === 'proven optimal' ? lead : undefined
+  if (!prepared.ok) {
+    return [...claims.map(goal => ({ goal: goal.goal, claimed: goal.value, bound: 0, proves: false })), ...(groupLine === undefined ? [] : [{ group: groupLine.group, claimed: groupLine.value, bound: 0, proves: false }])]
+  }
+  const context = prepared.context
+  const reaches = (bound: number, value: number, unit: string): boolean => bound >= value - (goalResolution(unit, inputs.settings.grid) ?? 0) / 2
   let broken = false
-  return claims.map(goal => {
-    const bound = boundFor(prepared.context, goal.goal, goal.unit) ?? 0
-    const resolution = goalResolution(goal.unit, inputs.settings.grid) ?? 0
-    const proves = !broken && bound >= goal.value - resolution / 2
+  const goals = claims.map((goal): OptimalCheck => {
+    const bound = boundFor(context, goal.goal, goal.unit) ?? 0
+    const allowed = lead === undefined ? !broken : 'goal' in lead && lead.goal === goal.goal
+    const proves = allowed && reaches(bound, goal.value, goal.unit)
     if (!proves) broken = true
     return { goal: goal.goal, claimed: goal.value, bound, proves }
   })
+  if (groupLine === undefined) return goals
+  const bound = groupBound(context, groupLine.group, groupLine.unit)
+  return [...goals, { group: groupLine.group, claimed: groupLine.value, bound: bound ?? 0, proves: bound !== undefined && reaches(bound, groupLine.value, groupLine.unit) }]
 }
