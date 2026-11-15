@@ -18,6 +18,7 @@ import type {
   MapAssignmentHandleFeature,
   MapAssignmentInteraction,
   MapRuntimeHandle,
+  MapTargetingRender,
   OperationalPointFeature,
   OperationalRenderSnapshot,
   RenderFamily,
@@ -28,6 +29,8 @@ export interface OperationalRenderControllerState {
   readonly selectedControllerId: string | null
   readonly highlightedObjectIds: ReadonlyArray<string>
   readonly mutedObjectIds: ReadonlyArray<string>
+  /** The armed order's tagged targets, every other object dimmed; null while nothing is armed. */
+  readonly targeting: MapTargetingRender | null
   /** The severity table's palette the alert badges take: the screen's theme (D9). */
   readonly alertPalette: Palette
   readonly hiddenObjectCategoryIds: ReadonlyArray<string>
@@ -239,6 +242,7 @@ export const createOperationalRenderController = (
           selectedControllerId: state.selectedControllerId,
           highlightedObjectIds: state.highlightedObjectIds,
           mutedObjectIds: state.mutedObjectIds,
+          targeting: state.targeting,
           alertPalette: state.alertPalette,
           hiddenObjectCategoryIds: state.hiddenObjectCategoryIds,
           placementPoints: state.placementPoints,

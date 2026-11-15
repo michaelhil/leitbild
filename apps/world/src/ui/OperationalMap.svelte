@@ -40,7 +40,7 @@
   import type { Map as MapLibreMap } from 'maplibre-gl'
   import { startingZoomFor, type CameraInteraction } from './map/map-camera.ts'
   import { mapClickOutcome } from './map-target-routing.ts'
-  import { noMapCover, type MapPrompt } from './surface-panel-interaction.ts'
+  import { noMapCover, type MapPrompt, type MapTargeting } from './surface-panel-interaction.ts'
   import type { MapCover } from './surface-panel-contract.ts'
   import { createMapPromptController } from './map/map-prompt.ts'
   import { createMapStackChooser } from './map/map-stack-chooser.ts'
@@ -58,6 +58,8 @@
     MapFocusRequest,
     MapRuntimeHandle,
     MapAssignmentInteraction,
+    MapTargetingRender,
+    Position3,
   } from './map-runtime/types.ts'
 
   interface Props {
@@ -80,6 +82,12 @@
     readonly mutedObjectIds?: ReadonlyArray<string>
     /** The open map-target panel's prompt of one or two buttons by a point, e.g. "Move here"; any map click dismisses it. */
     readonly prompt?: MapPrompt | null
+    /**
+     * The open map-target panel's armed order: halos with tags on its
+     * targets, every other object dimmed, and a line from its object to a
+     * mouse pointer (`MapTargeting`); null while nothing is armed.
+     */
+    readonly targeting?: MapTargeting | null
     readonly hiddenObjectCategoryIds?: ReadonlyArray<string>
     readonly hasNewInfo: (object: OperationalObject) => boolean
     readonly presentationFor: (object: OperationalObject) => PackObjectPresentation
@@ -177,6 +185,7 @@
     highlightedObjectIds = [],
     mutedObjectIds = [],
     prompt = null,
+    targeting = null,
     hiddenObjectCategoryIds = [],
     hasNewInfo,
     presentationFor,
@@ -257,13 +266,29 @@
   let objectTookClick = false
   let featureSelection: NonNullable<PackMapFeature['selection']> | null = null
 
-  const assignmentInteraction = (): MapAssignmentInteraction => ({
-    revision: interactionRevision,
-    active: assignmentActive,
-    anchor: assignmentAnchor ? [assignmentAnchor.coordinates[0], assignmentAnchor.coordinates[1], 0] : null,
-    pointer: assignmentPointer ? [assignmentPointer.coordinates[0], assignmentPointer.coordinates[1], 0] : null,
-    handles: assignmentHandles.map(handle => ({ id: handle.id, controllerId: handle.controllerId, position: [handle.point.coordinates[0], handle.point.coordinates[1], 0] })),
-  })
+  const targetingRender = $derived<MapTargetingRender | null>(targeting === null ? null : { fromId: targeting.from, tags: new Map(targeting.targets.map(target => [target.id as string, target.tag])) })
+  /** Whether a line follows the pointer: an armed hold-gesture assignment, or a panel's armed order while the pointer is a mouse. */
+  const pointerLineWanted = (pointerType: string | null): boolean => assignmentActive || (targeting !== null && hoverCardsFor(pointerType))
+
+  /** Where the line starts: the assignment's anchor, else the armed order's object where its icon is drawn. */
+  const lineAnchor = (): Position3 | null => {
+    if (assignmentActive) return assignmentAnchor ? [assignmentAnchor.coordinates[0], assignmentAnchor.coordinates[1], 0] : null
+    if (targeting === null || !hoverCardsFor(lastPointerType)) return null
+    return operationalRenderController.points().find(point => point.id === targeting.from)?.position ?? null
+  }
+
+  // The hold-gesture assignment and a panel's armed order draw their line to the pointer with the same layers.
+  const assignmentInteraction = (): MapAssignmentInteraction => {
+    const anchor = lineAnchor()
+    const active = assignmentActive || anchor !== null
+    return {
+      revision: interactionRevision,
+      active,
+      anchor,
+      pointer: active && assignmentPointer ? [assignmentPointer.coordinates[0], assignmentPointer.coordinates[1], 0] : null,
+      handles: assignmentHandles.map(handle => ({ id: handle.id, controllerId: handle.controllerId, position: [handle.point.coordinates[0], handle.point.coordinates[1], 0] })),
+    }
+  }
 
   const createNoopMapInputDebugController = (): MapInputDebugController => ({
     install: () => undefined,
@@ -363,6 +388,7 @@
       selectedControllerId,
       highlightedObjectIds,
       mutedObjectIds,
+      targeting: targetingRender,
       alertPalette: theme === 'dark' ? 'dusk' : 'day',
       hiddenObjectCategoryIds,
       placementPoints,
@@ -723,7 +749,7 @@
         const point = pointerPoint(event)
         trackPointer(event.pointerType)
         if (holdStart && Math.hypot(event.clientX - holdStart.x, event.clientY - holdStart.y) > 7) clearHold()
-        if (!assignmentActive) return
+        if (!pointerLineWanted(event.pointerType)) return
         assignmentPointer = point
         interactionRevision += 1
       }
@@ -806,6 +832,7 @@
     selectedControllerId
     highlightedObjectIds
     mutedObjectIds
+    targetingRender
     routeRevision
     theme
     untrack(() => operationalRenderController.syncObjects())
@@ -815,10 +842,11 @@
     assignmentActive
     assignmentAnchor
     assignmentHandles
+    targeting
     interactionRevision
     untrack(() => {
       const canvas = runtime?.map.getCanvas()
-      if (!assignmentActive && assignmentPointer) {
+      if (!pointerLineWanted(lastPointerType) && assignmentPointer) {
         assignmentPointer = null
         interactionRevision += 1
       }

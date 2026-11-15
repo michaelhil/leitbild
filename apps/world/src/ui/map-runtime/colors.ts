@@ -38,3 +38,6 @@ export const white = (alpha = 255): ColorRgba =>
 
 export const darkStroke = (alpha = 255): ColorRgba =>
   rgba(15, 23, 42, alpha)
+
+/** The alpha of a dimmed object's disk while an order is armed (`MapTargeting`): fainter than a muted one, so the targets stand out. */
+export const dimmedAlpha = 72

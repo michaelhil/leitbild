@@ -59,6 +59,35 @@ export const assertMapPrompt = (panelId: string, prompt: MapPrompt): MapPrompt =
   return prompt
 }
 
+/** The most targets one map targeting marks; a panel gives the nearest few. */
+export const mapTargetingMaxTargets = 8
+
+/**
+ * What a map-target panel shows on the map while it arms an order for one
+ * of its objects, `from`: each target gets a halo with its tag (a verb or an
+ * ETA, e.g. "4 min"), every other object is dimmed, and a line runs from
+ * `from` to a mouse pointer (never to a finger, which has none between taps).
+ * The map only draws it; clicks route as always (`map-target-routing.ts`).
+ */
+export interface MapTargeting {
+  readonly from: ObjectId
+  readonly targets: ReadonlyArray<{ readonly id: ObjectId; readonly tag: string }>
+}
+
+/** A panel's targeting, refused beyond eight targets, with a target twice or as `from`, or with an empty tag. */
+export const assertMapTargeting = (panelId: string, targeting: MapTargeting): MapTargeting => {
+  const refuse = (reason: string): never => { throw new Error(`Surface panel ${panelId} showed a map targeting from ${targeting.from} ${reason}`) }
+  if (targeting.targets.length > mapTargetingMaxTargets) refuse(`with ${targeting.targets.length} targets; at most ${mapTargetingMaxTargets} are marked`)
+  const ids = new Set<ObjectId>()
+  for (const target of targeting.targets) {
+    if (target.id === targeting.from) refuse('that targets its own object')
+    if (ids.has(target.id)) refuse(`that marks ${target.id} twice`)
+    if (target.tag.trim().length === 0) refuse(`whose target ${target.id} has no tag`)
+    ids.add(target.id)
+  }
+  return targeting
+}
+
 export const noMapCover: MapCover = Object.freeze({ top: 0, right: 0, bottom: 0, left: 0 })
 
 const coverEdges = ['top', 'right', 'bottom', 'left'] as const
@@ -124,6 +153,12 @@ export interface SurfacePanelProps {
    * when it unmounts.
    */
   readonly onMapPrompt: (prompt: MapPrompt | null) => void
+  /**
+   * Shows an armed order's targets on the map (`MapTargeting`), or clears
+   * them with null. Only the open map-target panel's latest targeting is
+   * drawn; a panel clears its own when it unmounts.
+   */
+  readonly onMapTargeting: (targeting: MapTargeting | null) => void
 }
 
 /** A panel connects the handlers its contribution declares, and only those. */

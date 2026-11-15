@@ -66,7 +66,7 @@
   import { startupScenarioSource } from '../app/startup-scenario.ts'
   import { loadActivePackViews } from '../pack-loader.ts'
   import { groundClicksWanted, previewObjectTarget, routeGroundClick, routeObjectClick, targetPickingWanted, targetPreviewsWanted, type ClosedMapTargetPanel, type MapClickContext, type MapClickRoute, type MapTargetPanel } from '../map-target-routing.ts'
-  import { assertMapCover, assertMapPrompt, assertPanelInteraction, cameraPaddingFor, mapCameraInteractionFor, openPanelDeclaring, railStartsCollapsed, startingControllerId, surfacePanelIsOpen, surfacePanelPackId, type MapPrompt, type SurfacePanelInteraction, type SurfacePanelProps } from '../surface-panel-interaction.ts'
+  import { assertMapCover, assertMapPrompt, assertMapTargeting, assertPanelInteraction, cameraPaddingFor, mapCameraInteractionFor, openPanelDeclaring, railStartsCollapsed, startingControllerId, surfacePanelIsOpen, surfacePanelPackId, type MapPrompt, type MapTargeting, type SurfacePanelInteraction, type SurfacePanelProps } from '../surface-panel-interaction.ts'
   import type { MapCover } from '../surface-panel-contract.ts'
   import PanelKeyRouter from '../keys/PanelKeyRouter.svelte'
   import type { PanelKey } from '../keys/panel-key.ts'
@@ -380,6 +380,9 @@
   // Each panel's latest map prompt; only the open map-target panel's is drawn.
   let panelMapPrompts = $state.raw<Readonly<Record<string, MapPrompt | null>>>({})
   const mapPrompt = $derived(mapTargetPanelContribution ? panelMapPrompts[mapTargetPanelContribution.id] ?? null : null)
+  // Each panel's latest armed order; only the open map-target panel's is drawn.
+  let panelMapTargetings = $state.raw<Readonly<Record<string, MapTargeting | null>>>({})
+  const mapTargeting = $derived(mapTargetPanelContribution ? panelMapTargetings[mapTargetPanelContribution.id] ?? null : null)
   // A panel lending its handlers may change which objects its Pack lets this screen order, so the muted set follows them.
   const mapMutedObjectIds = $derived.by(() => {
     void panelInteractions
@@ -566,7 +569,7 @@
 
   const viewPanels = $derived<ReadonlyArray<RunViewChoice>>([
     ...(activePhysicalLayoutBindings.length > 0 ? [{ id: 'layout-controls', label: 'Physical layout controls', visible: layoutControlsVisible }] : []),
-    ...surfacePanels.map(panel => ({ id: `panel:${panel.id}`, label: panel.label, visible: isSurfacePanelOpen(panel), ...(mapTargetPanelContribution?.id === panel.id && (selectedControllerObject?.packId === mapTargetPanel?.packId || panelMapPrompts[panel.id] != null) ? { disabledReason: 'Finish or cancel the current map operation before hiding this panel' } : {}) })),
+    ...surfacePanels.map(panel => ({ id: `panel:${panel.id}`, label: panel.label, visible: isSurfacePanelOpen(panel), ...(mapTargetPanelContribution?.id === panel.id && (selectedControllerObject?.packId === mapTargetPanel?.packId || panelMapPrompts[panel.id] != null || panelMapTargetings[panel.id] != null) ? { disabledReason: 'Finish or cancel the current map operation before hiding this panel' } : {}) })),
   ])
   const viewLayers = $derived<ReadonlyArray<RunViewChoice>>([
     ...activeMapLayerGroups.map(layer => ({ id: `layer:${layer.id}`, label: layer.label, visible: mapLayerGroupVisibility[layer.id] ?? layer.defaultVisible })),
@@ -2347,6 +2350,7 @@
           highlightedObjectIds={mapHighlightedObjectIds}
           mutedObjectIds={mapMutedObjectIds}
           prompt={mapPrompt}
+          targeting={mapTargeting}
           {hiddenObjectCategoryIds}
           {hasNewInfo}
           presentationFor={mapPresentationFor}
@@ -2459,7 +2463,7 @@
         {#each surfacePanels as panel (panel.id)}
           {@const Panel = surfacePanelComponents[panel.id]}
           {#if surfacePanelIsOpen(panel, surfacePanelOpen) && Panel}
-            <div id={`world-panel-${panel.id}`} class="presentation-panel-host"><Panel {simulationRunId} {objects} {seenRoleIds} mapView={panelMapView} dataRevision={packDataRevisions[panel.id.split('.')[0]! ] ?? 0} selectedItemId={packPanelSelections[panel.id] ?? null} onSelectItem={(itemId: string | null) => { packPanelSelections = { ...packPanelSelections, [panel.id]: itemId } }} onClose={() => setSurfacePanelOpen(panel.id, false)} onFocusMap={focusMapTarget} currentTime={currentPackTime} selectedObjectId={selectedControllerId} onSelectObject={selectObjectById} connectInteraction={(interaction: SurfacePanelInteraction) => connectPanelInteraction(panel, interaction)} keysActive={panelKeysActive} roleSet={panelRoleSet} onMapCover={(cover: MapCover) => { panelMapCovers = { ...panelMapCovers, [panel.id]: assertMapCover(panel.id, cover) } }} onMapPrompt={(prompt: MapPrompt | null) => { panelMapPrompts = { ...panelMapPrompts, [panel.id]: prompt === null ? null : assertMapPrompt(panel.id, prompt) } }} /></div>
+            <div id={`world-panel-${panel.id}`} class="presentation-panel-host"><Panel {simulationRunId} {objects} {seenRoleIds} mapView={panelMapView} dataRevision={packDataRevisions[panel.id.split('.')[0]! ] ?? 0} selectedItemId={packPanelSelections[panel.id] ?? null} onSelectItem={(itemId: string | null) => { packPanelSelections = { ...packPanelSelections, [panel.id]: itemId } }} onClose={() => setSurfacePanelOpen(panel.id, false)} onFocusMap={focusMapTarget} currentTime={currentPackTime} selectedObjectId={selectedControllerId} onSelectObject={selectObjectById} connectInteraction={(interaction: SurfacePanelInteraction) => connectPanelInteraction(panel, interaction)} keysActive={panelKeysActive} roleSet={panelRoleSet} onMapCover={(cover: MapCover) => { panelMapCovers = { ...panelMapCovers, [panel.id]: assertMapCover(panel.id, cover) } }} onMapPrompt={(prompt: MapPrompt | null) => { panelMapPrompts = { ...panelMapPrompts, [panel.id]: prompt === null ? null : assertMapPrompt(panel.id, prompt) } }} onMapTargeting={(targeting: MapTargeting | null) => { panelMapTargetings = { ...panelMapTargetings, [panel.id]: targeting === null ? null : assertMapTargeting(panel.id, targeting) } }} /></div>
           {/if}
         {/each}
         {/key}
