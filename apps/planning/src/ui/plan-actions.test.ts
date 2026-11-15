@@ -161,7 +161,7 @@ describe('plan screen actions', () => {
     const shown = await cancelled.actions.generate(start, {}, stop.signal, 'opt-1')
     expect(shown.notice).toContain('Cancelled.')
     expect(cancelled.calls.some(call => call.capability === 'planning.plan.read')).toBe(true)
-    const words = 'This plan needs 340 jobs in one solve. Planning handles up to 60, and is certified for up to 33 (one system window). Split the work into system windows.'
+    const words = 'This plan needs 340 jobs in one solve. Planning handles up to 40, and is certified for up to 33 (one system window). Split the work into system windows.'
     const large = await host(start, { status: 413, code: 'above_certified_size', message: words }).actions.generate(start, {}, new AbortController().signal, null)
     expect(large.error).toBe(words)
   })

@@ -1,7 +1,9 @@
 import { afterAll, describe, expect, test } from 'bun:test'
 import { createRealSolver } from '../api/wiring.ts'
 import { twinPlan, twinV3Options } from '../../tests/harness/twin-plan.ts'
-import { generate } from './generate.ts'
+import { planInputsSchema } from '../plan/schema.ts'
+import { jobsPerSolve } from '../plan/summary.ts'
+import { CERTIFIED_SIZE, generate } from './generate.ts'
 import { CHILD_RSS_LIMIT_MB, createSolverPool, SOLVER_CPU_CAP_CORES } from './pool.ts'
 import { laneKCheck, laneKVerify, laneKVerifyBound } from './fixtures/lane-k.ts'
 import { SIZE_CURVE_SHA256, sizeCurveSubset } from './fixtures/size-curve.ts'
@@ -11,7 +13,7 @@ import { trainAInputs } from './fixtures/train-a-case.ts'
 // At the certified size (33 jobs per solve): Generate within 20 s and 200 MB, preview p95 within 300 ms.
 // Records the flagship Generate (wall, solver CPU, peak memory), the preview p95 through the real preview
 // (in a solver child: spawn, compile, repair, dates, float, check), and one Generate each of or's frozen
-// 33-job subset S33v3 and 60-job subset S60, the size limit (read-only from PLANNING_SIZE_DIR, the review
+// 33-job subset S33v3 and 60-job subset S60 (above the 40-job limit, lifted for it; read-only from PLANNING_SIZE_DIR, the review
 // folder's or/inc1/size, when present, else rebuilt from twin v3; either way the sha256 must be or's). The
 // service runs one solver child at a time, and each whole sub-solve runs in it: `servicePeakMb` is this
 // process's RSS (the test runner included), sampled every 50 ms, and `childPeaksMb` each child's own peak
@@ -37,7 +39,7 @@ describe.skipIf(!enabled)('solver floors at the certified size (opt-in)', () => 
   const solver = createRealSolver(pool)
   afterAll(() => pool.shutdown())
   const flagship = trainAInputs({ read: true })
-  const run = (inputs = flagship, input = {}) => generate({ engine: pool, check: laneKCheck, verify: laneKVerify, verifyBound: laneKVerifyBound, subSolver: pool.subSolver }, { inputs, revision: 1, previous: null, input, by, signal: new AbortController().signal })
+  const run = (inputs = flagship, input = {}, certifiedSize = CERTIFIED_SIZE) => generate({ engine: pool, check: laneKCheck, verify: laneKVerify, verifyBound: laneKVerifyBound, subSolver: pool.subSolver, certifiedSize }, { inputs, revision: 1, previous: null, input, by, signal: new AbortController().signal })
 
   test('flagship: Generate within 20 s and 200 MB, solver CPU within the cap; preview p95 within 300 ms', async () => {
     const stop = sampleRss()
@@ -57,7 +59,28 @@ describe.skipIf(!enabled)('solver floors at the certified size (opt-in)', () => 
     expect(p95(times)).toBeLessThanOrEqual(300)
   }, 60_000)
 
-  test('S60, or\'s frozen 60-job subset (the size limit): one Generate within 20 s, with the size caution; child peak recorded', async () => {
+  test('40 jobs, the size limit (the flagship plus 7 found-work jobs): Generate within 20 s, no memory stop, each child under its ceiling', async () => {
+    const found = (k: number) => ({
+      key: `FOUND-${k}`, title: `Found work ${k}`, kind: 'work' as const, equipment: [], isolation: 'none' as const,
+      duration: { value: 1, unit: 'h' as const, calendar: 'working' as const, origin: { by: 'planner' as const } }, durationWith: [],
+      needs: [{ anyOf: ['elec-station'], amount: 1, handover: false }], continuous: false, checks: [], tags: [],
+    })
+    const inputs = planInputsSchema.parse({ ...flagship, jobs: [...flagship.jobs, ...Array.from({ length: 7 }, (_, k) => found(k + 1))] })
+    expect([jobsPerSolve(inputs), CERTIFIED_SIZE.limitJobs]).toEqual([40, 40])
+    const stop = sampleRss()
+    const at = performance.now()
+    const result = await run(inputs)
+    const wallMs = performance.now() - at
+    const servicePeakMb = stop()
+    const childPeaksMb = pool.records().slice(-2).map(record => record.peakRssMb ?? 0)
+    console.log(JSON.stringify({ jobs40: { wallMs: Math.round(wallMs), cpuMs: cpuOf(result), servicePeakMb, childPeaksMb, words: wordsOf(result), stoppedBy: stoppedOf(result) } }))
+    expect(wallMs).toBeLessThanOrEqual(20_000)
+    expect(result.optionSet.options.map(option => [option.status.word, option.sizeCaution])).toEqual([['validated feasible', true], ['validated feasible', true]])
+    expect(stoppedOf(result)).not.toContain('memory')
+    for (const peak of childPeaksMb) expect(peak).toBeLessThanOrEqual(CHILD_RSS_LIMIT_MB)
+  }, 60_000)
+
+  test('S60, or\'s frozen 60-job subset, the limit lifted: why Planning stops at 40 (child peak recorded, above its ceiling)', async () => {
     const frozen = Bun.file(`${sizeDir}/S60.json`)
     const text = (await frozen.exists()) ? await frozen.text() : JSON.stringify(sizeCurveSubset('S60').bench)
     expect(new Bun.CryptoHasher('sha256').update(text).digest('hex')).toBe(SIZE_CURVE_SHA256.S60)
@@ -65,7 +88,7 @@ describe.skipIf(!enabled)('solver floors at the certified size (opt-in)', () => 
     const twin = twinPlan(bench, twinV3Options(bench))
     const stop = sampleRss()
     const at = performance.now()
-    const result = await run(twin.inputs, { variants: [{ label: 'S60', methods: [...twin.variant.methods], buy: [...twin.variant.purchases] }] })
+    const result = await run(twin.inputs, { variants: [{ label: 'S60', methods: [...twin.variant.methods], buy: [...twin.variant.purchases] }] }, { ...CERTIFIED_SIZE, limitJobs: 60 })
     const wallMs = performance.now() - at
     const servicePeakMb = stop()
     const childPeaksMb = pool.records().slice(-1).map(record => record.peakRssMb ?? 0)

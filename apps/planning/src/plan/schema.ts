@@ -401,8 +401,8 @@ export type Plan = z.infer<typeof planSchema>
 export const certifiedSizeSchema = z.object({
   decided: z.boolean(), family: wordsSchema, maxJobs: z.number().int().positive(), evidence: wordsSchema,
   // Above `maxJobs` and up to `limitJobs` jobs in one solve Generate still runs, and every option carries a
-  // caution (`sizeCaution`), worded with `limitEvidence`; above `limitJobs` it refuses.
-  limitJobs: z.number().int().positive(), limitEvidence: wordsSchema,
+  // caution (`sizeCaution`); above `limitJobs` it refuses.
+  limitJobs: z.number().int().positive(),
 }).strict().refine(size => size.limitJobs >= size.maxJobs, { message: 'The limit is at or above the certified size', path: ['limitJobs'] })
 export type CertifiedSize = z.infer<typeof certifiedSizeSchema>
 

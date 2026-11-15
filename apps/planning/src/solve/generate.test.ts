@@ -110,7 +110,7 @@ describe('generate with the real checker', () => {
     for (const goal of proven(refused)) expect(goal).toEqual({ word: 'best found under budget', goal: goal.goal, value: goal.value, unit: goal.unit })
   })
 
-  test('size bands: 33 jobs in one solve carry no caution; 34 run with a caution on every option; 61 are refused', async () => {
+  test('size bands: 33 jobs in one solve carry no caution; 34 to 40 run with a caution on every option; 41 are refused', async () => {
     const flagship = trainAInputs({ read: true })
     // Found work: free-standing 1 h jobs for the electrical crew, added to the flagship's 33 jobs per solve.
     const found = (k: number) => ({
@@ -131,26 +131,26 @@ describe('generate with the real checker', () => {
     const cautioned = await run(plus)
     expect(cautioned.optionSet.options.map(option => [option.status.word, option.sizeCaution])).toEqual([['validated feasible', true], ['validated feasible', true]])
     for (const option of cautioned.optionSet.options) expect(laneKCheck({ inputs: plus, variant: option.variant, rows: option.rows }).violations).toEqual([])
-    expect(sizeCautionWords(CERTIFIED_SIZE)).toBe('Above the certified size (33 jobs). This plan keeps every hard rule, but it may not be near the best: at 60 jobs, 7 of 9 test runs came within 5 % of the proven best.')
-    // 60 is still taken; 61 is refused in planner words, before any solve.
-    expect(sizeBand(withFound(27), CERTIFIED_SIZE)).toBe('caution')
-    const over = withFound(28)
-    expect([jobsPerSolve(over), sizeBand(over, CERTIFIED_SIZE)]).toEqual([61, 'refused'])
+    expect(sizeCautionWords(CERTIFIED_SIZE)).toBe('Above the certified size (33 jobs). This plan keeps every hard rule, but it may not be near the best.')
+    // 40 is still taken; 41 is refused in planner words, before any solve.
+    expect([jobsPerSolve(withFound(7)), sizeBand(withFound(7), CERTIFIED_SIZE)]).toEqual([40, 'caution'])
+    const over = withFound(8)
+    expect([jobsPerSolve(over), sizeBand(over, CERTIFIED_SIZE)]).toEqual([41, 'refused'])
     const refusal = await run(over).catch((error: unknown) => error as Error)
     expect(refusal).toMatchObject({ code: 'above_certified_size' })
-    expect((refusal as Error).message).toBe('This plan needs 61 jobs in one solve. Planning handles up to 60, and is certified for up to 33 (one system window). Split the work into system windows.')
+    expect((refusal as Error).message).toBe('This plan needs 41 jobs in one solve. Planning handles up to 40, and is certified for up to 33 (one system window). Split the work into system windows.')
   }, 120_000)
 
   test('the certified size: 33 jobs in one solve, as measured and decided; the flagship and Supply run run, twin v3 is refused', async () => {
     expect(CERTIFIED_SIZE.decided).toBe(true)
-    expect(certifiedSizeWords(CERTIFIED_SIZE)).toBe('Certified for plans of up to 33 jobs in one solve; handles up to 60 with a caution.')
-    expect([CERTIFIED_SIZE.maxJobs, CERTIFIED_SIZE.limitJobs]).toEqual([33, 60])
+    expect(certifiedSizeWords(CERTIFIED_SIZE)).toBe('Certified for plans of up to 33 jobs in one solve; handles up to 40 with a caution.')
+    expect([CERTIFIED_SIZE.maxJobs, CERTIFIED_SIZE.limitJobs]).toEqual([33, 40])
     expect(measuredSizeWords(CERTIFIED_SIZE)).toBeNull()
     // A size not yet decided still reads as pending, with its measured limit.
     expect(certifiedSizeWords({ ...CERTIFIED_SIZE, decided: false })).toBe('Certified plan size: pending the owner\'s decision')
     expect(measuredSizeWords({ ...CERTIFIED_SIZE, decided: false })).toBe('Measured: up to 33 jobs')
     // The evidence is detail, in planner words: no review names.
-    expect(CERTIFIED_SIZE.evidence).toBe('Measured 11 Nov on single-train work weeks: 9 of 9 runs within 5 % of the proven optimum at 33 jobs; 7 of 9 at 60; 4 of 9 at 100; 0 of 9 at 130.')
+    expect(CERTIFIED_SIZE.evidence).toBe('Measured 11 Nov on single-train work weeks: 9 of 9 runs within 5 % of the proven optimum at 33 jobs; 7 of 9 at 60; 4 of 9 at 100; 0 of 9 at 130. Measured 15 Nov: a 60-job solve needs more memory than the service allows, so Planning handles up to 40 jobs.')
     expect(CERTIFIED_SIZE.evidence).not.toMatch(/\b(or|maint|twin)\b/i)
     // Jobs per solve, after method selection: the flagship's 34 job records (both SW A methods) are 33 per solve.
     const flagship = trainAInputs({ read: true })
@@ -163,7 +163,7 @@ describe('generate with the real checker', () => {
     expect(jobsPerSolve(twin)).toBe(330)
     const refusal = await generate({ engine: searchEngine(), check: laneKCheck, verify: laneKVerify, verifyBound: laneKVerifyBound }, { inputs: twin, revision: 1, previous: null, input: {}, by, signal: new AbortController().signal }).catch((error: unknown) => error as Error)
     expect(refusal).toMatchObject({ code: 'above_certified_size' })
-    expect((refusal as Error).message).toBe('This plan needs 330 jobs in one solve. Planning handles up to 60, and is certified for up to 33 (one system window). Split the work into system windows.')
+    expect((refusal as Error).message).toBe('This plan needs 330 jobs in one solve. Planning handles up to 40, and is certified for up to 33 (one system window). Split the work into system windows.')
     const supply = await generate({ engine: searchEngine(), check: laneKCheck, verify: laneKVerify, verifyBound: laneKVerifyBound }, { inputs: supplyRun, revision: 1, previous: null, input: {}, by, signal: new AbortController().signal, evals: 200 })
     expect(supply.optionSet.options[0]!.status.word).toBe('validated feasible')
   })

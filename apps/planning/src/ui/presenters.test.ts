@@ -55,7 +55,7 @@ describe('Needs your attention', () => {
     const stale: PlanModel = { ...planned, options: { ...planned.options!, items: planned.options!.items.map(option => ({ ...option, fresh: false })) } }
     // A stale option claims nothing; the Module's one stale item says so (the screen adds no card of its own).
     expect(attentionCards(stale, contextOf(stale)).some(card => card.title.includes(stale.options!.items[0]!.label))).toBe(false)
-    const size = { decided: true, family: 'single-train work weeks', maxJobs: jobsPerSolve(planned.inputs) - 2, evidence: 'measured 11 Nov', limitJobs: jobsPerSolve(planned.inputs) - 1, limitEvidence: 'measured 11 Nov' }
+    const size = { decided: true, family: 'single-train work weeks', maxJobs: jobsPerSolve(planned.inputs) - 2, evidence: 'measured 11 Nov', limitJobs: jobsPerSolve(planned.inputs) - 1 }
     const large: PlanModel = { ...planned, certifiedSize: size }
     const refusal = attentionCards(large, contextOf(large)).find(card => card.title === 'Too large for the certified size.')!
     // The evidence is for reviewers; the card says the size in words only (maint's walk G2).

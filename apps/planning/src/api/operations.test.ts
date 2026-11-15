@@ -439,7 +439,7 @@ describe('an option solved above the certified size says so beside its status (s
     const local = await createHarness({ solver })
     try {
       const created = await local.create('train-a-work-week')
-      const words = `Above the certified size (${testCertifiedSize.maxJobs} jobs). This plan keeps every hard rule, but it may not be near the best: ${testCertifiedSize.limitEvidence}.`
+      const words = `Above the certified size (${testCertifiedSize.maxJobs} jobs). This plan keeps every hard rule, but it may not be near the best.`
       const generated = await local.call('planning.plan.generate', { resource: created.id, input: {}, expectedRevision: 1 })
       expect(generated.status).toBe(200)
       for (const option of generated.body.result.options) expect(option.warnings).toContainEqual({ kind: 'above-certified-size', text: words, about: [] })

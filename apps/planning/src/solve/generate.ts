@@ -26,7 +26,7 @@ export type GenerateInput = z.infer<typeof generateInputSchema>
 /**
  * The certified size (G2, A8), decided on 15 Nov (the owner delegated the scale decision): Planning is
  * certified for plans of up to 33 jobs in one solve, the measured size (`maxJobs`, jobs per solve as
- * plan/summary's jobsPerSolve counts them); it handles up to 60 (`limitJobs`) with a caution on every option,
+ * plan/summary's jobsPerSolve counts them); it handles up to 40 (`limitJobs`) with a caution on every option,
  * and refuses above that. The two numbers live here and nowhere else. A native CP solver for larger plans is
  * deferred. `evidence` is the measurement, shown to planners only as detail; the words are plan/summary's.
  */
@@ -34,11 +34,11 @@ export const CERTIFIED_SIZE: CertifiedSize = {
   decided: true,
   family: 'one system window',
   maxJobs: 33,
-  // Above 33 and up to 60 jobs Generate runs with a caution on every option; above 60 it refuses. On the
-  // size curve every run was feasible at every size; at 100 jobs only 4 of 9 came within 5 %, hence 60.
-  limitJobs: 60,
-  limitEvidence: 'at 60 jobs, 7 of 9 test runs came within 5 % of the proven best',
-  evidence: 'Measured 11 Nov on single-train work weeks: 9 of 9 runs within 5 % of the proven optimum at 33 jobs; 7 of 9 at 60; 4 of 9 at 100; 0 of 9 at 130.',
+  // Above 33 and up to 40 jobs Generate runs with a caution on every option; above 40 it refuses. The band
+  // is for a few jobs added to a 33-job window (found work), not for bigger weeks: a 60-job solve peaks at
+  // 144-164 MB in its child, above the 140 MB ceiling, while 40 jobs peak at 124-139 MB (33 jobs: 126-132).
+  limitJobs: 40,
+  evidence: 'Measured 11 Nov on single-train work weeks: 9 of 9 runs within 5 % of the proven optimum at 33 jobs; 7 of 9 at 60; 4 of 9 at 100; 0 of 9 at 130. Measured 15 Nov: a 60-job solve needs more memory than the service allows, so Planning handles up to 40 jobs.',
 }
 
 export const MAX_SUB_SOLVES = 8

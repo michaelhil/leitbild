@@ -322,7 +322,7 @@ export const sizeBand = (inputs: Pick<PlanInputs, 'jobs' | 'methods'>, size: Cer
   jobsPerSolve(inputs) <= size.maxJobs ? 'certified' : jobsPerSolve(inputs) <= size.limitJobs ? 'caution' : 'refused'
 /** The caution an option carries when it was solved above the certified size, in planner words. */
 export const sizeCautionWords = (size: CertifiedSize): string =>
-  `Above the certified size (${size.maxJobs} jobs). This plan keeps every hard rule, but it may not be near the best: ${size.limitEvidence}.`
+  `Above the certified size (${size.maxJobs} jobs). This plan keeps every hard rule, but it may not be near the best.`
 /** That caution as an option warning, shown beside the option's status. */
 export const sizeCautionWarning = (size: CertifiedSize): OptionWarning => ({ kind: 'above-certified-size', text: clip(sizeCautionWords(size), 240), about: [] })
 /**
