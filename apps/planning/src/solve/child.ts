@@ -8,7 +8,7 @@ import { isPlanningError } from '../errors.ts'
 import { subSolve, type SubSolveTask } from './generate.ts'
 import { limitingOf } from './limiting.ts'
 import { previewOption } from './preview.ts'
-import { checkForSolver, verifyBoundForSolver, verifyForSolver } from './lane-k-ports.ts'
+import { checkForSolver, judgeRetimedForSolver, verifyBoundForSolver, verifyForSolver } from './lane-k-ports.ts'
 import { searchEngine, threadCpuMs } from './search.ts'
 import type { Engine, EngineBudget, EngineResult } from './problem.ts'
 import { decode, decodeProblem, decodeSchedule, encode, resultToWire, type ChildRequest, type ChildResponse } from './wire.ts'
@@ -37,6 +37,7 @@ const run = subSolve({
   engine, verify: verifyForSolver,
   check: plan => { Bun.gc(true); return checkForSolver(plan) },
   verifyBound: (inputs, variant, goal, bound) => { Bun.gc(true); return verifyBoundForSolver(inputs, variant, goal, bound) },
+  judgeRetimed: judgeRetimedForSolver,
 })
 
 const send = (response: ChildResponse): void => { process.send?.(response) }

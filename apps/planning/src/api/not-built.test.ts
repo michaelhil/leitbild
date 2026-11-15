@@ -1,7 +1,8 @@
 // Increment 2 inputs that the contract takes before their lanes build them are refused with 501 not_built,
-// never ignored (adversary review of lane A, R1). Each refusal sits where its owner lifts it: also, lead and
-// keep in solve/generate.ts variantsOf (lane S), keep where the service drops it (lane P, api/operations.ts),
-// and the explain asks recommended and versus in the real explain (lane P, api/wiring.ts).
+// never ignored (adversary review of lane A, R1). Each refusal sits where its owner lifts it: keep where the
+// service drops it (lane P, api/operations.ts), and the explain asks recommended and versus in the real
+// explain (lane P, api/wiring.ts). The solver's own refusal of also, lead and keep is lifted: lane S builds
+// them (solve/whatif.test.ts, lead.test.ts, ladder.test.ts), and this file checks they are no longer refused.
 import { afterAll, describe, expect, test } from 'bun:test'
 import { isPlanningError } from '../errors.ts'
 import { bundledPlanDefinitions } from '../definitions/index.ts'
@@ -23,20 +24,20 @@ const refusal = async (run: () => unknown): Promise<unknown> => {
 }
 
 describe('Generate refuses what it does not build yet', () => {
-  test('the solver refuses also, lead and keep by name; plain what-ifs still pass', async () => {
-    expect(await refusal(() => variantsOf(inputs, { variants: [{ label: 'At most 48 h out', also: [rule] }] }))).toEqual([501, 'not_built', { fields: ['also'] }])
-    expect(await refusal(() => variantsOf(inputs, { variants: [{ label: 'Finish AFW A first', lead: { group: 'AFW-A' } }] }))).toEqual([501, 'not_built', { fields: ['lead'] }])
-    expect(await refusal(() => variantsOf(inputs, { variants: [{ also: [rule] }, { lead: { goal: 1 } }], keep: true }))).toEqual([501, 'not_built', { fields: ['also', 'lead', 'keep'] }])
+  test('the solver takes also, lead and keep: each what-if keeps what it asks', async () => {
+    expect(variantsOf(inputs, { variants: [{ label: 'At most 48 h out', also: [rule] }] }).map(variant => [variant.label, variant.also])).toEqual([['At most 48 h out', [rule]]])
+    expect(variantsOf(inputs, { variants: [{ label: 'Finish AFW A first', lead: { group: 'AFW-A' } }] }).map(variant => variant.lead)).toEqual([{ group: 'AFW-A' }])
+    expect(variantsOf(inputs, { variants: [{ also: [rule] }, { lead: { goal: 1 } }], keep: true }).map(variant => [variant.also, variant.lead])).toEqual([[[rule], undefined], [undefined, { goal: 1 }]])
     expect(variantsOf(inputs, { variants: [{ label: 'Days only', buy: 'no-extra-crew-hours' }] }).map(variant => variant.label)).toEqual(['Days only'])
   })
 
-  test('on the real solver, an "at most 48 h out" what-if is refused and nothing is stored', async () => {
+  test('on the real solver, an "at most 48 h out" what-if is stored with its rule, never as an ordinary option', async () => {
     const created = await real.create('train-a-work-week')
-    const answer = await real.call('planning.plan.generate', { resource: created.id, input: { variants: [{ label: 'At most 48 h out', also: [rule] }] }, expectedRevision: created.revision })
-    expect([answer.status, answer.body.error.code]).toEqual([501, 'not_built'])
+    const answer = await real.call('planning.plan.generate', { resource: created.id, input: { variants: [{ label: 'At most 48 h out', also: [rule] }], seconds: 2 }, expectedRevision: created.revision })
+    expect(answer.status).toBe(200)
     const stored = await real.store.read(real.workspaceId, created.id)
-    expect([stored.revision, stored.options]).toEqual([created.revision, null])
-  })
+    expect(stored.options!.options.map(option => option.variant.also)).toEqual([[rule]])
+  }, 60_000)
 
   test('keep is refused where the service would drop it, and nothing is stored', async () => {
     const created = await double.create('train-a-work-week')
