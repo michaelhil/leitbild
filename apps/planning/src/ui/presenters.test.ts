@@ -4,7 +4,7 @@ import { attentionCards } from './attention.ts'
 import { causeText, finishChain, floatText, whyStart } from './explain-text.ts'
 import { hourMs, modelOf, supplyRunPlanned, trainAInputs, trainAPlanned, trainARows } from './fixtures/plans.ts'
 import { createTimeFormat } from './format.ts'
-import { certifiedSizeWords, jobsPerSolve } from '../plan/summary.ts'
+import { jobsPerSolve } from '../plan/summary.ts'
 import { createNames, type PlanModel } from './model.ts'
 import { dueMoveEdit } from './edit-forms.ts'
 import { weakensRule } from './plan-actions.ts'
@@ -60,8 +60,8 @@ describe('Needs your attention', () => {
     const refusal = attentionCards(large, contextOf(large)).find(card => card.title === 'Too large for the certified size.')!
     // The evidence is for reviewers; the card says the size in words only (maint's walk G2).
     // The refusal in planner words, jobs counted per solve (after method selection).
-    expect(refusal.text).toBe(`This plan needs ${jobsPerSolve(planned.inputs)} jobs in one solve. Planning handles up to ${size.limitJobs}, and is certified for up to ${size.maxJobs} (single-train work weeks). Split the work into system windows.`)
-    expect(certifiedSizeWords(size)).toBe(`Certified for plans of up to ${size.maxJobs} jobs in one solve; handles up to ${size.limitJobs} with a caution.`)
+    expect(refusal.text).toBe(`This plan has ${jobsPerSolve(planned.inputs)} jobs to schedule at once. Planning handles up to ${size.limitJobs}, and is certified for up to ${size.maxJobs}. Split the work into separate plans.`)
+    expect(refusal.text).not.toMatch(/in one solve|system window/)
     // Above the certified size but within the limit: no "too large" card (Generate runs, with a caution).
     const cautioned: PlanModel = { ...planned, certifiedSize: { ...size, limitJobs: jobsPerSolve(planned.inputs) } }
     expect(attentionCards(cautioned, contextOf(cautioned)).some(card => card.title === 'Too large for the certified size.')).toBe(false)
