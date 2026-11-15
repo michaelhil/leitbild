@@ -188,9 +188,11 @@ export const solveInputsOf = (inputs: PlanInputs, whatIf: Pick<WhatIf, 'also' | 
 /**
  * The figures stored on an option, all lane K's: each plan goal's value by the plan's goal id, a span-over
  * goal's spans by the checker's own group keys (never by position: fix round F4); with no extra-cost goal, the
- * checker's 'extra-cost'; then its 'bought:' measures. A group lead's value is in its status.
+ * checker's 'extra-cost'; its 'span:<group>' for every group a span rule names (the plan's or the what-if's),
+ * for the comparison and the outage floor (a group never out has none); then its 'bought:' measures. At most
+ * 96 in all (plan/schema.ts). A group lead's value is in its status too.
  */
-const metricsOf = (inputs: PlanInputs, report: CheckReport): Option['metrics'] => {
+const metricsOf = (inputs: PlanInputs, report: CheckReport, also: readonly AlsoRule[] = []): Option['metrics'] => {
   const goals = report.goals.flatMap((value, k) => {
     const unit = inputs.goals[k]!.tolerance.unit
     if (typeof value === 'number') return [{ id: `goal:${k}`, value, unit }]
@@ -200,7 +202,9 @@ const metricsOf = (inputs: PlanInputs, report: CheckReport): Option['metrics'] =
   })
   const measures = report.metrics ?? []
   const cost = inputs.goals.some(goal => goal.metric === 'extra-cost') ? [] : measures.filter(metric => metric.id === 'extra-cost')
-  return [...goals.slice(0, 32), ...cost.map(metric => ({ ...metric })), ...measures.filter(metric => metric.id.startsWith('bought:')).map(metric => ({ ...metric })).slice(0, 63)]
+  const ruled = new Set([...inputs.rules, ...also].flatMap(rule => (rule.kind === 'span-limit' ? [`span:${rule.group}`] : [])))
+  const spans = measures.filter(metric => ruled.has(metric.id))
+  return [...goals.slice(0, 32), ...cost, ...spans, ...measures.filter(metric => metric.id.startsWith('bought:'))].slice(0, 96).map(metric => ({ ...metric }))
 }
 
 /** The raw goal metrics stored on an option, back in goal order. */
@@ -377,7 +381,7 @@ export const subSolve = (deps: SubSolveDeps): SubSolver => async (task, signal, 
     const status = verifiedGoals(onPlanGoals(solved, lead, planGoalOf),
       (goal, bound) => deps.verifyBound(inputs, variantOut, goal, bound),
       group === undefined ? undefined : bound => deps.verifyBound(inputs, variantOut, { group, unit: groupLeadGoal(group).tolerance.unit }, bound))
-    return { ...base, variant: stored(planned.purchases), status, rows, metrics: metricsOf(inputs, report) }
+    return { ...base, variant: stored(planned.purchases), status, rows, metrics: metricsOf(inputs, report, variant.also) }
   }
   const usedBy = (rows: ReadonlyArray<Pick<DatedRow, 'uses'>>): string[] => [...new Set([...rows.flatMap(row => row.uses.flatMap(use => (use.purchase === undefined ? [] : [use.purchase]))), ...index.purchases.filter(purchase => purchase.committed).map(purchase => purchase.key)])]
 

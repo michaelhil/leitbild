@@ -45,3 +45,14 @@ describe('the extra cost without an extra-cost goal', () => {
     expect((await solve(flagship)).metrics.some(metric => metric.id === 'extra-cost')).toBe(false)
   }, 60_000)
 })
+
+describe('each ruled group\'s span, for the comparison and the outage floor', () => {
+  test('Train A: every group with a span rule stores lane K\'s span:<group>, not only the goal\'s group', async () => {
+    const option = await solve(flagship)
+    const ruled = [...new Set(flagship.rules.flatMap(rule => (rule.kind === 'span-limit' ? [rule.group] : [])))]
+    expect(ruled.length).toBe(3)
+    const own = checkPlan(flagship, option.variant, option.rows).metrics
+    for (const group of ruled) expect(option.metrics.find(metric => metric.id === `span:${group}`)).toEqual(own.find(metric => metric.id === `span:${group}`))
+    expect(option.metrics.filter(metric => metric.id.startsWith('span:')).length).toBe(3)
+  }, 60_000)
+})
