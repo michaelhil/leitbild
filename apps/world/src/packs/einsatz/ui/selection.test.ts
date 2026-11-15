@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test'
-import type { GeoJsonPoint } from '../../../core/model/index.ts'
+import { geoPointFromLonLat, type GeoJsonPoint } from '../../../core/model/index.ts'
 import { einsatzPackId } from '../ids.ts'
 import {
   dispatchKindOf,
@@ -23,7 +23,7 @@ import {
  * what an armed unit's submit comes back with.
  */
 
-const point: GeoJsonPoint = { type: 'Point', coordinates: [11.4, 59.1] }
+const point: GeoJsonPoint = geoPointFromLonLat(11.4, 59.1)
 const unitA = { id: 'u-a', kind: 'unit' } as const
 const unitB = { id: 'u-b', kind: 'unit' } as const
 const call = { id: 't-1', kind: 'call' } as const
@@ -124,9 +124,12 @@ describe('B.3: a click on open ground', () => {
     expect(confirmed.effects).toEqual([{ kind: 'submit', unitId: unitA.id, target: { point }, when: null }])
     expect(confirmed.state.selection).toEqual(sa)
   })
-  test('SA: a dismissed prompt moves nothing and stays armed', () => {
+  test('SA: another tap on the ground moves the prompt there; a target click answers it by submitting', () => {
     const shown = step(sa, click(ground)).state
-    expect(reduceSelection(shown, { kind: 'prompt-dismissed' })).toEqual({ state: { ...shown, selection: sa }, effects: [] })
+    const elsewhere = geoPointFromLonLat(11.5, 59.2)
+    expect(reduceSelection(shown, click({ kind: 'ground', point: elsewhere })).state.selection).toEqual({ ...sa, prompt: { kind: 'move', point: elsewhere } })
+    const sent = reduceSelection(shown, click(call))
+    expect([sent.state.selection, kinds(sent.effects)]).toEqual([sa, ['submit']])
   })
 })
 

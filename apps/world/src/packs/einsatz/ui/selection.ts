@@ -93,8 +93,6 @@ export type SelectionEvent =
   | { readonly kind: 'arm'; readonly unitId: string; readonly when: 'after' | null }
   /** A choice of the armed unit's map prompt. */
   | { readonly kind: 'prompt'; readonly choice: 'move' | OrderWhen }
-  /** The map prompt was dismissed by a tap elsewhere. */
-  | { readonly kind: 'prompt-dismissed' }
   | { readonly kind: 'back' }
   /** The surface cleared the shared selection. */
   | { readonly kind: 'cleared' }
@@ -238,8 +236,6 @@ export const reduceSelection = (state: SelectionState, event: SelectionEvent): S
       if (event.choice === 'move') throw new Error('The busy prompt offers no move')
       return { state: { ...state, selection: { ...selection, prompt: null } }, effects: [{ kind: 'submit', unitId: selection.unitId, target: prompt.target, when: event.choice }] }
     }
-    case 'prompt-dismissed':
-      return selection.kind === 'armed' ? { state: { ...state, selection: { ...selection, prompt: null } }, effects: [] } : unchanged(state)
     case 'back':
       switch (selection.kind) {
         case 'none': return selection.marked === null ? unchanged(state) : transition(state, none)

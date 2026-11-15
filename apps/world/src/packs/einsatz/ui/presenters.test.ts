@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test'
-import type { OperationalObject } from '../../../core/model/index.ts'
+import { objectIdSchema, type OperationalObject } from '../../../core/model/index.ts'
 import { einsatzPackId } from '../ids.ts'
 import { recommendAnswerSchema, type RecommendAnswer } from '../recommendation-schema.ts'
 import { situationSchema, unitOptionsSchema, type Situation, type UnitOptions } from '../situation/schema.ts'
@@ -38,6 +38,7 @@ import type { Selection } from './selection.ts'
  * surveys. Every word the views show comes from the situation.
  */
 
+const oid = (id: string) => objectIdSchema.parse(id)
 const viewer = { label: 'Desk', isViewer: true }
 const assistant = { label: 'Assistant', isViewer: false }
 const routed = (seconds: number) => ({ kind: 'routed' as const, seconds, distanceM: seconds * 10 })
@@ -173,7 +174,7 @@ describe('Unit card', () => {
 
   test('armed: the banner, valid targets nearest first with verb, ETA and what is dropped, refused ones with their reason; loading until options arrive', () => {
     const loading = unitCard(situation, situation.units[0]!, sa('r1'), null, 0)
-    expect(loading.armed).toEqual({ banner: 'Task R1…', targets: [], refused: [], loading: true, refusal: null })
+    expect(loading.armed).toEqual({ banner: 'Task R1…', targets: [], refused: [], loading: true, refusal: null, busy: null })
     const busy = optionsFor('r1', {
       busy: { taskId: 'job-2', label: 'J-2 Bay', freeInS: 300 },
       targets: [{ target: { taskId: 'job-1' }, verb: 'pick-up', label: 'J-1 Ridge', etaS: 240, drops: { taskId: 'job-2', label: 'J-2 Bay', code: 'Q1' } }],
@@ -183,6 +184,8 @@ describe('Unit card', () => {
     expect(armed.targets).toEqual([{ key: JSON.stringify({ taskId: 'job-1' }), target: { taskId: 'job-1' }, text: 'Pick up at J-1 Ridge', eta: '4 min', drops: 'drops J-2 Bay · Q1' }])
     expect(armed.refused).toEqual([{ key: JSON.stringify({ siteId: 'depot-b' }), target: { siteId: 'depot-b' }, label: 'Depot B', text: 'Depot B is closed for arrivals' }])
     expect(armed.refusal).toBe('Depot B is closed')
+    const asked = unitCard(situation, situation.units[0]!, sa('r1', { prompt: { kind: 'busy', target: { taskId: 'job-1' } } }), busy, 0).armed!
+    expect(asked.busy).toEqual({ after: `${dispatchWords.after} (free in 5 min)`, now: `${dispatchWords.now} (drops J-2 Bay · Q1)` })
     // Options of another unit are never shown.
     expect(unitCard(situation, situation.units[0]!, sa('r1'), optionsFor('k1'), 0).armed!.loading).toBe(true)
     expect(unitCard(situation, situation.units[0]!, sa('r1', { when: 'after' }), null, 0).armed!.banner).toBe('Task R1… (after current job)')
@@ -252,8 +255,9 @@ describe('Call card', () => {
 
   test('a call that closed shows who served it and offers nothing', () => {
     expect(closedCallCard(situation.calls[1]!)).toEqual({ kind: 'closed-call', id: 'job-2', label: 'J-2 Bay', text: `${dispatchWords.closed} · served by R2` })
-    const inputs = { options: null, pinned: null, opened, lastSeenCalls: new Map([['job-9', situation.calls[1]!]]), elapsedS: 0 }
+    const inputs = { options: null, pinned: null, opened, lastSeenCall: { ...situation.calls[1]!, id: 'job-9' }, elapsedS: 0 }
     expect(cardFor(situation, { kind: 'call', callId: 'job-9' }, inputs)?.kind).toBe('closed-call')
+    expect(cardFor(situation, { kind: 'call', callId: 'job-8' }, inputs)).toBeNull()
     expect(cardFor(situation, { kind: 'call', callId: 'job-1' }, inputs)?.kind).toBe('call')
     expect(cardFor(situation, none, inputs)).toBeNull()
     expect(cardFor(situation, { kind: 'site', siteId: 'depot-a' }, inputs)?.kind).toBe('site')
@@ -314,10 +318,10 @@ describe('Overview', () => {
 describe('Armed feedback, prompts and receipts', () => {
   test('targeting: halos with ETA tags on the valid targets that are objects, the refused target\'s reason first; nothing outside SA', () => {
     expect(targetingFor(su('r1'), optionsFor('r1'))).toBeNull()
-    expect(targetingFor(sa('r1'), null)).toEqual({ from: 'r1', targets: [] })
-    expect(targetingFor(sa('r1'), optionsFor('r1'))).toEqual({ from: 'r1', targets: [{ id: 'job-1', tag: '4 min' }, { id: 'depot-a', tag: '7 min' }] })
+    expect(targetingFor(sa('r1'), null)).toEqual({ from: oid('r1'), targets: [] })
+    expect(targetingFor(sa('r1'), optionsFor('r1'))).toEqual({ from: oid('r1'), targets: [{ id: oid('job-1'), tag: '4 min' }, { id: oid('depot-a'), tag: '7 min' }] })
     const refused = sa('r1', { refusal: { targetId: 'depot-b', code: 'site_not_accepting', text: 'Depot B is closed', untilMs: 1 } })
-    expect(targetingFor(refused, optionsFor('r1'))!.targets[0]).toEqual({ id: 'depot-b', tag: 'Depot B is closed' })
+    expect(targetingFor(refused, optionsFor('r1'))!.targets[0]).toEqual({ id: oid('depot-b'), tag: 'Depot B is closed' })
     const many = optionsFor('r1', { targets: Array.from({ length: 12 }, (_, index) => ({ target: { taskId: `job-${index}` }, verb: 'serve', label: `J-${index}`, etaS: index * 60 })) })
     expect(targetingFor(sa('r1'), many)!.targets).toHaveLength(maxHaloTargets)
   })
@@ -331,12 +335,12 @@ describe('Armed feedback, prompts and receipts', () => {
   })
 
   test('receipts name the actor, unit, target and what was dropped; Undo for 8 s; newest first, one per command, at most 3', () => {
-    const own = ownReceipt({ commandId: 'c1', unitId: 'r1', unitLabel: 'R1', targetLabel: 'J-1 Ridge', dropped: 'J-2 Bay', atMs: 1_000 })
+    const own = ownReceipt({ commandId: 'c1', unitIds: ['r1'], unitLabel: 'R1', targetLabel: 'J-1 Ridge', dropped: 'J-2 Bay', atMs: 1_000 })
     expect([own.text, own.undo]).toEqual([`${dispatchWords.you}: R1 → J-1 Ridge (drops J-2 Bay)`, `${dispatchWords.undo} (R1 returns to J-2 Bay)`])
     expect([receiptUndoable(own, 1_000 + receiptUndoMs - 1), receiptUndoable(own, 1_000 + receiptUndoMs)]).toEqual([true, false])
     const before = situationOf({ units: [unit('r1'), unit('r2')] })
     expect(receiptsFromSituation(null, situation, 5)).toEqual([])
-    expect(receiptsFromSituation(before, situation, 5)).toEqual([{ commandId: 'cmd-7', unitId: 'r2', text: 'Assistant: R2 → J-2 Bay', undo: dispatchWords.undo, atMs: 5 }])
+    expect(receiptsFromSituation(before, situation, 5)).toEqual([{ commandId: 'cmd-7', unitIds: ['r2'], text: 'Assistant: R2 → J-2 Bay', undo: dispatchWords.undo, atMs: 5 }])
     expect(receiptsFromSituation(situation, situation, 5)).toEqual([])
     let list = withReceipts([], [own])
     list = withReceipts(list, receiptsFromSituation(before, situation, 5))

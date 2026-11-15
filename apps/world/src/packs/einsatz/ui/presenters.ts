@@ -1,5 +1,5 @@
 import { z } from 'zod'
-import type { OperationalObject } from '../../../core/model/index.ts'
+import { objectIdSchema, type OperationalObject } from '../../../core/model/index.ts'
 import { einsatzPackId } from '../ids.ts'
 import { neutralLexicon } from '../lexicon.ts'
 import type { Stop, UnitOrderInput } from '../order-schema.ts'
@@ -72,6 +72,7 @@ export const dispatchWords = {
   refusedTargets: 'Refused',
   loadingTargets: 'Reading targets… a click on the map still sends',
   you: 'You',
+  mapPoint: 'the map point',
 } as const
 
 const clockPad = (value: number): string => value.toString().padStart(2, '0')
@@ -159,6 +160,8 @@ export interface ArmedView {
   readonly loading: boolean
   /** The last refusal, also shown at its target. */
   readonly refusal: string | null
+  /** The busy prompt's choices, also offered here off the map; null while none is asked. */
+  readonly busy: { readonly after: string; readonly now: string } | null
 }
 
 export interface UnitCardView {
@@ -190,6 +193,11 @@ const dueText = (unit: SituationUnit, elapsedS: number): string | null => unit.p
 
 const stopKey = (target: Stop): string => JSON.stringify(target)
 
+const busyChoices = (selection: Extract<Selection, { kind: 'armed' }>, options: UnitOptions | null, unitId: string): ArmedView['busy'] => {
+  const prompt = selection.prompt?.kind === 'busy' ? busyPrompt(options, unitId) : null
+  return prompt === null ? null : { after: prompt.after, now: prompt.now }
+}
+
 const armedView = (unit: SituationUnit, words: Words, options: UnitOptions | null, selection: Extract<Selection, { kind: 'armed' }>): ArmedView => {
   const own = options !== null && options.unitId === unit.id ? options : null
   return {
@@ -204,6 +212,7 @@ const armedView = (unit: SituationUnit, words: Words, options: UnitOptions | nul
     refused: own === null ? [] : own.refused.map(entry => ({ key: stopKey(entry.target), target: entry.target, label: entry.label, text: entry.text })),
     loading: own === null,
     refusal: selection.refusal?.text ?? null,
+    busy: busyChoices(selection, own, unit.id),
   }
 }
 
@@ -443,8 +452,8 @@ export interface CardInputs {
   readonly options: UnitOptions | null
   readonly pinned: PinnedProposal | null
   readonly opened: ReadonlySet<string>
-  /** The last row seen of each call, for the card of one that closed. */
-  readonly lastSeenCalls: ReadonlyMap<string, SituationCall>
+  /** The selected call's row as last seen, for its card once it closed. */
+  readonly lastSeenCall: SituationCall | null
   readonly elapsedS: number
 }
 
@@ -460,8 +469,8 @@ export const cardFor = (situation: Situation, selection: Selection, inputs: Card
     case 'call': {
       const call = situation.calls.find(entry => entry.id === selection.callId)
       if (call !== undefined) return callCard(situation, call, inputs.pinned, inputs.opened, inputs.elapsedS)
-      const seen = inputs.lastSeenCalls.get(selection.callId)
-      return seen === undefined ? null : closedCallCard(seen)
+      const seen = inputs.lastSeenCall
+      return seen === null || seen.id !== selection.callId ? null : closedCallCard(seen)
     }
     case 'site': {
       const site = situation.sites.find(entry => entry.id === selection.siteId)
@@ -626,7 +635,7 @@ export const targetingFor = (selection: Selection, options: UnitOptions | null):
     const id = stopObjectId(target.target)
     return id === null || id === refusal?.targetId ? [] : [{ id, tag: minutesText(target.etaS) }]
   })
-  return { from: selection.unitId as MapTargeting['from'], targets: [...refused, ...valid].slice(0, maxHaloTargets) as MapTargeting['targets'] }
+  return { from: objectIdSchema.parse(selection.unitId), targets: [...refused, ...valid].slice(0, maxHaloTargets).map(target => ({ id: objectIdSchema.parse(target.id), tag: target.tag })) }
 }
 
 /** The busy prompt's two options, once the unit's options say what its current job is; null until then. */
@@ -651,7 +660,8 @@ export const movePromptText = (situation: Situation, unitId: string): string => 
 
 export interface Receipt {
   readonly commandId: string
-  readonly unitId: string
+  /** The units the order named; Undo takes it back for each. */
+  readonly unitIds: ReadonlyArray<string>
   readonly text: string
   /** "Undo (A2 returns to C-3)" when the order dropped a task, else "Undo". */
   readonly undo: string
@@ -659,9 +669,9 @@ export interface Receipt {
 }
 
 /** A receipt of this viewer's own accepted order, naming what it dropped. */
-export const ownReceipt = (options: { readonly commandId: string; readonly unitLabel: string; readonly targetLabel: string; readonly dropped: string | null; readonly atMs: number; readonly unitId: string }): Receipt => ({
+export const ownReceipt = (options: { readonly commandId: string; readonly unitIds: ReadonlyArray<string>; readonly unitLabel: string; readonly targetLabel: string; readonly dropped: string | null; readonly atMs: number }): Receipt => ({
   commandId: options.commandId,
-  unitId: options.unitId,
+  unitIds: options.unitIds,
   text: `${dispatchWords.you}: ${options.unitLabel} → ${options.targetLabel}${options.dropped === null ? '' : ` (drops ${options.dropped})`}`,
   undo: options.dropped === null ? dispatchWords.undo : `${dispatchWords.undo} (${options.unitLabel} returns to ${options.dropped})`,
   atMs: options.atMs,
@@ -675,7 +685,7 @@ export const receiptsFromSituation = (previous: Situation | null, next: Situatio
     const commandId = unit.lastOrder?.commandId ?? null
     if (commandId === null || unit.lastOrder === null || before.get(unit.id) === commandId) return []
     const target = unit.plan[0]?.label ?? unit.status.word
-    return [{ commandId, unitId: unit.id, text: `${actorText(unit.lastOrder.by)}: ${unit.label} → ${target}`, undo: dispatchWords.undo, atMs }]
+    return [{ commandId, unitIds: [unit.id], text: `${actorText(unit.lastOrder.by)}: ${unit.label} → ${target}`, undo: dispatchWords.undo, atMs }]
   })
 }
 
