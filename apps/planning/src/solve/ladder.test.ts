@@ -5,7 +5,8 @@ import { checkPlan } from '../check/check.ts'
 import { planInputsSchema, type PlanInputs } from '../plan/schema.ts'
 import { formulationOf } from './compile.ts'
 import { GENERATE_DEADLINE_MS, generate, rankableOf, subSolve, variantsOf, type GenerateDeps, type SubSolveTask } from './generate.ts'
-import { ladderRungs, rungOptionKeys, rungRequest } from './ladder.ts'
+import { methodCombinations, methodLabel } from './keys.ts'
+import { ladderRungs, rungOptionKeys, rungRequest as rungRequestFor } from './ladder.ts'
 import { compareOptions } from './rank.ts'
 import { searchEngine } from './search.ts'
 import { laneKCheck, laneKVerify, laneKVerifyBound } from './fixtures/lane-k.ts'
@@ -16,6 +17,8 @@ const deps: GenerateDeps = { engine: searchEngine(), check: laneKCheck, verify: 
 const flagship = trainAInputs({ read: true })
 const kindOf = (inputs: PlanInputs, key: string) => inputs.resources.find(resource => resource.key === inputs.purchases.find(purchase => purchase.key === key)!.resource)!.kind
 const purchase = (inputs: PlanInputs, key: string) => inputs.purchases.find(entry => entry.key === key)!
+/** A rung's request with the method's label standing in for the screen's words. */
+const rungRequest = (inputs: PlanInputs, rung: Parameters<typeof rungRequestFor>[1]) => rungRequestFor(inputs, rung, combo => `${methodLabel(inputs, combo)}: rung ${rung.rung}`)
 
 describe('the rungs, from plan data', () => {
   test('Train A: rung 0 keeps what adds no crew time, rung 1 adds the per-person-hour crew time, rung 2 the rest', () => {
@@ -55,19 +58,18 @@ describe('the rungs, from plan data', () => {
     expect(ladderRungs(none).map(rung => rung.rung)).toEqual([0])
   })
 
-  test('U1: a lower rung is "<method>: <what it allows>"; the top rung is the default options, keys and labels', () => {
+  test('U1: a lower rung is one what-if per method with the label the screen gives; the top rung is a plain kept Generate', () => {
     const [bottom, middle, top] = ladderRungs(flagship)
-    const methodLabels = flagship.methods[0]!.options.map(option => option.label)
-    expect(rungRequest(flagship, bottom!).variants.map(variant => variant.label)).toEqual(methodLabels.map(label => `${label}: days only`))
-    const request = rungRequest(flagship, middle!)
-    expect(request.keep).toBe(true)
-    request.variants.forEach((variant, m) => {
-      expect(variant.buy).toEqual([...middle!.buy])
-      expect(variant.label).toBe(`${methodLabels[m]}: with ${middle!.crewTime.map(key => purchase(flagship, key).label).join(', ')}`)
-    })
+    for (const rung of [bottom!, middle!]) {
+      const request = rungRequestFor(flagship, rung, combo => `${methodLabel(flagship, combo)}: the screen's words for rung ${rung.rung}`)
+      expect(request.keep).toBe(true)
+      expect(request.variants!.map(variant => [variant.label, variant.methods, variant.buy])).toEqual(methodCombinations(flagship).map(combo => [`${methodLabel(flagship, combo)}: the screen's words for rung ${rung.rung}`, combo, [...rung.buy]]))
+      // The solver keeps the label it is given.
+      expect(variantsOf(flagship, request).map(variant => variant.label)).toEqual(request.variants!.map(variant => variant.label!))
+    }
     // The top rung asks what a plain Generate asks: the same option keys and the methods' own labels.
-    const plain = variantsOf(flagship, {})
-    expect(variantsOf(flagship, rungRequest(flagship, top!)).map(variant => [variant.key, variant.label])).toEqual(plain.map(variant => [variant.key, variant.label]))
+    expect(rungRequestFor(flagship, top!, () => 'unused')).toEqual({ keep: true })
+    expect(variantsOf(flagship, rungRequestFor(flagship, top!, () => 'unused')).map(variant => [variant.key, variant.label])).toEqual(variantsOf(flagship, {}).map(variant => [variant.key, variant.label]))
   })
 })
 

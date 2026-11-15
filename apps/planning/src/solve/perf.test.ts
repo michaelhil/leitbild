@@ -5,6 +5,7 @@ import { planInputsSchema } from '../plan/schema.ts'
 import { jobsPerSolve } from '../plan/summary.ts'
 import { CERTIFIED_SIZE, generate } from './generate.ts'
 import { CHILD_RSS_LIMIT_MB, createSolverPool, SOLVER_CPU_CAP_CORES } from './pool.ts'
+import { methodLabel } from './keys.ts'
 import { ladderRungs, rungRequest } from './ladder.ts'
 import { laneKCheck, laneKVerify, laneKVerifyBound } from './fixtures/lane-k.ts'
 import { SIZE_CURVE_SHA256, sizeCurveSubset } from './fixtures/size-curve.ts'
@@ -48,9 +49,10 @@ describe.skipIf(!enabled)('solver floors at the certified size (opt-in)', () => 
     for (const rung of ladderRungs(flagship)) {
       const stop = sampleRss()
       const at = performance.now()
-      const result = await run(flagship, rungRequest(flagship, rung), CERTIFIED_SIZE, previous)
+      const request = rungRequest(flagship, rung, combo => `${methodLabel(flagship, combo)}: rung ${rung.rung}`)
+      const result = await run(flagship, request, CERTIFIED_SIZE, previous)
       const wallMs = performance.now() - at
-      const childPeaksMb = pool.records().slice(-rungRequest(flagship, rung).variants.length).map(record => record.peakRssMb ?? 0)
+      const childPeaksMb = pool.records().slice(-(request.variants?.length ?? 2)).map(record => record.peakRssMb ?? 0)
       rungs.push({ rung: rung.rung, wallMs: Math.round(wallMs), servicePeakMb: stop(), childPeaksMb, words: wordsOf(result), stoppedBy: stoppedOf(result), robust: result.optionSet.options.map(option => option.robust === undefined ? null : option.robust.allPessimistic.holds) })
       expect(wallMs).toBeLessThanOrEqual(20_000)
       for (const peak of childPeaksMb) expect(peak).toBeLessThanOrEqual(CHILD_RSS_LIMIT_MB)
