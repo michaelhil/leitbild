@@ -38,17 +38,17 @@ describe('demo polish', () => {
     expect(text.match(/easing only one/g)?.length).toBe(1)
   })
 
-  test('3. a bound that says nothing gives no gap; an informative bound keeps its gap', () => {
+  test('3. a bound that says nothing gives no gap; a fixed-cost bound is said as the bound itself', () => {
     const model = trainAPlanned()
     const run = runBasis(model.inputs.settings.grid)
     const view = statusView(status({ word: 'validated feasible', run, goals: [
       { word: 'proven optimal', goal: 0, value: 0, unit: 'h', bound: { value: 0, source: 'logic+calendars', certificate: { kind: 'zero' } } },
-      // Hand values: NOK 472,650 against fixed costs of NOK 340,000 leaves NOK 132,650.
+      // Fixed costs of NOK 340,000 are paid by every plan: the bound is said, not NOK 472,650 - 340,000 as doubt.
       { word: 'best found under budget', goal: 1, value: 472650, unit: 'NOK', bound: { value: 340000, source: 'fixed-costs', certificate: { kind: 'fixed-costs', items: [{ key: 'charged', amount: 340000 }] } } },
       // The trivial bound: 0 h out of service, so the "gap" would be the whole 242.5 h.
       { word: 'best found under budget', goal: 2, value: 242.5, unit: 'h', bound: { value: 0, source: 'logic+calendars', certificate: { kind: 'zero' } } },
     ] }), contextOf(model))
-    expect(view.goals.map(goal => [goal.mark.word, goal.distance])).toEqual([['proven optimal', ''], ['best found', 'could be up to NOK 132,650 better'], ['best found', '']])
+    expect(view.goals.map(goal => [goal.mark.word, goal.distance])).toEqual([['proven optimal', ''], ['best found', 'no plan can cost less than NOK 340,000'], ['best found', '']])
   })
 
   test('4. fractional seconds on a routine screen are caught', () => {
@@ -59,10 +59,10 @@ describe('demo polish', () => {
   test('5. "Days only" is offered only when the plan has crew hours to buy', () => {
     const flagship = trainAPlanned()
     expect(crewHourPurchases(flagship.inputs).map(purchase => purchase.key)).toEqual(['ot-mech', 'contractor-nights'])
-    expect(readableText(renderHtml(PlanHeader, { context: contextOf(flagship), title: flagship.title, certified: null, onGenerate: none, onCancel: none }))).toContain('Days only')
+    expect(readableText(renderHtml(PlanHeader, { context: contextOf(flagship), title: flagship.title, size: null, onGenerate: none, onCancel: none }))).toContain('Days only')
     const trucks = supplyRunPlanned()
     expect(crewHourPurchases(trucks.inputs)).toEqual([])
-    expect(readableText(renderHtml(PlanHeader, { context: contextOf(trucks), title: trucks.title, certified: null, onGenerate: none, onCancel: none }))).not.toContain('Days only')
+    expect(readableText(renderHtml(PlanHeader, { context: contextOf(trucks), title: trucks.title, size: null, onGenerate: none, onCancel: none }))).not.toContain('Days only')
   })
 
   test('7. each result says which request made it, also after the controls have reset', () => {

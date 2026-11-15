@@ -68,9 +68,9 @@
     .notice { padding: 8px 12px; border-left: 3px solid var(--accent); background: var(--accent-2); font-size: 13px; }
     .loading { margin: 24px; color: var(--ink-3); }
     .outcome.refused { border-left-color: var(--refusal); }
-    .outcome { padding: 8px 12px; border-left: 3px solid var(--accent); background: var(--card); margin: 8px 0; font-size: 13px; overflow-wrap: anywhere; }
-    .outcome-title { font-weight: 600; margin: 0 0 4px; }
-    .outcome ul { margin: 0; padding-left: 18px; }
+    .outcome { padding: 6px 12px; border-left: 3px solid var(--accent); background: var(--card); margin: 6px 0 10px; font-size: 13px; overflow-wrap: anywhere; }
+    .outcome-title { font-weight: 600; margin: 0; }
+    .outcome ul { margin: 4px 0 0; padding-left: 18px; }
     .sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0; }
     .actions { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
     .field-pair { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
@@ -96,16 +96,34 @@
     .plan-list { list-style: none; padding: 0; }
     .plan-list li { border-top: 1px solid var(--line); padding: 12px 0; }
 
-    .plan-screen { max-width: 1800px; margin: 0 auto; padding: 16px 20px 40px; }
-    .back { margin-bottom: 8px; font-size: 12px; }
-    .plan-header { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 16px; margin-bottom: 12px; }
-    .plan-header .title-block { max-width: 760px; }
-    .plan-header .purpose { color: var(--ink-2); }
-    .plan-header .generate { background: var(--card); border: 1px solid var(--line); border-radius: 8px; padding: 12px; max-width: 520px; }
-    .screen-grid { display: grid; grid-template-columns: 320px minmax(0, 1fr) 340px; gap: 16px; align-items: start; }
+    .plan-screen { max-width: 1800px; margin: 0 auto; padding: 12px 20px 40px; }
+    .back { margin: 0 0 2px; font-size: 12px; }
+    /* The header: title and the Generate toolbar on one row, the purpose, then window, now, zone and size on one line. */
+    .plan-header { margin-bottom: 8px; }
+    .plan-header .title-row { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: 6px 24px; }
+    .plan-header h1 { font-size: clamp(20px, 1.8vw, 24px); margin: 0; }
+    .plan-header .purpose { color: var(--ink-2); margin: 2px 0 0; }
+    .plan-header .generate { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 14px; min-width: 0; }
+    .plan-header .generate .choice { margin: 0; }
+    .plan-header .generate .choice.radios legend { float: left; margin: 0 10px 0 0; line-height: 24px; }
+    .plan-header .generate label.inline { display: inline-flex; margin: 0 10px 0 0; font-size: 13px; line-height: 24px; }
+    .plan-header .generate label.days-only { margin-right: 0; }
+    .plan-header .generate .choice.list { display: flex; align-items: center; gap: 8px; position: relative; }
+    .context-line { display: flex; flex-wrap: wrap; gap: 2px 18px; align-items: baseline; margin-top: 2px; }
+    .size-evidence summary { cursor: pointer; }
+    .size-evidence p { margin: 4px 0 0; max-width: 620px; }
+    /* Attention on the left; the views and, under them, the work in the middle; the detail on the right. */
+    .screen-grid { display: grid; grid-template-columns: 300px minmax(0, 1fr) 360px; grid-template-rows: auto 1fr; grid-template-areas: "attention views views" "attention main panel"; gap: 10px 16px; align-items: start; }
+    /* With nothing open in the detail column, the work takes its width. */
+    .screen-grid.no-detail { grid-template-areas: "attention views views" "attention main main"; }
+    .screen-grid.no-detail .col-panel { display: none; }
+    .col-attention { grid-area: attention; }
+    .views { grid-area: views; }
+    .col-main { grid-area: main; }
+    .col-panel { grid-area: panel; }
     /* Each column is one track that may shrink to its box; long text wraps instead of widening it. */
-    .col-attention, .col-main, .col-panel, .desktop-only { min-width: 0; display: grid; grid-template-columns: minmax(0, 1fr); gap: 16px; align-content: start; }
-    .attention, .glance, .work-list, .options, .rules, .crews, .picker, .authoring, .job-panel, .preview, .shift-list, .shown-option, .timeline {
+    .col-attention, .col-main, .col-panel, .desktop-only { min-width: 0; display: grid; grid-template-columns: minmax(0, 1fr); gap: 12px; align-content: start; }
+    .attention, .glance, .work-list, .options, .rules, .crews, .picker, .authoring, .job-panel, .preview, .shift-list, .shown-option, .timeline, .options-glance, .finish-panel {
       background: var(--card); border: 1px solid var(--line); border-radius: 8px; padding: 14px; min-width: 0; overflow-wrap: anywhere;
     }
     .cards { list-style: none; padding: 0; margin: 0; display: grid; gap: 10px; }
@@ -114,22 +132,54 @@
     .card-text { color: var(--ink-2); font-size: 13px; margin-bottom: 6px; }
     .card-steps { font-size: 12px; padding-left: 18px; margin: 0 0 8px; }
     .card-actions { display: flex; flex-wrap: wrap; gap: 6px; }
-    .finish { margin-top: 14px; }
-    .chain { padding-left: 18px; font-size: 13px; }
-    .chain .when { color: var(--ink-3); margin-left: 4px; }
-    .chain .because { display: block; color: var(--ink-2); }
-    .views { display: flex; flex-wrap: wrap; gap: 6px; }
+    /* An explanation is a short list: the job (its only link), its time, one plain sentence. */
+    .limiting { font-size: 13px; padding: 8px 10px; background: var(--accent-2); border-radius: 6px; margin-bottom: 8px; }
+    .chain { list-style: none; padding: 0; margin: 0; font-size: 13px; }
+    .chain li { padding: 7px 0; border-top: 1px solid var(--line-2); }
+    .chain .step-name { font-weight: 600; }
+    .chain .when { color: var(--ink-3); }
+    .chain .because { color: var(--ink-2); }
+    .chain .due { display: block; margin-top: 2px; }
+    .proof-headline { font-weight: 600; color: var(--refusal); margin: 8px 0 4px; }
+    .proof-text { font-size: 13px; margin: 8px 0 2px; }
+    /* All views on one row: from 1280 px the row spans the work and the detail column, which holds them all. */
+    .views { display: flex; flex-wrap: nowrap; gap: 4px; min-width: 0; overflow-x: auto; padding: 3px; margin: -3px; }
+    .views button { flex: none; white-space: nowrap; min-height: 32px; padding: 4px 10px; font-size: 13px; }
     .views button.current { background: var(--accent); color: var(--on-accent); border-color: var(--accent); }
+    /* The options side by side: one row per option, a click shows it on the timeline. */
+    .options-glance { padding: 6px 12px 8px; }
+    .glance-scroll { overflow-x: auto; }
+    .options-glance table { width: 100%; border-collapse: collapse; font-size: 13px; overflow-wrap: break-word; }
+    .options-glance th, .options-glance td { padding: 5px 6px; text-align: left; vertical-align: top; border-top: 1px solid var(--line-2); font-weight: 400; }
+    .options-glance thead th { border-top: 0; font-size: 11px; font-weight: 600; color: var(--ink-3); vertical-align: bottom; line-height: 1.3; }
+    .options-glance .number { text-align: right; }
+    .options-glance tbody tr { cursor: pointer; }
+    .options-glance tbody tr.beside-row { cursor: default; font-size: 12px; }
+    .options-glance tbody tr.beside-row td { border-top: 0; padding-top: 0; }
+    .options-glance tbody tr:hover:not(.beside-row), .options-glance tr.selected { background: var(--accent-2); }
+    .options-glance tr.selected { box-shadow: inset 3px 0 var(--accent); }
+    .options-glance button.option-name { font-weight: 600; color: var(--ink); text-decoration: none; margin-right: 6px; }
+    .options-glance button.option-name:hover:not(:disabled) { background: none; text-decoration: underline; }
+    .options-glance td strong, .options-glance .goal-word { white-space: nowrap; }
+    .options-glance .cause { color: var(--refusal); }
+    .options-glance .status-cell { white-space: nowrap; }
+    .legend { margin: 6px 0 0; padding: 0 8px; font-size: 11px; color: var(--ink-3); }
+    .legend-word { font-weight: 600; }
     .status-line { display: flex; flex-wrap: wrap; gap: 6px; align-items: baseline; }
     .goals { padding-left: 18px; font-size: 13px; }
     .goals .distance { color: var(--ink-3); }
     .details { padding-left: 18px; font-size: 13px; }
     .beside, .stale { font-size: 12px; }
 
-    .timeline { overflow-x: auto; }
-    .lane, .axis { display: grid; grid-template-columns: 220px minmax(520px, 1fr); gap: 8px; align-items: center; min-height: 26px; border-bottom: 1px solid var(--line-2); }
+    /* The right padding holds the last tick's label, so a label at the window's end never starts a scroll bar. */
+    .timeline { overflow-x: auto; padding: 8px 52px 12px 12px; }
+    .lane, .axis { display: grid; grid-template-columns: 200px minmax(380px, 1fr); gap: 8px; align-items: center; min-height: 24px; border-bottom: 1px solid var(--line-2); }
     .axis { border-bottom: 1px solid var(--line); font-size: 10px; color: var(--ink-3); min-height: 30px; }
-    .lane-heading { margin: 12px 0 4px; }
+    .lane-heading { margin: 10px 0 2px; }
+    .lane-heading .key { display: inline; margin-left: 8px; }
+    .group-head { margin: 6px 0 0; font-size: 12px; }
+    .lane-summary { color: var(--ink-3); font-size: 11px; }
+    .group-lane .lane-label { color: var(--ink-3); }
     .lane-label { font-size: 11px; overflow: hidden; text-overflow: ellipsis; }
     .lane-label small { white-space: normal; }
     .track { position: relative; display: block; height: 22px; }
@@ -138,7 +188,8 @@
     .now { position: absolute; top: 0; bottom: 0; border-left: 2px dashed var(--focus); padding-left: 3px; color: var(--focus); white-space: nowrap; top: 14px; }
     .span-bar { position: absolute; top: 4px; height: 14px; background: repeating-linear-gradient(45deg, #b9c9d9, #b9c9d9 4px, #d6e1ea 4px, #d6e1ea 8px); border: 1px solid #7d95ab; }
     .span-bar.over { border: 2px solid var(--refusal); }
-    .out-bar { position: absolute; top: 6px; height: 10px; background: #9fb3c4; }
+    /* An item's outage is a band behind the bars of the jobs on it. */
+    .out-bar { position: absolute; top: 2px; bottom: 2px; background: #dfe7ee; border-radius: 2px; }
     .limit { position: absolute; top: 0; font-size: 12px; transform: translateX(-50%); }
     .limit.hard { color: var(--rule); }
     .limit.guideline { color: var(--estimate); }
@@ -146,11 +197,13 @@
     .load-bar { position: absolute; top: 4px; height: 14px; background: var(--load-fill); border: 1px solid var(--load-line); font-size: 9px; color: var(--load-text); text-align: center; line-height: 12px; overflow: hidden; }
     .load-bar.bought { background: var(--load-bought-fill); border-color: var(--load-bought-line); color: var(--load-bought-text); }
     .load-bar.over { border: 2px solid var(--refusal); }
-    .job-bar { position: absolute; top: 3px; height: 16px; min-height: 0; padding: 0; border-radius: 3px; background: #6f9f86; border: 1px solid #4f7f66; }
+    .job-bar { position: absolute; top: 3px; height: 14px; min-height: 0; padding: 0; border-radius: 3px; background: #6f9f86; border: 1px solid #4f7f66; }
+    .job-bar:hover:not(:disabled) { background: var(--accent); }
+    .job-bar.current { outline: 2px solid var(--focus); outline-offset: 1px; }
     .job-bar.kind-tag-out { background: #b8a26a; border-color: #8f7c48; }
     .job-bar.kind-test { background: #5d7fa6; border-color: #3f5f84; border-radius: 8px; }
     .job-bar.locked { outline: 2px solid var(--ink); }
-    .job-lane.selected { background: var(--accent-2); }
+    .job-lane.selected, .item-lane.selected { background: var(--accent-2); }
 
     .work-list ul, .item-list, .rule-list, .option-list { list-style: none; padding: 0; margin: 0; }
     .work-list li, .item-list li, .rule-list li, .option-list > li { border-top: 1px solid var(--line-2); padding: 8px 0; }
@@ -190,20 +243,26 @@
     .choice-options li button[aria-pressed='true'] { background: var(--accent-2); font-weight: 600; }
     .choice.radios label.inline { margin-bottom: 4px; }
     a.name { color: var(--accent); text-decoration: underline; text-underline-offset: 2px; }
+    /* A name inside a sentence of causes: selectable, and quiet until pointed at or focused. */
+    a.name.quiet { color: var(--ink); font-weight: 500; text-decoration: none; }
+    a.name.quiet:hover, a.name.quiet:focus-visible { color: var(--accent); text-decoration: underline; }
     .phone-only { display: none; }
 
-    @media (max-width: 1280px) {
-      .screen-grid { grid-template-columns: 300px minmax(0, 1fr); }
-      .col-panel { grid-column: 1 / -1; }
+    /* Below 1280 px the detail column stacks under the other two; on a phone everything is one column. */
+    @media (max-width: 1279px) {
+      .screen-grid, .screen-grid.no-detail { grid-template-columns: 300px minmax(0, 1fr); grid-template-rows: auto 1fr auto; grid-template-areas: "attention views" "attention main" "panel panel"; }
+      /* A narrower row wraps, so no view is out of sight. */
+      .views { flex-wrap: wrap; overflow-x: visible; }
     }
     @media (max-width: 760px) {
       .plan-screen { padding: 12px; }
-      .screen-grid { grid-template-columns: minmax(0, 1fr); }
+      .screen-grid, .screen-grid.no-detail { grid-template-columns: minmax(0, 1fr); grid-template-rows: auto; grid-template-areas: "attention" "views" "main" "panel"; }
       .desktop-only { display: none; }
       .phone-only { display: block; }
       .field-pair { grid-template-columns: minmax(0, 1fr); }
       button, input, select { min-height: 42px; }
-      .plan-header .generate { max-width: none; width: 100%; }
+      .plan-header .generate { width: 100%; }
+      .plan-header .generate .choice.radios legend { float: none; }
     }
   }
 </style>

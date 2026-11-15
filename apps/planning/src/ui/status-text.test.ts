@@ -3,7 +3,7 @@ import { statusWordSchema } from '../plan/schema.ts'
 import { runBasis, status, trainAInputs } from './fixtures/plans.ts'
 import { createTimeFormat } from './format.ts'
 import { createNames } from './model.ts'
-import { certificateText, goalOrderText, statusView, type Context } from './status-text.ts'
+import { certificateText, goalName, goalOrderText, statusView, type Context } from './status-text.ts'
 
 const inputs = trainAInputs()
 const context: Context = { inputs, names: createNames(inputs), format: createTimeFormat(inputs.settings.timeZone) }
@@ -26,7 +26,7 @@ describe('status in words, from structure', () => {
   })
 
   test('each goal says how far from the best it can be', () => {
-    // Hand values: goal 1 at its bound; goal 2 NOK 39,200 above a bound of NOK 425,050.
+    // Hand values: goal 1 at its bound; goal 2 above fixed costs of NOK 425,050, which every plan pays.
     const view = statusView(status({
       word: 'validated feasible', run,
       goals: [
@@ -38,10 +38,12 @@ describe('status in words, from structure', () => {
     expect(view.goals.map(goal => [goal.mark.word, goal.distance])).toEqual([
       // One word per goal; the gap only when it is positive; never "best possible" (maint's walk 4, N4-1).
       ['proven optimal', ''],
-      ['best found', 'could be up to NOK 39,200 better'],
+      ['best found', 'no plan can cost less than NOK 425,050'],
       ['best found', ''],
     ])
-    expect(view.goals[0]!.name).toBe('time over the 54 h guideline for Train A cooling chain (SW A, CCW A and HX A, RHR A, HHSI A)')
+    // Short names on the main screen; the full wording is said once, in Rules and goals.
+    expect(view.goals.map(goal => goal.name)).toEqual(['Over the 54 h guideline', 'Extra cost', 'Equipment-hours out of service'])
+    expect(goalName(context.inputs.goals[0]!, context)).toBe('time over the 54 h guideline for Train A cooling chain (SW A, CCW A and HX A, RHR A, HHSI A)')
     expect(view.run).toBe('The search ran to the end.')
   })
 

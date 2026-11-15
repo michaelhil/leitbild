@@ -101,6 +101,12 @@ export const goalsEdit = (goals: readonly GoalChoice[], currency: string): Built
 // ───────────── equipment, crews and tools from World ─────────────
 export interface EquipmentForm { readonly group: string; readonly newGroup: string }
 
+/** How a World item is already in this plan, if it is: "equipment", "a crew or tool", or both. */
+export const addedAs = (inputs: PlanInputs, locator: string): string | null => {
+  const roles = [...inputs.equipment.some(item => item.locator === locator) ? ['equipment'] : [], ...inputs.resources.some(item => item.locator === locator) ? ['a crew or tool'] : []]
+  return roles.length === 0 ? null : roles.join(' and ')
+}
+
 export const equipmentFromWorld = (subject: PlanningSubject, form: EquipmentForm, inputs: PlanInputs): Built => {
   if (inputs.equipment.some(item => item.locator === subject.locator)) return refuse(`${subject.label} is already in the plan.`)
   const keys = allKeys(inputs)

@@ -1,5 +1,6 @@
 // The coordinated timeline: availability lanes per function group with their limit and guideline marks,
-// load lanes per crew or tool with their shifts, and one bar per job. Pure; positions are percentages.
+// each equipment item's row with its outage and the jobs on it, a row for each job on no equipment, and
+// load lanes per crew or tool with their shifts. Pure; positions are percentages.
 import type { PlanInputs } from '../plan/schema.ts'
 import { expandCalendar } from '../time/calendar.ts'
 import { gridSlotMs, isTimeUnit, timeUnitMs } from '../time/units.ts'
@@ -12,7 +13,16 @@ const hourMs = timeUnitMs.h
 export interface Bar { readonly left: number; readonly width: number; readonly text: string }
 export interface Tick { readonly left: number; readonly label: string }
 
-export interface ItemLane { readonly label: string; readonly segments: readonly Bar[] }
+/** A job's bar in an equipment row; bars that overlap in time sit on different levels of the row. */
+export interface PlacedJob extends JobBar { readonly level: number }
+export interface ItemLane {
+  readonly label: string
+  readonly segments: readonly Bar[]
+  /** The jobs on this item, each a bar in its row. */
+  readonly jobs: readonly PlacedJob[]
+  /** How many levels the row needs so no two of its bars overlap; at least 1. */
+  readonly levels: number
+}
 export interface AvailabilityLane {
   readonly group: string
   /** "Out 54 h of 72 h allowed; 18 h margin; within the 54 h guideline", or the limits before a plan exists. */
@@ -46,7 +56,10 @@ export interface TimelineLayout {
   readonly now: Tick | null
   readonly availability: readonly AvailabilityLane[]
   readonly loads: readonly LoadLane[]
+  /** Every scheduled job, in start order. */
   readonly jobs: readonly JobBar[]
+  /** The jobs that are on no equipment row: each gets a row of its own. */
+  readonly otherJobs: readonly JobBar[]
 }
 
 export const jobMark = (kind: Job['kind']): Mark => ({
@@ -139,6 +152,29 @@ export const layoutTimeline = (inputs: PlanInputs, rows: readonly DatedRow[], fo
   const resources = new Map(inputs.resources.map(resource => [resource.key, resource]))
   const jobs = new Map(inputs.jobs.map(job => [job.key, job]))
 
+  // One bar per scheduled job, in start order.
+  const bars = [...rows].sort((left, right) => Date.parse(left.start) - Date.parse(right.start)).flatMap((row): JobBar[] => {
+    const job = jobs.get(row.job)
+    if (job === undefined) return []
+    const who = [...new Set(row.uses.map(use => resources.get(use.resource)?.label).filter(label => label !== undefined))]
+    return [{
+      key: job.key, title: job.title, mark: jobMark(job.kind), who: joinWords(who), locked: job.lock !== undefined,
+      ...position(Date.parse(row.start), Date.parse(row.finish)), text: `${job.title}: ${format.range(row.start, row.finish)}`,
+    }]
+  })
+
+  /** The bars of the jobs on one item, levelled so that bars overlapping in time do not cover each other. */
+  const jobsOn = (item: string): { readonly jobs: readonly PlacedJob[]; readonly levels: number } => {
+    const ends: number[] = []
+    const placed = bars.filter(bar => jobs.get(bar.key)?.equipment.includes(item)).map((bar): PlacedJob => {
+      const free = ends.findIndex(end => end <= bar.left + 1e-9)
+      const level = free === -1 ? ends.length : free
+      ends[level] = bar.left + bar.width
+      return { ...bar, level }
+    })
+    return { jobs: placed, levels: Math.max(1, ends.length) }
+  }
+
   // Availability per function group.
   const outages = outagesWithSupport(inputs, ownOutages(inputs, rows, from, to))
   const laneFor = (label: string, members: readonly PlanInputs['equipment'][number][], group: string | null): AvailabilityLane | null => {
@@ -148,8 +184,9 @@ export const layoutTimeline = (inputs: PlanInputs, rows: readonly DatedRow[], fo
     const guidelineMs = guideline?.threshold !== undefined && isTimeUnit(guideline.threshold.unit) ? guideline.threshold.value * timeUnitMs[guideline.threshold.unit] : null
     const items = members.flatMap((item): ItemLane[] => {
       const intervals = outages.get(item.key) ?? []
-      if (group === null && intervals.length === 0) return []
-      return [{ label: item.label, segments: intervals.map(interval => ({ ...position(interval.start, interval.end), text: `${item.label} out ${format.range(interval.start, interval.end)}` })) }]
+      const on = jobsOn(item.key)
+      if (group === null && intervals.length === 0 && on.jobs.length === 0) return []
+      return [{ label: item.label, segments: intervals.map(interval => ({ ...position(interval.start, interval.end), text: `${item.label} out ${format.range(interval.start, interval.end)}` })), ...on }]
     })
     if (items.length === 0) return null
     const all = members.flatMap(item => outages.get(item.key) ?? [])
@@ -221,21 +258,11 @@ export const layoutTimeline = (inputs: PlanInputs, rows: readonly DatedRow[], fo
     }
   })
 
-  // One bar per scheduled job, in start order.
-  const bars = [...rows].sort((left, right) => Date.parse(left.start) - Date.parse(right.start)).flatMap((row): JobBar[] => {
-    const job = jobs.get(row.job)
-    if (job === undefined) return []
-    const who = [...new Set(row.uses.map(use => resources.get(use.resource)?.label).filter(label => label !== undefined))]
-    return [{
-      key: job.key, title: job.title, mark: jobMark(job.kind), who: joinWords(who), locked: job.lock !== undefined,
-      ...position(Date.parse(row.start), Date.parse(row.finish)), text: `${job.title}: ${format.range(row.start, row.finish)}`,
-    }]
-  })
-
   const dataDate = inputs.settings.dataDate === null ? null : Date.parse(inputs.settings.dataDate)
   return {
     from, to, ticks: ticksFor(from, to, format),
     now: dataDate !== null && dataDate >= from && dataDate <= to ? { left: (dataDate - from) / length * 100, label: `Now: ${format.clock(dataDate)}` } : null,
     availability, loads, jobs: bars,
+    otherJobs: bars.filter(bar => !availability.some(lane => lane.items.some(item => item.jobs.some(job => job.key === bar.key)))),
   }
 }

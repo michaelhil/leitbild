@@ -121,7 +121,7 @@ export const attentionCards = (model: PlanModel, context: Context, wallNowMs: nu
         ? `${recommended.label}: ${view.word}.`
         : `${recommended.label} was made before the latest change; generate again for a current status.`,
       text: recommended.fresh && first !== undefined
-        ? `Least ${first.name}: ${goalResult(first)}.`
+        ? `${first.name}: ${goalResult(first)}.`
         : recommended.fresh ? `${view.sentence} ${view.details.join(' ')}`.trim() : '',
       steps: warnings,
       actions: recommended.fresh && recommended.status.word === 'validated feasible' ? ['why-finish'] : ['generate'],

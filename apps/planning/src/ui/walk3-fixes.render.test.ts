@@ -14,13 +14,15 @@ import { modelOf, runBasis, status, supplyRunInputs, trainAPlanned } from './fix
 import { readableText, registerSvelte, renderHtml, routineBreaches } from './fixtures/svelte-ssr.ts'
 import { createTimeFormat } from './format.ts'
 import { createNames, type PlanModel } from './model.ts'
+import { jobsPerSolve } from '../plan/summary.ts'
+import { planSizeLine } from './size-text.ts'
 import { outcomeBanner } from './outcome.ts'
 import type { Preview } from './preview.ts'
 import type { Context } from './status-text.ts'
 
 registerSvelte()
 type Any = Component<Record<string, unknown>>
-const { default: AttentionColumn } = await import('./AttentionColumn.svelte') as { default: Any }
+const { default: FinishPanel } = await import('./FinishPanel.svelte') as { default: Any }
 const { default: EditPreview } = await import('./EditPreview.svelte') as { default: Any }
 const { default: EquipmentPicker } = await import('./EquipmentPicker.svelte') as { default: Any }
 const { default: PlanHeader } = await import('./PlanHeader.svelte') as { default: Any }
@@ -92,8 +94,8 @@ describe("maint's third walk, screen defects", () => {
       { job: 'SWA-PUMP-OUT', start: rows[1]!.start, finish: rows[1]!.finish, floatHours: 0, joint: false, because: [{ kind: 'crew', about: [{ kind: 'resource', key: 'mech-station' }] }, { kind: 'tool', about: [{ kind: 'resource', key: 'crane' }] }] },
       { job: 'SWA-TAG', start: rows[0]!.start, finish: rows[0]!.finish, floatHours: 0, joint: false, because: [{ kind: 'span-limit', about: [{ kind: 'rule', key: 'R2' }] }] },
     ] }
-    const html = renderHtml(AttentionColumn, { cards: [], finish: finishChain(result, context), limiting: mostLimiting(result, context), onAction: none, onPick: none })
-    const names = [...html.matchAll(/<a class="name" href="[^"]*"[^>]*>([^<]*)<\/a>/g)].map(match => match[1])
+    const html = renderHtml(FinishPanel, { steps: finishChain(result, context), limiting: mostLimiting(result, context), onPick: none, onClose: none })
+    const names = [...html.matchAll(/<a class="name[^"]*" href="[^"]*"[^>]*>([^<]*)<\/a>/g)].map(match => match[1])
     expect(names).toEqual(expect.arrayContaining(['Station mechanical crew', 'Pull SW A pump assembly', '60 t mobile crane with operator and rigger', 'Restore SW A, fill and vent, pump test']))
     expect(partsText(mostLimiting(result, context)!.parts)).toBe('Most limiting: the finish waits on Restore SW A, fill and vent, pump test: Station mechanical crew is busy with Pull SW A pump assembly.')
     expect(readableText(html)).toContain('Most limiting: the finish waits on')
@@ -125,12 +127,13 @@ describe("maint's third walk, screen defects", () => {
     const css = readFileSync(join(import.meta.dir, 'App.svelte'), 'utf8')
     expect(css).toContain('button.primary:hover:not(:disabled) { background: var(--accent-strong);')
     const size = { decided: true, family: 'single-train work weeks', maxJobs: 33, evidence: 'measured 11 Nov', limitJobs: 60 }
-    const header = readableText(renderHtml(PlanHeader, { context: contextOf(model), title: model.title, certified: { text: 'Certified for plans of up to 33 jobs in one solve (single-train work weeks).', measured: null, evidence: size.evidence, plan: 'x' }, onGenerate: none, onCancel: none }))
-    expect(header).toContain('Certified for plans of up to 33 jobs in one solve')
-    expect(header).not.toContain('Measured: up to')
+    const header = readableText(renderHtml(PlanHeader, { context: contextOf(model), title: model.title, size: { line: planSizeLine(size, model.inputs), evidence: size.evidence }, onGenerate: none, onCancel: none }))
+    expect(header).toContain('certified up to 33, handles up to 60 with a caution')
+    expect(header).not.toContain('measured up to')
     const client = createPlanningClient('0b4b9a52-2f7e-4c1a-9d3e-00000000000a', async () => { throw new Error('No Host in a render test') })
     const screen = readableText(renderHtml(PlanScreen, { client, planId: model.id, initial: { ...model, certifiedSize: size }, onChanged: none, onOpenWorkspace: none, onOpenLibrary: none }))
     // Hand count: the fragment's jobs, with one of the two SW A methods per solve.
-    expect(screen).toMatch(/This plan: \d+ jobs in one solve, within the certified size\./)
+    expect(screen).toContain(`Plan size: ${jobsPerSolve(model.inputs)} jobs · certified up to 33, handles up to 60 with a caution`)
+    expect(screen).not.toContain('above the certified size')
   })
 })

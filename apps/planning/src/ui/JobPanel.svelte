@@ -99,7 +99,7 @@
       <button type="button" disabled={busy} onclick={() => onWhy(job.key)}>Why does it start then?</button>
       {#if why}
         <div class="why">
-          <p><Said parts={why.parts} {onPick} /></p>
+          <p><Said parts={why.parts} {onPick} quiet /></p>
         </div>
       {/if}
     {:else}

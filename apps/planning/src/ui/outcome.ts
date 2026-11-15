@@ -22,13 +22,43 @@ export interface Outcome {
  * list is for the explain view, the sentences belong where the planner looks first. For a span limit the
  * hours are in the second sentence ("The shortest span this plan allows is 80.5 h, against 72 h …").
  */
-const lead = (lines: readonly string[] | undefined): string | null => {
+const opening = (lines: readonly string[] | undefined): readonly string[] => {
   const sentences: string[] = []
   for (const line of (lines ?? []).map(entry => entry.trim()).filter(entry => entry !== '')) {
     if (line.startsWith('- ') || line.endsWith(':') || sentences.length === 2) break
-    sentences.push(line)
+    sentences.push(line.replace(/^Not possible:\s*/, ''))
   }
-  return sentences.length === 0 ? null : sentences.join(' ').replace(/^Not possible:\s*/, '')
+  return sentences
+}
+const lead = (lines: readonly string[] | undefined): string | null => opening(lines).length === 0 ? null : opening(lines).join(' ')
+
+/**
+ * The refusal in one line, the one that carries its hours: the last of its opening sentences ("The shortest
+ * span this plan allows is 80.5 h, against 72 h: …", or "6 jobs … need 37 h of work, but … only 32 h.").
+ */
+export const refusalLine = (lines: readonly string[] | undefined): string | null => opening(lines).at(-1) ?? null
+
+export interface ProofStep { readonly name: string; readonly detail: string; /** The job this step names, when exactly one job has that title. */ readonly job: string | null }
+export interface ProofPart { readonly text: string | null; readonly steps: readonly ProofStep[] }
+export interface RefusalProof { readonly headline: string; readonly parts: readonly ProofPart[] }
+
+/**
+ * A refusal as a list: "Not possible: …" with its hours first, then what the Module said, each list of jobs
+ * as rows of a name and its times. The words are the Module's; only their form is the screen's.
+ */
+export const refusalProof = (lines: readonly string[] | undefined, context: Context): RefusalProof | null => {
+  const line = refusalLine(lines)
+  if (line === null) return null
+  const parts: Array<{ text: string | null; steps: ProofStep[] }> = []
+  for (const entry of (lines ?? []).map(item => item.trim().replace(/^Not possible:\s*/, '')).filter(item => item !== '' && item !== line)) {
+    if (!entry.startsWith('- ')) { parts.push({ text: entry, steps: [] }); continue }
+    const cut = entry.lastIndexOf(': ')
+    const name = cut === -1 ? entry.slice(2) : entry.slice(2, cut)
+    const named = context.inputs.jobs.filter(job => job.title === name)
+    const last = parts.at(-1) ?? parts[parts.push({ text: null, steps: [] }) - 1]!
+    last.steps.push({ name, detail: cut === -1 ? '' : entry.slice(cut + 2), job: named.length === 1 ? named[0]!.key : null })
+  }
+  return { headline: `Not possible: ${line}`, parts }
 }
 
 export const outcomeOf = (option: OptionView, model: PlanModel, context: Context): Outcome => {
@@ -37,7 +67,7 @@ export const outcomeOf = (option: OptionView, model: PlanModel, context: Context
   const first = view.goals[0]
   const cause = option.status.word === 'proven infeasible'
     ? lead(model.refusals[option.key]) ?? certificateText(option.status.cause, context)
-    : first !== undefined ? `least ${first.name}: ${goalResult(first)}` : [view.sentence, view.details[0]].filter(part => part !== undefined).join(' ')
+    : first !== undefined ? `${first.name}: ${goalResult(first)}` : [view.sentence, view.details[0]].filter(part => part !== undefined).join(' ')
   return { key: option.key, label: option.label, mark: view.mark, word: view.word, cause, recommended }
 }
 

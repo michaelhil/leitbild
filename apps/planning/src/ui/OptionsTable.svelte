@@ -1,16 +1,21 @@
 <script lang="ts">
   import MarkTag from './MarkTag.svelte'
   import type { OptionView } from './model.ts'
+  import type { NameKind } from './explain-text.ts'
+  import { refusalProof } from './outcome.ts'
   import { requestText } from './request.ts'
   import StatusBlock from './StatusBlock.svelte'
-  import { goalOrderText, statusView, type Context } from './status-text.ts'
+  import { goalOrderShort, statusView, type Context } from './status-text.ts'
 
   // The latest options, each with its status rendered from structure, its warnings beside the status,
   // and a baseline only for an option that is validated feasible on the current inputs.
-  let { options, recommended, context, selected = null, busy = false, onSelect, onBaseline }: {
+  let { options, recommended, context, refusals = {}, selected = null, busy = false, onSelect, onBaseline, onPick }: {
     options: readonly OptionView[]
     recommended: string | null
     context: Context
+    /** Each refused option's refusal in the Module's words; shown as a list under its status. */
+    refusals?: Readonly<Record<string, readonly string[]>>
+    onPick?: ((kind: NameKind, key: string) => void) | undefined
     selected?: string | null
     busy?: boolean
     onSelect: (option: string) => void
@@ -25,7 +30,7 @@
 
 <section class="options" aria-labelledby="options-title">
   <h2 id="options-title">Options</h2>
-  <p class="hint">Goals in order: {goalOrderText(context.inputs.goals, context).join(' ')}</p>
+  <p class="hint">Goals in order: {goalOrderShort(context.inputs.goals, context).join(' · ')}. Their full wording is in Rules and goals.</p>
   {#if options.length === 0}
     <p class="hint">No options yet. Generate makes them.</p>
   {/if}
@@ -41,7 +46,7 @@
           {/if}
         </div>
         {#if requestText(option, context.inputs)}<p class="hint">{requestText(option, context.inputs)}</p>{/if}
-        <StatusBlock {view} warnings={option.warnings.map(warning => warning.text)} stale={!option.fresh} />
+        <StatusBlock {view} warnings={option.warnings.map(warning => warning.text)} stale={!option.fresh} proof={option.status.word === 'proven infeasible' ? refusalProof(refusals[option.key], context) : null} {onPick} />
         {#if baselineFor === option.key}
           <form class="mini-form" onsubmit={(event) => { event.preventDefault(); onBaseline(option.key, name.trim(), note.trim()); baselineFor = null }}>
             <h3>Baseline</h3>

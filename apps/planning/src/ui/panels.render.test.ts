@@ -8,7 +8,8 @@ import { whyStart } from './explain-text.ts'
 import { optionOf, runBasis, status, supplyRunPlanned, trainAPlanned } from './fixtures/plans.ts'
 import { readableText, registerSvelte, renderHtml } from './fixtures/svelte-ssr.ts'
 import { createTimeFormat } from './format.ts'
-import { certifiedSizeWords, measuredSizeWords } from '../plan/summary.ts'
+import { jobsPerSolve } from '../plan/summary.ts'
+import { planSizeLine } from './size-text.ts'
 import { createNames } from './model.ts'
 import type { Preview } from './preview.ts'
 import type { Context } from './status-text.ts'
@@ -142,11 +143,13 @@ describe('panels', () => {
 describe('the plan header', () => {
   test('says the certified size in one line, the evidence only behind its details', () => {
     const size = { decided: true, family: 'one system window', maxJobs: 33, evidence: 'Measured 11 Nov on single-train work weeks.', limitJobs: 40 }
-    const html = renderHtml(PlanHeader, { context, title: model.title, certified: { text: certifiedSizeWords(size), measured: measuredSizeWords(size), evidence: size.evidence }, onGenerate: () => {}, onCancel: () => {} })
-    expect(html).toContain('<p class="hint">Certified for plans of up to 33 jobs in one solve; handles up to 40 with a caution.</p>')
-    expect(html).not.toContain('Measured: up to')
+    const html = renderHtml(PlanHeader, { context, title: model.title, size: { line: planSizeLine(size, model.inputs), evidence: size.evidence }, onGenerate: () => {}, onCancel: () => {} })
+    // The job count is the fixture's own, counted as Generate counts it.
+    expect(html).toContain(`<span class="plan-size">Plan size: ${jobsPerSolve(model.inputs)} jobs · certified up to 33, handles up to 40 with a caution</span>`)
     expect(html).not.toContain('pending')
-    expect(html).toMatch(/<details class="hint"><summary>How the size was measured<\/summary><p>Measured 11 Nov/)
+    // The main screen says neither "in one solve" nor "system window" (demo layout pass, item 2).
+    expect(readableText(html)).not.toMatch(/in one solve|system window/)
+    expect(html).toMatch(/<details class="size-evidence"><summary>How the size was measured<\/summary><p>Measured 11 Nov/)
     expect(html.split('Measured 11 Nov').length).toBe(2)
   })
 })

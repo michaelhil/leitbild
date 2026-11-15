@@ -10,10 +10,13 @@
   import EquipmentPicker from './EquipmentPicker.svelte'
   import Glance from './Glance.svelte'
   import { glance } from './orientation.ts'
-  import { outcomeBanner } from './outcome.ts'
+  import FinishPanel from './FinishPanel.svelte'
+  import OptionsGlance from './OptionsGlance.svelte'
+  import { optionsGlance } from './options-glance.ts'
+  import { outcomeBanner, refusalProof } from './outcome.ts'
   import type { FinishStep, NameKind, Part, WhyStart } from './explain-text.ts'
   import { createTimeFormat } from './format.ts'
-  import { certifiedSizeWords, jobsPerSolve, measuredSizeWords, withinCertifiedSize } from '../plan/summary.ts'
+  import { planSizeLine } from './size-text.ts'
   import JobForm from './JobForm.svelte'
   import JobPanel from './JobPanel.svelte'
   import { createNames, type PlanModel, type PlanView, type RunChoice } from './model.ts'
@@ -33,6 +36,13 @@
   import Timeline from './Timeline.svelte'
   import { layoutTimeline } from './timeline-layout.ts'
   import WorkList from './WorkList.svelte'
+
+  /**
+   * With no option to recommend, the first current option that has no schedule is the one whose status and
+   * proof show in the detail column, so the reason is on the screen without a click. It has no rows to read.
+   */
+  const firstRefused = (plan: PlanModel | null): string | null =>
+    plan?.options?.items.find(option => option.fresh && option.status.word !== 'validated feasible')?.key ?? null
 
   let { client, planId, initial = null, initialRuns = [], initialView = 'schedule', onChanged, onOpenWorkspace, onOpenLibrary }: {
     client: PlanningClient
@@ -54,7 +64,7 @@
   let view = $state<PlanView>(initialView)
   let selectedJob = $state<string | null>(null)
   // svelte-ignore state_referenced_locally
-  let selectedOption = $state<string | null>(initial?.options?.recommended ?? null)
+  let selectedOption = $state<string | null>(initial?.options?.recommended ?? firstRefused(initial))
   let busy = $state(false)
   let generating = $state<AbortController | null>(null)
   let error = $state<string | null>(null)
@@ -67,12 +77,21 @@
   /** Counts applied changes; the forms are keyed on it so each starts empty after an Apply. */
   let applied = $state(0)
   let panel = $state<HTMLElement | undefined>(undefined)
+  /**
+   * At 1280 px and wider the screen has a detail column on the right: the shown option's status sits there
+   * beside the timeline. Below that the columns stack and it stays above the timeline.
+   */
+  let wide = $state(false)
 
-  /** After a preview or a selected job appears, bring the panel into view and focus its heading. */
-  const reveal = (): void => {
+  /**
+   * After a preview, a selected job or an explanation appears, bring it into view and focus its heading.
+   * `card` names the one that opened when the detail column holds more than one.
+   */
+  const reveal = (card?: string): void => {
     // After the panel has rendered and laid out, so its heading has its final place on the page.
     void tick().then(() => requestAnimationFrame(() => {
-      if (panel !== undefined) revealPanel(panel, window.matchMedia('(prefers-reduced-motion: reduce)').matches)
+      const opened = card === undefined ? panel : panel?.querySelector<HTMLElement>(card) ?? panel
+      if (opened !== undefined) revealPanel(opened, window.matchMedia('(prefers-reduced-motion: reduce)').matches, wide ? 'nearest' : 'start')
     }))
   }
   /**
@@ -92,7 +111,7 @@
   const selectJob = (job: string): void => {
     selectedJob = job
     why = null
-    reveal()
+    reveal('.job-panel')
   }
 
   const context = $derived<Context | null>(model === null ? null : { inputs: model.inputs, names: createNames(model.inputs), format: createTimeFormat(model.inputs.settings.timeZone) })
@@ -103,11 +122,12 @@
   const shifts = $derived(model !== null && context !== null ? shiftList(model.inputs, rows, context.format) : [])
   const shown = $derived(model?.options?.items.find(option => option.key === selectedOption) ?? null)
   const linkedRun = $derived(model?.inputs.settings.run ? runs.find(run => run.id === model?.inputs.settings.run?.id)?.title ?? null : null)
-  const certified = $derived(model?.certifiedSize ? {
-    text: certifiedSizeWords(model.certifiedSize), measured: measuredSizeWords(model.certifiedSize), evidence: model.certifiedSize.evidence,
-    // Plainly whether this plan is inside the measured size (maint's walk 3, R2-9-01).
-    plan: `This plan: ${jobsPerSolve(model.inputs)} ${jobsPerSolve(model.inputs) === 1 ? 'job' : 'jobs'} in one solve, ${withinCertifiedSize(model.inputs, model.certifiedSize) ? 'within' : 'above'} the ${model.certifiedSize.decided ? 'certified' : 'measured'} size.`,
-  } : null)
+  // Plainly whether this plan is inside the certified size (maint's walk 3, R2-9-01), in one line.
+  const size = $derived(model?.certifiedSize ? { line: planSizeLine(model.certifiedSize, model.inputs), evidence: model.certifiedSize.evidence } : null)
+  /** Whether the detail column has anything in it; when it has not, the work takes its width. */
+  const detailOpen = $derived(preview !== null || selectedJob !== null || finish !== null || (wide && view === 'schedule' && shown !== null))
+  const compared = $derived(model !== null && context !== null ? optionsGlance(model, context) : null)
+  const proof = $derived(model !== null && context !== null && shown?.status.word === 'proven infeasible' ? refusalProof(model.refusals[shown.key], context) : null)
 
   const views: ReadonlyArray<{ key: PlanView; word: string }> = [
     { key: 'schedule', word: 'Schedule' }, { key: 'add', word: 'Add jobs and links' }, { key: 'equipment', word: 'Equipment and World' },
@@ -117,7 +137,7 @@
   const actions = $derived(createPlanActions(client, planId, text => { notice = text }))
   const show = (shown: Shown): void => {
     model = shown.model
-    selectedOption = shown.option
+    selectedOption = shown.option ?? firstRefused(shown.model)
     if (shown.notice !== null) notice = shown.notice
     finish = null
     why = null
@@ -137,10 +157,15 @@
   }
 
   onMount(() => {
+    const detailColumn = window.matchMedia('(min-width: 1280px)')
+    const follow = (): void => { wide = detailColumn.matches }
+    follow()
+    detailColumn.addEventListener('change', follow)
     void attempt(async () => {
       if (model === null) show(await actions.load(null))
       runs = await actions.runs(model?.inputs.settings.scenario?.id)
     })
+    return () => detailColumn.removeEventListener('change', follow)
   })
 
   const gate = createPreviewGate()
@@ -154,7 +179,7 @@
   const runPreview = (edits: readonly Edit[], label: string): void => withModel(async current => {
     pending = edits
     preview = await actions.preview(current, edits, label)
-    reveal()
+    reveal('.preview')
   })
   const apply = (authority: { name: string; reason: string } | null): void => withModel(async current => {
     const shown = await actions.apply(current, pending, authority, selectedOption, preview?.label ?? 'the change')
@@ -199,7 +224,7 @@
   })
   const explainFinish = (): void => {
     const shownContext = context
-    if (shownContext !== null) void attempt(async () => { const answer = await actions.finish(shownContext, selectedOption); finish = answer.steps; limiting = answer.limiting })
+    if (shownContext !== null) void attempt(async () => { const answer = await actions.finish(shownContext, selectedOption); finish = answer.steps; limiting = answer.limiting; reveal('.finish-panel') })
   }
   const explainStart = (job: string): void => {
     const shownContext = context
@@ -232,10 +257,20 @@
   }
 </script>
 
+{#snippet optionDetail()}
+  {#if shown && model && context}
+    <section class="shown-option" aria-labelledby="shown-title">
+      <h2 id="shown-title">{shown.label}</h2>
+      {#if requestText(shown, model.inputs)}<p class="hint">{requestText(shown, model.inputs)}</p>{/if}
+      <StatusBlock view={statusView(shown.status, context)} warnings={shown.warnings.map(warning => warning.text)} stale={!shown.fresh} {proof} onPick={pick} />
+    </section>
+  {/if}
+{/snippet}
+
 {#if model !== null && context !== null}
   <div class="plan-screen">
     <p class="back"><button type="button" class="link" onclick={onOpenLibrary}>← All plans</button></p>
-    <PlanHeader {context} title={model.title} {certified} generating={generating !== null} {busy} onGenerate={generate} onCancel={() => generating?.abort()} />
+    <PlanHeader {context} title={model.title} {size} generating={generating !== null} {busy} onGenerate={generate} onCancel={() => generating?.abort()} />
     {#if error}<p class="error" role="alert">{error}</p>{/if}
     {#if notice}<p class="notice" aria-live="polite">{notice}</p>{/if}
     {#if banner}
@@ -244,25 +279,20 @@
         {#if banner.lines.length > 0}<ul>{#each banner.lines as line, index (index)}<li>{line}</li>{/each}</ul>{/if}
       </section>
     {/if}
-    <div class="screen-grid">
+    <div class="screen-grid" class:no-detail={!detailOpen}>
       <div class="col-attention">
         <p class="phone-only jump"><a href="#plan-views">Jump to the plan views and forms</a></p>
-        <AttentionColumn {cards} {finish} {limiting} busy={busy || generating !== null} {onAction} onPick={pick} />
+        <AttentionColumn {cards} busy={busy || generating !== null} {onAction} />
         <Glance sections={glance(context)} />
         <div class="phone-only"><ShiftList {shifts} /></div>
       </div>
+      <nav class="views" id="plan-views" aria-label="Plan views">
+        {#each views as item (item.key)}<button type="button" class:current={view === item.key} aria-pressed={view === item.key} onclick={() => { view = item.key }}>{item.word}</button>{/each}
+      </nav>
       <div class="col-main">
-        <nav class="views" id="plan-views" aria-label="Plan views">
-          {#each views as item (item.key)}<button type="button" class:current={view === item.key} aria-pressed={view === item.key} onclick={() => { view = item.key }}>{item.word}</button>{/each}
-        </nav>
         {#if view === 'schedule'}
-          {#if shown}
-            <section class="shown-option" aria-labelledby="shown-title">
-              <h2 id="shown-title">{shown.label}</h2>
-              {#if requestText(shown, model.inputs)}<p class="hint">{requestText(shown, model.inputs)}</p>{/if}
-              <StatusBlock view={statusView(shown.status, context)} warnings={shown.warnings.map(warning => warning.text)} stale={!shown.fresh} />
-            </section>
-          {/if}
+          {#if compared}<OptionsGlance glance={compared} selected={selectedOption} {busy} onSelect={showOption} />{/if}
+          {#if !wide}{@render optionDetail()}{/if}
           {#if layout}<div class="desktop-only"><Timeline {layout} selected={selectedJob} onSelect={selectJob} /></div>{/if}
           <WorkList {context} {rows} selected={selectedJob} onSelect={selectJob} />
         {:else if view === 'add'}
@@ -276,15 +306,18 @@
         {:else if view === 'rules'}
           {#key applied}<RulesPanel {context} busy={busy || generating !== null} onPreview={previewEdits} />{/key}
         {:else}
-          <OptionsTable options={model.options?.items ?? []} recommended={model.options?.recommended ?? null} {context} selected={selectedOption} {busy} onSelect={showOption} onBaseline={baseline} />
+          <OptionsTable options={model.options?.items ?? []} recommended={model.options?.recommended ?? null} {context} refusals={model.refusals} selected={selectedOption} {busy} onSelect={showOption} onBaseline={baseline} onPick={pick} />
         {/if}
       </div>
+      <!-- The detail column: an edit's preview, the selected job, what sets the finish, and the shown option. -->
       <div class="col-panel" bind:this={panel}>
         {#if preview}
           <EditPreview {preview} {pending} {context} {busy} onApply={apply} onDiscard={() => { preview = null }} onUseTime={useTime} onAddEdits={extra => previewEdits([...pending, ...extra], preview?.label ?? 'the change')} />
         {:else if selectedJob}
-{#key applied}          <JobPanel jobKey={selectedJob} {context} row={rows.find(row => row.job === selectedJob)} scheduled={rows.length === 0 ? null : new Set(rows.map(row => row.job))} {why} busy={busy || generating !== null} onWhy={explainStart} onPick={pick} onPreview={previewEdits} onClose={() => { selectedJob = null; why = null }} />{/key}
+          {#key applied}<JobPanel jobKey={selectedJob} {context} row={rows.find(row => row.job === selectedJob)} scheduled={rows.length === 0 ? null : new Set(rows.map(row => row.job))} {why} busy={busy || generating !== null} onWhy={explainStart} onPick={pick} onPreview={previewEdits} onClose={() => { selectedJob = null; why = null }} />{/key}
         {/if}
+        {#if finish !== null}<FinishPanel steps={finish} {limiting} onPick={pick} onClose={() => { finish = null; limiting = null }} />{/if}
+        {#if wide && view === 'schedule'}{@render optionDetail()}{/if}
       </div>
     </div>
   </div>

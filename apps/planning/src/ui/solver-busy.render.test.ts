@@ -21,7 +21,7 @@ const none = () => {}
 
 describe('one solver at a time', () => {
   test('while the person\'s Generate runs, the screen says "Generating…" and preview actions are held', () => {
-    const header = readableText(renderHtml(PlanHeader, { context, title: model.title, certified: null, generating: true, onGenerate: none, onCancel: none }))
+    const header = readableText(renderHtml(PlanHeader, { context, title: model.title, size: null, generating: true, onGenerate: none, onCancel: none }))
     expect(header).toContain('Generating…')
     expect(header).toContain('Cancel')
     // The forms' Preview buttons are disabled while it runs (the screen passes busy for the run).

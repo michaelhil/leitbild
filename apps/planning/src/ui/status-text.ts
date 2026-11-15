@@ -40,6 +40,29 @@ export const goalName = (goal: Goal, context: Context): string => {
   }
 }
 
+/** A goal's short name before telling two alike apart: "Over the 54 h guideline", "Extra cost". */
+const shortName = (goal: Goal): string => {
+  const threshold = goal.threshold === undefined ? '' : quantityText(goal.threshold.value, goal.threshold.unit)
+  switch (goal.metric) {
+    case 'span-over': return goal.threshold === undefined ? 'Outage span' : `Over the ${threshold} guideline`
+    case 'finish': return 'Finish of the last job'
+    case 'extra-cost': return goal.threshold === undefined ? 'Extra cost' : `Extra cost above ${threshold}`
+    case 'unavailable-hours': return 'Equipment-hours out of service'
+    case 'lateness': return goal.scope?.tags?.length ? `Lateness of ${joinWords(goal.scope.tags.map(tag => `“${tag}”`))} jobs` : 'Lateness'
+  }
+}
+
+/**
+ * The name a goal has on the main screen: "Over the 54 h guideline", "Extra cost", "Equipment-hours out of
+ * service". Its full wording (`goalName`) is said once, in Rules and goals. Two goals that would read the
+ * same also name their groups.
+ */
+export const goalShort = (goal: Goal, context: Context): string => {
+  const own = shortName(goal)
+  const alike = context.inputs.goals.filter(other => shortName(other) === own).length > 1
+  return alike && goal.scope?.groups?.length ? `${own} (${context.names.list(goal.scope.groups, context.names.group)})` : own
+}
+
 /** "costs compared in steps of NOK 25,000", or nothing for an exact goal. */
 export const goalStep = (goal: Goal): string | null =>
   goal.tolerance.value === 0 ? null : `compared in steps of ${quantityText(goal.tolerance.value, goal.tolerance.unit)}`
@@ -51,11 +74,22 @@ export const goalOrderText = (goals: readonly Goal[], context: Context): readonl
     return `${index + 1}. Least ${goalName(goal, context)}${step === null ? '' : ` (${step})`}`
   })
 
+/** The goals in priority order by their short names, e.g. "1. Over the 54 h guideline". */
+export const goalOrderShort = (goals: readonly Goal[], context: Context): readonly string[] =>
+  goals.map((goal, index) => `${index + 1}. ${goalShort(goal, context)}`)
+
+/** What the three words beside an option and its goals claim; shown once, near the options. */
+export const statusLegend: ReadonlyArray<{ readonly word: string; readonly means: string }> = [
+  { word: 'validated feasible', means: 'every hard rule was checked independently' },
+  { word: 'proven optimal', means: 'it cannot be better' },
+  { word: 'best found', means: 'the best the search found, with any proven gap shown' },
+]
+
 export interface GoalLine {
   readonly name: string
   readonly value: string
   readonly mark: Mark
-  /** How far from best, in words. */
+  /** How far from best, in words: "could be up to 3.5 h better", or the bound itself for fixed costs. */
   readonly distance: string
 }
 
@@ -87,7 +121,8 @@ export const certificateText = (cause: Certificate, context: Context): string =>
     case 'temporal':
       return cause.steps.length === 0
         ? 'The times cannot line up inside the window.'
-        : `The times cannot line up: ${cause.steps.map(step => `${names.job(step.job)} (held by ${viaWords[step.via]})`).join(', then ')}.`
+        // What holds a job is said only where it is more than a link to the job before it.
+        : `The times cannot line up along this chain: ${cause.steps.map(step => step.via === 'link' ? names.job(step.job) : `${names.job(step.job)} (held by ${viaWords[step.via]})`).join(', then ')}.`
   }
 }
 
@@ -177,7 +212,7 @@ const runText = (status: Extract<Status, { run: unknown }>): string => {
   return `The search stopped early, ${why}.`
 }
 
-/** "0 h, proven optimal" or "NOK 472,650, best found; could be up to NOK 132,650 better". */
+/** "0 h, proven optimal", "11 h, best found; could be up to 3.5 h better" or "NOK 472,650, best found; no plan can cost less than NOK 340,000". */
 export const goalResult = (goal: GoalLine): string => `${goal.value}, ${goal.mark.word}${goal.distance === '' ? '' : `; ${goal.distance}`}`
 
 export const statusView = (status: Status, context: Context): StatusView => {
@@ -186,12 +221,15 @@ export const statusView = (status: Status, context: Context): StatusView => {
     case 'validated feasible': {
       const goals = status.goals.map((line): GoalLine => {
         const goal = context.inputs.goals[line.goal]
-        const name = goal === undefined ? `goal ${line.goal + 1}` : goalName(goal, context)
+        const name = goal === undefined ? `Goal ${line.goal + 1}` : goalShort(goal, context)
         const value = valueText(line.value, line.unit)
         // A bound that says nothing (the trivial zero bound: the gap is the whole value) gives no gap line.
         const informative = line.bound !== undefined && line.bound.certificate?.kind !== 'zero' && line.bound.value > 0
         const gap = line.word === 'proven optimal' || line.bound === undefined || !informative ? 0 : line.value - line.bound.value
-        const distance = gap > 0 ? `could be up to ${valueText(gap, line.unit)} better` : ''
+        // A bound made of costs every plan pays is said as that fact, not as doubt about this plan.
+        const distance = gap <= 0 || line.bound === undefined ? ''
+          : line.bound.certificate?.kind === 'fixed-costs' ? `no plan can cost less than ${valueText(line.bound.value, line.unit)}`
+          : `could be up to ${valueText(gap, line.unit)} better`
         return { name, value, mark: goalMark(line.word), distance }
       })
       return {
@@ -220,5 +258,5 @@ export const statusLine = (view: StatusView): string => {
   const first = view.goals[0]
   return first === undefined
     ? `${view.word}: ${view.sentence}`
-    : `${view.word}; least ${first.name}: ${goalResult(first)}`
+    : `${view.word}; ${first.name.charAt(0).toLowerCase()}${first.name.slice(1)}: ${goalResult(first)}`
 }

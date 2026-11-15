@@ -149,7 +149,7 @@ describe('shift list, estimates, rules and explanations', () => {
     expect(why.sentence).toBe('It starts then because all of these hold at once (easing only one does not move it): 60 t mobile crane with operator and rigger is in use until Tue 07:00; it follows Remove SW A from service and hang tags.')
     expect(floatText({ workingHours: 6, limitedBy: { kind: 'span-limit', rule: 'R2' } }, context)).toBe('Float 6 h, limited by: “Once the first cooling-chain item is tagged out, all must be back and tested within 72 h.” (crew availability is not counted)')
     const chain = finishChain({ lines: [], items: [{ job: 'SWA-RTS', start: rows[2]!.start, finish: rows[2]!.finish, floatHours: 0, joint: false, because: [{ kind: 'link', about: [{ kind: 'job', key: 'SWA-PUMP-OUT' }] }] }] }, context)
-    expect(chain).toMatchObject([{ job: 'Restore SW A, fill and vent, pump test', jobKey: 'SWA-RTS', when: 'Tue 12:00–15:30', because: 'it follows Pull SW A pump assembly', due: null }])
+    expect(chain).toMatchObject([{ job: 'Restore SW A, fill and vent, pump test', jobKey: 'SWA-RTS', when: 'Tue 12:00–15:30', because: 'follows Pull SW A pump assembly', due: null }])
   })
 })
 
@@ -160,7 +160,7 @@ describe('causes name the real items (walk 2, R2-3)', () => {
     expect(busy).toBe(`Station mechanical crew is busy with Remove SW A from service and hang tags and Remove CCW A pump and HX A from service and hang tags until ${train.format.clock('2026-11-18T09:00:00Z')}`)
     const supply = contextOf(supplyRunPlanned())
     const shift = causeText({ kind: 'shift', about: [{ kind: 'resource', key: 'truck-2' }], until: '2026-09-03T08:02:00Z' }, supply)
-    expect(shift).toBe(`no working time for ${supply.names.resource('truck-2')} until ${supply.format.clock('2026-09-03T08:02:00Z')}`)
+    expect(shift).toBe(`${supply.names.resource('truck-2')} is not on shift before ${supply.format.clock('2026-09-03T08:02:00Z')}`)
     for (const text of [busy, shift]) expect(text).not.toContain('no longer in this plan')
   })
 })

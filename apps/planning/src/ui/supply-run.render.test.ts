@@ -55,7 +55,7 @@ describe('Supply run on the generic screen', () => {
     // R-1 on Truck 3 from 08:00 to 08:00 + 240 s + 180 s = 08:07.
     expect(text).toContain('Thu 10:00–10:07')
     // Lateness of the bulk request: 30 s past its 08:07 target, said as a goal value.
-    expect(text).toContain('Least lateness of jobs tagged “bulk” past their target:')
+    expect(text).toContain('Lateness of “bulk” jobs:')
     expect(text).toContain('30 s')
     expect(text).toContain('best found')
     expect(text).not.toContain('best possible')

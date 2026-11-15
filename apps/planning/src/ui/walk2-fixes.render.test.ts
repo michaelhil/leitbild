@@ -5,7 +5,7 @@ import type { Component } from 'svelte'
 import { workspaceResourceReferenceSchema } from '@leitbild/contracts'
 import { attentionCards } from './attention.ts'
 import { alignWindowEdit, crewEdit, simulationNow } from './edit-forms.ts'
-import { finishChain, whyStart } from './explain-text.ts'
+import { finishChain, shiftStart, whyStart } from './explain-text.ts'
 import { modelOf, supplyRunInputs, trainAInputs, trainAPlanned } from './fixtures/plans.ts'
 import { cutShort, readableText, registerSvelte, renderHtml, routineBreaches } from './fixtures/svelte-ssr.ts'
 import { changedText, createTimeFormat, factText, routineFact } from './format.ts'
@@ -76,9 +76,12 @@ describe("maint's second walk, screen defects", () => {
     ] }, context, pull)
     expect(why.sentence).not.toContain('no longer in this plan')
     expect(why.sentence).toContain('Station mechanical crew is busy with Remove SW A from service and hang tags and Restore SW A, fill and vent, pump test until Tue 07:00')
-    expect(why.sentence).toContain('no working time for Eddy-current test contractor until Tue 07:00')
+    expect(why.sentence).toContain('Eddy-current test contractor is not on shift before Tue 07:00')
     const chain = finishChain({ lines: [], items: [{ job: 'SWA-RTS', start: rows[2]!.start, finish: rows[2]!.finish, floatHours: 0, joint: false, because: [{ kind: 'shift', about: [{ kind: 'calendar', key: 'day' }, { kind: 'resource', key: 'mech-station' }] }] }] }, context)
-    expect(chain[0]!.because).toBe('no working time on Day shift for Station mechanical crew')
+    // No time came with the cause: it is read from the crew's own calendar, the day shift that holds the start.
+    const shift = shiftStart(model.inputs, 'mech-station', Date.parse(rows[2]!.start))!
+    expect(context.format.clock(shift)).toBe(`${context.format.clock(rows[2]!.start).split(' ')[0]} 07:00`)
+    expect(chain[0]!.because).toBe(`Station mechanical crew is not on shift before ${context.format.clock(shift)}`)
     expect(routineBreaches(`${why.sentence} ${chain[0]!.because}`, [], [])).toEqual([])
     // Rendered where the planner reads it: the finish chain in the attention column, and the job panel's answer.
     const column = readableText(renderHtml(AttentionColumn, { cards: [], finish: chain, onAction: none }))

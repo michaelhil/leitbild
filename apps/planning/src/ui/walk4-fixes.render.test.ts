@@ -15,7 +15,7 @@ import { statusView, type Context } from './status-text.ts'
 
 registerSvelte()
 type Any = Component<Record<string, unknown>>
-const { default: AttentionColumn } = await import('./AttentionColumn.svelte') as { default: Any }
+const { default: FinishPanel } = await import('./FinishPanel.svelte') as { default: Any }
 const { default: EditPreview } = await import('./EditPreview.svelte') as { default: Any }
 const { default: PlanScreen } = await import('./PlanScreen.svelte') as { default: Any }
 const { default: WorkList } = await import('./WorkList.svelte') as { default: Any }
@@ -61,9 +61,9 @@ describe("maint's fourth walk, screen items", () => {
     const context = contextOf(model)
     const rows = model.rows['opt-1']!
     const result: ExplainResult = { lines: [], items: [{ job: 'SWA-RTS', start: rows[2]!.start, finish: rows[2]!.finish, floatHours: 0, joint: false, because: [{ kind: 'span-limit', about: [{ kind: 'rule', key: 'R2' }] }] }] }
-    const html = renderHtml(AttentionColumn, { cards: [], finish: finishChain(result, context), limiting: mostLimiting(result, context), onAction: none, onPick: none })
+    const html = renderHtml(FinishPanel, { steps: finishChain(result, context), limiting: mostLimiting(result, context), onPick: none, onClose: none })
     expect(html).not.toContain('class="link name"')
-    expect(html.replace(/<!--[\s\S]*?-->/g, '')).toMatch(/past <a class="name" href="#item-rule-R2">“[^<]+”<\/a>/)
+    expect(html.replace(/<!--[\s\S]*?-->/g, '')).toMatch(/past <a class="name quiet" href="#item-rule-R2">“[^<]+”<\/a>/)
   })
 
   test('T0s-05, R3-7-01 (R4-4): "Not saved" once; "1 job"; the Align preview names the new dates', () => {
@@ -76,7 +76,7 @@ describe("maint's fourth walk, screen items", () => {
     const one = { ...model.inputs, jobs: model.inputs.jobs.slice(0, 1), links: [] }
     const single: PlanModel = { ...modelOf(one), certifiedSize: { decided: true, family: 'single-train work weeks', maxJobs: 33, evidence: 'measured 11 Nov', limitJobs: 60 } }
     const screen = readableText(renderHtml(PlanScreen, { client: createPlanningClient('0b4b9a52-2f7e-4c1a-9d3e-00000000000a', async () => { throw new Error('offline') }), planId: single.id, initial: single, onChanged: none, onOpenWorkspace: none, onOpenLibrary: none }))
-    expect(screen).toContain('This plan: 1 job in one solve')
+    expect(screen).toContain('Plan size: 1 job · certified up to 33')
   })
 
   test('R4-4: every form starts empty after an applied change (the forms are keyed on the count of applied changes)', () => {
@@ -98,22 +98,22 @@ describe("maint's fourth walk, screen items", () => {
     const about = { kind: 'resource' as const, key: 'mech-station' }
     const line = (result: ExplainResult) => {
       const limiting = mostLimiting(result, context)
-      const rendered = readableText(renderHtml(AttentionColumn, { cards: [], finish: finishChain(result, context), limiting, onAction: none, onPick: none }))
+      const rendered = readableText(renderHtml(FinishPanel, { steps: finishChain(result, context), limiting, onPick: none, onClose: none }))
       return { words: partsText(limiting!.parts), rendered }
     }
-    const waits = 'Most limiting: the finish waits on Pull SW A pump assembly: no working time for Eddy-current test contractor until Tue 07:00'
+    const waits = 'Most limiting: the finish waits on Pull SW A pump assembly: Eddy-current test contractor is not on shift before Tue 07:00.'
     // Checked, with a gain (a hand value standing in for lane S's answer): the resource and the hours.
     const gain = line({ lines: [], items, limiting: { result: 'gain', about, hoursEarlier: 1 } })
     expect(gain.words).toBe('Most limiting: Station mechanical crew. One more Station mechanical crew would allow a finish at least 1 h earlier.')
     expect(gain.rendered).toContain('would allow a finish at least 1 h earlier.')
     // Checked, no gain (the flagship): what the finish waits for, and only this plan is spoken of.
     const noGain = line({ lines: [], items, limiting: { result: 'no-gain', about } })
-    expect(noGain.words).toBe(`${waits}; one more Station mechanical crew alone does not bring it earlier in this plan.`)
+    expect(noGain.words).toBe(`${waits} One more Station mechanical crew alone does not bring it earlier in this plan.`)
     expect(noGain.rendered).toContain('alone does not bring it earlier in this plan.')
     expect(noGain.words).not.toMatch(/never|could not|earlier\./)
     // Not computed (the solver was busy, or nothing to check): the binding cause, and nothing more.
     const notComputed = line({ lines: [], items })
-    expect(notComputed.words).toBe(`${waits}.`)
-    for (const text of [notComputed.words, notComputed.rendered]) expect(text).not.toMatch(/one more|h earlier|does not bring/)
+    expect(notComputed.words).toBe(waits)
+    for (const text of [notComputed.words, notComputed.rendered]) expect(text).not.toMatch(/one more|h earlier|does not bring/i)
   })
 })
