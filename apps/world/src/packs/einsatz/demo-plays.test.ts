@@ -1,5 +1,6 @@
 import { describe, expect, test } from 'bun:test'
 import { isMapSymbol } from '../../core/map-symbols/catalog.ts'
+import { geoPointFromLonLat } from '../../core/model/index.ts'
 import atlas from '../../core/map-symbols/common.json'
 import { compileScenarioDefinition } from '../../core/scenarios/compiler.ts'
 import { scenarioDefinitionSchema, type ScenarioDefinition } from '../../core/scenarios/definition.ts'
@@ -660,7 +661,7 @@ describe('B.11 click counts at the Dispatch panel', () => {
       await screen.groundTap([east + 0.004, north + 0.002])
       expect(screen.prompt()).toEqual([expect.stringMatching(/ here$/)])
       await screen.groundTap([east + 0.006, north + 0.003])
-      expect(screen.selection()).toEqual({ kind: 'armed', unitId, when: null, prompt: { kind: 'move', point: { type: 'Point', coordinates: [east + 0.006, north + 0.003] } }, refusal: null })
+      expect(screen.selection()).toEqual({ kind: 'armed', unitId, when: null, prompt: { kind: 'move', point: geoPointFromLonLat(east + 0.006, north + 0.003) }, refusal: null })
       expect(screen.calls).toEqual([])
     })
   })
