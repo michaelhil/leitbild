@@ -2,13 +2,12 @@ import { z } from 'zod'
 import type { OperationalObject } from '../../core/model/index.ts'
 import { createWorldPackDescriptor, type PackObjectField, type PackObjectPresentation, type PackObjectPresentationContext, type PackObjectStatusPresentation, type WorldPackView } from '../../core/packs/protocol.ts'
 import { packField } from '../../core/packs/presentation.ts'
-import { contactIcon } from './board/contacts.ts'
-import { clockText } from './board/text.ts'
 import { plannedPathFeatures } from './chain-path.ts'
 import { einsatzColors } from './colors.ts'
 import { einsatzPackId, einsatzRuntimeId } from './ids.ts'
 import { neutralLexicon, unitPhases, type UnitPhase } from './lexicon.ts'
 import { groupUnseen } from './picture.ts'
+import { clockText, contactIcon } from './situation/text.ts'
 import { boardMapOrders } from './ui/map-orders.ts'
 
 /**
@@ -215,8 +214,8 @@ export const einsatzPackView = {
   presentation: {
     // The Board is the only unit and task list, so no category takes a rail section.
     categories: [
-      { id: unitsCategory, label: neutralLexicon.unitBoard, emptyLabel: `No ${neutralLexicon.unitBoard.toLowerCase()}`, matches: object => typeOf(object) === 'unit', rail: false },
-      { id: tasksCategory, label: neutralLexicon.workList, emptyLabel: `No ${neutralLexicon.workList.toLowerCase()}`, matches: object => typeOf(object) === 'task', rail: false },
+      { id: unitsCategory, label: neutralLexicon.units, emptyLabel: `No ${neutralLexicon.units.toLowerCase()}`, matches: object => typeOf(object) === 'unit', rail: false },
+      { id: tasksCategory, label: neutralLexicon.calls, emptyLabel: `No ${neutralLexicon.calls.toLowerCase()}`, matches: object => typeOf(object) === 'task', rail: false },
       { id: tracksCategory, label: neutralLexicon.tracks, emptyLabel: `No ${neutralLexicon.tracks.toLowerCase()}`, matches: object => typeOf(object) === 'track', rail: false },
       { id: trackIndexesCategory, label: 'Track indexes', emptyLabel: 'No track indexes', matches: object => typeOf(object) === 'track-index', rail: false },
     ],
@@ -243,7 +242,7 @@ export const einsatzPackView = {
   ui: {
     surfacePanels: [{
       id: einsatzBoardPanelId,
-      label: neutralLexicon.workList,
+      label: neutralLexicon.calls,
       defaultOpen: true,
       mapTargets: true,
       keymap: true,

@@ -20,8 +20,8 @@ export const isStandingOrderBy = (by: string): boolean => by.startsWith(standing
  */
 export const chainStepBy = standingOrderBy('chain')
 
-/** The cause a step removal records when it undoes the order that created the step. */
-export const undoCause = 'undo'
+/** How `lastAction.by` names an AI agent's order in an open Run: this prefix and its core actor id. */
+export const aiByPrefix = 'ai:'
 
 /**
  * The operator role a declared group becomes, and back. Configuration ids

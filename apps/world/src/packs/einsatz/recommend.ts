@@ -1,34 +1,36 @@
 import { capabilityRejection } from '../../simulation/capability-rejection.ts'
-import type { Eta, Recommendation } from './recommendation-schema.ts'
-import { assignedTo, contributionOf, countedFor, coverageOf, isDivertCandidate, residualNeed, roleViewFor, type RoleView } from './engine/coverage.ts'
+import type { Eta, RecommendAnswer } from './recommendation-schema.ts'
+import { assignedTo, contributionOf, countedFor, coverageOf, loadAllocation, roleViewFor, stillNeeds, type RoleView } from './engine/coverage.ts'
 import { committedText, loadedText } from './engine/intent-support.ts'
 import { templateOf, unitTypeOf, type EngineState, type TaskCoverage, type TaskRecord, type UnitRecord } from './engine/model.ts'
-import { conditionReasons, divertablePhases, hasLoad, isDestroyed, isFree, linksToTask, providesFor } from './engine/rules.ts'
-import { byId, countOf } from './engine/values.ts'
-import { classCode, unitWord } from './engine/wording.ts'
-import { etaSeconds, etasTo, type TablePort } from './eta.ts'
+import { conditionReasons, isDestroyed, isFree, isSite, linksToSite, linksToTask, providesFor } from './engine/rules.ts'
+import { byId, countOf, total } from './engine/values.ts'
+import { classCode, loadText, unitWord } from './engine/wording.ts'
+import { etaSeconds, etasFrom, etasTo, type TablePort } from './eta.ts'
 import { refusal } from './refusal.ts'
-import { commandsUnit, inPicture, taskAuthority, type EinsatzViewer } from './viewer.ts'
+import { priorityRefOf } from './situation/situation.ts'
+import { commandsUnit, taskAuthority, type EinsatzViewer } from './viewer.ts'
+import { motionOf } from './engine/model.ts'
 
 /**
  * Recommendations for a task. It reads one engine state, the snapshot it is
- * given, outside the engine's queue, and changes nothing. Coverage, need and
- * the divert rule are the engine's own, so what is proposed is what a send
- * of it commits.
+ * given, outside the engine's queue, and changes nothing. Coverage and need
+ * are the engine's own, so what is proposed is what an order of it commits.
  *
  * - Proposal: the smallest set of free units that serves the task for the
  *   caller's units, by fit then ETA; failing that, the free units' best
- *   partial set completed by the fewest divert candidates; failing that, the
- *   best partial set of free units and divert candidates, with the remainder.
+ *   partial set, with the remainder named. Only free units are proposed (no
+ *   task, no load), so an order between two recommendations never lets
+ *   both propose the same unit. `proposal.order` is the order to send.
  * - Fit is how much of the task a unit fills. Units filling the same
  *   requirements and load classes with the same free capacity fill alike, so
  *   the search picks among them by ETA, nearest first.
- * - Only a unit's active step counts: a unit holding the task queued behind
- *   other work is named under `next`, never as covering it; `nextRemainder`
- *   says what the task would still need were those whose next job it is on
- *   their way. A free unit may
- *   hold steps (a move, an engagement, a paused chain); each candidate says
- *   how many, so the caller can ask whether to do it now or add it to the end.
+ * - Alternatives: per need, the other free units that add to it, nearest
+ *   first, each with its own ready order.
+ * - Why not: units that provide what the task needs but are not offered,
+ *   with the reasons in property and lexicon words.
+ * - Deliver to: for each proposed carrier that will pick up load, the
+ *   accepting sites for that load, nearest first from the task.
  */
 
 /** The most combinations a search may judge before it refuses as too large to answer. */
@@ -48,10 +50,6 @@ const fillWith = (state: EngineState, task: TaskRecord, units: ReadonlyArray<Uni
   fillOf(coverageOf(state.catalog, task, countedFor(state, task, units)))
 const sameFill = (a: ReadonlyArray<number>, b: ReadonlyArray<number>): boolean => a.every((value, index) => value === b[index])
 const sum = (values: ReadonlyArray<number>): number => values.reduce((total, value) => total + value, 0)
-
-/** A unit's fit on its own: how much it adds to the task as assigned now. */
-const gainOf = (state: EngineState, task: TaskRecord, unit: UnitRecord): number =>
-  sum(fillWith(state, task, [unit])) - sum(fillWith(state, task, []))
 
 /** Units that fill a task alike: the same requirements met, the same load classes and the same free capacity. */
 const fillSignature = (state: EngineState, task: TaskRecord, unit: UnitRecord): string => {
@@ -89,7 +87,7 @@ const smallestCover = (state: EngineState, task: TaskRecord, view: RoleView, bas
   const serves = (set: ReadonlyArray<Candidate>): boolean => {
     judged += 1
     if (judged > searchBudget) throw capabilityRejection('capability_work_limit', `${task.label} has too many unit combinations to recommend; send units directly`)
-    return residualNeed(state, task, view, [...base, ...set].map(entry => entry.unit)) === undefined
+    return !stillNeeds(state, task, view, [...base, ...set].map(entry => entry.unit))
   }
   // Coverage only grows as units are added, so when all of them together do not serve, no subset does.
   if (!serves(candidates)) return undefined
@@ -142,90 +140,57 @@ const remainderOf = (state: EngineState, task: TaskRecord, view: RoleView, propo
   ]
 }
 
-/**
- * Whether any unit on the task's side, busy or not, could ever fill what the
- * task still needs after the proposal: a non-destroyed unit providing each
- * short requirement and meeting its conditions, and a carrier for each
- * uncovered load class.
- */
-const servableAfter = (state: EngineState, task: TaskRecord, proposal: ReadonlyArray<UnitRecord>): boolean => {
-  const coverage = coverageOf(state.catalog, task, countedFor(state, task, proposal))
-  const side = [...state.units.values()].filter(unit => linksToTask(unit, task) && !isDestroyed(unit))
-  const requirements = templateOf(state.catalog, task).requires
-  return coverage.requirements.every((entry, index) => entry.enRoute + entry.onTask + entry.completed >= entry.count
-    || side.some(unit => providesFor(unitTypeOf(state.catalog, unit), requirements[index]!) && conditionReasons(state.catalog, unit, requirements[index]!).length === 0))
-    && coverage.loads.every(entry => entry.covered >= entry.waiting
-      || side.some(unit => unitTypeOf(state.catalog, unit).components.carry?.classes.includes(entry.classId) === true))
-}
-
 interface Survey {
   /** Free units that add to the task now. */
   readonly free: ReadonlyArray<UnitRecord>
-  /** Busy units that would add to the task: committed elsewhere or carrying load. */
-  readonly busy: ReadonlyArray<UnitRecord>
-  readonly ineligible: Recommendation['ineligible']
+  /** Units that would add but are not free, or fail a condition, with the reasons. */
+  readonly whyNot: RecommendAnswer['whyNot']
 }
 
-/** The caller's units of the task's side that provide what it requires or carry what it holds, sorted into free, busy and ineligible. */
+/** The caller's units of the task's side that provide what it requires or carry what it holds, sorted into free and why not. */
 const survey = (state: EngineState, task: TaskRecord, commandable: (unit: UnitRecord) => boolean): Survey => {
   const assigned = assignedTo(state.units.values(), task)
   const requires = templateOf(state.catalog, task).requires
   const free: UnitRecord[] = []
-  const busy: UnitRecord[] = []
-  const ineligible: Array<Recommendation['ineligible'][number]> = []
+  const whyNot: Array<RecommendAnswer['whyNot'][number]> = []
   for (const unit of [...state.units.values()].sort(byId)) {
     if (!commandable(unit) || !linksToTask(unit, task) || unit.taskId === task.id) continue
     const type = unitTypeOf(state.catalog, unit)
     const relevant = requires.some(requirement => providesFor(type, requirement))
       || (type.components.carry?.classes.some(classId => countOf(task.loads, classId) > 0) ?? false)
     if (!relevant) continue
-    const refuse = (reasons: ReadonlyArray<string>) => ineligible.push({ unitId: unit.id, label: unit.label, reasons: [...reasons] })
+    const refuse = (reasons: ReadonlyArray<string>) => whyNot.push({ unitId: unit.id, label: unit.label, reasons: [...reasons] })
     if (isDestroyed(unit)) refuse([`${unit.label} is ${unitWord(state.catalog, unit, 'destroyed')}`])
     else if (type.components.mobility === undefined) refuse([`${unit.label} cannot move`])
     else {
       const contribution = contributionOf(state.catalog, task, assigned, unit)
       if (!contribution.adds) {
         if (contribution.unmet.length > 0) refuse(contribution.unmet)
-      } else (isFree(unit) ? free : busy).push(unit)
+      } else if (isFree(unit)) free.push(unit)
+      else refuse([Object.keys(unit.load).length > 0 ? loadedText(state, unit) : committedText(state, unit)])
     }
   }
-  return { free, busy, ineligible }
+  return { free, whyNot }
 }
 
 const rejected = (reason: { readonly reason: string }, code: 'capability_target_not_found' | 'capability_input_rejected') => capabilityRejection(code, reason.reason)
 
-/** Units in the viewer's picture with the task queued in their chain, by how many steps come first, then id. */
-const queuedFor = (state: EngineState, viewer: EinsatzViewer, task: TaskRecord): Recommendation['next'] => [...state.units.values()]
-  .filter(unit => inPicture(state.catalog, viewer, unit))
-  .flatMap(unit => {
-    const stepsAhead = unit.orders.findIndex(step => step.state === 'queued' && 'taskId' in step.target && step.target.taskId === task.id)
-    return stepsAhead < 0 ? [] : [{ unitId: unit.id, label: unit.label, stepId: unit.orders[stepsAhead]!.id, stepsAhead }]
-  })
-  .sort((a, b) => a.stepsAhead - b.stepsAhead || (a.unitId < b.unitId ? -1 : a.unitId > b.unitId ? 1 : 0))
+/** How many units the task's needs add up to, and how many of them are covered with these units counted on their way. */
+const coversOf = (coverage: TaskCoverage): { readonly covered: number; readonly needed: number } => ({
+  covered: fillOf(coverage).reduce((sum, value) => sum + value, 0),
+  needed: coverage.requirements.reduce((sum, entry) => sum + entry.count, 0) + coverage.loads.reduce((sum, entry) => sum + entry.waiting, 0),
+})
 
 /**
- * What the task would still need from the caller's units were the units
- * holding it as their next job, queued behind at most the step they are
- * carrying out, on their way to it beside those assigned now: empty when
- * they would serve it.
- */
-const nextRemainderOf = (state: EngineState, task: TaskRecord, view: RoleView, next: Recommendation['next']): string[] =>
-  remainderOf(state, task, view, next.flatMap(entry => {
-    const unit = state.units.get(entry.unitId)
-    return unit !== undefined && unit.orders.slice(0, entry.stepsAhead).every(step => step.state === 'active') ? [unit] : []
-  }))
-
-/**
- * The recommendation for a task as the viewer sees it: proposal,
- * alternatives, ineligible and busy units. A task outside the viewer's
- * picture is not in it; one outside its queue or closed is refused.
+ * The recommendation for a task as the viewer sees it. A task outside the
+ * viewer's picture is not in it; one outside its queue or closed is refused.
  */
 export const recommend = async (input: {
   readonly state: EngineState
   readonly viewer: EinsatzViewer
   readonly taskId: string
   readonly routing: TablePort
-}): Promise<Recommendation> => {
+}): Promise<RecommendAnswer> => {
   const { state, viewer } = input
   const task = state.tasks.get(input.taskId)
   if (task === undefined) throw rejected({ reason: refusal('not_in_picture', 'Not in your picture') }, 'capability_target_not_found')
@@ -236,60 +201,68 @@ export const recommend = async (input: {
   const commandable = (unit: UnitRecord): boolean => commandsUnit(state.catalog, viewer, unit)
   const view = roleViewFor(state, commandable, task)
   const units = survey(state, task, commandable)
-  const divertable = units.busy.filter(unit => divertablePhases.includes(unit.phase) && !hasLoad(unit))
-  const etas = await etasTo(state, [...units.free, ...divertable], task.point, input.routing)
-  const candidate = (unit: UnitRecord): Candidate => ({ unit, eta: etas.get(unit.id)! })
-  const free = units.free.map(candidate)
+  const etas = await etasTo(state, units.free, task.point, input.routing)
+  const free = units.free.map((unit): Candidate => ({ unit, eta: etas.get(unit.id)! }))
 
-  const freeCover = smallestCover(state, task, view, [], free)
-  const partial = freeCover ?? pruned(state, task, free)
-  const residual = residualNeed(state, task, view, partial.map(entry => entry.unit))
-  const counted = countedFor(state, task, partial.map(entry => entry.unit))
-  const diverts = divertable
-    .filter(unit => isDivertCandidate(state, { unit, task, counted, residual, commandable }))
-    .map(candidate)
-  const completion = freeCover === undefined ? smallestCover(state, task, view, partial, diverts) : undefined
-  const proposal = freeCover ?? (completion === undefined
-    ? pruned(state, task, [...partial, ...diverts], new Set(partial.map(entry => entry.unit.id)))
-    : [...partial, ...completion])
+  const proposal = smallestCover(state, task, view, [], free) ?? pruned(state, task, free)
   const proposed = proposal.map(entry => entry.unit)
   const inProposal = new Set(proposed.map(unit => unit.id))
-  const divertIds = new Set(diverts.map(entry => entry.unit.id))
+  const unitEta = (entry: Candidate) => ({ unitId: entry.unit.id, label: entry.unit.label, eta: entry.eta })
+  const orderFor = (ids: ReadonlyArray<string>) => ({ units: [...ids], stops: [{ taskId: task.id }] })
 
-  const described = (entry: Candidate): Recommendation['alternatives'][number] => {
-    const from = entry.unit.taskId === undefined ? undefined : state.tasks.get(entry.unit.taskId)
-    return {
-      unitId: entry.unit.id,
-      label: entry.unit.label,
-      eta: entry.eta,
-      ...(from === undefined ? {} : { divertFrom: { taskId: from.id, label: from.label, rank: { id: from.rank, code: classCode(state.catalog, from.rank) } } }),
-      ...(entry.unit.orders.length === 0 ? {} : { steps: entry.unit.orders.length }),
+  const assigned = assignedTo(state.units.values(), task)
+  const template = templateOf(state.catalog, task)
+  const others = free.filter(entry => !inProposal.has(entry.unit.id)).sort(byEta)
+  /** A free unit that could serve a need: it meets the requirement, or carries the class with room to spare. */
+  const serves = (unit: UnitRecord, need: { readonly requirement: number } | { readonly classId: string }): boolean => {
+    const type = unitTypeOf(state.catalog, unit)
+    if ('requirement' in need) {
+      const requirement = template.requires[need.requirement]!
+      return providesFor(type, requirement) && conditionReasons(state.catalog, unit, requirement).length === 0
     }
+    const carry = type.components.carry
+    return carry !== undefined && carry.classes.includes(need.classId) && carry.capacity - total(unit.load) > 0
   }
-  const byFit = (entries: ReadonlyArray<Candidate>): Candidate[] => entries
-    .filter(entry => !inProposal.has(entry.unit.id))
-    .map(entry => ({ entry, gain: gainOf(state, task, entry.unit) }))
-    .sort((a, b) => b.gain - a.gain || byEta(a.entry, b.entry))
-    .map(({ entry }) => entry)
-  const need = residualNeed(state, task, view, [])
-  const next = queuedFor(state, viewer, task)
+  const coverage = coverageOf(state.catalog, task, assigned)
+  const alternatives: RecommendAnswer['alternatives'] = [
+    ...template.requires.map((requirement, index) => ({
+      need: { kind: 'requirement' as const, id: requirement.provides, label: requirement.label.other },
+      units: others.filter(entry => serves(entry.unit, { requirement: index })).map(entry => ({ ...unitEta(entry), order: orderFor([entry.unit.id]) })),
+    })),
+    ...coverage.loads.map(entry => ({
+      need: { kind: 'load' as const, id: entry.classId, label: `${loadText(state.catalog, { [entry.classId]: entry.waiting })} (${classCode(state.catalog, entry.classId)})` },
+      units: others.filter(candidate => serves(candidate.unit, { classId: entry.classId })).map(candidate => ({ ...unitEta(candidate), order: orderFor([candidate.unit.id]) })),
+    })),
+  ].filter(entry => entry.units.length > 0)
 
+  const shares = loadAllocation(state.catalog, task, [...assigned, ...countedFor(state, task, proposed).filter(unit => inProposal.has(unit.id))])
+  const sites = [...state.units.values()].filter(site => isSite(state.catalog, site) && site.accepting === true && !isDestroyed(site))
+  const deliverTo: Array<RecommendAnswer['deliverTo'][number]> = []
+  for (const carrier of proposed) {
+    const share = shares.get(carrier.id) ?? {}
+    if (total(share) === 0) continue
+    const usable = sites.filter(site => linksToSite(state.catalog, carrier, site)
+      && Object.keys(share).every(classId => unitTypeOf(state.catalog, site).components.receiving!.accepts.includes(classId)))
+    if (usable.length === 0) continue
+    const legs = await etasFrom(state, carrier, task.point, usable.map(site => ({ point: motionOf(state, site.id).point, turnoutS: 0 })), input.routing)
+    const listed = usable.map((site, index) => ({ siteId: site.id, label: site.label, eta: legs[index]! }))
+      .sort((a, b) => etaSeconds(a.eta) - etaSeconds(b.eta) || (a.siteId < b.siteId ? -1 : 1))
+    deliverTo.push({ unitId: carrier.id, label: carrier.label, sites: listed })
+  }
+
+  const offered = new Set([...inProposal, ...alternatives.flatMap(entry => entry.units.map(unit => unit.unitId))])
   return {
     taskId: task.id,
-    rank: { id: task.rank, code: classCode(state.catalog, task.rank) },
-    need: need === undefined ? null : { id: need, code: classCode(state.catalog, need) },
-    proposal: {
-      units: proposal.map(described),
-      covers: residualNeed(state, task, view, proposed) === undefined,
+    priority: priorityRefOf(state, task.priority),
+    proposal: proposal.length === 0 ? null : {
+      order: orderFor(proposed.map(unit => unit.id)),
+      units: proposal.map(unitEta),
+      covers: coversOf(coverageOf(state.catalog, task, countedFor(state, task, proposed))),
       remainder: remainderOf(state, task, view, proposed),
     },
-    alternatives: [...byFit(free), ...byFit(diverts)].map(described),
-    ineligible: units.ineligible,
-    committed: units.busy
-      .filter(unit => !inProposal.has(unit.id) && !divertIds.has(unit.id))
-      .map(unit => ({ unitId: unit.id, label: unit.label, reason: hasLoad(unit) ? loadedText(state, unit) : committedText(state, unit) })),
-    servable: servableAfter(state, task, proposed),
-    next,
-    nextRemainder: nextRemainderOf(state, task, view, next),
+    alternatives,
+    whyNot: units.whyNot.filter(entry => !offered.has(entry.unitId)),
+    deliverTo,
   }
 }
+

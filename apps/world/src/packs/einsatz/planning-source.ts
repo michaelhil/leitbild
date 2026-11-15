@@ -58,7 +58,7 @@ export const readEinsatzPlanningSource = async (config: {
     if (record.kind === 'task') {
       const task = state.tasks.get(record.id)!
       return { locator: id, label: task.label, kind: 'task', facts: [
-        fact(`${task.id}/rank`, 'Priority class', 'state', task.rank, 'observed'),
+        fact(`${task.id}/rank`, 'Priority', 'state', task.priority, 'observed'),
         fact(`${task.id}/closed`, 'Work closed', 'state', task.closedAtMs !== undefined, 'observed'),
         ...Object.entries(task.loads).map(([key, count]) => fact(`${task.id}/waiting/${key}`, `Waiting ${key}`, 'count', count, 'observed', '1')),
       ] }
@@ -86,7 +86,7 @@ export const readEinsatzPlanningSource = async (config: {
       facts.push(fact(`${unit.id}/property/${property.id}`, property.label, property.id, value, 'configured', property.kind === 'number' ? property.unit ?? '1' : undefined))
     }
     if (mobility !== undefined && estimates) for (const task of tasks) {
-      const eligibility = planIntent(state, { kind: 'send', units: [unit.id], to: { taskId: task.id } }, { by: 'planning-research', commandable: () => true })
+      const eligibility = planIntent(state, { kind: 'order', units: [unit.id], stops: [{ taskId: task.id }] }, { by: 'planning-research', commandable: () => true })
       const eta = arrivals.get(task.id)!.get(unit.id)!
       facts.push(fact(`${unit.id}/eligible/${task.id}`, `Can serve ${task.label}`, 'state', eligibility.ok && eta.kind !== 'unavailable', 'owner-estimate'))
       if (eta.kind !== 'unavailable') facts.push(fact(`${unit.id}/arrival-seconds/${task.id}`, `Arrival at ${task.label}`, 'time', eta.seconds, 'owner-estimate', 's'))

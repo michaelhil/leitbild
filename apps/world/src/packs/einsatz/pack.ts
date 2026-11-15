@@ -1,6 +1,7 @@
 import { einsatzInspectionReferences } from './read-policy.ts'
 import type { WorldPack } from '../../core/packs/protocol.ts'
 import { einsatzAuthoring } from './authoring.ts'
+import { einsatzGuidance } from './capabilities.ts'
 import { einsatzConfigSchema } from './config-validation.ts'
 import { einsatzScenarioRoles } from './groups.ts'
 import { validateEinsatzScenarioConfig } from './scenario-config.ts'
@@ -15,15 +16,15 @@ import { einsatzPackView } from './ui-pack.ts'
  * carries its side, or `public` for a public type; its queries and refusals
  * answer within the viewer core stamps; a public object holds counts only;
  * a command id stays on objects its caller's view holds; and it emits no
- * realtime messages. Each declared group becomes an operator role
- * (`groups.ts`).
+ * realtime messages. In a Scenario with sides each declared group becomes
+ * an operator role (`groups.ts`); without sides a Run is open.
  */
 export const einsatzPack: WorldPack = {
   inspectionReferences: einsatzInspectionReferences,
   ...einsatzPackView,
   scenarioConfigSchema: einsatzConfigSchema,
   authoring: einsatzAuthoring,
-  knowledge: { wikiRefs: [{ name: 'Einsatz knowledge', url: '/wiki?path=world%2Fpacks%2Feinsatz%2Findex.md' }] },
+  knowledge: { wikiRefs: [{ name: 'Einsatz knowledge', url: '/wiki?path=world%2Fpacks%2Feinsatz%2Findex.md' }], guidance: einsatzGuidance },
   roleAware: true,
   validateScenarioConfig: validateEinsatzScenarioConfig,
   scenarioRoles: einsatzScenarioRoles,

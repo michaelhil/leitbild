@@ -1,10 +1,13 @@
 import { einsatzQueryState } from '../read-policy.ts'
-import { nowIso, type CommandEnvelope, type CommandResult, type GeoJsonPoint, type IsoTimestamp, type ObjectAudience, type ObjectId, type OperationalObject, type Provenance, type RoleSees, type RunViewer } from '../../../core/model/index.ts'
+import { nowIso, type CommandEnvelope, type CommandResult, type GeoJsonPoint, type IsoTimestamp, type ObjectAudience, type ObjectId, type OperationalObject, type Provenance, type RoleSees } from '../../../core/model/index.ts'
 import { defaultSimulationRunRuntimePolicy } from '../../../core/simulation-runs/runtime-persistence-policy.ts'
 import type { RoutingAdapter } from '../../../routing/protocol.ts'
-import type { PackRuntimeAdapter, PackRuntimeConnection, PackRuntimeConnectionConfig, PackRuntimeEvent, PackRuntimeEventHandler, PackRuntimeHealth } from '../../../simulation/protocol.ts'
+import type { PackCommandContext, PackRuntimeAdapter, PackRuntimeConnection, PackRuntimeConnectionConfig, PackRuntimeEvent, PackRuntimeEventHandler, PackRuntimeHealth, PackRuntimeQuery } from '../../../simulation/protocol.ts'
 import { createRuntimeStateWriter } from '../../../simulation/runtime-state-writer.ts'
 import { einsatzCapabilities, einsatzQueryIds, isEinsatzCommand, recommendInputSchema } from '../capabilities.ts'
+import { situationInputSchema, unitOptionsInputSchema } from '../situation/schema.ts'
+import { readSituation } from '../situation/situation.ts'
+import { readUnitOptions } from '../situation/unit-options.ts'
 import { prepareCommand } from '../commands.ts'
 import { einsatzConfigSchema } from '../config-validation.ts'
 import { advanceEngine, commitIntent, planIntent, prepareLegs, type EnginePorts } from '../engine/engine.ts'
@@ -14,9 +17,9 @@ import { audienceOf, readEngineState, runtimeStateOf, transitionObject, unitObje
 import { sightingOf, trackDeletionRefusal, trackIndexObject, trackObject, type TrackStamp } from '../engine/track-objects.ts'
 import { hasLoad } from '../engine/rules.ts'
 import { recommend } from '../recommend.ts'
-import { refusal } from '../refusal.ts'
+import { refusal, refusalCode } from '../refusal.ts'
 import { readEinsatzPlanningSource } from '../planning-source.ts'
-import { attributionOf, resolveViewer } from '../viewer.ts'
+import { actorFor, attributionOf, resolveViewer } from '../viewer.ts'
 import { removeRecords } from './removal.ts'
 import { einsatzAdapterId, einsatzPackId, einsatzRuntimeId } from '../ids.ts'
 import { savedStateSchema, type SavedState } from './saved-state.ts'
@@ -30,6 +33,12 @@ import { savedStateSchema, type SavedState } from './saved-state.ts'
  * carried out is never a runtime failure: only a fault in running the engine
  * (advancing it, or executing a command it accepted) fails it.
  */
+
+type QueryId = typeof einsatzQueryIds[keyof typeof einsatzQueryIds]
+
+/** A restored Run whose saved Einsatz state this runtime does not read: refused, never migrated. */
+const savedStateInvalid = (error: unknown): Error =>
+  new Error(refusal('einsatz_saved_state_invalid', `This Run's saved Einsatz state is of an older shape and cannot be restored; start a new Run (${error instanceof Error ? error.message.slice(0, 300) : String(error)})`))
 
 /** Wall-time cadence at which positions follow the Run clock between explicit advances. */
 const tickIntervalMs = 1_000
@@ -68,19 +77,29 @@ const connectEinsatz = async (config: PackRuntimeConnectionConfig, routing: Rout
   if (config.initialObjects !== undefined && store !== undefined && raw === null) {
     throw new Error('Einsatz runtime state is missing on a restored Run; leg progress cannot be reconstructed')
   }
-  const saved = raw === null ? null : savedStateSchema.parse(raw)
+  const savedRead = raw === null ? null : savedStateSchema.safeParse(raw)
+  if (savedRead !== null && !savedRead.success) throw savedStateInvalid(savedRead.error)
+  const saved = savedRead?.data ?? null
   const revision = saved?.revision ?? 0
   const engineConfig = saved?.config ?? einsatzConfigSchema.parse(config.scenario.runtimeConfig)
   let serials = saved?.serials ?? { unit: 1, task: 1 }
   const objects = (config.initialObjects ?? config.scenario.initialObjects).filter(object => object.packId === einsatzPackId)
   /** The Run's declared roles and sides; none of either in open mode. */
   const roles = config.scenario.roles ?? []
-  let current: EngineState = readEngineState({
+  const readState = (): EngineState => readEngineState({
     config: engineConfig,
     sides: (config.scenario.sides ?? []).map(side => side.id),
     objects,
     runtime: saved?.engine ?? { timeMs: clockMs(), units: {}, combat: { units: {}, tracks: {} } },
   })
+  let current: EngineState
+  try {
+    current = readState()
+  } catch (error) {
+    // A restored Run whose Einsatz records this runtime does not read is an Einsatz Run of an older shape: it is refused, never migrated.
+    if (config.initialObjects !== undefined) throw savedStateInvalid(error)
+    throw error
+  }
   const ports: EnginePorts = { routing }
 
   /** The object last published for each record, and where each unit was then. */
@@ -245,14 +264,30 @@ const connectEinsatz = async (config: PackRuntimeConnectionConfig, routing: Rout
 
   const unavailableReason = refusal('runtime_unavailable', 'The Einsatz runtime is unavailable; inspect runtime health')
 
+  /** Each query by its Capability id; every one reads the current state without what the Run deleted. */
+  const queries: Readonly<Record<QueryId, (query: PackRuntimeQuery, viewer: ReturnType<typeof resolveViewer>) => Promise<unknown>>> = {
+    [einsatzQueryIds.planningBasis]: async query =>
+      await readEinsatzPlanningSource({ state: withoutDeleted(current).state, input: query.input, policy: query.readPolicy, routing }),
+    [einsatzQueryIds.situation]: async (query, viewer) =>
+      readSituation({ state: einsatzQueryState(withoutDeleted(current).state, query.readPolicy), viewer, roles, ...situationInputSchema.parse(query.input) }),
+    [einsatzQueryIds.recommend]: async (query, viewer) =>
+      await recommend({ state: einsatzQueryState(withoutDeleted(current).state, query.readPolicy), viewer, taskId: recommendInputSchema.parse(query.input).taskId, routing }),
+    [einsatzQueryIds.unitOptions]: async (query, viewer) => {
+      const state = einsatzQueryState(withoutDeleted(current).state, query.readPolicy)
+      return await readUnitOptions({ state, viewer, roles, actor: actorFor(state.catalog, viewer, 'options'), unitId: unitOptionsInputSchema.parse(query.input).unitId, routing })
+    },
+    [einsatzQueryIds.configuration]: async () => ({ revision, config: current.catalog.config }),
+  }
+
   /**
    * Runs one command as the viewer core stamped for it. A refusal reads
    * `<code>: <message>`. Anything thrown past the refusals is a fault in the
    * engine or runtime, never the caller's: it fails the runtime, and the
    * command is refused as unavailable.
    */
-  const runCommand = async (command: CommandEnvelope, stamped: RunViewer | undefined): Promise<CommandResult> => {
-    const refused = (reason: string): CommandResult => ({ ok: false, commandId: command.id, rejectedAt: nowIso(), reason })
+  const runCommand = async (command: CommandEnvelope, context: PackCommandContext): Promise<CommandResult> => {
+    const stamped = context.viewer
+    const refused = (reason: string): CommandResult => ({ ok: false, commandId: command.id, rejectedAt: nowIso(), reason, code: refusalCode(reason) })
     if (unavailable()) return refused(unavailableReason)
     if (!isEinsatzCommand(command.kind)) return refused(refusal('command_not_accepted', `Einsatz does not accept ${command.kind}`))
     try {
@@ -267,7 +302,7 @@ const connectEinsatz = async (config: PackRuntimeConnectionConfig, routing: Rout
         const base = current
         let nextSerials = serials
         const prepared = prepareCommand({
-          state: base, viewer, roles, by: attributionOf(viewer, command.actorId),
+          state: base, viewer, roles, by: attributionOf(viewer, command.actorId, context.origin), commandId: command.id,
           newId: kind => {
             const fresh = freshId(kind)
             nextSerials = fresh.serials
@@ -324,19 +359,12 @@ const connectEinsatz = async (config: PackRuntimeConnectionConfig, routing: Rout
       handlers.add(handler)
       return () => { handlers.delete(handler) }
     },
-    sendCommand: (command, context) => serialize(() => runCommand(command, context.viewer)),
+    sendCommand: (command, context) => serialize(() => runCommand(command, context)),
     invokeQuery: async query => {
       if (unavailable()) throw new Error(unavailableReason)
-      const viewer = resolveViewer(query.viewer, roles)
-      if (query.capabilityId === 'world.einsatz.planning-basis') {
-        return await readEinsatzPlanningSource({ state: withoutDeleted(current).state, input: query.input, policy: query.readPolicy, routing })
-      }
-      if (query.capabilityId === einsatzQueryIds.recommend) {
-        const input = recommendInputSchema.parse(query.input)
-        return await recommend({ state: einsatzQueryState(withoutDeleted(current).state, query.readPolicy), viewer, taskId: input.taskId, routing })
-      }
-      if (query.capabilityId === einsatzQueryIds.configuration) return { revision, config: current.catalog.config }
-      throw new Error(`Einsatz does not answer ${query.capabilityId}`)
+      const answer = queries[query.capabilityId as QueryId]
+      if (answer === undefined) throw new Error(`Einsatz does not answer ${query.capabilityId}`)
+      return await answer(query, resolveViewer(query.viewer, roles))
     },
     validateObjectDeletion: objectId => {
       const unit = current.units.get(objectId)

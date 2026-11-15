@@ -89,3 +89,54 @@ export const etasTo = async (state: EngineState, units: ReadonlyArray<UnitRecord
 
 /** Seconds to compare ETAs by; a missing ETA sorts last. */
 export const etaSeconds = (eta: Eta): number => eta.kind === 'unavailable' ? Number.POSITIVE_INFINITY : eta.seconds
+
+/** The router's table from one point to many, or why there is none. A failing router is answered, never thrown. */
+const tableFrom = async (routing: TablePort, from: GeoJsonPoint, destinations: ReadonlyArray<GeoJsonPoint>): Promise<TableAnswer> => {
+  let table: RouteTableResult
+  try {
+    table = await routing.table({ sources: [from], destinations })
+  } catch (error) {
+    return { ok: false, reason: refusal('routing_unavailable', `ETA unavailable: ${message(error)}`) }
+  }
+  const answered = [table.durationsSeconds, table.distancesM].every(rows => rows.length === 1 && rows[0]!.length === destinations.length)
+    && table.sourceSnapsM.length === 1 && table.destinationSnapsM.length === destinations.length
+  if (!answered) return { ok: false, reason: refusal('routing_unavailable', `ETA unavailable: the router answered another table than one point to ${destinations.length}`) }
+  return { ok: true, table }
+}
+
+/**
+ * ETAs of one unit from `from` to many points, each with the turnout it
+ * would spend first, in one router request for a road unit: refused for the
+ * same reasons an order would be, as `etasTo` is. A direct unit flies
+ * straight lines at its own speed.
+ */
+export const etasFrom = async (state: EngineState, unit: UnitRecord, from: GeoJsonPoint, destinations: ReadonlyArray<{ readonly point: GeoJsonPoint; readonly turnoutS: number }>, routing: TablePort): Promise<ReadonlyArray<Eta>> => {
+  const mobility = unitTypeOf(state.catalog, unit).components.mobility
+  if (mobility === undefined) throw new Error(`${unit.id} cannot move, so it has no ETA`)
+  if (destinations.length === 0) return []
+  if (mobility.mode === 'direct') {
+    return destinations.map(entry => {
+      const distanceM = routeDistanceMeters(from, entry.point)
+      return { kind: 'straight-line', seconds: entry.turnoutS + distanceM / mobility.speedMps, distanceM }
+    })
+  }
+  const answer = await tableFrom(routing, from, destinations.map(entry => entry.point))
+  return destinations.map((entry, index): Eta => {
+    const unavailable = (reason: string): Eta => ({ kind: 'unavailable', reason, straightDistanceM: routeDistanceMeters(from, entry.point) })
+    if (!answer.ok) return unavailable(answer.reason)
+    const { table } = answer
+    if (table.sourceSnapsM[0]! > roadSnapLimitM) return unavailable(noRoadNear(unit.label))
+    if (table.destinationSnapsM[index]! > roadSnapLimitM) return unavailable(noRoadNear())
+    const durationS = table.durationsSeconds[0]![index]!
+    const distanceM = table.distancesM[0]![index]!
+    if (durationS === null || distanceM === null) return unavailable(refusal('routing_unavailable', 'ETA unavailable: no route'))
+    return { kind: table.basis, seconds: entry.turnoutS + durationS / mobility.speedFactor, distanceM }
+  })
+}
+
+/** The turnout a unit would spend before leaving for a target now: as `etasTo` counts it, and only for a task, as an order applies it. */
+export const turnoutFor = (state: EngineState, unit: UnitRecord, toTask: boolean): number => {
+  const mobility = unitTypeOf(state.catalog, unit).components.mobility
+  if (mobility === undefined || !toTask) return 0
+  return turnoutSeconds(state, unit, mobility.mobilizeS)
+}
