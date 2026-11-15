@@ -400,7 +400,12 @@ export const statusSchema = z.discriminatedUnion('word', [
       const issue = goalLineIssue(lead, status.run.grid)
       if (issue !== undefined && unit === undefined) context.addIssue({ code: 'custom', path: ['lead', issue.path], message: issue.message })
     }),
-  z.object({ word: z.literal(statusWordSchema.enum['proven infeasible']), cause: certificateSchema, run: runBasisSchema }).strict(),
+  // byMethod: a what-if over two or more method combinations, refused for each, with each combination's own
+  // cause as lane K verified it; `cause` is then the entry of the option's own methods (optionLeadRefinement).
+  z.object({
+    word: z.literal(statusWordSchema.enum['proven infeasible']), cause: certificateSchema, run: runBasisSchema,
+    byMethod: z.array(z.object({ methods: z.array(z.object({ choice: keySchema, option: keySchema }).strict()), purchases: z.array(keySchema), cause: certificateSchema }).strict()).min(2).max(8).optional(),
+  }).strict(),
   z.object({ word: z.literal(statusWordSchema.enum['invalid input']), problems: z.array(problemSchema).min(1).max(16) }).strict(),
   z.object({ word: z.literal(statusWordSchema.enum['unsupported feature']), problems: z.array(problemSchema).min(1).max(16) }).strict(),   // an unmodelled rule only
   z.object({ word: z.literal(statusWordSchema.enum.cancelled), run: runBasisSchema }).strict(),   // nothing found before the stop
@@ -431,7 +436,9 @@ export const datedRowSchema = z.object({
  * none of that resource's time remains ("<job> could not be done: <crew> has no time left after <instant>").
  */
 const retimedSchema = z.union([
-  z.object({ holds: z.literal(true) }).strict(),
+  // It holds; `spans`: each span limit's longest span on the re-timing and its margin, lane K's figures (V12),
+  // one per span-limit rule, the plan's (at most 200) and the what-if's.
+  z.object({ holds: z.literal(true), spans: z.array(z.object({ rule: keySchema, hours: z.number().finite().nonnegative(), margin: z.number().finite() }).strict()).max(201).optional() }).strict(),
   z.object({ holds: z.literal(false), rule: keySchema, job: keySchema, by: z.object({ value: z.number().positive(), unit: timeUnitSchema }).strict() }).strict(),
   z.object({ holds: z.literal(false), window: z.object({ by: instantSchema }).strict(), job: keySchema }).strict(),
   z.object({ holds: z.literal(false), unplaced: z.object({ job: keySchema, resource: keySchema, after: instantSchema }).strict() }).strict(),
@@ -439,6 +446,17 @@ const retimedSchema = z.union([
 /** allPessimistic: every ranged job at its high estimate together; single: each ranged job alone at its high estimate. */
 export const robustSchema = z.object({ allPessimistic: retimedSchema, single: z.array(z.object({ job: keySchema, outcome: retimedSchema }).strict()).max(12) }).strict()
 export type Robust = z.infer<typeof robustSchema>
+/**
+ * The re-timings were not worked out, said so, never left out silently, and never a part of the record:
+ * `time`, the sub-solve's time ran out before they could all be made; `unplaced`, re-timing could not place
+ * `job`, and lane K could not name one crew or tool that has no time left for it.
+ */
+export const robustNotWorkedOutSchema = z.union([
+  z.object({ notWorkedOut: z.literal('time') }).strict(),
+  z.object({ notWorkedOut: z.literal('unplaced'), job: keySchema }).strict(),
+])
+/** option.robust: the record, or why there is none. */
+export type RobustField = Robust | z.infer<typeof robustNotWorkedOutSchema>
 export const metricSchema = z.object({ id: z.string(), value: z.number(), unit: z.string() }).strict()
 const optionObjectSchema = z.object({
   key: keySchema, label: labelSchema,
@@ -456,7 +474,7 @@ const optionObjectSchema = z.object({
   // Solved above the certified size (more jobs in its solve than `certifiedSize.maxJobs`): it keeps every
   // hard rule, but may not be near the best. Shown beside its status as a caution.
   sizeCaution: z.literal(true).optional(),
-  robust: robustSchema.optional(),
+  robust: z.union([robustSchema, robustNotWorkedOutSchema]).optional(),
 }).strict()
 type OptionShape = Pick<z.infer<typeof optionObjectSchema>, 'variant' | 'status'>
 /** A what-if's lead and its status's lead name the same thing, and only a what-if with a lead records one. */
@@ -468,10 +486,25 @@ export const optionLeadIssue = (option: OptionShape): string | undefined => {
   const same = 'goal' in asked ? 'goal' in solved && solved.goal === asked.goal : 'group' in solved && solved.group === asked.group
   return same ? undefined : 'The status names another leading goal than the what-if'
 }
-/** The option-level lead rule; every schema of an option applies it. */
+/**
+ * A refusal over several method combinations names each once, and its `cause` is the entry of the option's
+ * own methods.
+ */
+export const optionByMethodIssue = (option: OptionShape): string | undefined => {
+  if (option.status.word !== 'proven infeasible' || option.status.byMethod === undefined) return undefined
+  const picks = (methods: ReadonlyArray<{ readonly choice: string; readonly option: string }>) => JSON.stringify([...methods].sort((x, y) => (x.choice < y.choice ? -1 : x.choice > y.choice ? 1 : 0)))
+  const names = option.status.byMethod.map(entry => picks(entry.methods))
+  if (new Set(names).size !== names.length) return 'Each method combination of a refusal is named once'
+  const own = option.status.byMethod.find(entry => picks(entry.methods) === picks(option.variant.methods))
+  if (own === undefined) return 'A refusal over several methods names the option\'s own methods'
+  return JSON.stringify(own.cause) === JSON.stringify(option.status.cause) ? undefined : 'The cause is the one of the option\'s own methods'
+}
+/** The option-level rules (its lead, a refusal's causes by method); every schema of an option applies them. */
 export const optionLeadRefinement = (option: OptionShape, context: z.core.$RefinementCtx): void => {
   const issue = optionLeadIssue(option)
   if (issue !== undefined) context.addIssue({ code: 'custom', path: ['status', 'lead'], message: issue })
+  const byMethod = optionByMethodIssue(option)
+  if (byMethod !== undefined) context.addIssue({ code: 'custom', path: ['status', 'cause'], message: byMethod })
 }
 export const optionSchema = optionObjectSchema.superRefine(optionLeadRefinement)
 /** An option without its rows, for the options read section, which extends it and applies optionLeadRefinement. */

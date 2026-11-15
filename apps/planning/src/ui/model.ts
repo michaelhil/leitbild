@@ -3,7 +3,7 @@
 import type { z } from 'zod'
 import type { OptionWarning, writeResultSchema } from '../api/contract.ts'
 import type { Edit } from '../plan/edit-schema.ts'
-import type { CertifiedSize, Plan, PlanInputs, Robust, Status, optionSchema } from '../plan/schema.ts'
+import type { CertifiedSize, Plan, PlanInputs, RobustField, Status, optionSchema } from '../plan/schema.ts'
 
 export type { Status }
 export type StoredOption = z.infer<typeof optionSchema>
@@ -28,8 +28,11 @@ export interface OptionView {
   readonly inputsRevision: number
   readonly fresh: boolean
   readonly warnings: readonly OptionWarning[]
-  /** The schedule re-timed at pessimistic estimates and checked; absent when it was not re-timed. */
-  readonly robust?: Robust | undefined
+  /**
+   * The schedule re-timed at pessimistic estimates and checked; `{notWorkedOut: 'time'}` when the time ran out
+   * before the re-timings could be made; absent when it was not re-timed.
+   */
+  readonly robust?: RobustField | undefined
   /** Another option of the same set is no worse on every goal and better on one; folded under the table. */
   readonly dominated?: { readonly by: string } | undefined
 }

@@ -167,9 +167,10 @@ describe("V1: a what-if's span refusal on the flagship (the walk's 40 h, after 4
   const variantOf = (hours: number, option: string) => ({ methods: methodsOf(option), purchases: refusal(hours, option)?.purchases ?? [], also: asked(hours) })
 
   test('a span cause named against the plan\'s 72 h rule proves nothing: its least span, 61.5 h, does not exceed 72 h', () => {
-    // the walk's card: "The shortest span this plan allows is 61.5 h, against 72 h"
+    // the walk's card: "The shortest span this plan allows is 61.5 h, against 72 h". Since lane S's V1 fix,
+    // bounds names the what-if's own 40 h rule; the claim against R2 is made here by hand, as the walk saw it.
     const rebuild = refusal(40, 'rebuild')!
-    expect(rebuild.span).toMatchObject({ rule: 'R2', limitHours: 72, leastHours: 61.5 })
+    expect(rebuild.span).toMatchObject({ rule: 'what-if-COOL-A-40h', limitHours: 40, leastHours: 61.5 })
     const named = verifySpanRefusal(flagship, variantOf(40, 'rebuild'), { rule: 'R2', leastHours: 61.5 })
     expect(named.proves).toBe(false)
     expect(named.reasons.join(' ')).toContain('72 h')
