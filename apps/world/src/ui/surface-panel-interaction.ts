@@ -63,15 +63,30 @@ export const assertMapPrompt = (panelId: string, prompt: MapPrompt): MapPrompt =
 export const mapTargetingMaxTargets = 8
 
 /**
+ * One target an armed order marks. A valid one (the default) gets a green
+ * halo whose tag is the verb or ETA a click there gives, e.g. "4 min". A
+ * refused one is the target a click was just refused for: it gets a neutral
+ * ring apart from the valid ones, and its tag is the refusal, shown beside
+ * the target for as long as the panel keeps it in the targeting (plan B.3:
+ * 4 s).
+ */
+export interface MapTargetingTarget {
+  readonly id: ObjectId
+  readonly tag: string
+  readonly tone?: 'valid' | 'refused'
+}
+
+/**
  * What a map-target panel shows on the map while it arms an order for one
- * of its objects, `from`: each target gets a halo with its tag (a verb or an
- * ETA, e.g. "4 min"), every other object is dimmed, and a line runs from
+ * of its objects, `from`: each target gets a halo with its tag
+ * (`MapTargetingTarget`), every other object is dimmed, and a line runs from
  * `from` to a mouse pointer (never to a finger, which has none between taps).
- * The map only draws it; clicks route as always (`map-target-routing.ts`).
+ * The map only draws it; clicks route as always (`map-target-routing.ts`),
+ * and a tap on a tag is a tap on its target.
  */
 export interface MapTargeting {
   readonly from: ObjectId
-  readonly targets: ReadonlyArray<{ readonly id: ObjectId; readonly tag: string }>
+  readonly targets: ReadonlyArray<MapTargetingTarget>
 }
 
 /** A panel's targeting, refused beyond eight targets, with a target twice or as `from`, or with an empty tag. */

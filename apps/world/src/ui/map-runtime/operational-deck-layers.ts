@@ -119,10 +119,13 @@ const pointFill = (point: OperationalPointFeature): ColorRgba => {
 /** An armed order's target: a green ring, apart from the selection's blue and a highlight's amber. */
 const targetHaloFill = rgba(22, 133, 92, 44)
 const targetHaloStroke = rgba(22, 133, 92, 245)
+/** The target a click was just refused for: a neutral slate ring and tag, apart from the valid targets' green and an alert's colour. */
+const refusedHaloFill = rgba(71, 85, 105, 40)
+const refusedHaloStroke = rgba(71, 85, 105, 245)
 
 const haloFill = (point: OperationalPointFeature): ColorRgba => {
   if (point.selected) return rgba(29, 102, 210, 62)
-  if (point.targetTag !== null) return targetHaloFill
+  if (point.targetTag !== null) return point.targetRefused ? refusedHaloFill : targetHaloFill
   if (point.highlighted) return rgba(193, 122, 19, 58)
   if (point.alert !== null) return colorWithAlpha(point.alert.color, 52)
   return rgba(255, 255, 255, 0)
@@ -130,7 +133,7 @@ const haloFill = (point: OperationalPointFeature): ColorRgba => {
 
 const haloStroke = (point: OperationalPointFeature): ColorRgba => {
   if (point.selected) return rgba(29, 102, 210, 245)
-  if (point.targetTag !== null) return targetHaloStroke
+  if (point.targetTag !== null) return point.targetRefused ? refusedHaloStroke : targetHaloStroke
   if (point.highlighted) return rgba(193, 122, 19, 230)
   if (point.alert !== null) return colorWithAlpha(point.alert.color, 230)
   return rgba(255, 255, 255, 0)
@@ -567,8 +570,9 @@ export const createOperationalDeckLayers = (config: OperationalDeckLayerConfig):
           onHover: onSymbolHover,
         })]
       : []),
-    // Each target's tag above its halo while an order is armed: the verb or ETA a click there gives. Like a label, a
-    // tag is part of its target: a tap on it picks the target, never the ground or an icon fanned out beneath it.
+    // Each target's tag above its halo while an order is armed: the verb or ETA a click there gives, or for a refused
+    // target the refusal, wrapped at about 22 characters a line. Like a label, a tag is part of its target: a tap on
+    // it picks the target, never the ground or an icon fanned out beneath it.
     ...(layerData.targetTagPoints.length > 0
       ? [new TextLayer<OperationalPointFeature>({
           id: 'leitbild-target-tags',
@@ -587,7 +591,9 @@ export const createOperationalDeckLayers = (config: OperationalDeckLayerConfig):
           getAlignmentBaseline: 'bottom',
           getPixelOffset: point => [0, -(Math.max(18, statusDiskRadiusPx(point.sizePx)) + 6)],
           background: true,
-          getBackgroundColor: targetHaloStroke,
+          maxWidth: 22,
+          wordBreak: 'break-word',
+          getBackgroundColor: point => point.targetRefused ? refusedHaloStroke : targetHaloStroke,
           backgroundPadding: [6, 3],
           onClick: onSymbolClick,
           onHover: onSymbolHover,
@@ -595,6 +601,7 @@ export const createOperationalDeckLayers = (config: OperationalDeckLayerConfig):
             getText: snapshot.revisions.points,
             getPosition: snapshot.revisions.points,
             getPixelOffset: snapshot.revisions.points,
+            getBackgroundColor: snapshot.revisions.points,
           },
         })]
       : []),

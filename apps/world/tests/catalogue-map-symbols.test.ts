@@ -7,7 +7,7 @@ import { createOperationalDeckLayers } from '../src/ui/map-runtime/operational-d
 import { catalogueSymbolIds } from '../src/ui/map-runtime/operational-render-controller.ts'
 import { leitbildSymbolIds, operationalIconPx, symbolAtlasFor } from '../src/ui/map-runtime/symbol-kit.ts'
 import { disksPickFor, pickingRadiusFor } from '../src/ui/map/map-pointer.ts'
-import type { OperationalRenderSnapshot } from '../src/ui/map-runtime/types.ts'
+import type { MapTargetingRender, OperationalRenderSnapshot } from '../src/ui/map-runtime/types.ts'
 
 const at = '2026-10-12T08:00:00.000Z' as IsoTimestamp
 
@@ -162,7 +162,7 @@ describe('operational map icons', () => {
   test('an armed order rings and tags its targets and dims every other object but its own, and nothing changes once it clears', () => {
     const store = createMapFeatureStore()
     const objects = [objectOf('a', 11.3), objectOf('b', 11.4), objectOf('c', 11.5), objectOf('d', 11.6)]
-    const input = (targeting: { readonly fromId: string; readonly tags: ReadonlyMap<string, string> } | null) => ({
+    const input = (targeting: MapTargetingRender | null) => ({
       objects,
       selectedControllerId: 'a',
       highlightedObjectIds: [],
@@ -175,7 +175,8 @@ describe('operational map icons', () => {
     })
     const plain = store.update(input(null))
     expect(plain.points.map(point => [point.id, point.targetTag, point.dimmed])).toEqual([['a', null, false], ['b', null, false], ['c', null, false], ['d', null, false]])
-    const armed = store.update(input({ fromId: 'a', tags: new Map([['b', '4 min'], ['c', 'Move · 9 min']]) }))
+    const valid = (tag: string) => ({ tag, refused: false })
+    const armed = store.update(input({ fromId: 'a', targets: new Map([['b', valid('4 min')], ['c', valid('Move · 9 min')]]) }))
     expect(armed.revisions.points).toBe(plain.revisions.points + 1)
     expect(armed.points.map(point => [point.id, point.targetTag, point.dimmed, point.color[3]])).toEqual([['a', null, false, 255], ['b', '4 min', false, 255], ['c', 'Move · 9 min', false, 255], ['d', null, true, 72]])
     const layers = layersOf(armed, emptyCatalogueSymbolAtlas)
@@ -188,6 +189,34 @@ describe('operational map icons', () => {
     expect(layersOf(cleared, emptyCatalogueSymbolAtlas).map(layer => layer.id)).toEqual(todaysLayerIds)
   })
 
+  test('a target a click was just refused for is ringed and tagged apart, with the refusal as its tag, and never dimmed', () => {
+    const store = createMapFeatureStore()
+    const objects = [objectOf('a', 11.3), objectOf('b', 11.4), objectOf('c', 11.5), objectOf('d', 11.6)]
+    const armed = store.update({
+      objects,
+      selectedControllerId: 'a',
+      highlightedObjectIds: [],
+      targeting: { fromId: 'a', targets: new Map([['b', { tag: 'Needs fire suppression', refused: true }], ['c', { tag: '4 min', refused: false }]]) },
+      hiddenObjectCategoryIds: [], alertPalette: 'day' as const,
+      placementPoints: [],
+      packFeatures: [],
+      hasNewInfo: () => false,
+      presentationFor: presentationWith({}),
+    })
+    expect(armed.points.map(point => [point.id, point.targetTag, point.targetRefused, point.dimmed])).toEqual([['a', null, false, false], ['b', 'Needs fire suppression', true, false], ['c', '4 min', false, false], ['d', null, false, true]])
+    const layers = layersOf(armed, emptyCatalogueSymbolAtlas)
+    const [refused, valid] = ['b', 'c'].map(id => armed.points.find(point => point.id === id)!)
+    const halos = layers.find(layer => layer.id === 'leitbild-object-halos')?.props as unknown as { readonly getRadius: (point: unknown) => number; readonly getLineColor: (point: unknown) => ReadonlyArray<number> }
+    expect([halos.getRadius(refused), halos.getRadius(valid)]).toEqual([18, 18])
+    expect(halos.getLineColor(refused)).not.toEqual(halos.getLineColor(valid))
+    const tags = layers.find(layer => layer.id === 'leitbild-target-tags')?.props as unknown as { readonly data: ReadonlyArray<{ readonly id: string }>; readonly getBackgroundColor: (point: unknown) => ReadonlyArray<number>; readonly maxWidth: number }
+    expect(tags.data.map(point => point.id)).toEqual(['b', 'c'])
+    expect(tags.getBackgroundColor(refused)).toEqual(halos.getLineColor(refused))
+    expect(tags.getBackgroundColor(valid)).toEqual(halos.getLineColor(valid))
+    // A refusal wraps instead of running across the map.
+    expect(tags.maxWidth).toBeGreaterThan(0)
+  })
+
   test('a tap or hover on a target\'s tag acts on that target, never on the ground or an icon beneath it', () => {
     const store = createMapFeatureStore()
     const objects = [objectOf('a', 11.3), objectOf('b', 11.4), objectOf('c', 11.5)]
@@ -195,7 +224,7 @@ describe('operational map icons', () => {
       objects,
       selectedControllerId: 'a',
       highlightedObjectIds: [],
-      targeting: { fromId: 'a', tags: new Map([['b', '4 min'], ['c', '9 min']]) },
+      targeting: { fromId: 'a', targets: new Map([['b', { tag: '4 min', refused: false }], ['c', { tag: '9 min', refused: false }]]) },
       hiddenObjectCategoryIds: [], alertPalette: 'day' as const,
       placementPoints: [],
       packFeatures: [],

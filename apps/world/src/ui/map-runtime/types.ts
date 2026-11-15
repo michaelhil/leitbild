@@ -52,6 +52,8 @@ export interface OperationalPointFeature {
   readonly muted: boolean
   /** A target of the armed order (`MapTargeting`): its halo carries this tag; null for any other object. */
   readonly targetTag: string | null
+  /** The target a click was just refused for: ringed apart, its tag the refusal. */
+  readonly targetRefused: boolean
   /** Dimmed while an order is armed: neither its object nor one of its targets. */
   readonly dimmed: boolean
   readonly sizePx: number
@@ -99,10 +101,10 @@ export interface MapAssignmentInteraction {
   readonly handles: ReadonlyArray<MapAssignmentHandleFeature>
 }
 
-/** An armed order as the map draws it (`MapTargeting`): the object it is for, and each target's tag by object id. */
+/** An armed order as the map draws it (`MapTargeting`): the object it is for, and each target's tag and tone by object id. */
 export interface MapTargetingRender {
   readonly fromId: string
-  readonly tags: ReadonlyMap<string, string>
+  readonly targets: ReadonlyMap<string, { readonly tag: string; readonly refused: boolean }>
 }
 
 export interface OperationalRenderInput {

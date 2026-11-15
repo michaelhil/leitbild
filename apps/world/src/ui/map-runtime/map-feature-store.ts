@@ -130,8 +130,10 @@ const operationalPointFor = (
   const highlighted = context.highlightedObjectIds.has(object.id)
   const hasNewInfo = presentation.noteworthyUpdates === true && context.hasNewInfo(object)
   const muted = presentation.muted === true || context.mutedObjectIds.has(object.id)
-  const targetTag = context.targeting?.tags.get(object.id) ?? null
-  const dimmed = context.targeting !== null && targetTag === null && object.id !== context.targeting.fromId
+  const target = context.targeting?.targets.get(object.id) ?? null
+  const targetTag = target?.tag ?? null
+  const targetRefused = target?.refused === true
+  const dimmed = context.targeting !== null && target === null && object.id !== context.targeting.fromId
   const color = dimmed ? colorWithAlpha(hexToRgba(presentation.color), dimmedAlpha) : muted ? colorWithAlpha(hexToRgba(presentation.color), 132) : hexToRgba(presentation.color)
   const sizePx = presentation.mapIconSizePx ?? symbolSizePx(symbolId)
   const alert = alertBadge(object, context.alertPalette)
@@ -147,7 +149,7 @@ const operationalPointFor = (
     hasNewInfo ? 'n' : '',
     muted ? 'm' : '',
     dimmed ? 'd' : '',
-    targetTag === null ? '' : `t=${targetTag}`,
+    targetTag === null ? '' : `t=${targetRefused ? 'r' : 'v'}=${targetTag}`,
     label ?? '',
     alert === null ? '' : alert.color.join(','),
   ].join(':')
@@ -166,6 +168,7 @@ const operationalPointFor = (
     hasNewInfo,
     muted,
     targetTag,
+    targetRefused,
     dimmed,
     sizePx,
     rotationDeg: 0,

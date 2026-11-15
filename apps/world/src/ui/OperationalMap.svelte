@@ -266,7 +266,7 @@
   let objectTookClick = false
   let featureSelection: NonNullable<PackMapFeature['selection']> | null = null
 
-  const targetingRender = $derived<MapTargetingRender | null>(targeting === null ? null : { fromId: targeting.from, tags: new Map(targeting.targets.map(target => [target.id as string, target.tag])) })
+  const targetingRender = $derived<MapTargetingRender | null>(targeting === null ? null : { fromId: targeting.from, targets: new Map(targeting.targets.map(target => [target.id as string, { tag: target.tag, refused: target.tone === 'refused' }])) })
   /** Whether a line follows the pointer: an armed hold-gesture assignment, or a panel's armed order while the pointer is a mouse. */
   const pointerLineWanted = (pointerType: string | null): boolean => assignmentActive || (targeting !== null && hoverCardsFor(pointerType))
 

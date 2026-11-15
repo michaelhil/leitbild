@@ -215,6 +215,9 @@ describe('map targeting', () => {
     const eight = { from, targets: Array.from({ length: 8 }, (_, index) => target(`task:c-${index}`)) }
     expect(assertMapTargeting('fixture.panel', eight)).toBe(eight)
     expect(assertMapTargeting('fixture.panel', { from, targets: [] }).targets).toEqual([])
+    // The target a click was just refused for carries the refusal as its tag.
+    const refused = { from, targets: [{ ...target('task:c-1', 'Needs fire suppression'), tone: 'refused' as const }, target('task:c-2')] }
+    expect(assertMapTargeting('fixture.panel', refused)).toBe(refused)
     expect(() => assertMapTargeting('fixture.panel', { from, targets: [...eight.targets, target('task:c-9')] })).toThrow('Surface panel fixture.panel showed a map targeting from unit:a4 with 9 targets; at most 8 are marked')
     expect(() => assertMapTargeting('fixture.panel', { from, targets: [target('unit:a4')] })).toThrow('that targets its own object')
     expect(() => assertMapTargeting('fixture.panel', { from, targets: [target('task:c-1'), target('task:c-1')] })).toThrow('that marks task:c-1 twice')
