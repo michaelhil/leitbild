@@ -3,14 +3,17 @@
 // adversary part 2 check, fixes B and C); the gap is in the goal's unit. Every
 // status shown is re-checked against the current inputs, and a stored proof is reused only when the
 // option's inputs revision and formulation both equal the current ones. Prose is never built here.
-import { goalResolution, statusSchema, type BoundCertificate, type Certificate, type GoalWord, type PlanInputs, type Status } from '../plan/schema.ts'
+import type { z } from 'zod'
+import { goalResolution, statusSchema, type alsoRuleSchema, type BoundCertificate, type Certificate, type GoalWord, type PlanInputs, type Status } from '../plan/schema.ts'
 import type { BoundSource } from './problem.ts'
 import { goalExcess, type RawMetric } from './rank.ts'
 import type { DatedRow } from './date.ts'
 
 type RunBasis = Extract<Status, { word: 'validated feasible' }>['run']
 type GoalStatus = Extract<Status, { word: 'validated feasible' }>['goals'][number]
-type Option = { readonly key: string; readonly status: Status; readonly rows: readonly DatedRow[]; readonly inputsRevision: number; readonly variant: { readonly methods: ReadonlyArray<{ choice: string; option: string }>; readonly purchases: readonly string[] } }
+/** What lane K checks an option as: its methods, the purchases it may use, and a what-if's extra rule (`also`), which lane K reads itself. */
+export interface CheckedVariant { readonly methods: ReadonlyArray<{ choice: string; option: string }>; readonly purchases: readonly string[]; readonly also?: ReadonlyArray<z.infer<typeof alsoRuleSchema>> | undefined }
+type Option = { readonly key: string; readonly status: Status; readonly rows: readonly DatedRow[]; readonly inputsRevision: number; readonly variant: CheckedVariant }
 
 /** A goal's lower bound from bounds.ts: raw value, source, and its derivation in plan terms. */
 export interface GoalBound { readonly value: RawMetric; readonly source: BoundSource; readonly certificate?: BoundCertificate }
@@ -20,6 +23,11 @@ export interface CheckReport {
   readonly violations: ReadonlyArray<{ readonly code: string; readonly about: readonly string[] }>
   /** One raw value per goal, in the goal's unit; span-over gives one span per group in scope. */
   readonly goals: readonly RawMetric[]
+  /**
+   * The checker's own measures Generate reads beside the goals: 'bought:<purchase>' (person-h or periods used),
+   * stored on the option, and 'span:<group>' (h), a group lead's value. A group never out has no span entry.
+   */
+  readonly metrics?: ReadonlyArray<{ readonly id: string; readonly value: number; readonly unit: string }>
 }
 export type CheckPlan = (plan: { readonly inputs: PlanInputs; readonly variant: Option['variant']; readonly rows: readonly DatedRow[] }) => CheckReport
 
@@ -32,8 +40,9 @@ export type VerifyCertificate = (inputs: PlanInputs, variant: Option['variant'],
  * Lane K's re-derivation of a "proven optimal" goal's bound (check/optimal.ts verifyBound): it `proves` when
  * lane K's own lower bound, from the inputs, reaches `bound.value` (net of the threshold, in the goal's
  * unit) at the goal's resolution. It does not read the certificate. Required wherever such a claim is stored.
+ * `goal` is a plan goal's id, or a group lead's own goal (its group's outage, in `unit`).
  */
-export type VerifyBound = (inputs: PlanInputs, variant: Option['variant'], goal: number, bound: { readonly value: number }) => { readonly proves: boolean }
+export type VerifyBound = (inputs: PlanInputs, variant: Option['variant'], goal: number | { readonly group: string; readonly unit: string }, bound: { readonly value: number }) => { readonly proves: boolean }
 
 /**
  * Checker findings that come from the inputs, not from a schedule: lane K's input codes and the readiness
@@ -119,6 +128,27 @@ const parse = (status: Status): Status => statusSchema.parse(status)
 export const feasibleStatus = (goals: PlanInputs['goals'], run: RunBasis, raw: readonly RawMetric[], bounds: readonly GoalBound[] | undefined) => {
   const words = goalStatuses(goals, run.grid, raw, bounds)
   return { status: parse({ word: 'validated feasible', goals: words.goals, run }), conflicts: words.conflicts }
+}
+
+/**
+ * A what-if's status back on the plan's goal ids (design §0.3). `solved` has one line per goal of the list
+ * it was solved with, the lead first (goalStatuses: goal order). `planGoalOf(p)` names the plan goal at
+ * position p, undefined for a group lead. The lead keeps its word: a plan goal's in its own line, a group's in
+ * `lead`; every other goal reads best found at that cost, its bound kept. Without a lead, `solved` as it is.
+ */
+export const onPlanGoals = (solved: Status, lead: { readonly goal: number } | { readonly group: string } | undefined, planGoalOf: (position: number) => number | undefined): Status => {
+  if (solved.word !== 'validated feasible' || lead === undefined) return solved
+  const goals: GoalStatus[] = []
+  solved.goals.forEach((line, p) => {
+    const goal = planGoalOf(p)
+    if (goal === undefined) return
+    goals[goal] = p === 0 ? { ...line, goal } : unproven({ ...line, goal }, true)
+  })
+  const first = solved.goals[0]!
+  const leadLine = 'goal' in lead ? { goal: lead.goal }
+    : first.word === 'proven optimal' ? { word: first.word, group: lead.group, value: first.value, unit: first.unit, bound: first.bound }
+      : { word: first.word, group: lead.group, value: first.value, unit: first.unit, ...(first.bound === undefined ? {} : { bound: first.bound }) }
+  return parse({ word: solved.word, goals, run: solved.run, lead: leadLine })
 }
 export const infeasibleStatus = (cause: Certificate, run: RunBasis): Status => parse({ word: 'proven infeasible', cause, run })
 export const unresolvedStatus = (run: RunBasis, attempt?: { job: string; wouldFinish: string; pastWindowHours: number }): Status =>

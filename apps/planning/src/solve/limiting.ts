@@ -5,7 +5,7 @@
 // Pure: the solver child runs it (pool.ts), so the service keeps none of its memory.
 import { checkPlan } from '../check/check.ts'
 import type { Plan, PlanInputs } from '../plan/schema.ts'
-import { compile } from './compile.ts'
+import { compile, withExtraRules } from './compile.ts'
 import { dateSchedule } from './date.ts'
 import { makeDecoder, precedenceOrder, prepare } from './decode.ts'
 import { compiled, scheduleOf } from './preview.ts'
@@ -36,7 +36,7 @@ export const oneMoreUnit = (inputs: PlanInputs, option: Option, resource: string
   const plain = makeDecoder(prep).decode(order, saved.mode)
   if (plain.penalty > 0) return unknown
   const more: PlanInputs = { ...inputs, resources: inputs.resources.map(entry => (entry.key === resource ? { ...entry, count: entry.count + 1 } : entry)) }
-  const again = compile(more, { methods: option.variant.methods, buy: option.variant.purchases })
+  const again = compile(withExtraRules(more, option.variant.also), { methods: option.variant.methods, buy: option.variant.purchases })
   if (!again.ok || again.problem.activities.length !== prep.n) return unknown
   const prepMore = prepare(again.problem)
   if (again.problem.activities.some((activity, a) => activity.modes.length !== prep.problem.activities[a]!.modes.length)) return unknown

@@ -82,6 +82,37 @@ export const methodCombinations = (inputs: PlanInputs, fixed: readonly MethodPic
     return combos.flatMap(combo => options.map(option => [...combo, { choice: choice.key, option }]))
   }, [[]])
 
+/**
+ * Whether a sub-solve may use a purchase: unordered past its order deadline at the data date, never; under
+ * "days only", never one that adds crew time without replacing booked time (even when ordered); an ordered one
+ * always otherwise; else as `buy` says. The one rule, for compile and for an option's key.
+ */
+export const purchaseStanding = (purchase: PlanInputs['purchases'][number], resource: PlanInputs['resources'][number], buy: Buy, dataDate: number | undefined):
+  { readonly ok: true } | { readonly ok: false; readonly code: CompileIndex['dropped'][number]['code'] } => {
+  if (purchase.ordered === undefined && purchase.orderBy !== undefined && dataDate !== undefined && dataDate > Date.parse(purchase.orderBy)) return { ok: false, code: 'order_deadline_passed' }
+  const addsCrewHours = resource.kind === 'crew' && purchase.replaces.length === 0
+  if (buy === 'no-extra-crew-hours' && addsCrewHours) return { ok: false, code: 'adds_crew_hours' }
+  if (purchase.ordered !== undefined) return { ok: true }
+  const permitted = buy === 'allowed' ? purchase.allowed : buy === 'none' ? false : buy === 'no-extra-crew-hours' ? true : buy.includes(purchase.key)
+  return permitted ? { ok: true } : { ok: false, code: 'not_in_variant' }
+}
+
+/**
+ * The inputs a what-if is compiled on: the plan's rules with its extra rules (option.variant.also) after
+ * them, never replacing one. Compile reads only these inputs; lane K reads `variant.also` itself.
+ */
+export const withExtraRules = (inputs: PlanInputs, also: ReadonlyArray<PlanInputs['rules'][number]> | undefined): PlanInputs =>
+  also === undefined || also.length === 0 ? inputs : { ...inputs, rules: [...inputs.rules, ...also] }
+
+/** The purchase keys a sub-solve under `buy` may use (purchaseStanding), in plan order. */
+export const permittedPurchases = (inputs: PlanInputs, buy: Buy): string[] => {
+  const dataDate = inputs.settings.dataDate === null ? undefined : Date.parse(inputs.settings.dataDate)
+  return inputs.purchases.flatMap(purchase => {
+    const resource = inputs.resources.find(candidate => candidate.key === purchase.resource)
+    return resource !== undefined && purchaseStanding(purchase, resource, buy, dataDate).ok ? [purchase.key] : []
+  })
+}
+
 const fail = (word: CompileFailure['word'], problems: Problem[]): CompileFailure => ({ ok: false, word, problems: problems.slice(0, 16) })
 const runKey = (mask: Uint8Array): string => {
   const parts: number[] = []
@@ -147,15 +178,9 @@ export const compile = (inputs: PlanInputs, sub: SubSolve): Compiled => {
   const allowedPurchases = inputs.purchases.filter(purchase => {
     const resource = inputs.resources[resourceByKey.get(purchase.resource) ?? -1]
     if (resource === undefined) { invalid.push({ about: [purchase.key, purchase.resource], code: 'unknown_key' }); return false }
-    if (purchase.ordered === undefined && purchase.orderBy !== undefined && dataDate !== undefined && dataDate > Date.parse(purchase.orderBy)) {
-      dropped.push({ purchase: purchase.key, code: 'order_deadline_passed' }); return false
-    }
-    const addsCrewHours = resource.kind === 'crew' && purchase.replaces.length === 0
-    if (sub.buy === 'no-extra-crew-hours' && addsCrewHours) { dropped.push({ purchase: purchase.key, code: 'adds_crew_hours' }); return false }
-    if (purchase.ordered !== undefined) return true
-    const permitted = sub.buy === 'allowed' ? purchase.allowed : sub.buy === 'none' ? false : sub.buy === 'no-extra-crew-hours' ? true : sub.buy.includes(purchase.key)
-    if (!permitted) dropped.push({ purchase: purchase.key, code: 'not_in_variant' })
-    return permitted
+    const standing = purchaseStanding(purchase, resource, sub.buy, dataDate)
+    if (!standing.ok) dropped.push({ purchase: purchase.key, code: standing.code })
+    return standing.ok
   })
   if (Array.isArray(sub.buy)) for (const key of sub.buy) if (!inputs.purchases.some(purchase => purchase.key === key)) invalid.push({ about: [key], code: 'unknown_key' })
 
