@@ -20,9 +20,12 @@ import { einsatzPackView } from './ui-pack.ts'
  * realtime messages. In a Scenario with sides each declared group becomes
  * an operator role (`groups.ts`); without sides a Run is open.
  *
- * A Drone Pack reconnaissance observation of a task is recorded on it with
- * a notice, through the signal the Drone Pack publishes
- * (`interactions/drone-observation.ts`, its handler registered here).
+ * Two links to other Packs, each through what that Pack publishes: a Drone
+ * Pack reconnaissance observation of a task is recorded on it with a notice
+ * (`interactions/drone-observation.ts`, its handler registered here), and
+ * with the Weather Pack in the Run road units move at the pace the weather
+ * at their position allows (`interactions/road-weather.ts`, read by the
+ * runtime).
  */
 export const einsatzPack: WorldPack = {
   inspectionReferences: einsatzInspectionReferences,

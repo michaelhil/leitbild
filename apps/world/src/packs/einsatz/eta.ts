@@ -2,7 +2,7 @@ import { routeDistanceMeters, type GeoJsonPoint } from '../../core/model/index.t
 import type { RouteTableResult, RoutingAdapter } from '../../routing/protocol.ts'
 import type { Eta } from './recommendation-schema.ts'
 import { motionOf, unitTypeOf, type EngineState, type UnitRecord } from './engine/model.ts'
-import { noRoadNear, roadSnapLimitM } from './engine/movement.ts'
+import { noRoadNear, roadSnapLimitM, speedFactor } from './engine/movement.ts'
 import { isMoving } from './engine/rules.ts'
 import { refusal } from './refusal.ts'
 
@@ -59,10 +59,20 @@ const roadEta = (entry: RoadEntry, answer: TableAnswer, index: number, to: GeoJs
 }
 
 /**
+ * A unit's pace now, as the engine moves it: the slowest of its route
+ * impacts, such as road weather (`speedFactor`); 0 while they stop it.
+ */
+const paceOf = (state: EngineState, unit: UnitRecord): number => speedFactor(motionOf(state, unit.id).impacts)
+/** The ETA of a unit its route impacts stop: unavailable, worded as `planEstimate` words a stopped unit. */
+const stoppedEta = (unit: UnitRecord, from: GeoJsonPoint, to: GeoJsonPoint): Eta =>
+  ({ kind: 'unavailable', reason: refusal('routing_unavailable', `${unit.label} is stopped`), straightDistanceM: routeDistanceMeters(from, to) })
+
+/**
  * ETAs of units to a point, turnout included. A direct unit flies a straight
  * line at its own speed. Road units share one router table: its travel time
  * divided by the unit's speed factor, labelled `routed`, or `straight-line`
- * when the Run routes in straight lines. Where a send would be refused, the
+ * when the Run routes in straight lines. Travel is at the unit's pace now
+ * (`paceOf`), as the engine would move it. Where a send would be refused, the
  * ETA is unavailable with that refusal and the straight distance: the router
  * fails (`routing_unavailable`), finds no route, or either end lies more than
  * 1 km from a road (`no_road_near_point`). There is never a straight-line
@@ -76,10 +86,12 @@ export const etasTo = async (state: EngineState, units: ReadonlyArray<UnitRecord
     if (mobility === undefined) throw new Error(`${unit.id} cannot move, so it has no ETA`)
     const from = motionOf(state, unit.id).point
     const turnout = turnoutSeconds(state, unit, mobility.mobilizeS)
-    if (mobility.mode === 'direct') {
+    const pace = paceOf(state, unit)
+    if (pace === 0) etas.set(unit.id, stoppedEta(unit, from, to))
+    else if (mobility.mode === 'direct') {
       const distanceM = routeDistanceMeters(from, to)
-      etas.set(unit.id, { kind: 'straight-line', seconds: turnout + distanceM / mobility.speedMps, distanceM })
-    } else road.push({ unit, from, speedFactor: mobility.speedFactor, turnout })
+      etas.set(unit.id, { kind: 'straight-line', seconds: turnout + distanceM / (mobility.speedMps * pace), distanceM })
+    } else road.push({ unit, from, speedFactor: mobility.speedFactor * pace, turnout })
   }
   if (road.length === 0) return etas
   const answer = await tableTo(routing, road.map(entry => entry.from), to)
@@ -108,16 +120,18 @@ const tableFrom = async (routing: TablePort, from: GeoJsonPoint, destinations: R
  * ETAs of one unit from `from` to many points, each with the turnout it
  * would spend first, in one router request for a road unit: refused for the
  * same reasons an order would be, as `etasTo` is. A direct unit flies
- * straight lines at its own speed.
+ * straight lines at its own speed. Travel is at the unit's pace now.
  */
 export const etasFrom = async (state: EngineState, unit: UnitRecord, from: GeoJsonPoint, destinations: ReadonlyArray<{ readonly point: GeoJsonPoint; readonly turnoutS: number }>, routing: TablePort): Promise<ReadonlyArray<Eta>> => {
   const mobility = unitTypeOf(state.catalog, unit).components.mobility
   if (mobility === undefined) throw new Error(`${unit.id} cannot move, so it has no ETA`)
   if (destinations.length === 0) return []
+  const pace = paceOf(state, unit)
+  if (pace === 0) return destinations.map(entry => stoppedEta(unit, from, entry.point))
   if (mobility.mode === 'direct') {
     return destinations.map(entry => {
       const distanceM = routeDistanceMeters(from, entry.point)
-      return { kind: 'straight-line', seconds: entry.turnoutS + distanceM / mobility.speedMps, distanceM }
+      return { kind: 'straight-line', seconds: entry.turnoutS + distanceM / (mobility.speedMps * pace), distanceM }
     })
   }
   const answer = await tableFrom(routing, from, destinations.map(entry => entry.point))
@@ -130,7 +144,7 @@ export const etasFrom = async (state: EngineState, unit: UnitRecord, from: GeoJs
     const durationS = table.durationsSeconds[0]![index]!
     const distanceM = table.distancesM[0]![index]!
     if (durationS === null || distanceM === null) return unavailable(refusal('routing_unavailable', 'ETA unavailable: no route'))
-    return { kind: table.basis, seconds: entry.turnoutS + durationS / mobility.speedFactor, distanceM }
+    return { kind: table.basis, seconds: entry.turnoutS + durationS / (mobility.speedFactor * pace), distanceM }
   })
 }
 

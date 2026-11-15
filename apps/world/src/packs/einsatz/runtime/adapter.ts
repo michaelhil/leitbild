@@ -12,7 +12,7 @@ import { prepareCommand } from '../commands.ts'
 import { einsatzConfigSchema } from '../config-validation.ts'
 import { advanceEngine, commitIntent, planIntent, prepareLegs, type EnginePorts } from '../engine/engine.ts'
 import { loadedText } from '../engine/intent-support.ts'
-import { motionOf, type EngineState, type Transition } from '../engine/model.ts'
+import { motionOf, type EngineState, type Transition, type UnitMotion } from '../engine/model.ts'
 import { audienceOf, readEngineState, runtimeStateOf, transitionObject, unitObject, type ObjectStamp } from '../engine/objects.ts'
 import { sightingOf, trackDeletionRefusal, trackIndexObject, trackObject, type TrackStamp } from '../engine/track-objects.ts'
 import { hasLoad } from '../engine/rules.ts'
@@ -20,6 +20,7 @@ import { recommend } from '../recommend.ts'
 import { refusal, refusalCode } from '../refusal.ts'
 import { readEinsatzPlanningSource } from '../planning-source.ts'
 import { judgeObservation, observeTask, reconnaissanceObservationSignalType } from '../interactions/drone-observation.ts'
+import { withRoadWeather } from '../interactions/road-weather.ts'
 import { actorFor, attributionOf, resolveViewer } from '../viewer.ts'
 import { removeRecords } from './removal.ts'
 import { einsatzAdapterId, einsatzPackId, einsatzRuntimeId } from '../ids.ts'
@@ -48,6 +49,9 @@ const routingAttempts = 3
 
 const message = (error: unknown): string => error instanceof Error ? error.message : String(error)
 const samePoint = (a: GeoJsonPoint, b: GeoJsonPoint): boolean => a.coordinates[0] === b.coordinates[0] && a.coordinates[1] === b.coordinates[1]
+/** What was last published of a unit's motion: where it was, how far along its leg, and the route impacts on it. */
+type PublishedMotion = Pick<UnitMotion, 'point' | 'progressMs' | 'impacts'>
+const sameMotion = (a: PublishedMotion, b: PublishedMotion): boolean => samePoint(a.point, b.point) && a.progressMs === b.progressMs && a.impacts === b.impacts
 
 /** A command whose commit is being published, and what its caller sees. */
 export interface Commander {
@@ -103,9 +107,9 @@ const connectEinsatz = async (config: PackRuntimeConnectionConfig, routing: Rout
   }
   const ports: EnginePorts = { routing }
 
-  /** The object last published for each record, and where each unit was then. */
+  /** The object last published for each record, and each unit's motion then. */
   const published = new Map<string, OperationalObject>(objects.map(object => [object.id, object]))
-  const publishedMotion = new Map([...current.motion].map(([id, motion]) => [id, { point: motion.point, progressMs: motion.progressMs }]))
+  const publishedMotion = new Map<string, PublishedMotion>([...current.motion].map(([id, motion]) => [id, { point: motion.point, progressMs: motion.progressMs, impacts: motion.impacts }]))
   /** Each track's last published sighting; a track's position between transitions is snapshot-only. */
   const publishedSightings = new Map([...current.combat.sightings].map(([id, sighting]) => [id, sighting.observedAtMs]))
   /** Records the Run has held, so one it no longer holds was deleted rather than not yet committed. */
@@ -179,14 +183,14 @@ const connectEinsatz = async (config: PackRuntimeConnectionConfig, routing: Rout
         continue
       }
       upsert(transitionObject(state, transition, stamp(transition.record.id, audienceOf(state, transition.record), at, commander)), 'record')
-      if (transition.kind === 'unit') publishedMotion.set(transition.record.id, { point: transition.point, progressMs: transition.progressMs })
+      if (transition.kind === 'unit') publishedMotion.set(transition.record.id, { point: transition.point, progressMs: transition.progressMs, impacts: motionOf(state, transition.record.id).impacts })
     }
     for (const unit of state.units.values()) {
       const motion = motionOf(state, unit.id)
       const last = publishedMotion.get(unit.id)
-      if (last !== undefined && samePoint(last.point, motion.point) && last.progressMs === motion.progressMs) continue
+      if (last !== undefined && sameMotion(last, motion)) continue
       upsert(unitObject(state, unit, motion, stamp(unit.id, audienceOf(state, unit), at, commander)), 'snapshot-only')
-      publishedMotion.set(unit.id, { point: motion.point, progressMs: motion.progressMs })
+      publishedMotion.set(unit.id, { point: motion.point, progressMs: motion.progressMs, impacts: motion.impacts })
     }
     for (const track of state.combat.tracks.values()) {
       const sighting = sightingOf(state.combat, track.id)
@@ -229,15 +233,30 @@ const connectEinsatz = async (config: PackRuntimeConnectionConfig, routing: Rout
     persistence.scheduleSave()
   }
 
-  /** Brings the engine to `targetMs`. A fault fails the runtime and is thrown to the caller. */
+  /**
+   * The state with each road unit's road weather read now, when the Run has
+   * the Weather Pack. A failed Weather read is no engine fault: the units
+   * keep the pace last read, and runtime health records the failure.
+   */
+  const weathered = async (state: EngineState): Promise<EngineState> => {
+    try {
+      return await withRoadWeather(state, config.queries)
+    } catch (error) {
+      fault('road-weather', error, 'degraded')
+      return state
+    }
+  }
+
+  /** Reads the road weather, then brings the engine to `targetMs`. A fault fails the runtime and is thrown to the caller. */
   const advance = async (targetMs: number): Promise<void> => {
     if (unavailable()) return
+    const start = await weathered(current)
     try {
-      if (targetMs <= current.timeMs) {
-        commit(current, [])
+      if (targetMs <= start.timeMs) {
+        commit(start, [])
         return
       }
-      const outcome = await advanceEngine(current, targetMs, ports)
+      const outcome = await advanceEngine(start, targetMs, ports)
       commit(outcome.state, outcome.transitions)
       succeeded()
     } catch (error) {
