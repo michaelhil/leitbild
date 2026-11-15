@@ -134,12 +134,16 @@ describe('readiness: warnings only, never a score (T2)', () => {
     expect(item.durations).toContainEqual({ job: job.key, resource: entry.resource, fromMs: 209_800, toMs: 210_000 })
     // Whole seconds only, and a sentence that ends in a full stop, never "; …" (walk 5, R4-4-08).
     const text = readinessText(item, read)
-    expect(text).toContain(`${job.title} with ${read.resources.find(resource => resource.key === entry.resource)!.label} from just under 3 min 30 s to 3 min 30 s`)
-    expect(text).toMatch(/^(One duration was|\d+ durations were) rounded up to the 30 s step: /)
+    // 3 min 29.8 s to 3 min 30 s reads the same in whole seconds: it is counted, never named (walk 6, item 9).
+    expect(text).toMatch(/^(One duration was rounded up to the 30 s step, by|\d+ durations were rounded up to the 30 s step, each by) less than a second\.$/)
+    expect(text).not.toContain(' from ')
     expect([/\d\.\d+ s\b/.test(text), text.includes('…'), text.endsWith('.'), text.length <= 240]).toEqual([false, false, true, true])
     // 7 min 48.5 s to 8 min reads "about 7 min 49 s"; a whole value is given exactly; many are counted.
     const many = { ...item, count: 9, durations: [{ job: job.key, fromMs: 468_500, toMs: 480_000 }, { job: job.key, fromMs: 45_000, toMs: 60_000 }, ...Array.from({ length: 7 }, () => ({ job: job.key, fromMs: 209_800, toMs: 210_000 }))] }
     expect(readinessText(many, read)).toBe(`9 durations were rounded up to the 30 s step: ${job.title} from about 7 min 49 s to 8 min; ${job.title} from 45 s to 1 min, and 7 more.`)
+    // The ones that read the same come first here: the named one is still the one that differs, and the count is the whole.
+    const mixed = { ...item, count: 3, durations: [{ job: job.key, fromMs: 209_800, toMs: 210_000 }, { job: job.key, fromMs: 209_800, toMs: 210_000 }, { job: job.key, fromMs: 468_500, toMs: 480_000 }] }
+    expect(readinessText(mixed, read)).toBe(`3 durations were rounded up to the 30 s step: ${job.title} from about 7 min 49 s to 8 min, and 2 more.`)
   })
 
   test('an order deadline is a decision before the data date and a warning after it', () => {

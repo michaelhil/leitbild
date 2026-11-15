@@ -61,12 +61,10 @@ export const msWords = (ms: number): string => {
   return [hours > 0 ? `${hours} h` : '', minutes > 0 ? `${minutes} min` : '', seconds > 0 ? `${seconds} s` : ''].filter(Boolean).join(' ') || '0 s'
 }
 
-/**
- * A duration before it was rounded up to `toMs`: exact when it is whole seconds, else "about 7 min 49 s", or
- * "just under 3 min 30 s" when the nearest whole second is the rounded value itself.
- */
-const beforeRounding = (fromMs: number, toMs: number): string =>
-  fromMs % 1_000 === 0 ? msWords(fromMs) : Math.round(fromMs / 1_000) * 1_000 >= toMs ? `just under ${msWords(toMs)}` : `about ${msWords(fromMs)}`
+/** A duration before it was rounded up: exact when it is whole seconds, else "about 7 min 49 s". */
+const beforeRounding = (fromMs: number): string => fromMs % 1_000 === 0 ? msWords(fromMs) : `about ${msWords(fromMs)}`
+/** Rounded up by under half a second: in whole seconds its two values read the same, so naming it says nothing. */
+const readsTheSame = (fromMs: number, toMs: number): boolean => Math.round(fromMs / 1_000) * 1_000 >= toMs
 
 export const basisWords: Readonly<Record<string, string>> = { design: 'design', configured: 'configured', observed: 'observed', 'owner-estimate': 'owner estimate' }
 
@@ -227,7 +225,10 @@ export const readinessText = (item: ReadinessItem, inputs: Inputs): string => {
         const rounded = item.durations ?? []
         const step = inputs.settings.grid === '30s' ? '30 s' : '30 min'
         const head = `${rounded.length === 1 ? 'One duration was' : `${rounded.length} durations were`} rounded up to the ${step} step`
-        const each = rounded.map(entry => `${nameOf(inputs, entry.job)}${entry.resource === undefined ? '' : ` with ${nameOf(inputs, entry.resource)}`} from ${beforeRounding(entry.fromMs, entry.toMs)} to ${msWords(entry.toMs)}`)
+        // Only a duration whose two values read differently is named (walk 6, item 9); the count stays the whole.
+        const each = rounded.filter(entry => !readsTheSame(entry.fromMs, entry.toMs))
+          .map(entry => `${nameOf(inputs, entry.job)}${entry.resource === undefined ? '' : ` with ${nameOf(inputs, entry.resource)}`} from ${beforeRounding(entry.fromMs)} to ${msWords(entry.toMs)}`)
+        if (each.length === 0) return `${head}, ${rounded.length === 1 ? 'by' : 'each by'} less than a second.`
         // As many as fit whole, at most two; the rest are counted, and the sentence always ends in a full stop.
         for (const count of [2, 1]) {
           const more = rounded.length - Math.min(count, each.length)
