@@ -16,14 +16,19 @@ import type { OrderWhen, Stop } from '../order-schema.ts'
  * Every click reaches the reducer as a `click`, whether the map selected
  * the object, handed it to the panel as a map target of the selected unit,
  * or a row in the panel was tapped. Double-clicks act as one click: a second
- * click on the same object or the ground within `doubleClickMs` is a no-op.
- * Esc, the banner's × and the card's × go one level back (`back`).
+ * map click on the same object or the ground within `doubleClickMs` is a
+ * no-op, and the panel lets no card, row or footer command act within
+ * `doubleClickMs` of the last one that acted or of the last time its layout
+ * changed (`activationActs`), so the second half of a double-click never
+ * lands on whatever took the first one's place. Esc, the banner's × and the
+ * card's × go one level back (`back`).
  *
  * The reducer returns its effects; the panel performs them in order:
  * `select` shares the selection with the map, `submit` sends a
  * `world.einsatz.unit.order` for the armed unit, `options` reads
- * `world.einsatz.unit.options` for it and `recommend` pins the call card's
- * proposal.
+ * `world.einsatz.unit.options` for it, `recommend` pins the call card's
+ * proposal and `late-refusal` reports a refused order whose unit is no
+ * longer armed, which would otherwise be lost.
  */
 
 /** A second click on the same thing within this many ms is the second half of a double-click. */
@@ -42,18 +47,34 @@ export interface ClickedObject {
 
 export type Clicked = ClickedObject | { readonly kind: 'ground'; readonly point: GeoJsonPoint }
 
+/** A busy unit's current job, which an order with `when: 'now'` drops. */
+export interface CurrentJob {
+  readonly taskId: string
+  readonly label: string
+  /** Its priority code, where the options name it. */
+  readonly code: string | null
+  /** Estimated seconds until the job is done; null when unknown. */
+  readonly freeInS: number | null
+}
+
 /** A prompt the map shows for the armed unit, offset from the point it names. */
 export type ArmedPrompt =
   /** A tap on open ground: "Move A4 here". */
   | { readonly kind: 'move'; readonly point: GeoJsonPoint }
-  /** The server refused `when_required`: "After current job" or "Now (drops …)". */
-  | { readonly kind: 'busy'; readonly target: Stop }
+  /**
+   * The server refused `when_required`: "After current job" or "Now (drops
+   * …)". The job is the one the unit's options named first after the prompt
+   * opened, and stays that one: the prompt never re-labels under the
+   * pointer, and "Now" sends exactly the task it names, so the server's
+   * `drops_mismatch` catches a job that changed meanwhile. Null until the
+   * options name it; "Now" is not offered before.
+   */
+  | { readonly kind: 'busy'; readonly target: Stop; readonly job: CurrentJob | null }
 
 /** A refusal shown beside its target (and in the card) until `untilMs`. */
 export interface ShownRefusal {
   /** The object the refused stop names; null for a point. */
   readonly targetId: string | null
-  readonly code: string | null
   readonly text: string
   readonly untilMs: number
 }
@@ -86,7 +107,7 @@ export type SubmitOutcome =
 export type SelectionEvent =
   | { readonly kind: 'click'; readonly on: Clicked; readonly atMs: number }
   /** A row of the armed card's target list: it submits like its map target. */
-  | { readonly kind: 'target-row'; readonly target: Stop; readonly atMs: number }
+  | { readonly kind: 'target-row'; readonly target: Stop }
   /** "Dispatch A4…", or "+ Add stop" with `when: 'after'`. */
   | { readonly kind: 'arm'; readonly unitId: string; readonly when: 'after' | null }
   /** A choice of the armed unit's map prompt. */
@@ -95,13 +116,18 @@ export type SelectionEvent =
   /** The surface cleared the shared selection. */
   | { readonly kind: 'cleared' }
   | { readonly kind: 'result'; readonly unitId: string; readonly target: Stop; readonly outcome: SubmitOutcome; readonly atMs: number }
+  /** The unit's options arrived; they name its current job, or none while it is free. */
+  | { readonly kind: 'current-job'; readonly unitId: string; readonly job: CurrentJob | null }
   | { readonly kind: 'tick'; readonly atMs: number }
 
 export type SelectionEffect =
   | { readonly kind: 'select'; readonly objectId: string | null }
-  | { readonly kind: 'submit'; readonly unitId: string; readonly target: Stop; readonly when: OrderWhen | null }
+  /** `drops` goes with `when: 'now'`: the job the busy prompt named. */
+  | { readonly kind: 'submit'; readonly unitId: string; readonly target: Stop; readonly when: OrderWhen | null; readonly drops: CurrentJob | null }
   | { readonly kind: 'options'; readonly unitId: string }
   | { readonly kind: 'recommend'; readonly callId: string }
+  /** A refused order of a unit the selection has left: the panel reports it, since no target shows it any more. */
+  | { readonly kind: 'late-refusal'; readonly unitId: string; readonly target: Stop; readonly text: string }
 
 export interface SelectionStep {
   readonly state: SelectionState
@@ -164,7 +190,7 @@ const unchanged = (state: SelectionState): SelectionStep => ({ state, effects: [
 const submit = (state: SelectionState, armed: Extract<Selection, { kind: 'armed' }>, target: Stop): SelectionStep => ({
   // The prompt goes: what was asked is answered by this submit. A refusal shown stays until the result replaces it or it expires.
   state: { ...state, selection: { ...armed, prompt: null } },
-  effects: [{ kind: 'submit', unitId: armed.unitId, target, when: armed.when }],
+  effects: [{ kind: 'submit', unitId: armed.unitId, target, when: armed.when, drops: null }],
 })
 
 const clickIn = (state: SelectionState, on: Clicked): SelectionStep => {
@@ -197,13 +223,9 @@ export const reduceSelection = (state: SelectionState, event: SelectionEvent): S
       if (last !== null && last.key === key && event.atMs - last.atMs < doubleClickMs) return unchanged(state)
       return clickIn({ ...state, lastClick: { key, atMs: event.atMs } }, event.on)
     }
-    case 'target-row': {
+    case 'target-row':
       if (selection.kind !== 'armed') throw new Error('A target row was tapped while no unit is armed')
-      const key = `row:${JSON.stringify(event.target)}`
-      const last = state.lastClick
-      if (last !== null && last.key === key && event.atMs - last.atMs < doubleClickMs) return unchanged(state)
-      return submit({ ...state, lastClick: { key, atMs: event.atMs } }, selection, event.target)
-    }
+      return submit(state, selection, event.target)
     case 'arm':
       return transition(state, { kind: 'armed', unitId: event.unitId, when: event.when, prompt: null, refusal: null })
     case 'prompt': {
@@ -214,7 +236,9 @@ export const reduceSelection = (state: SelectionState, event: SelectionEvent): S
         return submit(state, selection, { point: prompt.point })
       }
       if (event.choice === 'move') throw new Error('The busy prompt offers no move')
-      return { state: { ...state, selection: { ...selection, prompt: null } }, effects: [{ kind: 'submit', unitId: selection.unitId, target: prompt.target, when: event.choice }] }
+      if (event.choice === 'now' && prompt.job === null) throw new Error('The busy prompt\'s Now was confirmed before the unit\'s current job was known')
+      const drops = event.choice === 'now' ? prompt.job : null
+      return { state: { ...state, selection: { ...selection, prompt: null } }, effects: [{ kind: 'submit', unitId: selection.unitId, target: prompt.target, when: event.choice, drops }] }
     }
     case 'back':
       switch (selection.kind) {
@@ -225,13 +249,21 @@ export const reduceSelection = (state: SelectionState, event: SelectionEvent): S
     case 'cleared':
       return { state: { ...state, selection: none }, effects: [] }
     case 'result': {
-      if (selection.kind !== 'armed' || selection.unitId !== event.unitId) return unchanged(state)
-      if (event.outcome.ok) return transition(state, { kind: 'unit', unitId: selection.unitId })
-      if (event.outcome.code === 'when_required') {
-        return { state: { ...state, selection: { ...selection, prompt: { kind: 'busy', target: event.target }, refusal: null } }, effects: [{ kind: 'options', unitId: selection.unitId }] }
+      const outcome = event.outcome
+      if (selection.kind !== 'armed' || selection.unitId !== event.unitId) {
+        return outcome.ok ? unchanged(state) : { state, effects: [{ kind: 'late-refusal', unitId: event.unitId, target: event.target, text: outcome.text }] }
       }
-      const refusal: ShownRefusal = { targetId: stopObjectId(event.target), code: event.outcome.code, text: event.outcome.text, untilMs: event.atMs + refusalShownMs }
+      if (outcome.ok) return transition(state, { kind: 'unit', unitId: selection.unitId })
+      if (outcome.code === 'when_required') {
+        return { state: { ...state, selection: { ...selection, prompt: { kind: 'busy', target: event.target, job: null }, refusal: null } }, effects: [{ kind: 'options', unitId: selection.unitId }] }
+      }
+      const refusal: ShownRefusal = { targetId: stopObjectId(event.target), text: outcome.text, untilMs: event.atMs + refusalShownMs }
       return { state: { ...state, selection: { ...selection, refusal } }, effects: [] }
+    }
+    case 'current-job': {
+      // Only an open busy prompt that has not yet named its job takes one; from then on it keeps it.
+      if (selection.kind !== 'armed' || selection.unitId !== event.unitId || selection.prompt?.kind !== 'busy' || selection.prompt.job !== null || event.job === null) return unchanged(state)
+      return { state: { ...state, selection: { ...selection, prompt: { ...selection.prompt, job: event.job } } }, effects: [] }
     }
     case 'tick':
       if (selection.kind === 'armed' && selection.refusal !== null && event.atMs >= selection.refusal.untilMs) {
@@ -240,6 +272,14 @@ export const reduceSelection = (state: SelectionState, event: SelectionEvent): S
       return unchanged(state)
   }
 }
+
+/**
+ * Whether a card, row or footer command acts at `atMs`: not when it is the
+ * second half of a double-click, within `doubleClickMs` of `quietFromMs`,
+ * the last command that acted or the last change of the panel's layout,
+ * whichever came later; null when neither happened yet.
+ */
+export const activationActs = (quietFromMs: number | null, atMs: number): boolean => quietFromMs === null || atMs - quietFromMs >= doubleClickMs
 
 /**
  * The shared selection moved outside the panel (the map selected an object,

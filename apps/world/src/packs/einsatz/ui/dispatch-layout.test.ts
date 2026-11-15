@@ -13,12 +13,12 @@ import {
 } from './dispatch-layout.ts'
 
 describe('Dispatch panel layout', () => {
-  test('docked up to 480 px from 1280 px, up to 360 px from 1024 px, a bottom sheet below', () => {
+  test('docked up to 480 px from 1280 px, up to 360 px from 1024 px, a bottom sheet of a fixed height below', () => {
     expect(panelLayoutFor(1366, 900)).toEqual({ mode: 'docked', widthPx: widePanelPx, mapWidthPx: 1366 - panelEdgeGapPx - widePanelPx })
     expect(panelLayoutFor(1280, 900)).toMatchObject({ mode: 'docked', widthPx: widePanelPx })
     expect(panelLayoutFor(1024, 768)).toMatchObject({ mode: 'docked', widthPx: narrowPanelPx })
     expect(panelLayoutFor(1279, 768)).toMatchObject({ mode: 'docked', widthPx: narrowPanelPx })
-    expect(panelLayoutFor(768, 1024)).toEqual({ mode: 'sheet', maxHeightPx: 614 })
+    expect(panelLayoutFor(768, 1024)).toEqual({ mode: 'sheet', heightPx: 614 })
     expect(panelLayoutFor(375, 812).mode).toBe('sheet')
     expect(() => panelLayoutFor(-1, 10)).toThrow('no width')
   })

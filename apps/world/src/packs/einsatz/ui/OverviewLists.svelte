@@ -11,8 +11,9 @@
    * card, as a click on it on the map does. Conditions that need action sit
    * on their object's row while they hold. Columns follow the
    * configuration: a load column only with carriers, property columns only
-   * for shown properties. While a unit is armed the lists fold away and
-   * only the counts line stays.
+   * for shown properties, each as "label value", so nothing needs a hover.
+   * While a unit is armed the lists fold away and only the counts line
+   * stays.
    */
   interface Props {
     readonly view: OverviewView
@@ -60,7 +61,7 @@
             <button type="button" class="row" class:selected={row.selected} aria-pressed={row.selected} onclick={() => props.open({ id: row.id, kind: 'unit' })}>
               {@render badge(row.icon, einsatzColors.unit)}
               <span class="text">
-                <span class="line"><strong>{row.label}</strong><span class="status" data-tone={row.status.tone}><span aria-hidden="true">●</span> {row.status.word}</span>{#if view.columns.carry && row.carry !== null}<span class="num cell">{row.carry}</span>{/if}{#each row.properties as value, index (index)}{#if value !== ''}<span class="cell" title={view.columns.properties[index]}>{value}</span>{/if}{/each}</span>
+                <span class="line"><strong>{row.label}</strong><span class="status" data-tone={row.status.tone}><span aria-hidden="true">●</span> {row.status.word}</span>{#if view.columns.carry && row.carry !== null}<span class="num cell">{row.carry}</span>{/if}{#each row.properties as property, index (index)}<span class="cell">{property}</span>{/each}</span>
                 {#if row.current !== null || row.actor !== null}<span class="line sub">{row.current ?? ''}{#if row.actor !== null} <span class="by">{row.actor}</span>{/if}</span>{/if}
                 {#each row.states as state, index (index)}<span class="line state">{state}</span>{/each}
               </span>

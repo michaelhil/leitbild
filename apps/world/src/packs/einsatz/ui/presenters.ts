@@ -6,7 +6,7 @@ import type { Stop, UnitOrderInput } from '../order-schema.ts'
 import type { Eta, RecommendAnswer } from '../recommendation-schema.ts'
 import type { Situation, SituationCall, SituationSite, SituationUnit, StopVerb, UnitOptions, UnitTone } from '../situation/schema.ts'
 import { mapTargetingMaxTargets, type MapTargeting } from '../../../ui/surface-panel-interaction.ts'
-import { selectedObjectOf, stopObjectId, type DispatchObjectKind, type Selection } from './selection.ts'
+import { selectedObjectOf, stopObjectId, type CurrentJob, type DispatchObjectKind, type Selection } from './selection.ts'
 
 /**
  * What the Dispatch panel shows, as plain view models over the Run's own
@@ -65,8 +65,10 @@ export const dispatchWords = {
   inbound: 'Inbound',
   slots: 'slots in use',
   validTargets: 'Targets',
-  refusedTargets: 'Refused',
   loadingTargets: 'Reading targets… a click on the map still sends',
+  readingJob: 'Reading the current job…',
+  refreshing: 'Reading the suggestion again…',
+  suggestionHolds: 'The suggestion still holds',
   you: 'You',
   mapPoint: 'the map point',
 } as const
@@ -206,32 +208,62 @@ export interface PlanStopView {
   readonly removeLabel: string
 }
 
-export interface ArmedTargetView {
-  readonly key: string
-  readonly target: Stop
-  readonly text: string
-  readonly eta: string
-  /** "drops C-3 · P3" for a busy unit's current task. */
-  readonly drops: string | null
+/**
+ * The armed list's rows in a fixed order, so a live update never moves a
+ * row under the pointer: the order of the first options answer after
+ * arming (valid targets nearest first, then refused ones), with every target
+ * a later answer adds appended. Each row keeps the label it was last listed
+ * with, for a target no answer lists any more.
+ */
+export interface ArmedOrder {
+  readonly unitId: string
+  readonly rows: ReadonlyArray<{ readonly key: string; readonly target: Stop; readonly label: string }>
 }
 
-export interface RefusedTargetView {
+const stopKey = (target: Stop): string => JSON.stringify(target)
+
+/** The armed list's order after this options answer: the rows so far in place, new targets appended; a new unit starts afresh. */
+export const armedOrderWith = (order: ArmedOrder | null, options: UnitOptions): ArmedOrder => {
+  const listed = [...options.targets, ...options.refused].map(entry => ({ key: stopKey(entry.target), target: entry.target, label: entry.label }))
+  const kept = order !== null && order.unitId === options.unitId ? order.rows : []
+  const labels = new Map(listed.map(row => [row.key, row.label]))
+  const known = new Set(kept.map(row => row.key))
+  return {
+    unitId: options.unitId,
+    rows: [...kept.map(row => ({ ...row, label: labels.get(row.key) ?? row.label })), ...listed.filter(row => !known.has(row.key))],
+  }
+}
+
+export interface ArmedRowView {
   readonly key: string
   readonly target: Stop
-  readonly label: string
+  /** The verb and label, or the label alone for a refused target. */
   readonly text: string
+  /** The ETA of a valid target; null for a refused one. */
+  readonly eta: string | null
+  /** "drops C-3 · P3" for a busy unit's current task. */
+  readonly drops: string | null
+  /** Why an order to it is refused, for a dimmed row that still submits; null for a valid one. */
+  readonly refused: string | null
 }
+
+/**
+ * The armed card's reserved slot above its rows, which holds one thing at a
+ * time so the rows below never move: the busy prompt's choices (or, until
+ * the options name the current job, a note), else the last refusal.
+ */
+export type ArmedSlot =
+  | { readonly kind: 'empty' }
+  | { readonly kind: 'refusal'; readonly text: string }
+  | { readonly kind: 'busy-reading' }
+  | { readonly kind: 'busy'; readonly after: string; readonly now: string }
 
 export interface ArmedView {
   readonly banner: string
-  readonly targets: ReadonlyArray<ArmedTargetView>
-  readonly refused: ReadonlyArray<RefusedTargetView>
+  readonly slot: ArmedSlot
+  readonly rows: ReadonlyArray<ArmedRowView>
   /** True while the unit's options are on their way; a target click still submits. */
   readonly loading: boolean
-  /** The last refusal, also shown at its target. */
-  readonly refusal: string | null
-  /** The busy prompt's choices, also offered here off the map; null while none is asked. */
-  readonly busy: { readonly after: string; readonly now: string } | null
 }
 
 export interface UnitCardView {
@@ -244,6 +276,7 @@ export interface UnitCardView {
   readonly readOnly: string | null
   readonly dispatch: ButtonView
   readonly recall: ButtonView
+  /** "Undo last order (by Assistant: C-2 → Triage post)": who gave the order it takes back, and where it sent the unit. */
   readonly undo: ButtonView & { readonly commandId: string | null }
   /** The situation's word for the unit's stops. */
   readonly planHeading: string
@@ -263,33 +296,55 @@ const loadLabels = (unit: SituationUnit): ReadonlyArray<string> => unit.carry?.l
 
 const dueText = (unit: SituationUnit, elapsedS: number): string | null => unit.phaseDueInS === null ? null : clockText(unit.phaseDueInS - elapsedS)
 
-const stopKey = (target: Stop): string => JSON.stringify(target)
-
-const busyChoices = (selection: Extract<Selection, { kind: 'armed' }>, options: UnitOptions | null, unitId: string): ArmedView['busy'] => {
-  const prompt = selection.prompt?.kind === 'busy' ? busyPrompt(options, unitId) : null
-  return prompt === null ? null : { after: prompt.after, now: prompt.now }
+/** The job a busy unit's options name, with its priority code where a target names it. */
+export const currentJobOf = (options: UnitOptions): CurrentJob | null => {
+  const busy = options.busy
+  if (busy === null) return null
+  const code = options.targets.find(target => target.drops?.taskId === busy.taskId)?.drops?.code ?? null
+  return { taskId: busy.taskId, label: busy.label, code, freeInS: busy.freeInS }
 }
 
-const armedView = (unit: SituationUnit, words: Words, options: UnitOptions | null, selection: Extract<Selection, { kind: 'armed' }>): ArmedView => {
+/** The busy prompt's two options, labelled from the job the prompt named when it opened. */
+export const busyChoices = (job: CurrentJob): { readonly after: string; readonly now: string } => ({
+  after: job.freeInS === null ? dispatchWords.after : `${dispatchWords.after} (free in ${minutesText(job.freeInS)})`,
+  now: `${dispatchWords.now} (drops ${job.label}${job.code === null ? '' : ` · ${job.code}`})`,
+})
+
+const armedSlot = (selection: Extract<Selection, { kind: 'armed' }>): ArmedSlot => {
+  const prompt = selection.prompt
+  if (prompt?.kind === 'busy') return prompt.job === null ? { kind: 'busy-reading' } : { kind: 'busy', ...busyChoices(prompt.job) }
+  return selection.refusal === null ? { kind: 'empty' } : { kind: 'refusal', text: selection.refusal.text }
+}
+
+const armedView = (unit: SituationUnit, words: Words, options: UnitOptions | null, order: ArmedOrder | null, selection: Extract<Selection, { kind: 'armed' }>): ArmedView => {
   const own = options !== null && options.unitId === unit.id ? options : null
+  const valid = new Map((own?.targets ?? []).map(target => [stopKey(target.target), target]))
+  const refused = new Map((own?.refused ?? []).map(entry => [stopKey(entry.target), entry]))
+  const rows = order !== null && order.unitId === unit.id ? order.rows : []
   return {
     banner: `${words.send} ${unit.label}…${selection.when === 'after' ? ` (${dispatchWords.after.toLowerCase()})` : ''}`,
-    targets: own === null ? [] : own.targets.map(target => ({
-      key: stopKey(target.target),
-      target: target.target,
-      text: `${verbText(target.verb, words)} ${target.label}`,
-      eta: minutesText(target.etaS),
-      drops: target.drops === undefined ? null : `drops ${target.drops.label} · ${target.drops.code}`,
-    })),
-    refused: own === null ? [] : own.refused.map(entry => ({ key: stopKey(entry.target), target: entry.target, label: entry.label, text: entry.text })),
+    slot: armedSlot(selection),
+    rows: rows.map(row => {
+      const target = valid.get(row.key)
+      if (target !== undefined) {
+        return { key: row.key, target: row.target, text: `${verbText(target.verb, words)} ${target.label}`, eta: minutesText(target.etaS), drops: target.drops === undefined ? null : `drops ${target.drops.label} · ${target.drops.code}`, refused: null }
+      }
+      return { key: row.key, target: row.target, text: row.label, eta: null, drops: null, refused: refused.get(row.key)?.text ?? dispatchWords.notListed }
+    }),
     loading: own === null,
-    refusal: selection.refusal?.text ?? null,
-    busy: busyChoices(selection, own, unit.id),
   }
 }
 
+/** Who gave the unit's last order and where it sent the unit: the stops that actor gave, else the unit's status. */
+const lastOrderText = (unit: SituationUnit): string | null => {
+  const last = unit.lastOrder
+  if (last === null) return null
+  const stops = unit.plan.filter(stop => stop.by.isViewer === last.by.isViewer && stop.by.label === last.by.label).map(stop => stop.label)
+  return `by ${last.by.isViewer ? dispatchWords.you.toLowerCase() : last.by.label}: ${stops.length === 0 ? unit.status.word : stops.join(' → ')}`
+}
+
 /** A unit's card, armed or not. */
-export const unitCard = (situation: Situation, unit: SituationUnit, selection: Selection, options: UnitOptions | null, elapsedS: number): UnitCardView => {
+export const unitCard = (situation: Situation, unit: SituationUnit, selection: Selection, options: UnitOptions | null, order: ArmedOrder | null, elapsedS: number): UnitCardView => {
   const { words } = situation
   const readOnly = unit.commandedBy === null ? null : `Commanded by ${unit.commandedBy}`
   const destroyed = unit.status.tone === 'out' ? unit.status.word : null
@@ -297,6 +352,7 @@ export const unitCard = (situation: Situation, unit: SituationUnit, selection: S
   const tasks = taskStopLabels(unit)
   const recallLabel = tasks.length === 0 ? words.return : `${words.return} (drops ${joined(tasks)})`
   const lastCommand = unit.lastOrder?.commandId ?? null
+  const lastOrder = lastOrderText(unit)
   const bound = loaded.length > 0 || unit.plan.some(stop => stop.verb === 'pick-up')
   const facts = [
     ...(unit.carry === null ? [] : [`carries ${unit.carry.capacity}`]),
@@ -311,7 +367,7 @@ export const unitCard = (situation: Situation, unit: SituationUnit, selection: S
     readOnly,
     dispatch: button(`${words.send} ${unit.label}…`, readOnly ?? destroyed),
     recall: button(recallLabel, readOnly ?? destroyed ?? (loaded.length > 0 ? `Carrying ${joined(loaded)}: deliver first` : null)),
-    undo: { ...button(dispatchWords.undoLast, readOnly ?? (lastCommand === null ? dispatchWords.nothingToUndo : null)), commandId: lastCommand },
+    undo: { ...button(lastOrder === null ? dispatchWords.undoLast : `${dispatchWords.undoLast} (${lastOrder})`, readOnly ?? (lastCommand === null ? dispatchWords.nothingToUndo : null)), commandId: lastCommand },
     planHeading: words.plan,
     plan: unit.plan.map((stop, index) => ({
       id: stop.id,
@@ -328,7 +384,7 @@ export const unitCard = (situation: Situation, unit: SituationUnit, selection: S
     addStop: unit.plan.length === 0 ? null : button(`+ Add ${words.stop.toLowerCase()}`, readOnly ?? destroyed),
     facts,
     states: unit.states.map(state => state.text),
-    armed: selection.kind === 'armed' && selection.unitId === unit.id ? armedView(unit, words, options, selection) : null,
+    armed: selection.kind === 'armed' && selection.unitId === unit.id ? armedView(unit, words, options, order, selection) : null,
   }
 }
 
@@ -341,22 +397,84 @@ export const deliverToOrder = (unit: SituationUnit, siteId: string): UnitOrderIn
 
 // ——— Call card ———
 
-/** A call card's proposal, pinned when the card opened; the operator may drop proposed units by their chips. */
+/**
+ * A call card's proposal, pinned when the card opened; the operator may drop
+ * proposed units by their chips. `baseline` is each proposed unit's plan
+ * (its stop ids) and status tone as the situation showed them at pinning:
+ * the proposal stands until one of them changes in a way that matters.
+ * `refreshing` holds the old answer, greyed, while Refresh asks again.
+ */
 export interface PinnedProposal {
   readonly callId: string
   readonly answer: RecommendAnswer
   readonly dropped: ReadonlySet<string>
+  readonly baseline: ReadonlyMap<string, { readonly stopIds: ReadonlyArray<string>; readonly tone: UnitTone }>
+  readonly refreshing: boolean
 }
 
+/** Pins a recommendation for a call against the situation the panel holds when it arrives (none yet: every proposed unit starts with no stops). */
+export const pinProposal = (situation: Situation | null, callId: string, answer: RecommendAnswer): PinnedProposal => ({
+  callId,
+  answer,
+  dropped: new Set(),
+  baseline: new Map((answer.proposal?.units ?? []).flatMap(proposed => {
+    const unit = situation?.units.find(entry => entry.id === proposed.unitId)
+    return unit === undefined ? [] : [[unit.id, { stopIds: unit.plan.map(stop => stop.id), tone: unit.status.tone }] as const]
+  })),
+  refreshing: false,
+})
+
+/** The tones a proposed unit may not have turned to since pinning: it can no longer go. */
+const unavailableTones: ReadonlySet<UnitTone> = new Set(['out', 'attention'])
+
+/**
+ * Why the pinned proposal no longer holds, in the situation's words; null
+ * while it holds. Only a change since pinning counts: a proposed unit left
+ * the situation, gained a stop, or turned out of action or needing
+ * attention. A unit that was returning when the proposal was made (free, to
+ * the engine) still holds.
+ */
+export const proposalInvalidation = (situation: Situation, pinned: PinnedProposal): string | null => {
+  const proposal = pinned.answer.proposal
+  if (proposal === null) return null
+  for (const proposed of proposal.units) {
+    const unit = situation.units.find(entry => entry.id === proposed.unitId)
+    if (unit === undefined) return `${proposed.label}: ${dispatchWords.notListed.toLowerCase()}`
+    const before = pinned.baseline.get(unit.id)
+    const gained = unit.plan.find(stop => before === undefined || !before.stopIds.includes(stop.id))
+    if (gained !== undefined) return `${unit.label} now on ${gained.label}`
+    if (unavailableTones.has(unit.status.tone) && before?.tone !== unit.status.tone) return `${unit.label} now ${unit.status.word.toLowerCase()}`
+  }
+  return null
+}
+
+/**
+ * The call card's command block, in fixed places from the moment the card
+ * opens: the Dispatch button with Refresh beside it, the reason line under
+ * them (why Dispatch is disabled, or that the suggestion is being read
+ * again), then the unit chips and the coverage. While the answer is on its
+ * way, and while Refresh reads it again, the block keeps its places, greyed.
+ */
 export interface ProposalView {
   readonly button: ButtonView
+  readonly refresh: ButtonView
   readonly units: ReadonlyArray<{ readonly unitId: string; readonly label: string; readonly eta: string | null; readonly dropped: boolean }>
-  readonly covers: string
+  readonly covers: string | null
   readonly remainder: string | null
   /** The order the button sends: the pinned one, less the dropped units; null when it may not be sent. */
   readonly order: UnitOrderInput | null
   /** True once the Run has invalidated the pinned proposal. */
   readonly stale: boolean
+  /** True while the chips and alternatives take no tap: the answer is on its way or being read again. */
+  readonly waiting: boolean
+}
+
+export interface DeliverToView {
+  readonly unitLabel: string
+  /** "Deliver to (R1)", or "Deliver to (R1, after Dispatch)" until the carrier is on the call. */
+  readonly heading: string
+  readonly enabled: boolean
+  readonly sites: ReadonlyArray<{ readonly siteId: string; readonly text: string; readonly order: UnitOrderInput }>
 }
 
 export interface CallCardView {
@@ -370,14 +488,14 @@ export interface CallCardView {
   readonly waiting: string
   readonly overdue: string | null
   readonly needs: ReadonlyArray<{ readonly text: string; readonly met: boolean }>
-  readonly assigned: ReadonlyArray<{ readonly unitId: string; readonly text: string }>
-  /** Null while the recommendation is on its way. */
-  readonly proposal: ProposalView | null
-  /** Shown when the pinned answer proposes no unit. */
-  readonly noProposal: string | null
+  readonly proposal: ProposalView
+  /** The proposed carriers' Deliver-to chips, directly under the command block: shown from pinning, live once the carrier is on the call. */
+  readonly deliverTo: ReadonlyArray<DeliverToView>
+  /** Per need: other free units, each a labelled order ("Dispatch E3 · 9 min"). */
   readonly alternatives: ReadonlyArray<{ readonly heading: string; readonly units: ReadonlyArray<{ readonly unitId: string; readonly text: string; readonly order: UnitOrderInput }> }>
   readonly whyNot: ReadonlyArray<{ readonly label: string; readonly reasons: string }>
-  readonly deliverTo: ReadonlyArray<{ readonly unitLabel: string; readonly sites: ReadonlyArray<{ readonly siteId: string; readonly text: string; readonly order: UnitOrderInput }> }>
+  /** Below the commands, so an order landing never moves a command. */
+  readonly assigned: ReadonlyArray<{ readonly unitId: string; readonly text: string }>
   readonly close: { readonly label: string; readonly confirm: string }
   readonly states: ReadonlyArray<string>
 }
@@ -397,36 +515,29 @@ const needText = (need: SituationCall['needs'][number]): { readonly text: string
   return { text: `${need.label}${where} ${have}/${need.count}`, met: have >= need.count }
 }
 
-/** Why the pinned proposal no longer holds, in the situation's words; null while it holds. */
-export const proposalInvalidation = (situation: Situation, answer: RecommendAnswer): string | null => {
-  const proposal = answer.proposal
-  if (proposal === null) return null
-  for (const proposed of proposal.units) {
-    const unit = situation.units.find(entry => entry.id === proposed.unitId)
-    if (unit === undefined) return `${proposed.label}: ${dispatchWords.notListed.toLowerCase()}`
-    const current = unit.plan[0]
-    if (current !== undefined) return `${unit.label} now on ${current.label}`
-    if (unit.status.tone !== 'free') return `${unit.label} now ${unit.status.word.toLowerCase()}`
-  }
-  return null
-}
-
-const proposalView = (situation: Situation, pinned: PinnedProposal): ProposalView | null => {
-  const proposal = pinned.answer.proposal
-  if (proposal === null) return null
+const proposalView = (situation: Situation, pinned: PinnedProposal | null): ProposalView => {
   const { words } = situation
-  const kept = proposal.units.filter(unit => !pinned.dropped.has(unit.unitId))
-  const stale = proposalInvalidation(situation, pinned.answer)
+  const proposal = pinned?.answer.proposal ?? null
+  const kept = proposal === null || pinned === null ? [] : proposal.units.filter(unit => !pinned.dropped.has(unit.unitId))
+  const stale = pinned === null ? null : proposalInvalidation(situation, pinned)
   const slowest = Math.max(0, ...kept.map(unit => etaSeconds(unit.eta) ?? 0))
   const label = kept.length === 0 ? words.send : `${words.send} ${joined(kept.map(unit => unit.label))}${slowest > 0 ? ` · ${minutesText(slowest)}` : ''}`
-  const reason = stale ?? (kept.length === 0 ? dispatchWords.noUnitChosen : null)
+  const waiting = pinned === null || pinned.refreshing
+  const reason = pinned === null
+    ? dispatchWords.loading
+    : pinned.refreshing
+      ? dispatchWords.refreshing
+      : proposal === null ? dispatchWords.noFreeUnit : stale ?? (kept.length === 0 ? dispatchWords.noUnitChosen : null)
+  const refreshable = pinned !== null && !pinned.refreshing && (proposal === null || stale !== null)
   return {
     button: button(label, reason),
-    units: proposal.units.map(unit => ({ unitId: unit.unitId, label: unit.label, eta: etaText(unit.eta), dropped: pinned.dropped.has(unit.unitId) })),
-    covers: `covers ${proposal.covers.covered} of ${proposal.covers.needed}`,
-    remainder: proposal.remainder.length === 0 ? null : `still needs ${joined(proposal.remainder)}`,
-    order: reason === null ? { ...proposal.order, units: proposal.order.units.filter(id => !pinned.dropped.has(id)) } : null,
+    refresh: button(dispatchWords.refresh, refreshable ? null : dispatchWords.suggestionHolds),
+    units: proposal === null || pinned === null ? [] : proposal.units.map(unit => ({ unitId: unit.unitId, label: unit.label, eta: etaText(unit.eta), dropped: pinned.dropped.has(unit.unitId) })),
+    covers: proposal === null ? null : `covers ${proposal.covers.covered} of ${proposal.covers.needed}`,
+    remainder: proposal === null || proposal.remainder.length === 0 ? null : `still needs ${joined(proposal.remainder)}`,
+    order: reason === null && proposal !== null && pinned !== null ? { ...proposal.order, units: proposal.order.units.filter(id => !pinned.dropped.has(id)) } : null,
     stale: stale !== null,
+    waiting,
   }
 }
 
@@ -438,6 +549,7 @@ export const callCard = (situation: Situation, call: SituationCall, pinned: Pinn
   const answer = pinned !== null && pinned.callId === call.id ? pinned : null
   const assignedIds = new Set(call.assigned.map(unit => unit.unitId))
   const frees = call.assigned.map(unit => unit.label)
+  const live = answer !== null && !answer.refreshing
   return {
     kind: 'call',
     id: call.id,
@@ -449,25 +561,28 @@ export const callCard = (situation: Situation, call: SituationCall, pinned: Pinn
     waiting: `${dispatchWords.waiting} ${clockText(waitedS)}`,
     overdue: target === undefined ? null : waitedS < target ? `overdue in ${clockText(target - waitedS)}` : `${dispatchWords.overdue} by ${clockText(waitedS - target)}`,
     needs: call.needs.map(needText),
+    proposal: proposalView(situation, answer),
+    deliverTo: answer === null ? [] : answer.answer.deliverTo.map(entry => {
+      const enabled = live && assignedIds.has(entry.unitId)
+      return {
+        unitLabel: entry.label,
+        heading: enabled ? `${dispatchWords.deliverTo} (${entry.label})` : `${dispatchWords.deliverTo} (${entry.label}, after ${words.send})`,
+        enabled,
+        sites: entry.sites.map(site => ({
+          siteId: site.siteId,
+          text: `${site.label} · ${etaText(site.eta)}`,
+          order: { units: [entry.unitId], stops: [{ siteId: site.siteId }], when: 'after' as const },
+        })),
+      }
+    }),
+    alternatives: answer === null ? [] : answer.answer.alternatives.filter(entry => entry.units.length > 0).map(entry => ({
+      heading: `Other: ${entry.need.label}`,
+      units: entry.units.map(unit => ({ unitId: unit.unitId, text: `${words.send} ${unit.label} · ${etaText(unit.eta)}`, order: unit.order })),
+    })),
+    whyNot: answer === null ? [] : answer.answer.whyNot.map(entry => ({ label: entry.label, reasons: entry.reasons.join('; ') })),
     assigned: call.assigned.map(unit => ({
       unitId: unit.unitId,
       text: [unit.label, unit.status.word, ...(unit.eta === null ? [] : [etaText(unit.eta, elapsedS)!]), `by ${unit.by.isViewer ? dispatchWords.you.toLowerCase() : unit.by.label}`].join(' · '),
-    })),
-    proposal: answer === null ? null : proposalView(situation, answer),
-    noProposal: answer !== null && answer.answer.proposal === null ? dispatchWords.noFreeUnit : null,
-    alternatives: answer === null ? [] : answer.answer.alternatives.filter(entry => entry.units.length > 0).map(entry => ({
-      heading: `Other: ${entry.need.label}`,
-      units: entry.units.map(unit => ({ unitId: unit.unitId, text: `${unit.label} · ${etaText(unit.eta)}`, order: unit.order })),
-    })),
-    whyNot: answer === null ? [] : answer.answer.whyNot.map(entry => ({ label: entry.label, reasons: entry.reasons.join('; ') })),
-    // Deliver-to chips show after Dispatch: for the proposed carriers now on this call.
-    deliverTo: answer === null ? [] : answer.answer.deliverTo.filter(entry => assignedIds.has(entry.unitId)).map(entry => ({
-      unitLabel: entry.label,
-      sites: entry.sites.map(site => ({
-        siteId: site.siteId,
-        text: `${site.label} · ${etaText(site.eta)}`,
-        order: { units: [entry.unitId], stops: [{ siteId: site.siteId }], when: 'after' as const },
-      })),
     })),
     close: {
       label: frees.length === 0 ? words.close : `${words.close} (frees ${joined(frees)})`,
@@ -485,7 +600,7 @@ export const closedCallCard = (lastSeen: SituationCall): ClosedCallView => ({
   text: lastSeen.assigned.length === 0 ? dispatchWords.closed : `${dispatchWords.closed} · served by ${joined(lastSeen.assigned.map(unit => unit.label))}`,
 })
 
-/** Unassigned and not yet opened by this viewer: the call pulses on the map and carries the New badge. */
+/** Unassigned and not yet opened by this viewer: the call carries the New badge. */
 export const isNewCall = (call: SituationCall, opened: ReadonlySet<string>): boolean => call.assigned.length === 0 && !opened.has(call.id)
 
 // ——— Site card ———
@@ -524,6 +639,8 @@ export type CardView = UnitCardView | CallCardView | ClosedCallView | SiteCardVi
 /** What the panel holds besides the situation for its selection block. */
 export interface CardInputs {
   readonly options: UnitOptions | null
+  /** The armed list's order, fixed at arming. */
+  readonly armedOrder: ArmedOrder | null
   readonly pinned: PinnedProposal | null
   readonly opened: ReadonlySet<string>
   /** The selected call's row as last seen, for its card once it closed. */
@@ -538,7 +655,7 @@ export const cardFor = (situation: Situation, selection: Selection, inputs: Card
     case 'unit':
     case 'armed': {
       const unit = situation.units.find(entry => entry.id === selection.unitId)
-      return unit === undefined ? null : unitCard(situation, unit, selection, inputs.options, inputs.elapsedS)
+      return unit === undefined ? null : unitCard(situation, unit, selection, inputs.options, inputs.armedOrder, inputs.elapsedS)
     }
     case 'call': {
       const call = situation.calls.find(entry => entry.id === selection.callId)
@@ -581,7 +698,7 @@ export interface UnitRowView {
   readonly actor: string | null
   /** Load on board, only when some type carries. */
   readonly carry: string | null
-  /** One value per property column, in column order; empty where the type has none. */
+  /** "Water 3,000 l" per property column, in column order, label and value as the card shows them; none where the type has none. */
   readonly properties: ReadonlyArray<string>
   readonly states: ReadonlyArray<string>
   readonly selected: boolean
@@ -604,7 +721,7 @@ export interface OverviewView {
   readonly units: { readonly heading: string; readonly empty: string | null; readonly groups: ReadonlyArray<{ readonly heading: string; readonly rows: ReadonlyArray<UnitRowView> }> }
   /** Only when some type receives load. */
   readonly sites: { readonly heading: string; readonly rows: ReadonlyArray<SiteRowView> } | null
-  readonly columns: { readonly carry: boolean; readonly properties: ReadonlyArray<string> }
+  readonly columns: { readonly carry: boolean }
   /** Only when some type declares a sensor or an effector. */
   readonly contacts: boolean
   /** While a unit is armed the lists fold to the counts line. */
@@ -651,7 +768,7 @@ const unitRow = (situation: Situation, unit: SituationUnit, selectedId: string |
     current: current === undefined ? null : [current.label, ...(current.eta === null ? [] : [etaText(current.eta, elapsedS)!])].join(' · '),
     actor: unit.lastOrder === null || unit.lastOrder.by.isViewer ? null : `by ${unit.lastOrder.by.label}`,
     carry: !situation.features.hasCarry || unit.carry === null ? null : `${unit.carry.load.reduce((sum, entry) => sum + entry.count, 0)}/${unit.carry.capacity}`,
-    properties: situation.features.propertyColumns.map(column => unit.properties.find(property => property.id === column.id)?.value ?? ''),
+    properties: situation.features.propertyColumns.flatMap(column => unit.properties.filter(property => property.id === column.id).map(property => `${property.label} ${property.value}`)),
     states: unit.states.map(state => state.text),
     selected: unit.id === selectedId,
   }
@@ -687,7 +804,7 @@ export const overview = (situation: Situation, selection: Selection, opened: Rea
     calls: { heading: words.calls, empty: situation.calls.length === 0 ? words.noCalls : null, rows: situation.calls.map(call => callRow(call, opened, selectedId, elapsedS)) },
     units: { heading: words.units, empty: situation.units.length === 0 ? words.noUnits : null, groups: unitGroups(situation, selectedId, elapsedS) },
     sites: features.hasSites ? { heading: words.sites, rows: situation.sites.map(site => siteRow(site, selectedId)) } : null,
-    columns: { carry: features.hasCarry, properties: features.propertyColumns.map(column => column.label) },
+    columns: { carry: features.hasCarry },
     contacts: features.hasContacts,
     folded: selection.kind === 'armed',
   }
@@ -712,18 +829,6 @@ export const targetingFor = (selection: Selection, options: UnitOptions | null):
   return { from: objectIdSchema.parse(selection.unitId), targets: [...refused, ...valid].slice(0, mapTargetingMaxTargets).map(target => ({ id: objectIdSchema.parse(target.id), tag: target.tag })) }
 }
 
-/** The busy prompt's two options, once the unit's options say what its current job is; null until then. */
-export const busyPrompt = (options: UnitOptions | null, unitId: string): { readonly after: string; readonly now: string; readonly drops: string } | null => {
-  if (options === null || options.unitId !== unitId || options.busy === null) return null
-  const busy = options.busy
-  const code = options.targets.find(target => target.drops?.taskId === busy.taskId)?.drops?.code
-  return {
-    after: busy.freeInS === null ? dispatchWords.after : `${dispatchWords.after} (free in ${minutesText(busy.freeInS)})`,
-    now: `${dispatchWords.now} (drops ${busy.label}${code === undefined ? '' : ` · ${code}`})`,
-    drops: busy.taskId,
-  }
-}
-
 /** The Move prompt's one option. */
 export const movePromptText = (situation: Situation, unitId: string): string => {
   const unit = situation.units.find(entry => entry.id === unitId)
@@ -740,6 +845,8 @@ export interface Receipt {
   /** "Undo (A2 returns to C-3)" when the order dropped a task, else "Undo". */
   readonly undo: string
   readonly atMs: number
+  /** This viewer's own order, from its own result: it names what the order dropped, which the situation cannot. */
+  readonly own: boolean
 }
 
 /** A receipt of this viewer's own accepted order, naming what it dropped. */
@@ -749,6 +856,7 @@ export const ownReceipt = (options: { readonly commandId: string; readonly unitI
   text: `${dispatchWords.you}: ${options.unitLabel} → ${options.targetLabel}${options.dropped === null ? '' : ` (drops ${options.dropped})`}`,
   undo: options.dropped === null ? dispatchWords.undo : `${dispatchWords.undo} (${options.unitLabel} returns to ${options.dropped})`,
   atMs: options.atMs,
+  own: true,
 })
 
 /** Receipts of orders the situation shows as new since the previous read: another actor's, or this viewer's from another surface. */
@@ -759,19 +867,63 @@ export const receiptsFromSituation = (previous: Situation | null, next: Situatio
     const commandId = unit.lastOrder?.commandId ?? null
     if (commandId === null || unit.lastOrder === null || before.get(unit.id) === commandId) return []
     const target = unit.plan[0]?.label ?? unit.status.word
-    return [{ commandId, unitIds: [unit.id], text: `${actorText(unit.lastOrder.by)}: ${unit.label} → ${target}`, undo: dispatchWords.undo, atMs }]
+    return [{ commandId, unitIds: [unit.id], text: `${actorText(unit.lastOrder.by)}: ${unit.label} → ${target}`, undo: dispatchWords.undo, atMs, own: false }]
   })
 }
 
-/** Adds receipts, newest on top; one per command, at most `maxReceipts`. */
+/**
+ * Adds receipts, newest on top; one per command, at most `maxReceipts`. A
+ * viewer's own receipt takes the place of the situation's for the same
+ * command, whichever arrived first, so what it names is never lost; it
+ * keeps that place and Undo window.
+ */
 export const withReceipts = (list: ReadonlyArray<Receipt>, added: ReadonlyArray<Receipt>): ReadonlyArray<Receipt> => {
+  const ownOf = new Map(added.filter(receipt => receipt.own).map(receipt => [receipt.commandId, receipt]))
+  const kept = list.map(receipt => {
+    const own = receipt.own ? undefined : ownOf.get(receipt.commandId)
+    return own === undefined ? receipt : { ...own, atMs: receipt.atMs }
+  })
   const known = new Set(list.map(receipt => receipt.commandId))
   const fresh = added.filter(receipt => !known.has(receipt.commandId))
-  return [...fresh.reverse(), ...list].slice(0, maxReceipts)
+  return [...fresh.reverse(), ...kept].slice(0, maxReceipts)
 }
 
 /** Whether a receipt still offers Undo. */
 export const receiptUndoable = (receipt: Receipt, nowMs: number): boolean => nowMs - receipt.atMs < receiptUndoMs
+
+// ——— Re-layout ———
+
+const cardLayout = (card: CardView | null): ReadonlyArray<unknown> => {
+  if (card === null) return ['none']
+  switch (card.kind) {
+    case 'unit': return card.armed === null
+      ? ['unit', card.id, card.plan.map(stop => stop.id), card.predicted !== null, card.deliverTo.length, card.addStop !== null, card.states.length]
+      : ['armed', card.id, card.armed.slot.kind, card.armed.loading, card.armed.rows.map(row => row.key), card.plan.map(stop => stop.id)]
+    case 'call': return ['call', card.id, card.proposal.units.length, card.proposal.waiting, card.deliverTo.map(entry => [entry.enabled, entry.sites.length]), card.alternatives.map(entry => entry.units.length), card.whyNot.length > 0, card.assigned.length, card.states.length]
+    case 'closed-call': return ['closed-call', card.id]
+    case 'site': return ['site', card.id, card.inbound.length, card.states.length]
+  }
+}
+
+/**
+ * Where the panel's commands stand: which card shows and in which form,
+ * what its slots and lists hold, the receipts, and the rows of the lists.
+ * A change of it is a re-layout, after which no command acts for the
+ * double-click interval (`activationActs`), so a second tap never lands on
+ * what moved under it. A clock or an ETA running on, or a word changing in
+ * place, moves nothing and is none.
+ */
+export const panelLayoutKey = (card: CardView | null, view: OverviewView | null, receipts: ReadonlyArray<Receipt>, confirming: boolean): string => JSON.stringify([
+  cardLayout(card),
+  confirming,
+  receipts.map(receipt => receipt.commandId),
+  view === null ? null : [
+    view.folded,
+    view.calls.rows.map(row => [row.id, row.states.length]),
+    view.units.groups.map(group => group.rows.map(row => [row.id, row.states.length, row.current !== null || row.actor !== null])),
+    view.sites?.rows.map(row => [row.id, row.states.length, row.inbound !== null]) ?? null,
+  ],
+])
 
 // ——— Contacts ———
 

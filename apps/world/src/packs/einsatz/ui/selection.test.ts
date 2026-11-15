@@ -1,6 +1,7 @@
 import { describe, expect, test } from 'bun:test'
 import { geoPointFromLonLat, type GeoJsonPoint } from '../../../core/model/index.ts'
 import {
+  activationActs,
   doubleClickMs,
   initialSelection,
   reduceSelection,
@@ -86,9 +87,9 @@ describe('B.3: a click on a call or a site', () => {
     expect(step(sc, click(call))).toEqual({ state: { selection: sc, lastClick: expect.anything() }, effects: [] })
   })
   test('SA: a call submits unit.order for the armed unit, a site likewise, a track as an engage stop', () => {
-    expect(step(sa, click(call)).effects).toEqual([{ kind: 'submit', unitId: unitA.id, target: { taskId: call.id }, when: null }])
-    expect(step(sa, click(site)).effects).toEqual([{ kind: 'submit', unitId: unitA.id, target: { siteId: site.id }, when: null }])
-    expect(step(sa, click(track)).effects).toEqual([{ kind: 'submit', unitId: unitA.id, target: { trackId: track.id }, when: null }])
+    expect(step(sa, click(call)).effects).toEqual([{ kind: 'submit', unitId: unitA.id, target: { taskId: call.id }, when: null, drops: null }])
+    expect(step(sa, click(site)).effects).toEqual([{ kind: 'submit', unitId: unitA.id, target: { siteId: site.id }, when: null, drops: null }])
+    expect(step(sa, click(track)).effects).toEqual([{ kind: 'submit', unitId: unitA.id, target: { trackId: track.id }, when: null, drops: null }])
     expect(step(sa, click(call)).state.selection).toEqual(sa)
   })
   test('SA: a target the options list as refused (a dimmed target) submits all the same: the server decides', () => {
@@ -97,7 +98,7 @@ describe('B.3: a click on a call or a site', () => {
   })
   test('SA armed by "+ Add stop" submits with when "after"', () => {
     const armed = reduceSelection(start(su), { kind: 'arm', unitId: unitA.id, when: 'after' }).state
-    expect(reduceSelection(armed, click(call)).effects).toEqual([{ kind: 'submit', unitId: unitA.id, target: { taskId: call.id }, when: 'after' }])
+    expect(reduceSelection(armed, click(call)).effects).toEqual([{ kind: 'submit', unitId: unitA.id, target: { taskId: call.id }, when: 'after', drops: null }])
   })
   test('a track outside SA is marked on the map, with no card', () => {
     const result = step(su, click(track))
@@ -119,7 +120,7 @@ describe('B.3: a click on open ground', () => {
     expect(shown.state.selection).toEqual({ ...sa, prompt: { kind: 'move', point } })
     expect(shown.effects).toEqual([])
     const confirmed = reduceSelection(shown.state, { kind: 'prompt', choice: 'move' })
-    expect(confirmed.effects).toEqual([{ kind: 'submit', unitId: unitA.id, target: { point }, when: null }])
+    expect(confirmed.effects).toEqual([{ kind: 'submit', unitId: unitA.id, target: { point }, when: null, drops: null }])
     expect(confirmed.state.selection).toEqual(sa)
   })
   test('SA: another tap on the ground moves the prompt there; a target click answers it by submitting', () => {
@@ -139,11 +140,11 @@ describe('B.3: a row in the panel', () => {
     }
   })
   test('SA: a row of the armed target list submits like the map target', () => {
-    const result = step(sa, { kind: 'target-row', target: { siteId: site.id }, atMs: 1 })
-    expect(result.effects).toEqual([{ kind: 'submit', unitId: unitA.id, target: { siteId: site.id }, when: null }])
+    const result = step(sa, { kind: 'target-row', target: { siteId: site.id } })
+    expect(result.effects).toEqual([{ kind: 'submit', unitId: unitA.id, target: { siteId: site.id }, when: null, drops: null }])
   })
   test('a target row outside SA is a programming error, never a silent order', () => {
-    expect(() => step(su, { kind: 'target-row', target: { taskId: call.id }, atMs: 1 })).toThrow('no unit is armed')
+    expect(() => step(su, { kind: 'target-row', target: { taskId: call.id } })).toThrow('no unit is armed')
   })
 })
 
@@ -191,6 +192,11 @@ describe('B.3: a double-click acts as one click', () => {
     const first = reduceSelection(start(s0), click(call, 1_000))
     expect(reduceSelection(first.state, click(unitA, 1_100)).state.selection).toEqual(su)
   })
+  test('a card, row or footer command is the second half of a double-click within the interval of the last one that acted or of the last re-layout', () => {
+    expect(activationActs(null, 5)).toBe(true)
+    expect(activationActs(1_000, 1_000 + doubleClickMs - 1)).toBe(false)
+    expect(activationActs(1_000, 1_000 + doubleClickMs)).toBe(true)
+  })
 })
 
 describe('Arming and the armed unit\'s submits', () => {
@@ -201,23 +207,42 @@ describe('Arming and the armed unit\'s submits', () => {
     const result = step(sa, { kind: 'result', unitId: unitA.id, target: { taskId: call.id }, outcome: { ok: true }, atMs: 1 })
     expect(result.state.selection).toEqual(su)
   })
-  test('a busy unit refused when_required shows the busy prompt at the target, reads the options again, then sends the choice', () => {
+  test('a busy unit refused when_required shows the busy prompt at the target and reads the options again; Now waits for the job they name', () => {
     const refused = step(sa, { kind: 'result', unitId: unitA.id, target: { taskId: call.id }, outcome: { ok: false, code: 'when_required', text: 'busy' }, atMs: 1 })
-    expect(refused.state.selection).toEqual({ ...sa, prompt: { kind: 'busy', target: { taskId: call.id } } })
+    expect(refused.state.selection).toEqual({ ...sa, prompt: { kind: 'busy', target: { taskId: call.id }, job: null } })
     expect(refused.effects).toEqual([{ kind: 'options', unitId: unitA.id }])
-    expect(reduceSelection(refused.state, { kind: 'prompt', choice: 'after' }).effects).toEqual([{ kind: 'submit', unitId: unitA.id, target: { taskId: call.id }, when: 'after' }])
-    expect(reduceSelection(refused.state, { kind: 'prompt', choice: 'now' }).effects).toEqual([{ kind: 'submit', unitId: unitA.id, target: { taskId: call.id }, when: 'now' }])
+    expect(reduceSelection(refused.state, { kind: 'prompt', choice: 'after' }).effects).toEqual([{ kind: 'submit', unitId: unitA.id, target: { taskId: call.id }, when: 'after', drops: null }])
+    expect(() => reduceSelection(refused.state, { kind: 'prompt', choice: 'now' })).toThrow('before the unit\'s current job was known')
     expect(() => reduceSelection(refused.state, { kind: 'prompt', choice: 'move' })).toThrow('offers no move')
+  })
+  test('HF5: the busy prompt keeps the job the options named first, and Now sends exactly that one, so a job that changed meanwhile is the server\'s drops_mismatch', () => {
+    const refused = step(sa, { kind: 'result', unitId: unitA.id, target: { taskId: call.id }, outcome: { ok: false, code: 'when_required', text: 'busy' }, atMs: 1 }).state
+    const job = { taskId: 't-9', label: 'C-9', code: 'P3', freeInS: 300 }
+    const named = reduceSelection(refused, { kind: 'current-job', unitId: unitA.id, job }).state
+    expect(named.selection).toEqual({ ...sa, prompt: { kind: 'busy', target: { taskId: call.id }, job } })
+    // A later read naming another job, or none, changes nothing: the prompt never re-labels.
+    expect(reduceSelection(named, { kind: 'current-job', unitId: unitA.id, job: { ...job, taskId: 't-8', label: 'C-8' } }).state).toBe(named)
+    expect(reduceSelection(named, { kind: 'current-job', unitId: unitA.id, job: null }).state).toBe(named)
+    expect(reduceSelection(named, { kind: 'prompt', choice: 'now' }).effects).toEqual([{ kind: 'submit', unitId: unitA.id, target: { taskId: call.id }, when: 'now', drops: job }])
+    // Outside a busy prompt the job is not kept.
+    expect(reduceSelection(start(sa), { kind: 'current-job', unitId: unitA.id, job }).state.selection).toEqual(sa)
+    const mismatch = reduceSelection(named, { kind: 'result', unitId: unitA.id, target: { taskId: call.id }, outcome: { ok: false, code: 'drops_mismatch', text: 'A works for C-8' }, atMs: 5 })
+    expect(mismatch.state.selection).toMatchObject({ kind: 'armed', refusal: { targetId: call.id, text: 'A works for C-8' } })
   })
   test('any other refusal shows beside the target for 4 s, stays armed and sends nothing', () => {
     const refused = step(sa, { kind: 'result', unitId: unitA.id, target: { siteId: site.id }, outcome: { ok: false, code: 'site_not_accepting', text: 'S-1 is closed' }, atMs: 1_000 })
-    expect(refused.state.selection).toEqual({ ...sa, refusal: { targetId: site.id, code: 'site_not_accepting', text: 'S-1 is closed', untilMs: 1_000 + refusalShownMs } })
+    expect(refused.state.selection).toEqual({ ...sa, refusal: { targetId: site.id, text: 'S-1 is closed', untilMs: 1_000 + refusalShownMs } })
     expect(refused.effects).toEqual([])
     expect(reduceSelection(refused.state, { kind: 'tick', atMs: 1_000 + refusalShownMs - 1 }).state).toBe(refused.state)
     expect(reduceSelection(refused.state, { kind: 'tick', atMs: 1_000 + refusalShownMs }).state.selection).toEqual(sa)
   })
-  test('a result for a unit no longer armed changes nothing', () => {
-    expect(step(sc, { kind: 'result', unitId: unitA.id, target: { taskId: call.id }, outcome: { ok: true }, atMs: 1 }).state.selection).toEqual(sc)
+  test('a result for a unit no longer armed changes no selection; a refusal is reported, never lost', () => {
+    expect(step(sc, { kind: 'result', unitId: unitA.id, target: { taskId: call.id }, outcome: { ok: true }, atMs: 1 })).toEqual({ state: start(sc), effects: [] })
+    for (const code of ['when_required', 'site_not_accepting', null]) {
+      const late = step(sc, { kind: 'result', unitId: unitA.id, target: { taskId: call.id }, outcome: { ok: false, code, text: 'refused' }, atMs: 1 })
+      expect(late).toEqual({ state: start(sc), effects: [{ kind: 'late-refusal', unitId: unitA.id, target: { taskId: call.id }, text: 'refused' }] })
+    }
+    expect(step({ ...sa, unitId: unitB.id }, { kind: 'result', unitId: unitA.id, target: { taskId: call.id }, outcome: { ok: false, code: null, text: 'refused' }, atMs: 1 }).effects.map(effect => effect.kind)).toEqual(['late-refusal'])
   })
   test('confirming a prompt that is not shown is a programming error', () => {
     expect(() => step(sa, { kind: 'prompt', choice: 'move' })).toThrow('no prompt shown')

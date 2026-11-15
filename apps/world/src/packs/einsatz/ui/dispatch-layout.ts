@@ -10,7 +10,9 @@ import { noMapCover } from '../../../ui/surface-panel-interaction.ts'
  *   that less than `minMapWidthPx` of map stays clear beside it.
  * - Below 1024 px (tablet portrait, phones) it is a bottom sheet. It starts
  *   folded to an edge tab ("Calls 3 · 7 free", with the receipt line); a
- *   click on an Einsatz object, or on the tab, opens the sheet.
+ *   click on an Einsatz object, or on the tab, opens the sheet. Open, it
+ *   takes a fixed share of the surface's height, so its selection block and
+ *   lists scroll inside it and the map it covers stays put as cards change.
  *
  * The panel reports how far it reaches over the map (`MapCover`) from its
  * observed size, so the map camera centres and fits in the part left clear,
@@ -36,17 +38,17 @@ export const panelEdgeGapPx = 12
  */
 export const panelTopClearancePx = 52
 export const panelBottomClearancePx = 52
-/** The most of the surface's height the open bottom sheet takes. */
-export const sheetMaxShare = 0.6
+/** The share of the surface's height the open bottom sheet takes. */
+export const sheetShare = 0.6
 export type PanelLayout =
   | { readonly mode: 'docked'; readonly widthPx: number; readonly mapWidthPx: number }
-  | { readonly mode: 'sheet'; readonly maxHeightPx: number }
+  | { readonly mode: 'sheet'; readonly heightPx: number }
 
 /** The panel's layout on a surface of this size. */
 export const panelLayoutFor = (surfaceWidthPx: number, surfaceHeightPx: number): PanelLayout => {
   if (!Number.isFinite(surfaceWidthPx) || surfaceWidthPx < 0) throw new Error(`The World surface is no width: ${surfaceWidthPx}`)
   if (!Number.isFinite(surfaceHeightPx) || surfaceHeightPx < 0) throw new Error(`The World surface is no height: ${surfaceHeightPx}`)
-  if (surfaceWidthPx < dockedFromPx) return { mode: 'sheet', maxHeightPx: Math.floor(surfaceHeightPx * sheetMaxShare) }
+  if (surfaceWidthPx < dockedFromPx) return { mode: 'sheet', heightPx: Math.floor(surfaceHeightPx * sheetShare) }
   const preferred = surfaceWidthPx >= wideFromPx ? widePanelPx : narrowPanelPx
   const widthPx = Math.max(minPanelWidthPx, Math.min(preferred, surfaceWidthPx - panelEdgeGapPx - minMapWidthPx))
   return { mode: 'docked', widthPx, mapWidthPx: surfaceWidthPx - panelEdgeGapPx - widthPx }

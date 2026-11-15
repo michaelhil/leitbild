@@ -1,19 +1,21 @@
 <script lang="ts">
   import { untrack } from 'svelte'
-  import { objectIdSchema, type GeoJsonPoint, type ObjectId } from '../../../core/model/index.ts'
+  import { objectIdSchema, type ObjectId } from '../../../core/model/index.ts'
   import type { PackMapTarget } from '../../../core/packs/protocol.ts'
   import { loadMapSymbols } from '../../../ui/map-runtime/map-symbols.ts'
+  import type { MapPrompt, SurfacePanelProps } from '../../../ui/surface-panel-interaction.ts'
   import { runOnMount } from '../../../ui/svelte-lifecycle.svelte.ts'
   import { neutralLexicon } from '../lexicon.ts'
-  import type { OrderWhen, Stop, UnitOrderInput } from '../order-schema.ts'
+  import type { Stop, UnitOrderInput } from '../order-schema.ts'
   import type { Situation, SituationCall, UnitOptions } from '../situation/schema.ts'
-  import type { MapPrompt, SurfacePanelProps } from '../../../ui/surface-panel-interaction.ts'
   import { dispatchMapCover, panelBottomClearancePx, panelEdgeGapPx, panelLayoutFor, panelTopClearancePx, sheetOpen, shownClearOfPanel } from './dispatch-layout.ts'
   import { createIconCache, runEinsatzClient, situationIconIds, type CommandOutcome } from './einsatz-client.ts'
   import {
-    busyPrompt,
+    armedOrderWith,
+    busyChoices,
     cardFor,
     contactRows,
+    currentJobOf,
     deliverToOrder,
     dispatchKindOf,
     dispatchWords,
@@ -22,14 +24,30 @@
     movePromptText,
     overview,
     ownReceipt,
+    panelLayoutKey,
+    pinProposal,
     receiptsFromSituation,
     receiptUndoable,
     targetingFor,
     withReceipts,
+    type ArmedOrder,
     type PinnedProposal,
     type Receipt,
   } from './presenters.ts'
-  import { initialSelection, reduceSelection, selectedObjectOf, selectionChangeEvent, type ClickedObject, type DispatchObjectKind, type SelectionEffect, type SelectionEvent, type SelectionState } from './selection.ts'
+  import {
+    activationActs,
+    initialSelection,
+    reduceSelection,
+    selectedObjectOf,
+    selectionChangeEvent,
+    stopObjectId,
+    type ClickedObject,
+    type CurrentJob,
+    type DispatchObjectKind,
+    type SelectionEffect,
+    type SelectionEvent,
+    type SelectionState,
+  } from './selection.ts'
   import ContactsSection from './ContactsSection.svelte'
   import OverviewLists from './OverviewLists.svelte'
   import SelectionCard from './SelectionCard.svelte'
@@ -42,15 +60,21 @@
    *
    * It holds the Run's situation, read on open and on every data revision;
    * an armed unit's options, read on arming and on every data revision while
-   * it stays armed; and the call card's proposal, pinned when the card opens
-   * and read again only on Refresh. It never holds the configuration.
+   * it stays armed, with the armed list's order fixed at arming; and the
+   * call card's proposal, pinned when the card opens and read again only on
+   * Refresh, which keeps the old answer greyed until the new one arrives. It
+   * never holds the configuration.
    *
    * Every map click on an Einsatz object reaches it: the surface shares the
-   * selection (`selectedObjectId`) or, with a unit selected, hands it the
-   * click as that unit's map target (`onMapTarget`). Both become one `click`
-   * of the selection table, as a row tap does. While a unit is armed it
-   * hands the map the targeting (halos with ETA tags) and the Move or busy
-   * prompt. Esc goes one level back, as the banner's and the card's × do.
+   * selection (`selectedObjectId`) or, with one of its objects selected,
+   * hands it the click (`onMapTarget`). Both become one `click` of the
+   * selection table, as a row tap does. While a unit is armed it hands the
+   * map the targeting (halos with ETA tags) and the Move or busy prompt.
+   * Esc goes one level back, as the banner's and the card's × do.
+   *
+   * No card, row or footer command acts within the double-click interval of
+   * the last one that acted or of the last re-layout (`activationActs`), so
+   * a double-click never reaches what took the first click's place.
    */
   const props: SurfacePanelProps = $props()
 
@@ -62,11 +86,15 @@
   let problem = $state<string | null>(null)
   let selection = $state.raw<SelectionState>(initialSelection)
   let options = $state.raw<UnitOptions | null>(null)
+  let armedOrder = $state.raw<ArmedOrder | null>(null)
   let pinned = $state.raw<PinnedProposal | null>(null)
   let opened = $state.raw<ReadonlySet<string>>(new Set())
   let lastSeenCall = $state.raw<SituationCall | null>(null)
   let receipts = $state.raw<ReadonlyArray<Receipt>>([])
-  let feedback = $state.raw<{ readonly text: string; readonly code: string | null } | null>(null)
+  /** The last refusal or failure the panel reports outside a target, shown in the card's slot. */
+  let feedback = $state<string | null>(null)
+  /** The call whose Close waits for its inline confirm. */
+  let confirming = $state<string | null>(null)
   let surfaceWidth = $state(0)
   let surfaceHeight = $state(0)
   let panelSize = $state.raw({ width: 0, height: 0 })
@@ -74,6 +102,8 @@
   let iconRevision = $state(0)
   let root = $state<HTMLElement | null>(null)
   let disposed = false
+  /** When the last command acted or the layout last changed: the double-click guard. */
+  let quietFromMs: number | null = null
 
   const icons = createIconCache({ load: loadMapSymbols, changed: () => { iconRevision += 1 } })
   const icon = (id: string): string | undefined => {
@@ -89,7 +119,7 @@
     const now = props.currentTime()
     return readAtRunMs === null || now === undefined ? 0 : Math.max(0, (Date.parse(now) - readAtRunMs) / 1_000)
   })
-  const card = $derived(situation === null ? null : cardFor(situation, selection.selection, { options, pinned, opened, lastSeenCall, elapsedS }))
+  const card = $derived(situation === null ? null : cardFor(situation, selection.selection, { options, armedOrder, pinned, opened, lastSeenCall, elapsedS }))
   const lists = $derived(situation === null ? null : overview(situation, selection.selection, opened, elapsedS))
   const contacts = $derived.by(() => {
     if (lists === null || !lists.contacts) return []
@@ -110,6 +140,14 @@
   const kindOfObject = (objectId: string): DispatchObjectKind | null => {
     const object = props.objects.find(entry => entry.id === objectId)
     return object === undefined ? null : dispatchKindOf(object)
+  }
+
+  /** A command from the card, a row or the footer: it acts unless it is the second half of a double-click. */
+  const act = <Args extends ReadonlyArray<unknown>>(run: (...args: Args) => void) => (...args: Args): void => {
+    const now = Date.now()
+    if (!activationActs(quietFromMs, now)) return
+    quietFromMs = now
+    run(...args)
   }
 
   // ——— Reads ———
@@ -136,21 +174,30 @@
     const read = ++optionsRead
     try {
       const answer = await client.unitOptions(unitId)
-      if (!disposed && read === optionsRead) options = answer
+      if (disposed || read !== optionsRead) return
+      options = answer
+      const armed = selection.selection
+      if (armed.kind !== 'armed' || armed.unitId !== answer.unitId) return
+      armedOrder = armedOrderWith(armedOrder, answer)
+      send({ kind: 'current-job', unitId: answer.unitId, job: currentJobOf(answer) })
     } catch (error) {
-      if (!disposed && read === optionsRead) feedback = { text: messageOf(error), code: null }
+      if (!disposed && read === optionsRead) feedback = messageOf(error)
     }
   }
 
   let pinRead = 0
+  /** Pins the call's proposal; asked again (Refresh), the old answer stays, greyed, until the new one arrives. */
   const pin = async (callId: string): Promise<void> => {
     const read = ++pinRead
-    pinned = null
+    pinned = pinned !== null && pinned.callId === callId ? { ...pinned, refreshing: true } : null
     try {
       const answer = await client.recommend(callId)
-      if (!disposed && read === pinRead) pinned = { callId, answer, dropped: new Set() }
+      if (!disposed && read === pinRead) pinned = pinProposal(situation, callId, answer)
     } catch (error) {
-      if (!disposed && read === pinRead) feedback = { text: messageOf(error), code: null }
+      if (!disposed && read === pinRead) {
+        if (pinned !== null && pinned.callId === callId) pinned = { ...pinned, refreshing: false }
+        feedback = messageOf(error)
+      }
     }
   }
 
@@ -158,7 +205,11 @@
 
   const send = (event: SelectionEvent): void => {
     const stepped = reduceSelection(selection, event)
+    const before = selection.selection
     selection = stepped.state
+    const after = stepped.state.selection
+    if (after.kind !== 'armed') armedOrder = null
+    else if (before.kind !== 'armed' || before.unitId !== after.unitId) armedOrder = null
     for (const effect of stepped.effects) perform(effect)
   }
 
@@ -166,6 +217,7 @@
     switch (effect.kind) {
       case 'select':
         feedback = null
+        confirming = null
         props.onSelectObject(effect.objectId === null ? null : objectIdSchema.parse(effect.objectId))
         return
       case 'options':
@@ -176,7 +228,10 @@
         void pin(effect.callId)
         return
       case 'submit':
-        void submit(effect.unitId, effect.target, effect.when)
+        void submit(effect.unitId, effect.target, effect.when, effect.drops)
+        return
+      case 'late-refusal':
+        feedback = `${unitLabel(effect.unitId)} → ${stopLabel(effect.target)}: ${effect.text}`
         return
     }
   }
@@ -199,28 +254,25 @@
     }
   }
 
-  /** The armed unit's order for one stop: `now` names the task it drops, as its options say. */
-  const submit = async (unitId: string, target: Stop, when: OrderWhen | null): Promise<void> => {
-    const busy = when === 'now' ? busyPrompt(options, unitId) : null
-    if (when === 'now' && busy === null) {
-      feedback = { text: 'The unit\'s current job is not known yet; nothing was sent', code: null }
-      return
-    }
-    const dropped = busy === null ? null : options?.busy?.label ?? null
-    const input: UnitOrderInput = { units: [unitId], stops: [target], ...(when === null ? {} : { when }), ...(busy === null ? {} : { drops: busy.drops }) }
+  /** The armed unit's order for one stop: `now` drops exactly the job the busy prompt named. */
+  const submit = async (unitId: string, target: Stop, when: UnitOrderInput['when'] | null, drops: CurrentJob | null): Promise<void> => {
+    const input: UnitOrderInput = { units: [unitId], stops: [target], ...(when === null ? {} : { when }), ...(drops === null ? {} : { drops: drops.taskId }) }
     const outcome = await outcomeOf(async () => await client.order(input))
     if (disposed) return
     send({ kind: 'result', unitId, target, outcome: outcome.ok ? { ok: true } : { ok: false, code: outcome.code, text: outcome.text }, atMs: Date.now() })
-    if (outcome.ok) receipts = withReceipts(receipts, [ownReceipt({ commandId: outcome.commandId, unitIds: [unitId], unitLabel: unitLabel(unitId), targetLabel: stopLabel(target), dropped, atMs: Date.now() })])
+    if (outcome.ok) {
+      const dropped = drops === null ? null : `${drops.label}${drops.code === null ? '' : ` · ${drops.code}`}`
+      receipts = withReceipts(receipts, [ownReceipt({ commandId: outcome.commandId, unitIds: [unitId], unitLabel: unitLabel(unitId), targetLabel: stopLabel(target), dropped, atMs: Date.now() })])
+    }
   }
 
-  /** A card's command: a refusal shows in the card; an accepted order leaves a receipt. */
+  /** A card's command: a refusal shows in the card's slot; an accepted order leaves a receipt. */
   const command = async (run: () => Promise<CommandOutcome>, receipt: { readonly unitIds: ReadonlyArray<string>; readonly target: string } | null): Promise<void> => {
     feedback = null
     const outcome = await outcomeOf(run)
     if (disposed) return
     if (!outcome.ok) {
-      feedback = { text: outcome.text, code: outcome.code }
+      feedback = outcome.text
       return
     }
     if (receipt !== null) {
@@ -246,9 +298,9 @@
   }
 
   /** The map point of a stop: its own point, or the position of the object it names. */
-  const pointOf = (stop: Stop): GeoJsonPoint | undefined => {
+  const pointOf = (stop: Stop) => {
     if ('point' in stop) return stop.point
-    const id = 'taskId' in stop ? stop.taskId : 'siteId' in stop ? stop.siteId : stop.trackId
+    const id = stopObjectId(stop)
     return props.objects.find(object => object.id === id)?.spatial.position?.point
   }
 
@@ -263,7 +315,7 @@
     props.onFocusMap({ kind: 'point', center: [point.coordinates[0], point.coordinates[1]] })
   }
 
-  const onMapTarget = (_controllerId: ObjectId, target: PackMapTarget): void => {
+  const onMapTarget = (_selectedId: ObjectId, target: PackMapTarget): void => {
     if (target.kind === 'point') {
       send({ kind: 'click', on: { kind: 'ground', point: target.point }, atMs: Date.now() })
       return
@@ -349,6 +401,15 @@
     if (row !== undefined) untrack(() => { lastSeenCall = row })
   })
 
+  // A change of what stands where re-arms the double-click guard.
+  let shownLayout: string | null = null
+  $effect(() => {
+    const key = panelLayoutKey(card, lists, receipts, confirming !== null)
+    if (key === shownLayout) return
+    shownLayout = key
+    quietFromMs = Date.now()
+  })
+
   // The armed unit's halos and tags; sent again only when they change.
   let shownTargeting: string | null = null
   $effect(() => {
@@ -368,15 +429,15 @@
     if (shown.kind === 'armed' && shown.prompt !== null && current !== null) {
       if (shown.prompt.kind === 'move') {
         prompt = { point: shown.prompt.point, options: [{ label: movePromptText(current, shown.unitId), onConfirm: () => send({ kind: 'prompt', choice: 'move' }) }] }
-      } else {
-        const busy = busyPrompt(options, shown.unitId)
+      } else if (shown.prompt.job !== null) {
+        const choices = busyChoices(shown.prompt.job)
         const point = pointOf(shown.prompt.target)
-        if (busy !== null && point !== undefined) {
+        if (point !== undefined) {
           prompt = {
             point,
             options: [
-              { label: busy.after, onConfirm: () => send({ kind: 'prompt', choice: 'after' }) },
-              { label: busy.now, tone: 'warning', onConfirm: () => send({ kind: 'prompt', choice: 'now' }) },
+              { label: choices.after, onConfirm: () => send({ kind: 'prompt', choice: 'after' }) },
+              { label: choices.now, tone: 'warning', onConfirm: () => send({ kind: 'prompt', choice: 'now' }) },
             ],
           }
         }
@@ -401,21 +462,21 @@
   class:folded={!open}
   bind:this={root}
   style:width={layout.mode === 'docked' ? `${layout.widthPx}px` : null}
-  style:max-height={layout.mode === 'sheet' ? `${layout.maxHeightPx}px` : null}
+  style:height={layout.mode === 'sheet' && open ? `${layout.heightPx}px` : null}
   style:top={layout.mode === 'docked' ? `${panelTopClearancePx}px` : null}
   style:bottom={layout.mode === 'docked' ? `${panelBottomClearancePx}px` : '0px'}
   style:right={layout.mode === 'docked' ? `${panelEdgeGapPx}px` : '0px'}
   aria-label={dispatchWords.panel}
 >
   {#if !open}
-    <button type="button" class="tab" onclick={() => { sheetOpenedByOperator = true }}>
+    <button type="button" class="tab" onclick={act(() => { sheetOpenedByOperator = true })}>
       <strong>{situation === null ? dispatchWords.panel : edgeTabText(situation)}</strong>
       {#if receipts[0] !== undefined}<span class="receipt-line">{receipts[0].text}</span>{/if}
     </button>
   {:else}
     <header class="head">
       <h2>{dispatchWords.panel}</h2>
-      {#if layout.mode === 'sheet'}<button type="button" class="fold" aria-label={dispatchWords.close} onclick={fold}>⌄</button>{/if}
+      {#if layout.mode === 'sheet'}<button type="button" class="fold" aria-label={dispatchWords.close} onclick={act(fold)}>⌄</button>{/if}
     </header>
     {#if problem !== null}
       <p class="problem" role="alert">{problem} <button type="button" onclick={() => { void readSituation() }}>{dispatchWords.retry}</button></p>
@@ -429,30 +490,33 @@
             {card}
             {feedback}
             {icon}
-            back={() => send({ kind: 'back' })}
-            arm={(unitId, when) => send({ kind: 'arm', unitId, when })}
-            targetRow={target => send({ kind: 'target-row', target, atMs: Date.now() })}
-            promptChoice={choice => send({ kind: 'prompt', choice })}
-            recall={unitId => { void command(async () => await client.recall(unitId), { unitIds: [unitId], target: situation === null ? dispatchWords.panel : situation.words.return }) }}
-            undo={(unitId, commandId) => { void command(async () => await client.undo(unitId, commandId), null) }}
-            removeStop={(unitId, stopId) => { void command(async () => await client.removeStop(unitId, stopId), null) }}
-            deliverTo={(unitId, siteId) => { const unit = situation?.units.find(entry => entry.id === unitId); if (unit !== undefined) order(deliverToOrder(unit, siteId)) }}
-            {order}
-            {toggleChip}
-            refresh={callId => { void pin(callId) }}
-            closeTask={taskId => { void command(async () => await client.closeTask(taskId), null) }}
-            setSite={(siteId, accepting) => { void command(async () => await client.setSite(siteId, accepting), null) }}
+            confirming={confirming !== null && confirming === card.id}
+            back={act(() => send({ kind: 'back' }))}
+            arm={act((unitId: string, when: 'after' | null) => send({ kind: 'arm', unitId, when }))}
+            targetRow={act((target: Stop) => send({ kind: 'target-row', target }))}
+            promptChoice={act((choice: 'after' | 'now') => send({ kind: 'prompt', choice }))}
+            recall={act((unitId: string) => { void command(async () => await client.recall(unitId), { unitIds: [unitId], target: situation === null ? dispatchWords.panel : situation.words.return }) })}
+            undo={act((unitId: string, commandId: string) => { void command(async () => await client.undo(unitId, commandId), null) })}
+            removeStop={act((unitId: string, stopId: string) => { void command(async () => await client.removeStop(unitId, stopId), null) })}
+            deliverTo={act((unitId: string, siteId: string) => { const unit = situation?.units.find(entry => entry.id === unitId); if (unit !== undefined) order(deliverToOrder(unit, siteId)) })}
+            order={act(order)}
+            toggleChip={act(toggleChip)}
+            refresh={act((callId: string) => { void pin(callId) })}
+            askClose={act((callId: string) => { confirming = callId })}
+            cancelClose={act(() => { confirming = null })}
+            closeTask={act((taskId: string) => { confirming = null; void command(async () => await client.closeTask(taskId), null) })}
+            setSite={act((siteId: string, accepting: boolean) => { void command(async () => await client.setSite(siteId, accepting), null) })}
           />
         {:else}
           <p class="hint">{emptySelectionText(situation.words)}</p>
-          {#if feedback !== null}<p class="problem" role="alert">{feedback.text}</p>{/if}
+          {#if feedback !== null}<p class="problem" role="alert">{feedback}</p>{/if}
         {/if}
       </div>
       {#if lists !== null}
         <div class="lists">
-          <OverviewLists view={lists} {icon} open={openRow} />
+          <OverviewLists view={lists} {icon} open={act(openRow)} />
           {#if lists.contacts && !lists.folded}
-            <ContactsSection heading={neutralLexicon.tracks} empty={neutralLexicon.noTracks} rows={contacts} {icon} open={openRow} />
+            <ContactsSection heading={neutralLexicon.tracks} empty={neutralLexicon.noTracks} rows={contacts} {icon} open={act(openRow)} />
           {/if}
         </div>
       {/if}
@@ -462,7 +526,7 @@
           {#each receipts as receipt (receipt.commandId)}
             <li>
               <span class="receipt-text">{receipt.text}</span>
-              {#if receiptUndoable(receipt, nowMs)}<button type="button" onclick={() => undoReceipt(receipt)}>{receipt.undo}</button>{/if}
+              {#if receiptUndoable(receipt, nowMs)}<button type="button" onclick={act(() => undoReceipt(receipt))}>{receipt.undo}</button>{/if}
             </li>
           {/each}
         </ol>
@@ -472,7 +536,7 @@
 </section>
 
 <style>
-  /* Its offsets and width come from dispatch-layout.ts. */
+  /* Its offsets, width and the open sheet's height come from dispatch-layout.ts. */
   .dispatch {
     position: absolute;
     z-index: 15;
@@ -495,15 +559,17 @@
   .dispatch[data-mode='sheet'].folded { left: auto; padding: 0; border-radius: 10px 0 0 0; }
   .head { flex: none; display: flex; align-items: center; gap: 8px; }
   h2 { flex: 1; margin: 0; font-size: 12px; font-weight: 750; letter-spacing: .08em; text-transform: uppercase; color: var(--muted); }
-  .selection { flex: none; max-height: 55%; overflow: auto; overscroll-behavior: contain; }
-  .lists { flex: 1; min-height: 0; overflow: auto; overscroll-behavior: contain; display: grid; align-content: start; gap: 4px; }
+  /* The panel has a definite height in both modes, so the selection block's share resolves and it scrolls. */
+  .selection { flex: 0 1 auto; max-height: 70%; min-height: 0; overflow: auto; overscroll-behavior: contain; }
+  .lists { flex: 1 1 0; min-height: 0; overflow: auto; overscroll-behavior: contain; display: grid; align-content: start; gap: 4px; }
   .hint { margin: 0; padding: 10px 8px; border: 1px dashed var(--border); border-radius: 8px; color: var(--muted); }
   .loading { margin: 0; color: var(--muted); }
   .problem { margin: 0; color: var(--critical); }
   .artwork { flex: none; margin: 0; color: var(--warning); font-size: 11px; }
   .receipts { flex: none; display: grid; gap: 4px; margin: 0; padding: 6px 0 0; border-top: 1px solid var(--border); list-style: none; }
-  .receipts li { display: flex; align-items: center; gap: 6px; }
-  .receipt-text { flex: 1; min-width: 0; font-size: 12px; overflow-wrap: anywhere; }
+  /* Every receipt row keeps one height, Undo or not, so no other receipt's Undo slides under the pointer. */
+  .receipts li { box-sizing: border-box; height: 48px; display: flex; align-items: center; gap: 6px; overflow: hidden; }
+  .receipt-text { flex: 1; min-width: 0; font-size: 12px; line-height: 15px; display: -webkit-box; -webkit-line-clamp: 3; line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; overflow-wrap: anywhere; }
   button { min-height: 44px; min-width: 44px; padding: 4px 10px; border: 1px solid var(--border); border-radius: 8px; background: var(--panel); color: inherit; font: inherit; font-size: 12px; cursor: pointer; touch-action: manipulation; }
   button:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
   .receipts button { border-color: var(--accent); color: var(--accent); font-weight: 650; }
