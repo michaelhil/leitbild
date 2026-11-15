@@ -26,7 +26,7 @@ describe('W1: an answer the screen cannot read', () => {
     // The kind of error the walk met: the screen's contract refusing a key the service sent.
     const parse = z.object({ result: z.object({ lines: z.array(z.string()) }).strict() }).strict().safeParse({ result: { lines: [], extra: 1 } })
     const cause = parse.success ? null : parse.error
-    expect(unreadableAnswerWords).toBe('This screen could not read the plan\'s answer. Reload the page; if it persists, the screen and the service are from different releases.')
+    expect(unreadableAnswerWords).toBe('This screen could not read the plan\'s answer. Reload the page; if it happens again, send the details below to support.')
     expect(refusalText(cause)).toBe(unreadableAnswerWords)
     const html = renderHtml(ErrorNotice, { cause })
     const shown = readableText(html.replace(/<details[\s\S]*<\/details>/, ''))

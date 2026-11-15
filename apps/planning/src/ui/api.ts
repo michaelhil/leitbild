@@ -116,7 +116,7 @@ export const notBuiltWords = 'This is not available yet in this version of Plann
  * issues, which stay behind "Details for support" (walk W1).
  */
 export const isUnreadableAnswer = (error: unknown): error is Error => error instanceof z.ZodError
-export const unreadableAnswerWords = 'This screen could not read the plan\'s answer. Reload the page; if it persists, the screen and the service are from different releases.'
+export const unreadableAnswerWords = 'This screen could not read the plan\'s answer. Reload the page; if it happens again, send the details below to support.'
 /** The detail kept for support behind a disclosure, only for an answer the screen could not read. */
 export const failureDetail = (error: unknown): string | null => isUnreadableAnswer(error) ? error.message : null
 /** No earlier set of options to compare with (409 no_previous_options): Planning keeps one when the plan changes and Generate runs again. */
