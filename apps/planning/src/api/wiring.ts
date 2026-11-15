@@ -81,8 +81,9 @@ export const createRealSolver = (pool: SolverPool): SolverPort => {
       const items = ask === 'why-start'
         ? [explainer.whyStart(activity ?? index.jobs.findIndex(key => key !== null))]
         : explainer.finishChain(activity)
-      // 'finish': the hours one more unit of the most limiting resource would gain, checked by lane K in a
-      // solver child; left out when nothing sound can be said, or while a Generate holds the solver.
+      // 'finish': what one more unit of the most limiting resource does, checked by lane K in a solver child
+      // (a gain in hours, or no gain). Left out when not computed: the chain names no resource, a Generate
+      // holds the solver, or the child fails. Absent never means "no gain".
       const candidates = ask === 'finish' ? mostLimiting(items) : []
       const limiting = candidates.length === 0 || generating ? null : await pool.limiting(inputs, option, candidates).catch((error: unknown) => {
         if (isPlanningError(error) && error.code === 'solver_busy') return null

@@ -112,9 +112,13 @@ export const previewFromWire = (wire: unknown): PreviewResult | { readonly probl
   return { ...rest, ...(nearestAllowed === undefined ? {} : { nearestAllowed }), ...(lockFindings === undefined ? {} : { lockFindings }) }
 }
 
-const limitingSchema = z.object({ about: z.object({ kind: z.literal('resource'), key: keySchema }).strict(), hoursEarlier: z.number().positive() }).strict().nullable()
+const aboutSchema = z.object({ kind: z.literal('resource'), key: keySchema }).strict()
+const limitingSchema = z.discriminatedUnion('result', [
+  z.object({ result: z.literal('gain'), about: aboutSchema, hoursEarlier: z.number().positive() }).strict(),
+  z.object({ result: z.literal('no-gain'), about: aboutSchema }).strict(),
+]).nullable()
 
-/** The child's limiting answer, validated: a resource and its hours, or null (nothing sound to say). */
+/** The child's limiting answer, validated: a gain, no gain (both checked), or null: not computed. */
 export const limitingFromWire = (wire: unknown): Limiting | null | { readonly problem: string } => {
   const parsed = limitingSchema.safeParse(decode(wire))
   return parsed.success ? parsed.data : { problem: parsed.error.issues.slice(0, 3).map(issue => `${issue.path.join('.')}: ${issue.message}`).join('; ') }

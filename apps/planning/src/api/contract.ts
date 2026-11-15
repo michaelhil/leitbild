@@ -124,9 +124,14 @@ export const explainResultSchema = z.object({
     }).strict()).min(1).max(4),
     joint: z.boolean(),
   }).strict()).max(20),
-  // 'finish' only: the most limiting resource and the hours one more unit of it would gain, when lane K's
-  // checker passed that plan (the option's own order decoded again with the extra unit, no search).
-  limiting: z.object({ about: z.object({ kind: z.literal('resource'), key: keySchema }).strict(), hoursEarlier: z.number().positive() }).strict().optional(),
+  // 'finish' only: what one more unit of the most limiting resource does, checked by lane K's checker on the
+  // option's own order decoded again with that unit (no search). gain: the finish is hoursEarlier earlier.
+  // no-gain: checked, and the finish does not move in this order. Absent: not computed (the chain names no
+  // resource, the solver was busy, or the decode or check failed), so nothing may be said about hours.
+  limiting: z.discriminatedUnion('result', [
+    z.object({ result: z.literal('gain'), about: z.object({ kind: z.literal('resource'), key: keySchema }).strict(), hoursEarlier: z.number().positive() }).strict(),
+    z.object({ result: z.literal('no-gain'), about: z.object({ kind: z.literal('resource'), key: keySchema }).strict() }).strict(),
+  ]).optional(),
   more: z.string().max(256).optional(),
 }).strict()
 // ───────────── read sections ─────────────

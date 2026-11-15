@@ -46,15 +46,31 @@ describe('walk 4: the limiting crew in hours, and a bound that counts a keep-fre
     const option = await optionOf(inputs)
     expect((lastFinish(option.rows) - Date.parse(inputs.settings.window!.start)) / 3_600_000).toBe(2)
     const answer = await createRealSolver(pool).explain({ inputs, option, ask: 'finish', job: undefined, cursor: undefined })
-    expect(answer.limiting).toEqual({ about: { kind: 'resource', key: 'a' }, hoursEarlier: 1 })
+    expect(answer.limiting).toEqual({ result: 'gain', about: { kind: 'resource', key: 'a' }, hoursEarlier: 1 })
     // oneMoreUnit gives hours only for a decoded plan lane K's checker passes, on inputs with the extra truck.
-    expect(oneMoreUnit(inputs, option, 'a')).toBe(1)
-    // Nothing sound to say: on the flagship one more unit of any crew gains nothing in the option's own order.
+    expect(oneMoreUnit(inputs, option, 'a')).toEqual({ kind: 'gain', hours: 1 })
+    // Checked, no gain: on the flagship one more unit of any crew gains nothing in the option's own order.
     const flagship = trainAInputs({ read: true })
     const flagshipOption = (await generate({ engine: searchEngine(), check: laneKCheck, verify: laneKVerify, verifyBound: laneKVerifyBound }, { inputs: flagship, revision: 1, previous: null, input: {}, by, signal: new AbortController().signal, seed: 1, evals: 1_500 })).optionSet.options[0]!
-    for (const resource of ['work-control', 'test-team']) expect(oneMoreUnit(flagship, flagshipOption, resource)).toBeUndefined()
+    for (const resource of ['work-control', 'test-team']) expect(oneMoreUnit(flagship, flagshipOption, resource)).toEqual({ kind: 'none' })
     const flagshipAnswer = await createRealSolver(pool).explain({ inputs: flagship, option: flagshipOption, ask: 'finish', job: undefined, cursor: undefined })
-    expect(flagshipAnswer.limiting).toBeUndefined()
+    expect(flagshipAnswer.limiting).toMatchObject({ result: 'no-gain', about: { kind: 'resource' } })
+  }, 120_000)
+
+  test('R4-1: not computed (the field absent) while a Generate holds the solver, or when the child fails; never "no gain"', async () => {
+    const inputs = plan(['a'], [], ['a'])
+    const option = await optionOf(inputs)
+    const ask = { inputs, option, ask: 'finish' as const, job: undefined, cursor: undefined }
+    // Busy: a Generate runs on the same service.
+    const solver = createRealSolver(pool)
+    const running = solver.generate({ inputs, inputsRevision: 1, variants: undefined, seconds: 2, stored: null, at: new Date().toISOString(), by, signal: new AbortController().signal })
+    expect((await solver.explain(ask)).limiting).toBeUndefined()
+    await running
+    // The same question once the solver is free: computed, and it is a gain.
+    expect((await solver.explain(ask)).limiting).toMatchObject({ result: 'gain', hoursEarlier: 1 })
+    // Failed: the child never answers and is killed at its deadline.
+    const silent = createSolverPool({ childEntry: new URL('./fixtures/child-silent.ts', import.meta.url).pathname, previewDeadlineMs: 500 })
+    try { expect((await createRealSolver(silent).explain(ask)).limiting).toBeUndefined() } finally { await silent.shutdown() }
   }, 120_000)
 
   test('R4-3: with two trucks and "keep one free" the deliveries go in turn; the finish bound counts the rule', async () => {

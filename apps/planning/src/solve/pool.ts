@@ -83,7 +83,7 @@ export interface SolveRecord {
 export interface SolverPool extends Engine {
   /** Generate's sub-solves, each whole in a child (compile, bounds, search, lane K's check). */
   readonly subSolver: SubSolver
-  /** The most limiting resource's hours (limiting.ts) in a child: null when nothing sound can be said. */
+  /** What one more unit of the most limiting resource does (limiting.ts), in a child; null: not computed. */
   readonly limiting: (inputs: PlanInputs, option: Option, candidates: readonly string[]) => Promise<Limiting | null>
   /** A preview in a child (preview.ts): one child at a time, like a solve; `signal` cancels it. */
   readonly preview: (inputs: PlanInputs, option: Option, signal?: AbortSignal) => Promise<PreviewResult>
@@ -259,7 +259,7 @@ export const createSolverPool = (options: PoolOptions = {}): SolverPool => {
       rate: 0, wallMs: 0, grantedCpuMs: 0, signal, deadlineMs: previewDeadlineMs,
       answer: message => {
         const result = message.type === 'preview' ? previewFromWire(message.preview) : { problem: 'a preview answered with a solve result' }
-        return 'problem' in result ? result : { value: result }
+        return result !== null && 'problem' in result ? result : { value: result }
       },
       unanswered: (stoppedBy, _wallMs, late) => ({ refuse: planningError(503, 'preview_unavailable', late ? PREVIEW_TOO_LONG_WORDS : stoppedBy === 'ended' ? 'The preview could not be made: the solver process ended. Try again.' : 'The preview was stopped. Try again.') }),
     })
@@ -275,7 +275,7 @@ export const createSolverPool = (options: PoolOptions = {}): SolverPool => {
         const result = message.type === 'limiting' ? limitingFromWire(message.limiting) : { problem: 'a limiting question answered with another kind of result' }
         return result !== null && 'problem' in result ? result : { value: result }
       },
-      // No answer in time: nothing sound to say about hours.
+      // No answer in time (the child hung or ended): not computed, so nothing is said about hours.
       unanswered: (stoppedBy, wallMs) => ({ value: null, record: { wallMs, cpuMs: 0, evals: 0, stoppedBy } }),
     })
   }
