@@ -1,6 +1,6 @@
 import type { RoleClass, RoleSees } from '../../core/model/index.ts'
 import type { TaskTemplate, UnitType } from './config-schema.ts'
-import { groupOfRoleId, groupRoleId } from './ids.ts'
+import { groupOfRoleId } from './ids.ts'
 
 /**
  * Who sees, commands and queues which Einsatz record (§3.1), as pure rules
@@ -38,9 +38,6 @@ export interface PictureViewer {
   readonly sees: RoleSees
   readonly roles: ReadonlyArray<PictureRole>
 }
-
-/** Open mode: no role, the whole truth, commanding every unit. */
-export const openModeViewer: PictureViewer = Object.freeze({ class: 'controller', sees: 'all', roles: Object.freeze([]) })
 
 /** The configuration the rules read: each unit type's visibility, tags and components, and each template's requirements. */
 export interface PictureTypes {
@@ -103,16 +100,6 @@ const inPictureOf = (types: PictureTypes, sees: RoleSees, record: PictureUnit | 
 export const inPicture = (types: PictureTypes, viewer: PictureViewer, record: PictureUnit | PictureTask): boolean =>
   inPictureOf(types, viewer.sees, record)
 
-/**
- * The See display filter: whether the screen chose not to see the role of
- * a unit's group (the role dialog's See boxes, given as the roles it shows;
- * absent in open mode). Such a unit is drawn nowhere on that screen, on the
- * map or in the panel, even where another held role commands it. It is
- * this tab's choice only; what a side sees stays the Run's.
- */
-export const groupUnseen = (group: string | undefined, seenRoleIds: ReadonlyArray<string> | undefined): boolean =>
-  group !== undefined && seenRoleIds !== undefined && !seenRoleIds.includes(groupRoleId(group))
-
 /** A role seeing the truth commands any unit; a side role only units of a side it sees, so never a public one. */
 const commandableBy = (sees: RoleSees, unit: PictureUnit): boolean =>
   sees === 'all' || (unit.side !== undefined && sees.includes(unit.side))
@@ -139,14 +126,6 @@ const roleQueues = (types: PictureTypes, role: PictureRole, task: PictureTask, g
 export const commandsUnit = (types: PictureTypes, viewer: PictureViewer, unit: PictureUnit): boolean =>
   inPicture(types, viewer, unit) && (viewer.class === 'controller' || viewer.roles.some(role => roleCommands(types, role, unit)))
 
-/**
- * The units a screen gives orders by map clicks, so a click on one selects
- * it: the commandable set's units that can move. A receiving site never
- * moves, so a click on one while a unit is selected is that unit's target,
- * never a new selection. This is the Pack's `targeting.isController`.
- */
-export const ordersOnMap = (types: PictureTypes, viewer: PictureViewer, unit: PictureUnit): boolean =>
-  commandsUnit(types, viewer, unit) && types.unitType(unit.unitType).components.mobility !== undefined
 
 /** The queue: a controller queues every task in its picture; an operator, the union of its roles' queues, each within its own picture. */
 export const queuesTask = (types: PictureTypes, viewer: PictureViewer, task: PictureTask, groups: GroupUnitTypes): boolean =>
