@@ -1,26 +1,25 @@
 import { describe, expect, test } from 'bun:test'
-import { advance, at, emptyState, low, middle, newTask, newUnit, refusalOf, run, runAll, send, start, taskOf, templates, top, types, unitOf } from '../fixtures/engine-harness.ts'
-import { countedFor, isDivertCandidate, needFor, rankOf, residualNeed, roleViewFor, roleViewOf } from './coverage.ts'
-import { commandsEveryUnit } from './intents.ts'
+import { advance, at, emptyState, first, low, middle, newTask, newUnit, refusalOf, run, runAll, second, send, start, taskOf, templates, third, top, types, unitOf } from '../fixtures/engine-harness.ts'
+import { needsFrom, roleViewOf, taskPriorityOf } from './coverage.ts'
 import type { EngineState } from './model.ts'
 import { isFree } from './rules.ts'
 
 const far = (index: number) => at(0.05 * (index + 1), 0.02)
 
 /**
- * The divert-protection scenario: A1 en route to a covered top-class task;
- * A2 en route to a middle-class task (C9); A3 on task at a low-class task;
- * A4 en route to C20 holding top ×1 (covered by A4) + low ×1; A6 en route to
- * a low-class task. Every unit carries one load of any class.
+ * The divert-protection scenario: A1 en route to TOP1 (first priority); A2
+ * en route to C9 (second); A3 on task at LOW3 (third); A4 en route to C20
+ * (first); A6 en route to LOW6 (third). Every unit carries one load of any
+ * class; load says nothing of priority.
  */
 const protectionScenario = async (): Promise<EngineState> => {
   let state = await runAll(emptyState(), [
     ...['a1', 'a2', 'a3', 'a4', 'a6'].map((id, index) => newUnit(id, types.roadCarrier, at(0.001 * index))),
-    newTask('top1', templates.load, far(0), { [top]: 1 }),
-    newTask('c9', templates.load, far(1), { [middle]: 1 }),
-    newTask('low3', templates.load, at(0.002), { [low]: 1 }),
-    newTask('c20', templates.load, far(2), { [top]: 1, [low]: 1 }),
-    newTask('low6', templates.load, far(3), { [low]: 1 }),
+    newTask('top1', templates.load, far(0), { [low]: 1 }, { priority: first }),
+    newTask('c9', templates.load, far(1), { [low]: 1 }, { priority: second }),
+    newTask('low3', templates.load, at(0.002), { [top]: 1 }),
+    newTask('c20', templates.load, far(2), { [low]: 1, [middle]: 1 }, { priority: first }),
+    newTask('low6', templates.load, far(3), { [top]: 1 }),
   ])
   state = await runAll(state, [
     send(['a1'], { taskId: 'top1' }),
@@ -32,64 +31,35 @@ const protectionScenario = async (): Promise<EngineState> => {
   return await advance(state, start + 3_000)
 }
 
-const candidatesFor = (state: EngineState, taskId: string, proposal: ReadonlyArray<string> = []): string[] => {
-  const task = taskOf(state, taskId)
-  const units = proposal.map(id => unitOf(state, id))
-  const residual = residualNeed(state, task, roleViewFor(state, commandsEveryUnit, task), units)
-  const counted = countedFor(state, task, units)
-  return [...state.units.values()].filter(unit => isDivertCandidate(state, { unit, task, counted, residual, commandable: commandsEveryUnit })).map(unit => unit.id).sort()
-}
-
 describe('Einsatz divert protection', () => {
   test('the scenario stands as described', async () => {
     const state = await protectionScenario()
     expect(['a1', 'a2', 'a3', 'a4', 'a6'].map(id => unitOf(state, id).phase)).toEqual(['en-route', 'en-route', 'on-task', 'en-route', 'en-route'])
-    expect(taskOf(state, 'c20')).toMatchObject({ rank: top, coverage: { loads: [{ classId: top, waiting: 1, covered: 1 }, { classId: low, waiting: 1, covered: 0 }] } })
+    expect(['top1', 'c9', 'low3', 'c20', 'low6'].map(id => taskOf(state, id).priority)).toEqual([first, second, third, first, third])
     expect([...state.units.values()].filter(isFree)).toEqual([])
   })
 
-  test('a new middle-class task is offered only the unit heading to lower-class work', async () => {
-    const state = await run(await protectionScenario(), newTask('n2', templates.load, at(0.003), { [middle]: 1 }))
-    expect(candidatesFor(state, 'n2')).toEqual(['a6'])
+  test('a busy unit is ordered only with when, and now names the task it drops', async () => {
+    const state = await run(await protectionScenario(), newTask('n1', templates.load, at(0.003), { [low]: 1 }, { priority: first }))
+    expect(await refusalOf(state, send(['a2'], { taskId: 'n1' }))).toEqual({ code: 'when_required', reason: expect.stringMatching(/^when_required: A2 is busy with C9, free in about \d+:\d\d: say when, "after" its current job, or "now", dropping C9$/) })
+    expect((await refusalOf(state, send(['a2', 'a6'], { taskId: 'n1' }, 'c9'))).reason).toBe('when_required: A2, A6 are busy: order a busy unit on its own, saying when')
+    expect((await refusalOf(state, send(['a2'], { taskId: 'n1' }, 'low6'))).reason).toBe('drops_mismatch: A2 works for C9 (c9): name it in drops to take A2 off it')
   })
 
-  test('a new top-class task is offered the middle- and low-class units, never the covered top, the one on task or C20\'s', async () => {
-    const state = await run(await protectionScenario(), newTask('n1', templates.load, at(0.003), { [top]: 1 }))
-    expect(candidatesFor(state, 'n1')).toEqual(['a2', 'a6'])
+  test('a divert comes from equal or lower priority only, before arrival; an equal priority is the caller\'s decision', async () => {
+    const state = await run(await protectionScenario(), newTask('n2', templates.load, at(0.003), { [low]: 1 }, { priority: second }))
+    expect((await refusalOf(state, send(['a1'], { taskId: 'n2' }, 'top1'))).reason).toBe('divert_from_higher_priority: TOP1 (Q1) is more urgent than N2 (Q2)')
+    expect((await refusalOf(state, send(['a3'], { taskId: 'n2' }, 'low3'))).code).toBe('divert_after_arrival')
+    expect(unitOf(await run(state, send(['a2'], { taskId: 'n2' }, 'c9')), 'a2')).toMatchObject({ taskId: 'n2', lastAction: { verb: 'divert' } })
+    expect(unitOf(await run(state, send(['a6'], { taskId: 'n2' }, 'low6')), 'a6')).toMatchObject({ taskId: 'n2' })
   })
 
-  test('a task whose top load is covered needs only its low load, so nothing is offered for it', async () => {
-    const state = await protectionScenario()
-    const task = taskOf(state, 'c20')
-    expect(task.rank).toBe(top)
-    expect(needFor(state.catalog, task, task.coverage, roleViewFor(state, commandsEveryUnit, task))).toBe(low)
-    expect(candidatesFor(state, 'c20')).toEqual([])
-  })
-
-  test('with a free unit covering the top load, the residual need is the low load and no divert is offered', async () => {
-    let state = await run(await protectionScenario(), newTask('n13', templates.load, at(0.003), { [top]: 1, [low]: 1 }))
-    state = await run(state, newUnit('a5', types.roadCarrier, at(0.004)))
-    const task = taskOf(state, 'n13')
-    const view = roleViewFor(state, commandsEveryUnit, task)
-    expect(residualNeed(state, task, view, [unitOf(state, 'a5')])).toBe(low)
-    expect(candidatesFor(state, 'n13', ['a5'])).toEqual([])
-    const refused = await refusalOf(state, send(['a5', 'a6'], { taskId: 'n13' }, [{ unitId: 'a6', fromTaskId: 'low6' }]))
-    expect(refused.reason).toBe('divert_not_lower_priority: LOW6 (C3) is not lower than C3 at N13')
-  })
-
-  test('a divert commits only from strictly lower work, before arrival, and returns the work with its age', async () => {
-    let state = await run(await protectionScenario(), newTask('n1', templates.load, at(0.003), { [top]: 1 }))
-    expect((await refusalOf(state, send(['a1'], { taskId: 'n1' }, [{ unitId: 'a1', fromTaskId: 'top1' }]))).code).toBe('divert_not_lower_priority')
-    expect((await refusalOf(state, send(['a4'], { taskId: 'n1' }, [{ unitId: 'a4', fromTaskId: 'c20' }]))).code).toBe('divert_not_lower_priority')
-    expect((await refusalOf(state, send(['a3'], { taskId: 'n1' }, [{ unitId: 'a3', fromTaskId: 'low3' }]))).code).toBe('divert_after_arrival')
-    const stale = await refusalOf(state, send(['a2'], { taskId: 'n1' }, [{ unitId: 'a2', fromTaskId: 'low6' }]))
-    expect(stale.reason).toBe('unit_committed: A2 now en route to C9')
-    expect((await refusalOf(state, send(['a2'], { taskId: 'n1' }))).code).toBe('unit_committed')
-
-    state = await run(state, send(['a2'], { taskId: 'n1' }, [{ unitId: 'a2', fromTaskId: 'c9' }]))
+  test('a divert returns the work it leaves with its age', async () => {
+    let state = await run(await protectionScenario(), newTask('n1', templates.load, at(0.003), { [top]: 1 }, { priority: first }))
+    state = await run(state, send(['a2'], { taskId: 'n1' }, 'c9'))
     expect(unitOf(state, 'a2')).toMatchObject({ taskId: 'n1', phase: 'en-route', lastAction: { verb: 'divert', target: 'n1', cause: 'from C9' } })
-    expect(taskOf(state, 'c9')).toMatchObject({ createdAtMs: start, loads: { [middle]: 1 }, alerts: [{ code: 'work_returned' }] })
-    expect(taskOf(state, 'c9').coverage.loads).toEqual([{ classId: middle, waiting: 1, covered: 0 }])
+    expect(taskOf(state, 'c9')).toMatchObject({ createdAtMs: start, loads: { [low]: 1 }, alerts: [{ code: 'work_returned' }] })
+    expect(taskOf(state, 'c9').coverage.loads).toEqual([{ classId: low, waiting: 1, covered: 0 }])
     expect(taskOf(state, 'n1').coverage.loads).toEqual([{ classId: top, waiting: 1, covered: 1 }])
   })
 })
@@ -129,32 +99,22 @@ describe('Einsatz carriers of different load classes', () => {
   })
 })
 
-describe('Einsatz rank and need', () => {
-  test('rank is the higher of floor and waiting load, covered or not; with neither, the least urgent class', async () => {
-    const state = await runAll(emptyState(), [
-      newTask('floored', templates.payload, at(0), { [low]: 1 }),
-      newTask('loaded', templates.payload, at(0), { [top]: 1, [low]: 2 }),
-      newTask('bare', templates.load, at(0), { [low]: 1 }),
-    ])
-    expect(taskOf(state, 'floored').rank).toBe(middle)
-    expect(taskOf(state, 'loaded').rank).toBe(top)
-    expect(rankOf(state.catalog, { id: 'x', template: templates.load, loads: {} })).toBe(low)
-    expect(rankOf(state.catalog, { id: 'x', template: templates.payload, loads: {} })).toBe(middle)
-  })
-
-  test('adding coverage never lowers the rank, and picking up the top load does', async () => {
+describe('Einsatz priority and need', () => {
+  test('a task takes the priority it names, else its template\'s, else the lowest; load never changes it', async () => {
     let state = await runAll(emptyState(), [
+      newTask('floored', templates.payload, at(0), { [low]: 1 }),
+      newTask('named', templates.payload, at(0), { [top]: 1 }, { priority: first }),
+      newTask('bare', templates.load, at(0), { [top]: 1 }),
       newUnit('u1', types.directCarrier, at(0)),
-      newTask('t1', templates.load, at(0), { [top]: 1, [middle]: 1, [low]: 1 }),
     ])
-    state = await run(state, send(['u1'], { taskId: 't1' }))
-    expect(taskOf(state, 't1').rank).toBe(top)
+    expect(['floored', 'named', 'bare'].map(id => taskOf(state, id).priority)).toEqual([second, first, third])
+    expect(taskPriorityOf(state.catalog, templates.load, undefined)).toBe(third)
+    state = await run(state, send(['u1'], { taskId: 'bare' }))
     state = await advance(state, start + 3_000)
-    expect(unitOf(state, 'u1').load).toEqual({ [top]: 1, [middle]: 1 })
-    expect(taskOf(state, 't1')).toMatchObject({ rank: low, loads: { [low]: 1 }, pickedUp: { [top]: 1, [middle]: 1 } })
+    expect(taskOf(state, 'bare').priority).toBe(third)
   })
 
-  test('need follows what the role can serve; load-less tasks sort by their floor and an open report needs acknowledging', async () => {
+  test('need follows what the role can serve; an open report needs attention', async () => {
     const state = await runAll(emptyState(), [
       newUnit('g1', types.pairServer, at(0)),
       newUnit('c1', types.roadCarrier, at(0)),
@@ -164,12 +124,12 @@ describe('Einsatz rank and need', () => {
     ])
     const servers = roleViewOf(state.catalog, [unitOf(state, 'g1')])
     const carriers = roleViewOf(state.catalog, [unitOf(state, 'c1')])
-    const need = (id: string, view: typeof servers) => needFor(state.catalog, taskOf(state, id), taskOf(state, id).coverage, view)
-    expect(need('pair', servers)).toBe(middle)
-    expect(need('pair', carriers)).toBeUndefined()
-    expect(need('note', carriers)).toBe(low)
-    expect(need('mixed', carriers)).toBe(middle)
-    expect(need('mixed', servers)).toBeUndefined()
+    const needs = (id: string, view: typeof servers) => needsFrom(state.catalog, taskOf(state, id), taskOf(state, id).coverage, view)
+    expect(needs('pair', servers)).toBe(true)
+    expect(needs('pair', carriers)).toBe(false)
+    expect(needs('note', carriers)).toBe(true)
+    expect(needs('mixed', carriers)).toBe(true)
+    expect(needs('mixed', servers)).toBe(false)
   })
 })
 
@@ -210,7 +170,7 @@ describe('Einsatz coverage and eligibility', () => {
     expect(taskOf(state, 'pair').closedAtMs).toBeDefined()
   })
 
-  test('a point move and a hold never commit a unit; a committed unit is not free until a hold pauses its step', async () => {
+  test('a point move never commits a unit; a unit sent to a task is busy', async () => {
     let state = await runAll(emptyState(), [
       newUnit('u1', types.roadCarrier, at(0)),
       newTask('t1', templates.load, at(0.01), { [low]: 1 }),
@@ -218,16 +178,9 @@ describe('Einsatz coverage and eligibility', () => {
     state = await run(state, send(['u1'], { point: at(0.02) }))
     expect(unitOf(state, 'u1')).toMatchObject({ phase: 'en-route', lastAction: { verb: 'move' } })
     expect(isFree(unitOf(state, 'u1'))).toBe(true)
-    state = await run(state, { kind: 'hold', unitId: 'u1' })
-    expect(unitOf(state, 'u1').phase).toBe('holding')
-    expect(isFree(unitOf(state, 'u1'))).toBe(true)
     state = await run(state, send(['u1'], { taskId: 't1' }))
-    expect(unitOf(state, 'u1').phase).toBe('mobilizing')
+    expect(unitOf(state, 'u1')).toMatchObject({ phase: 'en-route', taskId: 't1' })
     expect(isFree(unitOf(state, 'u1'))).toBe(false)
-    state = await run(state, { kind: 'hold', unitId: 'u1' })
-    // The send went ahead of the move the first hold paused; the second hold pauses the send too.
-    expect(unitOf(state, 'u1')).toMatchObject({ phase: 'holding', paused: true, orders: [{ kind: 'serve', target: { taskId: 't1' }, state: 'queued' }, { kind: 'move', state: 'queued' }] })
-    expect(isFree(unitOf(state, 'u1'))).toBe(true)
-    expect(taskOf(state, 't1').coverage.loads).toEqual([{ classId: low, waiting: 1, covered: 0 }])
+    expect(taskOf(state, 't1').coverage.loads).toEqual([{ classId: low, waiting: 1, covered: 1 }])
   })
 })

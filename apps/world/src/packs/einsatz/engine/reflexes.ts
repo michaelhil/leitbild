@@ -12,11 +12,11 @@ import { byId } from './values.ts'
  * unit's initial rules of engagement and `onStepLost` runs in the
  * engagement step.
  *
- * A unit's chain comes first: `deliver` and `return` apply only where the
- * chain says nothing. A loaded unit whose next step is no delivery delivers
- * first; a unit with steps or paused never returns by itself. Starting the
- * next step of a chain (`chain`) runs the same way, as soon as the active
- * step is done.
+ * A unit's plan comes first: `deliver` and `return` apply only where the
+ * plan says nothing. A loaded unit whose next step is no delivery delivers
+ * first; a unit with steps never returns by itself. Starting the next step
+ * of a plan (`chain`) runs the same way, as soon as the active step is
+ * done.
  */
 export const standingOrders = ['deliver', 'return', 'withdraw'] as const
 export type StandingOrder = typeof standingOrders[number]
@@ -41,7 +41,7 @@ export const boundaryMs = 2_000
 export const nextBoundaryMs = (timeMs: number): number => (Math.floor(timeMs / boundaryMs) + 1) * boundaryMs
 
 /** Orders that move a unit or change its chain; any of them given by an actor after a step loss stands in for withdrawing. */
-const movementVerbs: ReadonlyArray<NonNullable<UnitRecord['lastAction']>['verb']> = ['send', 'divert', 'move', 'deliver', 'recall', 'hold', 'release', 'queue', 'remove', 'resume', 'clear']
+const movementVerbs: ReadonlyArray<NonNullable<UnitRecord['lastAction']>['verb']> = ['send', 'divert', 'move', 'deliver', 'recall', 'release', 'queue', 'remove', 'undo']
 
 /** A damaged unit with a `withdraw` order heads home once, unloaded first, unless an actor has moved it since the step loss. */
 const withdrawPending = (catalog: Catalog, unit: UnitRecord): boolean => {
@@ -59,22 +59,21 @@ const idlePhases: ReadonlyArray<UnitRecord['phase']> = ['available', 'holding', 
  * The reflex a unit waits on, and the Run time from which it may fire. A
  * loaded unit delivers first: by its chain when the next step leads to a
  * site, else by its deliver order; a next step it cannot take loaded is
- * started only to be skipped. A paused unit runs nothing but a withdrawal.
+ * started only to be skipped.
  */
 const pendingOrder = (catalog: Catalog, unit: UnitRecord): { readonly order: Reflex; readonly fromMs: number } | undefined => {
   if (isDestroyed(unit)) return undefined
   const orders = unitTypeOf(catalog, unit).standingOrders
   const head = unit.orders[0]
-  const running = unit.paused !== true
-  const next = running && head?.state === 'queued' ? head : undefined
-  if (running && unit.phase === 'holding' && hasLoad(unit)) {
+  const next = head?.state === 'queued' ? head : undefined
+  if (unit.phase === 'holding' && hasLoad(unit)) {
     if (next !== undefined && 'siteId' in next.target) return { order: 'chain', fromMs: unit.phaseSinceMs }
     if (orders?.deliver === 'nearest-accepting') return { order: 'deliver', fromMs: unit.phaseSinceMs }
     return next === undefined ? undefined : { order: 'chain', fromMs: unit.phaseSinceMs }
   }
   if (withdrawPending(catalog, unit)) return { order: 'withdraw', fromMs: unit.integritySinceMs! }
   if (next !== undefined && unit.taskId === undefined && unit.siteId === undefined && idlePhases.includes(unit.phase)) return { order: 'chain', fromMs: unit.phaseSinceMs }
-  if (running && unit.orders.length === 0 && unit.phase === 'available' && !unit.atBase && isFree(unit) && orders?.return !== undefined) {
+  if (unit.orders.length === 0 && unit.phase === 'available' && !unit.atBase && isFree(unit) && orders?.return !== undefined) {
     return { order: 'return', fromMs: unit.phaseSinceMs + orders.return.afterIdleS * 1_000 }
   }
   return undefined

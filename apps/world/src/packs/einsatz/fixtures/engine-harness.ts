@@ -1,4 +1,5 @@
-import { geoPointFromLonLat, type GeoJsonPoint } from '../../../core/model/index.ts'
+import { geoPointFromLonLat, type CommandId, type GeoJsonPoint } from '../../../core/model/index.ts'
+import type { StepTarget } from '../steps.ts'
 import { createDirectRoutingAdapter } from '../../../routing/direct-adapter.ts'
 import type { TaskTemplate, UnitType } from '../config-schema.ts'
 import { einsatzConfigSchema } from '../config-validation.ts'
@@ -49,18 +50,20 @@ export const types = {
 }
 
 export const templates = {
-  /** Counted load only: no requirement, no floor. */
-  load: templateWhere('load template', template => template.requires.length === 0 && template.priorityClass === undefined),
+  /** Counted load only: no requirement, no priority of its own (the lowest). */
+  load: templateWhere('load template', template => template.requires.length === 0 && template.priority === undefined),
   /** A requirement with a `where` on the road carrier's property. */
   lift: templateWhere('lift template', template => whereOn(template, 'liftKg')),
   payload: templateWhere('payload template', template => whereOn(template, 'payloadKg')),
   pair: templateWhere('pair template', template => template.requires.some(requirement => requirement.count === 2)),
-  /** Nothing to serve, ranked by its floor. */
-  report: templateWhere('report template', template => template.requires.length === 0 && template.priorityClass !== undefined),
+  /** Nothing to serve, of a priority of its own. */
+  report: templateWhere('report template', template => template.requires.length === 0 && template.priority !== undefined),
 }
 
-/** Load classes in priority order. */
+/** Load classes in declared order. */
 export const [top, middle, low] = config.loadClasses.map(loadClass => loadClass.id) as [string, string, string]
+/** Priorities, highest first. */
+export const [first, second, third] = config.priorities.map(priority => priority.id) as [string, string, string]
 
 /** A point east and north of the fixture origin, in degrees. */
 export const at = (east: number, north = 0): GeoJsonPoint => geoPointFromLonLat(11 + east, 59 + north)
@@ -97,8 +100,16 @@ export const newUnit = (id: string, type: string, point: GeoJsonPoint, extra: Pa
 export const newTask = (id: string, template: string, point: GeoJsonPoint, loads?: Readonly<Record<string, number>>, extra: Partial<IntentOf<'task.create'>> = {}): Intent =>
   ({ kind: 'task.create', id, template, at: point, label: id.toUpperCase(), ...(loads === undefined ? {} : { loads }), ...extra })
 
-export const send = (units: ReadonlyArray<string>, to: IntentOf<'send'>['to'], divert?: IntentOf<'send'>['divert']): Intent =>
-  ({ kind: 'send', units: [...units], to, ...(divert === undefined ? {} : { divert }) })
+/** An order of one stop, started now; a busy unit given `drops` leaves that task for it. */
+export const send = (units: ReadonlyArray<string>, to: StepTarget, drops?: string): Intent =>
+  ({ kind: 'order', units: [...units], stops: [to], ...(drops === undefined ? {} : { when: 'now' as const, drops }) })
+
+/** An order of stops appended behind a unit's plan (`when: 'after'`); a unit with none starts the first at once. */
+export const append = (unitId: string, ...stops: ReadonlyArray<StepTarget>): Intent =>
+  ({ kind: 'order', units: [unitId], stops: [...stops], when: 'after' })
+
+/** An actor giving command `commandId`, as the runtime runs a command. */
+export const commanding = (commandId: string, actor: EngineActor = controller): EngineActor => ({ ...actor, commandId: commandId as CommandId })
 
 /** Run time a unit reaches the end of its current leg from now at full pace, on the Run's millisecond clock. */
 export const arrivalAt = (state: EngineState, id: string): number => {
