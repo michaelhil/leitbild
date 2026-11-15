@@ -2,8 +2,8 @@
 // high estimates, by preview's repair path (the same order, the same modes and so the same crews and bought
 // time, nothing earlier than planned), first every ranged job together, then each alone. Lane K judges each
 // re-timing (check/retime.ts judgeRetiming): it holds, or the first rule it breaks, the job and by how much,
-// or the job that would run past the window end. Every figure is lane K's. Pure apart from the clock; the
-// solver child runs it after a sub-solve's search.
+// the job that would run past the window end, or the job that could not be placed. Every figure is lane K's.
+// Pure apart from the clock; the solver child runs it after a sub-solve's search.
 import type { PlanInputs, Robust } from '../plan/schema.ts'
 import { timeUnitMs } from '../time/units.ts'
 import { compile, withExtraRules } from './compile.ts'
@@ -56,11 +56,12 @@ export const atHigh = (inputs: PlanInputs, jobs: ReadonlySet<string>): PlanInput
 /**
  * The option's rows re-timed on `pessimistic` (the same plan with some jobs longer; both with the option's
  * extra rule): each job keeps its mode (its crews and bought time, read exactly on the planned inputs) and its
- * order, and starts no earlier than planned (repair's floors). `unplaced`: a job that finds no slot with its
- * crews and tools before the horizon (a booked team's period missed, say); it has no row to judge. Undefined
- * when the rows do not read back on the planned inputs or the two compiles do not line up.
+ * order, and starts no earlier than planned (repair's floors). A job that finds no slot with its crews and
+ * tools before the horizon (a booked team's period missed, say) has no row, nor has any job that waits on it:
+ * `rows` are the placed jobs, and lane K names the job that could not be placed, its crew and from when.
+ * Undefined when the rows do not read back on the planned inputs or the two compiles do not line up.
  */
-export const retimedRows = (planned: PlanInputs, pessimistic: PlanInputs, option: Planned): { readonly rows: UndatedFloat[] } | { readonly unplaced: string } | undefined => {
+export const retimedRows = (planned: PlanInputs, pessimistic: PlanInputs, option: Planned): { readonly rows: UndatedFloat[] } | undefined => {
   const sub = { methods: option.variant.methods, buy: option.variant.purchases }
   const before = compile(planned, sub), after = compile(pessimistic, sub)
   if (!before.ok || !after.ok) return undefined
@@ -71,16 +72,15 @@ export const retimedRows = (planned: PlanInputs, pessimistic: PlanInputs, option
   if (!same) return undefined
   const prep = prepare(after.problem)
   const { decoded } = repair(prep, saved.schedule)
-  const lost = after.index.jobs.findIndex((job, a) => job !== null && (decoded.finish[a]! < 0 || decoded.finish[a]! >= prep.H))
-  if (lost >= 0) return { unplaced: after.index.jobs[lost]! }
-  return { rows: dateSchedule(prep, after.index, { start: decoded.start, mode: decoded.mode }) }
+  const placed = (a: number): boolean => decoded.finish[a]! >= 0 && decoded.finish[a]! < prep.H && decoded.start[a]! < prep.H
+  return { rows: dateSchedule(prep, after.index, { start: decoded.start, mode: decoded.mode }, placed) }
 }
 
 /**
  * The option's robust record on the plan's `inputs`: every ranged job high together, then each alone, each
- * judged by lane K. Undefined (not computed, never partly) when a re-timing cannot be made, leaves a job
- * unplaced (the record has no form for that), or is refused by lane K, or when the next one would not end by
- * `until` (epoch ms), judged by the longest re-timing so far.
+ * judged by lane K, a job that could not be placed included. Undefined (not
+ * computed, never partly) when a re-timing cannot be made or is refused by lane K, or when the next one would
+ * not end by `until` (epoch ms), judged by the longest re-timing so far.
  */
 export const robustOf = (inputs: PlanInputs, option: Planned, judge: JudgeRetimed, until = Infinity, now: () => number = Date.now): Robust | undefined => {
   const jobs = rangedJobs(inputs, option.rows)
@@ -92,7 +92,7 @@ export const robustOf = (inputs: PlanInputs, option: Planned, judge: JudgeRetime
     const started = now()
     if (started + longest > until) return undefined
     const retimed = retimedRows(planned, withExtraRules(atHigh(inputs, new Set(high)), option.variant.also), option)
-    const judged = retimed === undefined || !('rows' in retimed) ? undefined : judge({ inputs, variant: option.variant, planned: option.rows, retimed: retimed.rows, high })
+    const judged = retimed === undefined ? undefined : judge({ inputs, variant: option.variant, planned: option.rows, retimed: retimed.rows, high })
     longest = Math.max(longest, now() - started)
     return judged?.ok === true ? judged.outcome : undefined
   }

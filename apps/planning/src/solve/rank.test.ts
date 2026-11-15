@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test'
-import { compareKeys, compareStaged, dominatedKeys, goalExcess, goalKey, goalKeys, rankOptions, recommend, recommendedBecause, unpricedCaveats, type Rankable, type RankFacts } from './rank.ts'
+import { compareKeys, compareStaged, dominatedBy, goalExcess, goalKey, goalKeys, rankOptions, recommend, recommendedBecause, unpricedCaveats, type Rankable, type RankFacts } from './rank.ts'
 import { trainAInputs } from './fixtures/train-a-case.ts'
 
 // Train A's goal order: span over 54 h (step 0), extra cost (step NOK 25,000), unavailable hours (step 0).
@@ -65,16 +65,19 @@ describe('ranking keys (adversary r2 item 6)', () => {
 const facts = (key: string, raw: Array<number | number[]>, feasible = true): RankFacts => ({ ...option(key, raw, feasible), excess: raw.map((value, k) => goalExcess(value, goals[k]!.threshold)) })
 
 describe('dominance (design §4.1): folded, never deleted', () => {
-  test('an option another is no worse than on every goal key, and better on one, is dominated', () => {
+  test('an option another is no worse than on every goal key, and better on one, is dominated, by the best-ranked such option', () => {
     // b: 1 h less over than a at the same cost bucket and hours; c: worse span, cheaper bucket, so not dominated.
     const a = option('a', [[57], 410_000, 230]), b = option('b', [[56], 420_000, 230]), c = option('c', [[60], 300_000, 230])
-    expect(dominatedKeys([a, b, c])).toEqual(['a'])
+    expect(dominatedBy([a, b, c])).toEqual([{ key: 'a', by: 'b' }])
+    // d dominates a too, and ranks above b (0 h over): a is folded under d.
+    const d = option('d', [[54], 420_000, 230])
+    expect(dominatedBy([a, b, c, d])).toEqual([{ key: 'a', by: 'd' }, { key: 'b', by: 'd' }])
   })
 
   test('equal keys dominate neither; an option that is not feasible neither dominates nor is folded', () => {
-    expect(dominatedKeys([option('a', [[56], 420_000, 230]), option('b', [[56], 420_000, 230])])).toEqual([])
-    expect(dominatedKeys([option('a', [[57], 420_000, 230]), option('x', [[50], 0, 0], false)])).toEqual([])
-    expect(dominatedKeys([option('x', [[57], 420_000, 230], false), option('b', [[50], 0, 0])])).toEqual([])
+    expect(dominatedBy([option('a', [[56], 420_000, 230]), option('b', [[56], 420_000, 230])])).toEqual([])
+    expect(dominatedBy([option('a', [[57], 420_000, 230]), option('x', [[50], 0, 0], false)])).toEqual([])
+    expect(dominatedBy([option('x', [[57], 420_000, 230], false), option('b', [[50], 0, 0])])).toEqual([])
   })
 })
 

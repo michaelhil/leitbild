@@ -2,7 +2,8 @@ import { describe, expect, test } from 'bun:test'
 import type { z } from 'zod'
 import { buysEndSchema, buysRowSchema, buysWordSchema } from '../api/contract.ts'
 import { planInputsSchema, planSchema, type PlanInputs } from '../plan/schema.ts'
-import { buysHonesty, rungStanding, wordStands, type BuysItem } from '../../tests/harness/buys-honesty.ts'
+import { buysHonesty, checkedStanding, type BuysItem } from '../../tests/harness/buys-honesty.ts'
+import { rungStanding, wordStands } from './buys.ts'
 
 // "What overtime buys": no difference between rungs is worded stronger than its two ends' proofs allow.
 // The ends are lane K's alone: re-checked, re-verified, and "proven" only where the proof fixes the figure the
@@ -58,16 +59,18 @@ const proven = (goal: number, value: number, unit: string, certificate: object) 
 const zero = { kind: 'zero' }
 const leastSpan = (hours: number) => ({ kind: 'least-span', spans: [{ group: 'G', hours }] })
 const found = (goal: number, value: number, unit: string) => ({ word: 'best found under budget' as const, goal, value, unit })
-type StoredOption = { key: string; purchases: string[]; status: object; rows: ReturnType<typeof rung0Rows>; inputsRevision?: number }
+/** What Generate stores beside the rows: the checker's goal figures and bought time, from the hand-worked rows above. */
+const figures = (span: number, cost: number, ot?: number) => [{ id: 'goal:0:G', value: span, unit: 'h' }, { id: 'goal:1', value: cost, unit: 'NOK' }, ...(ot === undefined ? [] : [{ id: 'bought:ot', value: ot, unit: 'person-h' }])]
+type StoredOption = { key: string; purchases: string[]; status: object; rows: ReturnType<typeof rung0Rows>; metrics?: object[]; inputsRevision?: number }
 const stored = (planInputs: PlanInputs, options: StoredOption[]) => planSchema.parse({
   id: '00000000-0000-4000-8000-000000000006', workspaceId: '00000000-0000-4000-8000-0000000000aa', revision: 2, createdAt: '2026-11-11T00:00:00Z', updatedAt: '2026-11-11T00:00:00Z', inputs: planInputs,
-  options: { at: '2026-11-11T00:00:00Z', by: { kind: 'agent' }, options: options.map(option => ({ key: option.key, label: option.key, variant: { methods: [], purchases: option.purchases }, status: option.status, rows: option.rows, metrics: [], inputsRevision: option.inputsRevision ?? 2 })) },
+  options: { at: '2026-11-11T00:00:00Z', by: { kind: 'agent' }, options: options.map(option => ({ key: option.key, label: option.key, variant: { methods: [], purchases: option.purchases }, status: option.status, rows: option.rows, metrics: option.metrics ?? [], inputsRevision: option.inputsRevision ?? 2 })) },
   baselines: [], changes: [], droppedChanges: 0,
 })
 // Threshold 8 h: rung 0 is 19 h over it, rung 1 3 h; both proven, so each proof fixes its outage (threshold + excess).
 const pinned = stored(inputs(8), [
-  { key: 'rung-0', purchases: [], status: { word: 'validated feasible', run, goals: [proven(0, 19, 'h', leastSpan(27)), proven(1, 0, 'NOK', zero)] }, rows: rung0Rows() },
-  { key: 'rung-1', purchases: ['ot'], status: { word: 'validated feasible', run, goals: [proven(0, 3, 'h', leastSpan(11)), found(1, 200, 'NOK')] }, rows: rung1Rows },
+  { key: 'rung-0', purchases: [], status: { word: 'validated feasible', run, goals: [proven(0, 19, 'h', leastSpan(27)), proven(1, 0, 'NOK', zero)] }, rows: rung0Rows(), metrics: figures(27, 0) },
+  { key: 'rung-1', purchases: ['ot'], status: { word: 'validated feasible', run, goals: [proven(0, 3, 'h', leastSpan(11)), found(1, 200, 'NOK')] }, rows: rung1Rows, metrics: figures(11, 200, 2) },
 ])
 const rungs: BuysItem[] = [
   { rung: { rung: 0, buy: [], option: 'rung-0', bought: [] } },
@@ -98,8 +101,8 @@ describe('the ends are lane K\'s', () => {
 describe('no word is stronger than the proofs', () => {
   test('a rung without a proof is "found": "proven" is refused, and so is stating its end as proven', () => {
     const unproven = stored(inputs(8), [
-      { key: 'rung-0', purchases: [], status: { word: 'validated feasible', run, goals: [proven(0, 19, 'h', leastSpan(27)), proven(1, 0, 'NOK', zero)] }, rows: rung0Rows() },
-      { key: 'rung-1', purchases: ['ot'], status: { word: 'validated feasible', run, goals: [found(0, 3, 'h'), found(1, 200, 'NOK')] }, rows: rung1Rows },
+      { key: 'rung-0', purchases: [], status: { word: 'validated feasible', run, goals: [proven(0, 19, 'h', leastSpan(27)), proven(1, 0, 'NOK', zero)] }, rows: rung0Rows(), metrics: figures(27, 0) },
+      { key: 'rung-1', purchases: ['ot'], status: { word: 'validated feasible', run, goals: [found(0, 3, 'h'), found(1, 200, 'NOK')] }, rows: rung1Rows, metrics: figures(11, 200, 2) },
     ])
     expect(kinds(buysHonesty(unproven, [...rungs, row('proven', { from: 'proven', to: 'proven' }, { outage: -16, cost: 200 })], 'f'))).toEqual(['ends', 'word'])
     expect(buysHonesty(unproven, [...rungs, row('found', { from: 'proven', to: 'found' }, { outage: -16, cost: 200 })], 'f')).toEqual([])
@@ -107,8 +110,8 @@ describe('no word is stronger than the proofs', () => {
   test('a proof the checker cannot re-derive is no proof: rung 1 "proven" at 2 h over, its bound is 3 h over', () => {
     // 2 h claimed with a bound of 2 h, but the rows put G out 11 h (3 h over) and lane K's bound is 3 h
     const overclaimed = stored(inputs(8), [
-      { key: 'rung-0', purchases: [], status: { word: 'validated feasible', run, goals: [proven(0, 19, 'h', leastSpan(27)), proven(1, 0, 'NOK', zero)] }, rows: rung0Rows() },
-      { key: 'rung-1', purchases: ['ot'], status: { word: 'validated feasible', run, goals: [proven(0, 2, 'h', leastSpan(10)), found(1, 200, 'NOK')] }, rows: rung1Rows },
+      { key: 'rung-0', purchases: [], status: { word: 'validated feasible', run, goals: [proven(0, 19, 'h', leastSpan(27)), proven(1, 0, 'NOK', zero)] }, rows: rung0Rows(), metrics: figures(27, 0) },
+      { key: 'rung-1', purchases: ['ot'], status: { word: 'validated feasible', run, goals: [proven(0, 2, 'h', leastSpan(10)), found(1, 200, 'NOK')] }, rows: rung1Rows, metrics: figures(11, 200, 2) },
     ])
     expect(rungStanding(overclaimed, overclaimed.options!.options[1]!, 'f').end).toBe('found')
   })
@@ -116,8 +119,8 @@ describe('no word is stronger than the proofs', () => {
     // Rung 0 here returns X 2 h late (R Tue 10:00Z-11:00Z): out 29 h, still under 30 h, so "proven optimal"
     // at 0 h over, which lane K confirms. Its least outage is 27 h, so "proven: 18 h shorter" would be false.
     const under = stored(inputs(30), [
-      { key: 'rung-0', purchases: [], status: { word: 'validated feasible', run, goals: [proven(0, 0, 'h', zero), proven(1, 0, 'NOK', zero)] }, rows: rung0Rows(2) },
-      { key: 'rung-1', purchases: ['ot'], status: { word: 'validated feasible', run, goals: [proven(0, 0, 'h', zero), found(1, 200, 'NOK')] }, rows: rung1Rows },
+      { key: 'rung-0', purchases: [], status: { word: 'validated feasible', run, goals: [proven(0, 0, 'h', zero), proven(1, 0, 'NOK', zero)] }, rows: rung0Rows(2), metrics: figures(29, 0) },
+      { key: 'rung-1', purchases: ['ot'], status: { word: 'validated feasible', run, goals: [proven(0, 0, 'h', zero), found(1, 200, 'NOK')] }, rows: rung1Rows, metrics: figures(11, 200, 2) },
     ])
     expect(rungStanding(under, under.options!.options[0]!, 'f')).toMatchObject({ end: 'found', outage: 29 })
     const claimed = row('proven', { from: 'proven', to: 'proven' }, { outage: -18, cost: 200 })
@@ -129,18 +132,19 @@ describe('no word is stronger than the proofs', () => {
     const certificate = { kind: 'temporal', steps: [{ job: 'T', via: 'window' }, { job: 'W', via: 'bracket' }, { job: 'R', via: 'bracket' }, { job: 'T', via: 'span-limit' }] }
     const limited = (cause: object) => stored(inputs(8, [{ kind: 'span-limit', key: 'L', group: 'G', limit: { value: 20, unit: 'h' }, singleEntry: true, words: 'G back within 20 h', source: planner }]), [
       { key: 'rung-0', purchases: [], status: { word: 'proven infeasible', cause, run }, rows: [] },
-      { key: 'rung-1', purchases: ['ot'], status: { word: 'validated feasible', run, goals: [proven(0, 3, 'h', leastSpan(11)), found(1, 200, 'NOK')] }, rows: rung1Rows },
+      { key: 'rung-1', purchases: ['ot'], status: { word: 'validated feasible', run, goals: [proven(0, 3, 'h', leastSpan(11)), found(1, 200, 'NOK')] }, rows: rung1Rows, metrics: figures(11, 200, 2) },
     ])
     const possible = row('makes it possible', { from: 'refused', to: 'proven' })
     expect(buysHonesty(limited(certificate), [...rungs, possible], 'f')).toEqual([])
     // the same refusal with a chain that does not hold: rung 0 is not refused, only unsolved
     const broken = { kind: 'chain', jobs: ['R', 'T'], workHours: 30, calendars: [], availableHours: 1, from: '2026-11-16T06:00:00Z', by: '2026-11-16T07:00:00Z' }
-    expect(kinds(buysHonesty(limited(broken), [...rungs, possible], 'f'))).toEqual(['ends', 'word'])
+    // (its stored refusal claims more than the checker finds: in production the child stores a refusal only once lane K re-verifies it)
+    expect(kinds(buysHonesty(limited(broken), [...rungs, possible], 'f'))).toEqual(['ends', 'stored', 'word'])
   })
   test('a rung solved on an earlier revision is not solved here', () => {
     const old = stored(inputs(8), [
-      { key: 'rung-0', purchases: [], status: { word: 'validated feasible', run, goals: [proven(0, 19, 'h', leastSpan(27)), proven(1, 0, 'NOK', zero)] }, rows: rung0Rows() },
-      { key: 'rung-1', purchases: ['ot'], status: { word: 'validated feasible', run, goals: [proven(0, 3, 'h', leastSpan(11)), found(1, 200, 'NOK')] }, rows: rung1Rows, inputsRevision: 1 },
+      { key: 'rung-0', purchases: [], status: { word: 'validated feasible', run, goals: [proven(0, 19, 'h', leastSpan(27)), proven(1, 0, 'NOK', zero)] }, rows: rung0Rows(), metrics: figures(27, 0) },
+      { key: 'rung-1', purchases: ['ot'], status: { word: 'validated feasible', run, goals: [proven(0, 3, 'h', leastSpan(11)), found(1, 200, 'NOK')] }, rows: rung1Rows, metrics: figures(11, 200, 2), inputsRevision: 1 },
     ])
     // rung 1 is still to solve on this revision, so it names no option
     const toSolve: BuysItem[] = [rungs[0]!, { rung: { rung: 1, buy: ['ot'], bought: [] } }]
@@ -170,5 +174,31 @@ describe('the contract never accepts a word its stated ends do not carry', () =>
       return !wordStands(word, { from, to }, outage === 'undefined' ? undefined : Number(outage))
     })
     expect(wrong).toEqual([])
+  })
+})
+
+describe('rungStanding reads what Generate stored, and never runs the checker', () => {
+  const rung0 = { key: 'rung-0', purchases: [], status: { word: 'validated feasible', run, goals: [proven(0, 19, 'h', leastSpan(27)), proven(1, 0, 'NOK', zero)] }, rows: rung0Rows(), metrics: figures(27, 0) }
+  const rung1 = { key: 'rung-1', purchases: ['ot'], status: { word: 'validated feasible', run, goals: [proven(0, 3, 'h', leastSpan(11)), found(1, 200, 'NOK')] }, rows: rung1Rows, metrics: figures(11, 200, 2) }
+  test('the stored figures stand even beside rows that would not check; the guard catches the difference', () => {
+    const rowless = stored(inputs(8), [rung0, { ...rung1, rows: [] }])
+    expect(rungStanding(rowless, rowless.options!.options[1]!, 'f')).toMatchObject({ end: 'proven', outage: 11, cost: 200, bought: [{ id: 'bought:ot', value: 2, unit: 'person-h' }] })
+    expect(checkedStanding(rowless, rowless.options!.options[1]!, 'f').end).toBe('unsolved')
+    expect(kinds(buysHonesty(rowless, [...rungs, row('proven', { from: 'proven', to: 'proven' }, { outage: -16, cost: 200 })], 'f'))).toContain('stored')
+  })
+  test('another revision or formulation: unsolved, and stale', () => {
+    const old = stored(inputs(8), [rung0, { ...rung1, inputsRevision: 1 }])
+    expect(rungStanding(old, old.options!.options[1]!, 'f')).toMatchObject({ end: 'unsolved', stale: true })
+    expect(rungStanding(pinned, pinned.options!.options[1]!, 'other formulation')).toMatchObject({ end: 'unsolved', stale: true })
+  })
+  test('a figure it needs and Generate did not store: unsolved, naming it', () => {
+    const bare = stored(inputs(8), [rung0, { ...rung1, metrics: figures(11, 200, 2).filter(metric => metric.id !== 'goal:1') }])
+    expect(rungStanding(bare, bare.options!.options[1]!, 'f')).toMatchObject({ end: 'unsolved', why: "no stored 'goal:1'" })
+  })
+  test('check/buys.ts imports nothing that runs the checker', async () => {
+    const source = await Bun.file(new URL('./buys.ts', import.meta.url).pathname).text()
+    const imports = [...source.matchAll(/^import .* from '([^']+)'/gm)].map(match => match[1])
+    expect(imports.filter(path => !['../api/contract.ts', 'zod', '../plan/schema.ts', './metrics.ts'].includes(path!))).toEqual([])
+    expect(source).not.toMatch(/^import (?!type).*'\.\/metrics\.ts'/m)
   })
 })

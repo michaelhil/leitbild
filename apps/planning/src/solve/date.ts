@@ -11,13 +11,13 @@ export type UndatedFloat = Omit<DatedRow, 'float'>
 
 export const slotInstant = (index: Pick<CompileIndex, 'origin' | 'slotMs'>, slot: number): string => new Date(index.origin + slot * index.slotMs).toISOString()
 
-/** Rows for every planned job (method cost carriers are not jobs), in activity order. */
-export const dateSchedule = (prep: Prepared, index: CompileIndex, schedule: Schedule): UndatedFloat[] => {
+/** Rows for every planned job (method cost carriers are not jobs), in activity order; `only` leaves the others out. */
+export const dateSchedule = (prep: Prepared, index: CompileIndex, schedule: Schedule, only: (activity: number) => boolean = () => true): UndatedFloat[] => {
   const { problem } = prep
   const rows: UndatedFloat[] = []
   problem.activities.forEach((activity, a) => {
     const job = index.jobs[a]
-    if (job === null || job === undefined) return
+    if (job === null || job === undefined || !only(a)) return
     const m = schedule.mode[a]!, start = schedule.start[a]!
     const finish = finishOf(prep, a, m, start)
     if (finish < 0) throw new RangeError(`${activity.id} cannot start at slot ${start} in mode ${m}`)
