@@ -66,11 +66,14 @@
    * never holds the configuration.
    *
    * Every map click on an Einsatz object reaches it: the surface shares the
-   * selection (`selectedObjectId`) or, with one of its objects selected,
+   * selection (`selectedObjectId`) or, with one of its units selected,
    * hands it the click (`onMapTarget`). Both become one `click` of the
-   * selection table, as a row tap does. While a unit is armed it hands the
-   * map the targeting (halos with ETA tags) and the Move or busy prompt.
-   * Esc goes one level back, as the banner's and the card's × do.
+   * selection table, as a row tap does; open ground with a call or a site
+   * shown clears the shared selection, which the table reads as S0. While a
+   * unit is armed it hands the map the targeting (halos with ETA tags, a
+   * refused target's reason) and the Move or busy prompt, and forgets a
+   * prompt the operator dismissed (`onDismiss`). Esc goes one level back,
+   * as the banner's and the card's × do.
    *
    * No card, row or footer command acts within the double-click interval of
    * the last one that acted or of the last re-layout (`activationActs`), so
@@ -315,6 +318,7 @@
     props.onFocusMap({ kind: 'point', center: [point.coordinates[0], point.coordinates[1]] })
   }
 
+  /** A map click while one of the Pack's units is selected: the surface hands every one to the panel and never sends. */
   const onMapTarget = (_selectedId: ObjectId, target: PackMapTarget): void => {
     if (target.kind === 'point') {
       send({ kind: 'click', on: { kind: 'ground', point: target.point }, atMs: Date.now() })
@@ -422,13 +426,18 @@
 
   // The armed unit's Move or busy prompt, offset from its point; sent again only when it changes.
   let shownPrompt: string | null = null
+  /** The surface dropped the prompt the operator dismissed: the table forgets it, and a new prompt is sent afresh even where it reads the same. */
+  const promptDismissed = (): void => {
+    shownPrompt = null
+    send({ kind: 'prompt-dismissed' })
+  }
   $effect(() => {
     const shown = selection.selection
     const current = situation
     let prompt: MapPrompt | null = null
     if (shown.kind === 'armed' && shown.prompt !== null && current !== null) {
       if (shown.prompt.kind === 'move') {
-        prompt = { point: shown.prompt.point, options: [{ label: movePromptText(current, shown.unitId), onConfirm: () => send({ kind: 'prompt', choice: 'move' }) }] }
+        prompt = { point: shown.prompt.point, options: [{ label: movePromptText(current, shown.unitId), onConfirm: () => send({ kind: 'prompt', choice: 'move' }) }], onDismiss: promptDismissed }
       } else if (shown.prompt.job !== null) {
         const choices = busyChoices(shown.prompt.job)
         const point = pointOf(shown.prompt.target)
@@ -439,6 +448,7 @@
               { label: choices.after, onConfirm: () => send({ kind: 'prompt', choice: 'after' }) },
               { label: choices.now, tone: 'warning', onConfirm: () => send({ kind: 'prompt', choice: 'now' }) },
             ],
+            onDismiss: promptDismissed,
           }
         }
       }

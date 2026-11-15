@@ -115,6 +115,13 @@ describe('B.3: a click on open ground', () => {
       expect(result.effects).toEqual(name === 'S0' ? [] : [{ kind: 'select', objectId: null }])
     })
   }
+  test('SC, SS: on the map, open ground reaches the panel as the surface clearing the shared selection (route `deselect`), which goes to S0 too', () => {
+    for (const selection of [sc, ss]) {
+      const event = selectionChangeEvent(start(selection), null, () => null, 1)
+      expect(event).toEqual({ kind: 'cleared' })
+      expect(step(selection, event!).state.selection).toEqual(s0)
+    }
+  })
   test('SA: shows the "Move here" prompt and moves nothing until it is confirmed', () => {
     const shown = step(sa, click(ground))
     expect(shown.state.selection).toEqual({ ...sa, prompt: { kind: 'move', point } })
@@ -246,6 +253,15 @@ describe('Arming and the armed unit\'s submits', () => {
   })
   test('confirming a prompt that is not shown is a programming error', () => {
     expect(() => step(sa, { kind: 'prompt', choice: 'move' })).toThrow('no prompt shown')
+  })
+  test('a dismissed map prompt (a click elsewhere, its × or Esc) is gone and sends nothing; the unit stays armed, and a dismissed prompt is never confirmed', () => {
+    for (const prompt of [{ kind: 'move', point }, { kind: 'busy', target: { taskId: call.id }, job: null }] as const) {
+      const dismissed = step({ ...sa, prompt }, { kind: 'prompt-dismissed' })
+      expect(dismissed).toEqual({ state: start(sa), effects: [] })
+      expect(() => reduceSelection(dismissed.state, { kind: 'prompt', choice: prompt.kind === 'move' ? 'move' : 'after' })).toThrow('no prompt shown')
+    }
+    // With no prompt shown, a late dismissal changes nothing.
+    for (const selection of Object.values(states)) expect(step(selection, { kind: 'prompt-dismissed' })).toEqual({ state: start(selection), effects: [] })
   })
 })
 

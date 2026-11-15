@@ -626,6 +626,45 @@ describe('B.11 click counts at the Dispatch panel', () => {
     })
   })
 
+  test('walkthrough E1: the unit, then the call, then open ground sends no order; the call card opens, and the ground closes it', async () => {
+    await scene(async ({ run, screen, situation, callId, answer }) => {
+      const unitId = chosenCarrier(situation, answer)
+      await screen.mapTap(unitId)
+      await screen.mapTap(callId)
+      expect(screen.selection()).toEqual({ kind: 'call', callId })
+      expect(screen.mapSelection()).toBe(callId)
+      const [east, north] = lonLatOf(run.object(callId)!)
+      await screen.groundTap([east + 0.004, north + 0.002])
+      expect(screen.selection()).toEqual({ kind: 'none', marked: null })
+      expect(screen.mapSelection()).toBeNull()
+      expect(screen.calls).toEqual([])
+    })
+  })
+
+  test('walkthrough E2: a double-click on a unit keeps its card', async () => {
+    await scene(async ({ screen, situation, answer }) => {
+      const unitId = chosenCarrier(situation, answer)
+      await screen.mapTap(unitId)
+      await screen.mapTap(unitId, 120)
+      expect(screen.selection()).toEqual({ kind: 'unit', unitId })
+      expect(screen.calls).toEqual([])
+    })
+  })
+
+  test('walkthrough E4: armed, a tap on the ground shows the Move prompt; a tap elsewhere dismisses it and asks again there; nothing moves without a confirm', async () => {
+    await scene(async ({ run, screen, situation, answer }) => {
+      const unitId = chosenCarrier(situation, answer)
+      const [east, north] = lonLatOf(run.object(unitId)!)
+      await screen.mapTap(unitId)
+      await screen.press({ kind: 'arm' })
+      await screen.groundTap([east + 0.004, north + 0.002])
+      expect(screen.prompt()).toEqual([expect.stringMatching(/ here$/)])
+      await screen.groundTap([east + 0.006, north + 0.003])
+      expect(screen.selection()).toEqual({ kind: 'armed', unitId, when: null, prompt: { kind: 'move', point: { type: 'Point', coordinates: [east + 0.006, north + 0.003] } }, refusal: null })
+      expect(screen.calls).toEqual([])
+    })
+  })
+
   test('a double-click on Close never confirms: Close stays in its place, the confirm stands beside it', async () => {
     await scene(async ({ screen, callId }) => {
       await screen.mapTap(callId)

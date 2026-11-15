@@ -54,8 +54,10 @@ import { operator, type OpenRun } from './run-harness.ts'
  * call card's pinned proposal, and sends every order through the Run's
  * Capability path as the screen's actor. Map taps are routed as the World
  * surface routes them with the panel open (`ui/map-target-routing.ts`,
- * the Pack's own targeting), so a tap selects, or reaches the panel as a
- * map target, or does nothing, exactly as in the browser.
+ * the Pack's own targeting), so a tap selects, reaches the panel as a map
+ * target, clears the shared selection, or does nothing, exactly as in the
+ * browser; and, as on the map, every map tap first dismisses a shown map
+ * prompt.
  *
  * It counts operator actions: each map tap, ground tap, row tap, card or
  * footer button and map prompt option is one, whether or not it acts. The
@@ -317,7 +319,7 @@ export const openCardScreen = async (run: OpenRun, options: { readonly actor?: A
     const selected = all.find(object => object.id === mapSelection) ?? null
     const context = { objects: all }
     const targeting = einsatzPackView.targeting
-    return { controller: selected !== null && targeting.isController(selected) ? selected : null, selected, targeting, context, panel, closedMapTargetPanels: [], opensDisplay: () => false }
+    return { controller: selected !== null && targeting.isController(selected) ? selected : null, selectedObjectId: selected?.id ?? null, targeting, context, panel, closedMapTargetPanels: [], opensDisplay: () => false }
   }
 
   const onMapTarget = async (target: PackMapTarget): Promise<void> => {
@@ -338,6 +340,13 @@ export const openCardScreen = async (run: OpenRun, options: { readonly actor?: A
       }
       case 'panel':
         return await onMapTarget(route.target)
+      case 'deselect': {
+        // Open ground with a call or a site shown: the surface clears the shared selection, and the panel hears it cleared.
+        mapSelection = null
+        const event = selectionChangeEvent(selection, null, kindOf, wallMs)
+        if (event !== null) await send(event)
+        return
+      }
       case 'send':
       case 'openPanel':
       case 'display':
@@ -346,6 +355,15 @@ export const openCardScreen = async (run: OpenRun, options: { readonly actor?: A
       case 'none':
         return
     }
+  }
+
+  /**
+   * Every map tap first dismisses the prompt the map shows, as the map does
+   * with any click that is not on one of the prompt's own buttons: the
+   * surface drops it and calls its `onDismiss`, which the panel answers so.
+   */
+  const mapClick = async (): Promise<void> => {
+    if (promptOf() !== null) await send({ kind: 'prompt-dismissed' })
   }
 
   /** A card, row or footer command: it acts unless it is the second half of a double-click. */
@@ -468,11 +486,13 @@ export const openCardScreen = async (run: OpenRun, options: { readonly actor?: A
       step(gapMs)
       const object = objects().find(entry => entry.id === objectId)
       if (object === undefined) throw new Error(`The map shows no ${objectId}`)
+      await mapClick()
       await follow(routeObjectClick(object, mapClickContext()))
       await sync()
     },
     groundTap: async (position, gapMs = paceMs) => {
       step(gapMs)
+      await mapClick()
       await follow(routeGroundClick(geoPointFromLonLat(position[0], position[1]), mapClickContext()))
       await sync()
     },

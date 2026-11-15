@@ -112,6 +112,13 @@ export type SelectionEvent =
   | { readonly kind: 'arm'; readonly unitId: string; readonly when: 'after' | null }
   /** A choice of the armed unit's map prompt. */
   | { readonly kind: 'prompt'; readonly choice: 'move' | OrderWhen }
+  /**
+   * The operator dismissed the map prompt without confirming: a map click
+   * elsewhere, its × or Esc. The surface has dropped it; the unit stays
+   * armed and the prompt is gone, so it is never shown again. A click that
+   * dismissed it reaches the table after this, as any click does.
+   */
+  | { readonly kind: 'prompt-dismissed' }
   | { readonly kind: 'back' }
   /** The surface cleared the shared selection. */
   | { readonly kind: 'cleared' }
@@ -240,6 +247,8 @@ export const reduceSelection = (state: SelectionState, event: SelectionEvent): S
       const drops = event.choice === 'now' ? prompt.job : null
       return { state: { ...state, selection: { ...selection, prompt: null } }, effects: [{ kind: 'submit', unitId: selection.unitId, target: prompt.target, when: event.choice, drops }] }
     }
+    case 'prompt-dismissed':
+      return selection.kind === 'armed' && selection.prompt !== null ? { state: { ...state, selection: { ...selection, prompt: null } }, effects: [] } : unchanged(state)
     case 'back':
       switch (selection.kind) {
         case 'none': return selection.marked === null ? unchanged(state) : transition(state, none)

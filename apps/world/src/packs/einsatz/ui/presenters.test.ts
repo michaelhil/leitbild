@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test'
 import { objectIdSchema, type OperationalObject } from '../../../core/model/index.ts'
-import { mapTargetingMaxTargets } from '../../../ui/surface-panel-interaction.ts'
+import { assertMapTargeting, mapTargetingMaxTargets } from '../../../ui/surface-panel-interaction.ts'
 import { einsatzPackId } from '../ids.ts'
 import { recommendAnswerSchema, type RecommendAnswer } from '../recommendation-schema.ts'
 import { situationSchema, unitOptionsSchema, type Situation, type UnitOptions } from '../situation/schema.ts'
@@ -391,12 +391,14 @@ describe('Overview', () => {
 })
 
 describe('Armed feedback, prompts and receipts', () => {
-  test('targeting: halos with ETA tags on the valid targets that are objects, the refused target\'s reason first; nothing outside SA', () => {
+  test('targeting: halos with ETA tags on the valid targets that are objects, the refused target\'s reason first in the refused tone; nothing outside SA', () => {
     expect(targetingFor(su('r1'), optionsFor('r1'))).toBeNull()
     expect(targetingFor(sa('r1'), null)).toEqual({ from: oid('r1'), targets: [] })
-    expect(targetingFor(sa('r1'), optionsFor('r1'))).toEqual({ from: oid('r1'), targets: [{ id: oid('job-1'), tag: '4 min' }, { id: oid('depot-a'), tag: '7 min' }] })
+    expect(targetingFor(sa('r1'), optionsFor('r1'))).toEqual({ from: oid('r1'), targets: [{ id: oid('job-1'), tag: '4 min', tone: 'valid' }, { id: oid('depot-a'), tag: '7 min', tone: 'valid' }] })
     const refused = sa('r1', { refusal: { targetId: 'depot-b', text: 'Depot B is closed', untilMs: 1 } })
-    expect(targetingFor(refused, optionsFor('r1'))!.targets[0]).toEqual({ id: oid('depot-b'), tag: 'Depot B is closed' })
+    expect(targetingFor(refused, optionsFor('r1'))!.targets[0]).toEqual({ id: oid('depot-b'), tag: 'Depot B is closed', tone: 'refused' })
+    // Each targeting passes the surface's own check (at most eight, no target twice or as its own object, every tag worded).
+    expect(assertMapTargeting('einsatz.dispatch', targetingFor(refused, optionsFor('r1'))!)).toBeDefined()
     const many = optionsFor('r1', { targets: Array.from({ length: 12 }, (_, index) => ({ target: { taskId: `job-${index}` }, verb: 'serve', label: `J-${index}`, etaS: index * 60 })) })
     expect(targetingFor(sa('r1'), many)!.targets).toHaveLength(mapTargetingMaxTargets)
   })

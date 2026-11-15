@@ -814,18 +814,18 @@ export const overview = (situation: Situation, selection: Selection, opened: Rea
 /**
  * What the map draws while a unit is armed: halos with ETA tags on the
  * nearest valid targets (at most `mapTargetingMaxTargets`), and a refused target's
- * reason at that target while it is shown. Before the options arrive no
+ * reason at that target, in the `refused` tone, while it is shown. Before the options arrive no
  * target carries a tag, but the unit is armed and a click still submits.
  */
 export const targetingFor = (selection: Selection, options: UnitOptions | null): MapTargeting | null => {
   if (selection.kind !== 'armed') return null
   const refusal = selection.refusal
-  const refused = refusal?.targetId === null || refusal === null ? [] : [{ id: refusal.targetId, tag: refusal.text }]
+  const refused = refusal?.targetId === null || refusal === null ? [] : [{ id: refusal.targetId, tag: refusal.text, tone: 'refused' as const }]
   const valid = options === null || options.unitId !== selection.unitId ? [] : options.targets.flatMap(target => {
     const id = stopObjectId(target.target)
-    return id === null || id === refusal?.targetId ? [] : [{ id, tag: minutesText(target.etaS) }]
+    return id === null || id === refusal?.targetId ? [] : [{ id, tag: minutesText(target.etaS), tone: 'valid' as const }]
   })
-  return { from: objectIdSchema.parse(selection.unitId), targets: [...refused, ...valid].slice(0, mapTargetingMaxTargets).map(target => ({ id: objectIdSchema.parse(target.id), tag: target.tag })) }
+  return { from: objectIdSchema.parse(selection.unitId), targets: [...refused, ...valid].slice(0, mapTargetingMaxTargets).map(target => ({ id: objectIdSchema.parse(target.id), tag: target.tag, tone: target.tone })) }
 }
 
 /** The Move prompt's one option. */
