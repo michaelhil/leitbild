@@ -18,8 +18,10 @@ const solveSwap = async (inputs: PlanInputs, extra: Partial<GenerateDeps> = {}) 
 const option = await solveSwap(flagship)
 const ranged = rangedJobs(flagship, option.rows)
 const retime = (inputs: PlanInputs, high: readonly string[]) => retimedRows(inputs, atHigh(inputs, new Set(high)), option)
-const placeable = ranged.filter(job => { const found = retime(flagship, [job]); return found !== undefined && found.unplaced === undefined })
-const unplaced = ranged.filter(job => retime(flagship, [job])?.unplaced !== undefined)
+// A job left without a slot has no row in the re-timing.
+const placesAll = (job: string): boolean => retime(flagship, [job])?.rows.length === option.rows.length
+const placeable = ranged.filter(placesAll)
+const unplaced = ranged.filter(job => retime(flagship, [job]) !== undefined && !placesAll(job))
 /** The flagship with the ranges that leave a job unplaced taken off, so every re-timing has rows. */
 const trimmed: PlanInputs = { ...flagship, jobs: flagship.jobs.map(job => (unplaced.includes(job.key) ? { ...job, duration: (({ range: _range, ...rest }) => rest)(job.duration) } : job)) }
 const crewsOf = (rows: ReadonlyArray<{ readonly job: string; readonly uses: ReadonlyArray<{ readonly resource: string }> }>) => new Map(rows.map(row => [row.job, [...new Set(row.uses.map(use => use.resource))].toSorted()]))
@@ -51,33 +53,35 @@ describe('re-timed by the repair path', () => {
     expect(found).toEqual({ rows: option.rows.map(({ float: _float, ...row }) => row) })
   })
 
-  test('a job left without a slot with its crews is named, with the crew and the end of its last time (checked run: Train A swap)', () => {
+  test('a job left without a slot with its crews has no row, nor what waits on it; none placed starts earlier (checked run: Train A swap)', () => {
     // CCWHXA-CLEAN at its high estimate pushes the eddy-current test past the eddy-current team's only time:
     // the team has no weekly hours, only its booked period (and the rebooked one, when the option buys it).
     expect(unplaced).toContain('CCWHXA-CLEAN')
     const found = retime(flagship, ['CCWHXA-CLEAN'])!
-    const team = flagship.resources.find(resource => resource.key === found.unplaced?.resource)!
-    const job = flagship.jobs.find(entry => entry.key === found.unplaced?.job)!
-    expect(job.needs.map(need => need.anyOf)).toEqual([[team.key]])
-    const calendar = flagship.calendars.find(entry => entry.key === team.calendar)!
-    expect(calendar.weekly).toEqual([])
-    const periods = [...calendar.periods, ...flagship.purchases.filter(entry => entry.resource === team.key && option.variant.purchases.includes(entry.key)).flatMap(entry => ('periods' in entry.adds ? entry.adds.periods : []))]
-    expect(Date.parse(found.unplaced!.after)).toBe(Math.max(...periods.map(period => Date.parse(period.end))))
-    // The rows are the placed jobs only: the unplaced job and what waits on it have none; none starts earlier.
-    expect(found.rows.some(row => row.job === job.key)).toBe(false)
+    const missing = option.rows.map(row => row.job).filter(job => !found.rows.some(row => row.job === job))
+    const periodsOnly = (key: string) => flagship.calendars.find(entry => entry.key === flagship.resources.find(resource => resource.key === key)?.calendar)?.weekly.length === 0
+    expect(missing.some(key => flagship.jobs.find(job => job.key === key)!.needs.some(need => need.anyOf.every(periodsOnly)))).toBe(true)
     for (const row of found.rows) expect(Date.parse(row.start)).toBeGreaterThanOrEqual(Date.parse(option.rows.find(planned => planned.job === row.job)!.start))
   })
 
-  test('the unplaced item is stored as lane K judges it, never left out', () => {
-    // Lane K's judgement of an unplaced job is still to land: this judge returns the claim as the outcome
-    // lane K is expected to give, and leaves every other re-timing to lane K.
-    const withUnplaced: JudgeRetimed = plan => (plan.unplaced === undefined ? laneKJudgeRetimed(plan) : { ok: true, outcome: { holds: false, unplaced: plan.unplaced } })
-    const robust = robustOf(flagship, option, withUnplaced)!
+  test('lane K names the job that could not be placed, its crew and from when; Generate stores it', async () => {
+    const found = retime(flagship, ['CCWHXA-CLEAN'])!
+    const own = judgeRetiming(flagship, option.variant, option.rows, found.rows, ['CCWHXA-CLEAN'])
+    expect(own.ok).toBe(true)
+    const outcome = own.ok ? own.outcome : undefined
+    if (outcome === undefined || !('unplaced' in outcome)) throw new Error('lane K names the unplaced job')
+    // The job is the one that needs the eddy-current team, and the crew is that team (from the fixture).
+    const job = flagship.jobs.find(entry => entry.key === outcome.unplaced.job)!
+    expect(job.needs.map(need => need.anyOf)).toEqual([[outcome.unplaced.resource]])
+    const robust = robustOf(flagship, option, laneKJudgeRetimed)!
     expect(robustSchema.safeParse(robust).success).toBe(true)
-    const claim = retime(flagship, ['CCWHXA-CLEAN'])!.unplaced!
-    expect(robust.single.find(entry => entry.job === 'CCWHXA-CLEAN')!.outcome).toEqual({ holds: false, unplaced: claim })
     expect(robust.single.map(entry => entry.job)).toEqual(ranged)
-  })
+    expect(robust.single.find(entry => entry.job === 'CCWHXA-CLEAN')!.outcome).toEqual(outcome)
+    // In Generate, on the flagship itself: the record is stored, with lane K's outcome for every re-timing.
+    const stored = await solveSwap(flagship, { judgeRetimed: laneKJudgeRetimed })
+    expect(stored.robust).toBeDefined()
+    expect(stored.robust).toEqual(robustOf(flagship, stored, laneKJudgeRetimed))
+  }, 60_000)
 })
 
 describe('the robust record', () => {
