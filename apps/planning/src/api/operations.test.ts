@@ -1,9 +1,14 @@
 import { afterAll, describe, expect, test } from 'bun:test'
 import type { PlanningSubject } from '@leitbild/contracts'
-import { planInputsSchema } from '../plan/schema.ts'
+import { planInputsSchema, planSchema } from '../plan/schema.ts'
+import { rungsOf } from '../plan/buys.ts'
+import { buysPointer } from '../plan/summary.ts'
+import { buysHonesty, rungStanding } from '../../tests/harness/buys-honesty.ts'
+import { sectionDataSchemas } from './contract.ts'
+import { formulation, planWith, rebuild, refusedWith, swap, trainAInputs, variantOf } from './fixtures/choose.ts'
 import { bundledPlanDefinitions } from '../definitions/index.ts'
 import { worldSubjects } from '../plan/readiness.ts'
-import { subjectsFor } from './fixtures/doubles.ts'
+import { createSolverDouble, doubleVariantKey, subjectsFor } from './fixtures/doubles.ts'
 import { createHarness } from './fixtures/harness.ts'
 
 const supplyRun = planInputsSchema.parse(await Bun.file(new URL('../plan/fixtures/supply-run.case2.json', import.meta.url)).json())
@@ -485,6 +490,105 @@ describe('an option solved above the certified size says so beside its status (s
       const again = await local.call('planning.plan.generate', { resource: created.id, input: {}, expectedRevision: 1 })
       for (const option of again.body.result.options) expect(option.warnings.some((warning: { kind: string }) => warning.kind === 'above-certified-size')).toBe(false)
       expect(again.body.result.text).not.toContain('certified size')
+    } finally { await local.close() }
+  })
+})
+
+describe('increment 2: keep, the previous set, why recommended, versus and what overtime buys (lane P)', () => {
+  test('the previous set: moved there when Generate runs on a newer revision, never replaced on the same one, and typed', async () => {
+    const created = await harness.create('train-a-work-week')
+    const read = () => harness.store.read(harness.workspaceId, created.id)
+    const generate = (input: object, expectedRevision: number) => harness.call('planning.plan.generate', { resource: created.id, input, expectedRevision })
+    expect((await generate({}, 1)).status).toBe(200)
+    expect((await read()).previousOptions).toBeUndefined()
+    // Another look on the same revision replaces the options and leaves no previous set.
+    expect((await generate({ variants: [{ label: 'Second look' }] }, 1)).status).toBe(200)
+    const second = (await read()).options!
+    expect((await read()).previousOptions).toBeUndefined()
+    expect((await harness.call('planning.plan.edit', { resource: created.id, input: { edits: [{ edit: 'plan', title: 'Train A, week 47' }] }, expectedRevision: 1 })).status).toBe(200)
+    // The first Generate on revision 2 keeps the revision 1 set, exactly as stored.
+    expect((await generate({}, 2)).status).toBe(200)
+    expect((await read()).previousOptions).toEqual(second)
+    // Generate again on revision 2, with or without keep: the previous set is not replaced.
+    expect((await generate({ variants: [{ label: 'Days only', buy: 'no-extra-crew-hours' }], keep: true }, 2)).status).toBe(200)
+    expect((await generate({}, 2)).status).toBe(200)
+    const after = await read()
+    expect(after.previousOptions).toEqual(second)
+    // Typed: an untyped previous set is refused by the plan schema, so the store never writes one.
+    expect(planSchema.safeParse({ ...after, previousOptions: { junk: true } }).success).toBe(false)
+    expect(planSchema.safeParse({ ...after, previousOptions: { ...second, options: [{ key: 'x' }] } }).success).toBe(false)
+  })
+
+  test('keep reaches the solver and its whole set is stored; a set with an option of another revision is refused, nothing stored', async () => {
+    const inner = createSolverDouble()
+    const seen: unknown[] = []
+    let revision: number | undefined
+    const local = await createHarness({ solver: { ...inner, generate: async request => {
+      seen.push(request.keep)
+      const set = await inner.generate(request)
+      return revision === undefined ? set : { ...set, options: set.options.map(option => ({ ...option, inputsRevision: revision! })) }
+    } } })
+    try {
+      const created = await local.create('train-a-work-week')
+      const generate = (input: object) => local.call('planning.plan.generate', { resource: created.id, input, expectedRevision: 1 })
+      expect((await generate({})).status).toBe(200)
+      const rung = { buy: ['crane-fri'] }
+      const kept = await generate({ variants: [rung], keep: true })
+      expect([kept.status, seen]).toEqual([200, [undefined, true]])
+      const stored = (await local.store.read(local.workspaceId, created.id)).options!.options.map(option => option.key.replace(/\.[0-9a-f]{8}$/, ''))
+      expect(stored).toEqual(['O1', 'O2', doubleVariantKey(rung)])
+      revision = 7
+      const refused = await generate({})
+      expect([refused.status, refused.body.error.code, refused.body.error.message]).toEqual([500, 'invalid_planning_result', 'Generate returned an option of another plan revision'])
+      expect((await local.store.read(local.workspaceId, created.id)).options!.options).toHaveLength(3)
+    } finally { await local.close() }
+  })
+
+  test('explain recommended and versus come from stored, fresh options; the solver is never asked', async () => {
+    const calls: Array<{ readonly kind: string }> = []
+    const local = await createHarness({ solver: { ...createSolverDouble({ calls }), formulation: () => formulation } })
+    try {
+      const explain = (id: string, input: object) => local.call('planning.plan.explain', { resource: id, input })
+      const plan = await local.store.create(local.workspaceId, planWith(local.workspaceId, [swap, rebuild]))
+      const why = await explain(plan.id, { ask: 'recommended' })
+      expect([why.status, why.body.result.lines[1], why.bytes <= 4_096]).toEqual([200, `Next in rank: '${rebuild.label}'.`, true])
+      expect((await explain(plan.id, { ask: 'recommended', option: rebuild.key })).body.result.lines[1]).toBe(`Against '${rebuild.label}':`)
+      const none = await explain(plan.id, { ask: 'versus', versus: { previous: swap.key } })
+      expect([none.status, none.body.error.code]).toEqual([409, 'no_previous_options'])
+      expect((await explain(plan.id, { ask: 'versus' })).body.error.code).toBe('invalid_request')
+      // With the set of revision 2 kept as the previous one.
+      const previous = { at: plan.options!.at, by: plan.options!.by, options: [variantOf(swap, { revision: 2 })] }
+      const compared = await local.store.create(local.workspaceId, planWith(local.workspaceId, [swap, rebuild], 3, { previousOptions: previous }))
+      const versus = await explain(compared.id, { ask: 'versus', option: rebuild.key, versus: { previous: swap.key } })
+      expect([versus.status, versus.body.result.lines[0], versus.bytes <= 4_096]).toEqual([200, `'${rebuild.label}' against '${swap.label}' of the previous options (revision 2; now revision 3).`, true])
+      expect((await explain(compared.id, { ask: 'versus', versus: { previous: 'nowhere' } })).body.error.code).toBe('unknown_reference')
+      // Options of an older revision are out of date: nothing is said from them.
+      const stale = await local.store.create(local.workspaceId, planWith(local.workspaceId, [variantOf(swap, { revision: 2 }), variantOf(rebuild, { revision: 2 })]))
+      expect((await explain(stale.id, { ask: 'recommended' })).body.error.code).toBe('option_stale')
+      const refusedOnly = await local.store.create(local.workspaceId, planWith(local.workspaceId, [refusedWith(swap, rungsOf(plan.inputs)[0]!.buy)]))
+      expect((await explain(refusedOnly.id, { ask: 'recommended' })).body.result.lines).toEqual(['No option is recommended: none is validated feasible.'])
+      expect(calls.filter(call => call.kind === 'explain')).toEqual([])
+    } finally { await local.close() }
+  })
+
+  test('read buys: each rung names its fresh option by the key Generate gives its buy list; lane K finds every word honest', async () => {
+    const local = await createHarness({ solver: { ...createSolverDouble(), formulation: () => formulation, standing: (plan, option) => rungStanding(plan, option, formulation) } })
+    try {
+      const rungs = rungsOf(trainAInputs)
+      const keyOf = (rung: number) => `${doubleVariantKey({ buy: [...rungs[rung]!.buy] })}.0a1b2c3d`
+      // Rung 0 refused (days only), rung 1 the stored Rebuild; rung 2's Swap is of an older revision: still to solve.
+      const options = [refusedWith(variantOf(rebuild, { key: keyOf(0) }), rungs[0]!.buy), variantOf(rebuild, { key: keyOf(1) }), variantOf(swap, { key: keyOf(2), revision: 2 })]
+      const plan = await local.store.create(local.workspaceId, planWith(local.workspaceId, options))
+      const answer = await local.call('planning.plan.read', { resource: plan.id, input: { section: 'buys' } })
+      expect([answer.status, answer.bytes <= 4_096, answer.body.result.sections[0].description]).toEqual([200, true, buysPointer])
+      const { items } = sectionDataSchemas.buys.parse(answer.body.result.sections[0].data)
+      expect(items.flatMap(item => 'rung' in item ? [[item.rung.rung, item.rung.option ?? null]] : [])).toEqual([[0, keyOf(0)], [1, keyOf(1)], [2, null]])
+      expect(items.flatMap(item => 'row' in item ? [item.row.word] : [])).toEqual(['makes it possible'])
+      expect(buysHonesty(plan, items, formulation)).toEqual([])
+      // A plan with no options lists the rungs to solve and no row.
+      const empty = await local.create('train-a-work-week')
+      const listed = sectionDataSchemas.buys.parse((await local.call('planning.plan.read', { resource: empty.id, input: { section: 'buys' } })).body.result.sections[0].data)
+      expect(listed.items).toEqual(rungsOf(plan.inputs).map(rung => ({ rung: { rung: rung.rung, buy: [...rung.buy], bought: [] } })))
     } finally { await local.close() }
   })
 })

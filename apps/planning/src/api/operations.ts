@@ -2,7 +2,9 @@
 // reach these only through Host and module-api.ts, so both take one path. Planning writes nothing in World:
 // its only World call is the facts read in refresh. Generate, explain and preview run on the solver port
 // (lane S). Lane K's checker and its re-verifications run inside Generate's solver child, once; the service
-// stores their result, validated against the plan schema, and never runs the checker on a read.
+// stores their result, validated against the plan schema. On a read, lane K's code runs only where its proof
+// must be re-derived: "what overtime buys", where rungStanding re-checks each rung's stored option
+// (coordinator, lane K batch 2), and explain's refusal, which re-verifies a second proof before wording it.
 import { z } from 'zod'
 import {
   inspectionViewSchema, planningFactsOutputSchema, workspaceResourceReferenceSchema,
@@ -13,6 +15,9 @@ import { applyEdits, requireAuthority, type ChangeRecord, type EditOutcome, type
 import { definitionRevision, startPlan } from '../definitions/start.ts'
 import type { PlanDefinitionsPort } from '../definitions/index.ts'
 import { outTogether, readiness, worldSubjects, type ReadinessItem } from '../plan/readiness.ts'
+import { buysItems, ladderOf, rungsOf, type FinishCause, type Standing } from '../plan/buys.ts'
+import { versusLines } from '../plan/versus.ts'
+import { whyRecommendedLines } from '../plan/why.ts'
 import { withoutProof } from '../solve/status.ts'
 import {
   certificateSchema, certifiedSizeSchema, optionSetSchema, planInputsSchema,
@@ -22,7 +27,7 @@ import type { Edit } from '../plan/edit-schema.ts'
 import { assertRevision, type PlanStore, type RevisionGuard } from '../plan/store.ts'
 import {
   attentionKind, basisWords, buildSection, clip, datedWords, names, jobsPerSolve, sizeBand, sizeCautionWarning, sizeRefusalWords, weakeningWords, byteLength, changeLines, changeSummary, nameOf, optionWarning, readinessText,
-  statusSentence, timeWords, valueWords, type OptionState, type Section, type SectionContext,
+  spanAndCost, statusSentence, timeWords, valueWords, type OptionState, type Section, type SectionContext,
 } from '../plan/summary.ts'
 import type { Grid } from '../time/units.ts'
 import {
@@ -37,6 +42,8 @@ export type WriteResult = z.infer<typeof writeResultSchema>
 export type GenerateResult = z.infer<typeof generateResultSchema>
 export type ExplainResult = z.infer<typeof explainResultSchema>
 export type GenerateVariant = NonNullable<z.infer<typeof generateInputSchema>['variants']>[number]
+/** The explain asks the solver answers; recommended and versus are answered here from stored options. */
+export type SolverAsk = Exclude<z.infer<typeof explainInputSchema>['ask'], 'recommended' | 'versus'>
 
 // ───────────── ports ─────────────
 
@@ -58,19 +65,34 @@ export interface SolverPort {
     readonly variants: readonly GenerateVariant[] | undefined
     readonly seconds: number
     readonly stored: OptionSet | null
+    /**
+     * The what-ifs are added to `stored` (each starting from the best stored option that buys no more): the
+     * set returned is the whole set to store. Without it the set returned replaces the stored one.
+     */
+    readonly keep?: true
     readonly at: string
     readonly by: StoredActor
     readonly signal: AbortSignal
     /** Who stopped it, once the signal fires: the person (their request ended) or Host (Planning stopping). */
     readonly stoppedByWho?: () => 'person' | 'host' | undefined
   }) => Promise<OptionSet>
+  /** The solver's own asks about one option's schedule. Why recommended and the comparison are the service's (plan/why.ts, plan/versus.ts). */
   readonly explain: (request: {
     readonly inputs: PlanInputs
     readonly option: Option
-    readonly ask: z.infer<typeof explainInputSchema>['ask']
+    readonly ask: SolverAsk
     readonly job: string | undefined
     readonly cursor: string | undefined
   }) => Promise<ExplainResult>
+  /** The key Generate gives the option of `variant` (a function of its methods, purchases, extra rule and lead), without the set suffix. */
+  readonly variantKey: (inputs: PlanInputs, variant: GenerateVariant) => string
+  /**
+   * The first cause of what sets the finish of `option`'s own schedule (explain finish's first cause), or
+   * undefined when its chain names none. On the option's own compile, in this process: no solver child.
+   */
+  readonly finishCause: (request: { readonly inputs: PlanInputs; readonly option: Option }) => Promise<FinishCause | undefined>
+  /** Where a stored option stands as a rung of "what overtime buys", by lane K's checker alone (rungStanding). */
+  readonly standing: (plan: Plan, option: Option) => Standing
   /** Repairs `option`'s own schedule on the edited inputs (only what the edit forces moves), then checks it. */
   /** `signal`: the request's own; a preview it aborts is stopped and its solver child killed. */
   readonly preview: (request: { readonly inputs: PlanInputs; readonly option: Option; readonly signal?: AbortSignal }) => Promise<{
@@ -387,38 +409,77 @@ export const createPlanningOperations = (ports: PlanningOperationsPorts) => {
     return distinct.length <= shown ? distinct.join(' and ') : `${distinct.slice(0, shown).join(', ')} and ${distinct.length - shown} more`
   }
 
-  /** The option's longest group span (h, from the span-over goal) and its extra cost (from the extra-cost goal). */
-  const spanAndCost = (inputs: PlanInputs, option: Option): { readonly span?: number; readonly cost?: number } => {
-    const k = (metric: string) => inputs.goals.findIndex(goal => goal.metric === metric)
-    const spanGoal = k('span-over'), costGoal = k('extra-cost')
-    const spans = option.metrics.filter(metric => spanGoal >= 0 && (metric.id === `goal:${spanGoal}` || metric.id.startsWith(`goal:${spanGoal}:`)))
-    const cost = costGoal < 0 ? undefined : option.metrics.find(metric => metric.id === `goal:${costGoal}`)?.value
-    return { ...(spans.length === 0 ? {} : { span: Math.max(...spans.map(metric => metric.value)) }), ...(cost === undefined ? {} : { cost }) }
+  /**
+   * "What overtime buys" from stored options only (design §4.1): each rung's option is the one Generate keyed
+   * for its buy list, and only when fresh on this revision and formulation (else still to solve); where it
+   * stands is lane K's. A "proven: no gain" row names the higher rung's cause of the finish.
+   */
+  const buysOf = async (plan: Plan, states: ReadonlyMap<string, OptionState>) => {
+    const rungs = rungsOf(plan.inputs).map(rung => {
+      const key = solver.variantKey(plan.inputs, { buy: [...rung.buy] })
+      const option = plan.options?.options.find(entry => variantKey(entry.key) === key && states.get(entry.key)?.stale === false && entry.variant.lead === undefined && entry.variant.also === undefined)
+      return { ...rung, ...(option === undefined ? {} : { option: { key: option.key, standing: solver.standing(plan, option) } }) }
+    })
+    const ladder = ladderOf(rungs)
+    const causes = await Promise.all(ladder.rows.flatMap(({ finishFrom }) => finishFrom === undefined ? [] : [finishFrom]).map(async key => {
+      const cause = await solver.finishCause({ inputs: plan.inputs, option: plan.options!.options.find(entry => entry.key === key)! })
+      return cause === undefined ? [] : [[key, cause] as const]
+    }))
+    return buysItems(ladder, new Map(causes.flat()))
   }
+
   /** The purchases the schedule uses; an option's stored purchases are the set it was allowed. */
   const purchasesUsed = (option: Option): readonly string[] => [...new Set(option.rows.flatMap(row => row.uses.flatMap(use => use.purchase === undefined ? [] : [use.purchase])))]
 
+  /**
+   * A what-if's extra rule needs a key no plan rule has (design §6.6): rules are looked up by key when a
+   * refusal or a re-timing names them, so a 48 h what-if keyed as R2 would read "the 72 h limit".
+   */
+  const refuseRuleKeyClash = (inputs: PlanInputs, input: z.infer<typeof generateInputSchema>): void => {
+    const clashes = (input.variants ?? []).flatMap((variant, index) => (variant.also ?? []).flatMap((rule, at) => {
+      const plans = inputs.rules.find(entry => entry.key === rule.key)
+      return plans === undefined ? [] : [{ path: ['variants', String(index), 'also', String(at), 'key'], key: rule.key, message: `The extra rule's key ${rule.key} is the key of the plan's rule "${clip(plans.words, 120)}"; give the extra rule a key no plan rule has` }]
+    }))
+    if (clashes.length === 0) return
+    throw planningError(400, 'invalid_request', clashes[0]!.message, {
+      issues: clashes.slice(0, 4).map(({ path, message }) => ({ path, message })),
+      about: [...new Set(clashes.map(clash => clash.key))].slice(0, 4),
+    })
+  }
+
+  /**
+   * The set before this Generate, for "what differs" (design §6.3): when Generate runs on a newer revision
+   * than the stored set, that set becomes the previous one; on the same revision (another look, or a rung
+   * added with keep) the previous set stays as it is.
+   */
+  const previousAfter = (current: Plan): Pick<Plan, 'previousOptions'> => {
+    const older = current.options !== null && current.options.options.some(option => option.inputsRevision < current.revision)
+    if (older) return { previousOptions: current.options! }
+    return current.previousOptions === undefined ? {} : { previousOptions: current.previousOptions }
+  }
+
   const generateOnce = async (workspaceId: WorkspaceId, planId: string, input: z.infer<typeof generateInputSchema>, expectedRevision: number | undefined, access: AccessContext, signal: AbortSignal): Promise<GenerateResult> => {
-    // `keep` does not reach the solver yet: refused, never dropped. Lane P lifts this when it passes keep on
-    // (the solver refuses it too until lane S builds it).
-    if (input.keep !== undefined) throw planningError(501, 'not_built', 'Adding what-ifs to the options already there is not built in this version of Planning', { fields: ['keep'] })
     const guard = { expectedRevision, required: true }
     const plan = await readGuarded(workspaceId, planId, guard)
+    refuseRuleKeyClash(plan.inputs, input)
     if (sizeBand(plan.inputs, certifiedSize) === 'refused') {
       throw planningError(413, 'above_certified_size', sizeRefusalWords(certifiedSize, plan.inputs), { maxJobs: certifiedSize.maxJobs, limitJobs: certifiedSize.limitJobs, jobs: jobsPerSolve(plan.inputs) })
     }
     const at = now()
     const by = storedActor(access)
     const answer = optionSetSchema.safeParse(await solver.generate({
-      inputs: plan.inputs, inputsRevision: plan.revision, variants: input.variants, seconds: input.seconds ?? 20, stored: unkeyed(plan.options), at, by, signal,
+      inputs: plan.inputs, inputsRevision: plan.revision, variants: input.variants, seconds: input.seconds ?? 20, stored: unkeyed(plan.options),
+      ...(input.keep === undefined ? {} : { keep: input.keep }), at, by, signal,
       stoppedByWho: () => stopping.signal.aborted ? 'host' : signal.aborted ? 'person' : undefined,
     }))
     if (!answer.success) throw planningError(500, 'invalid_planning_result', 'Generate returned options that do not match the plan schema')
+    // A set on one revision only: a stored option kept from an older revision would read as fresh beside the new ones.
+    if (answer.data.options.some(option => option.inputsRevision !== plan.revision)) throw planningError(500, 'invalid_planning_result', 'Generate returned an option of another plan revision')
     // Lane K's check, its certificate and bound re-verifications ran on these options inside the solver
     // child; the set is validated against the plan schema above and stored as it came.
     const generated = keyed(answer.data, plan.options)
     const saved = await store.update(workspaceId, planId, guard, current => ({
-      ...current, updatedAt: at, options: generated,
+      ...current, updatedAt: at, options: generated, ...previousAfter(current),
       ...appendChange(current, { at, by, revision: current.revision, summary: `Generated ${generated.options.length} option${generated.options.length === 1 ? '' : 's'}`, kinds: [] }),
     }))
     const states = optionStates(saved)
@@ -549,18 +610,40 @@ export const createPlanningOperations = (ports: PlanningOperationsPorts) => {
 
     explain: async (workspaceId: WorkspaceId, planId: string, input: z.infer<typeof explainInputSchema>): Promise<ExplainResult> => {
       const plan = await store.read(workspaceId, planId)
+      const ask = input.ask
+      // Why recommended: the recommended option against the next in rank, or the option named. Only options
+      // fresh on this revision and formulation are compared (C5); none runs the solver.
+      if (ask === 'recommended') {
+        if (plan.options !== null && plan.options.recommended === undefined) return resultOf(explainResultSchema, { lines: ['No option is recommended: none is validated feasible.'], items: [] })
+        const recommended = findOption(plan, undefined)
+        requireFresh(plan, recommended)
+        const named = input.option === undefined ? undefined : findOption(plan, input.option)
+        if (named !== undefined) requireFresh(plan, named)
+        const others = plan.options!.options.filter(option => option.key !== recommended.key && !optionState(plan, option).stale)
+        return resultOf(explainResultSchema, { lines: whyRecommendedLines(plan.inputs, recommended, others, named), items: [] })
+      }
+      // What differs from an option of the previous set, kept from before the last Generate on a newer revision.
+      if (ask === 'versus') {
+        const option = findOption(plan, input.option)
+        requireFresh(plan, option)
+        if (plan.previousOptions === undefined) throw planningError(409, 'no_previous_options', 'There is no earlier set of options to compare with: one is kept when Generate runs after the plan changed.')
+        const wanted = input.versus!.previous
+        const previous = plan.previousOptions.options.find(entry => entry.key === wanted)
+        if (previous === undefined) throw planningError(400, 'unknown_reference', `No option ${wanted} in the previous options`, { about: [wanted] })
+        return resultOf(explainResultSchema, { lines: versusLines({ inputs: plan.inputs, option, previous, plan }), items: [] })
+      }
       const option = findOption(plan, input.option)
       requireFresh(plan, option)
       if (input.job !== undefined && !plan.inputs.jobs.some(job => job.key === input.job)) throw planningError(400, 'unknown_reference', `No job ${input.job} in this plan`, { about: [input.job] })
-      if (input.ask === 'refusal' && option.status.word === 'validated feasible') throw planningError(409, 'option_not_feasible', `Option ${option.label} was not refused; ask why a job starts then or what sets the finish`, { about: [option.key] })
-      return resultOf(explainResultSchema, await solver.explain({ inputs: plan.inputs, option, ask: input.ask, job: input.job, cursor: input.cursor }))
+      if (ask === 'refusal' && option.status.word === 'validated feasible') throw planningError(409, 'option_not_feasible', `Option ${option.label} was not refused; ask why a job starts then or what sets the finish`, { about: [option.key] })
+      return resultOf(explainResultSchema, await solver.explain({ inputs: plan.inputs, option, ask, job: input.job, cursor: input.cursor }))
     },
 
     read: async (workspaceId: WorkspaceId, planId: string, input: z.infer<typeof readInputSchema>): Promise<InspectionView> => {
       const plan = await store.read(workspaceId, planId)
       const states = optionStates(plan)
-      const context: SectionContext = { plan, readiness: readinessOf(plan, states), options: states, certifiedSize }
       const section = input.section ?? 'summary'
+      const context: SectionContext = { plan, readiness: readinessOf(plan, states), options: states, certifiedSize, ...(section === 'buys' ? { buys: await buysOf(plan, states) } : {}) }
       const option = section === 'schedule' ? findOption(plan, input.option) : undefined
       const offset = sliceCursor(input.cursor)
       const frame = { target: { kind: 'resource' as const, resource: planReference(workspaceId, plan.id) }, title: plan.inputs.settings.title, observedAt: now() }

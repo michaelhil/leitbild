@@ -98,7 +98,7 @@ export const planningOperations: ReadonlyArray<Operation<any>> = [
   {
     id: 'planning.plan.explain', kind: 'query', scope: 'plan', risk: 'read',
     title: 'Explain start, finish or refusal',
-    description: 'Explain a schedule: why a job starts when it does, what holds up the finish, or why a plan was refused. The answers are the solver\'s own reasons, such as a link, a crew or tool, a shift, an outage limit, a release time or the window, and each job comes with its float: how much it can slip before the window end. Asks about the recommended option unless another is named. Reads only; nothing is saved.',
+    description: 'Explain a schedule: why a job starts when it does, what holds up the finish, or why a plan was refused, with the solver\'s own reasons (a link, a crew or tool, a shift, an outage limit, the window) and each job\'s float. Also why the recommended option ranks first: the goal order, the goal that decided, the trade in hours and money, and the method caveats the ranking leaves out; and what differs from an option of the previous options, kept when the plan changed. Asks about the recommended option unless another is named. Reads only; nothing is saved.',
     searchTerms: ['why', 'late', 'critical path', 'longest path', 'driving', 'completion', 'limits', 'float', 'slack', 'held up', 'refused', 'impossible', 'why not earlier'],
     input: explainInputSchema, output: explainResultSchema,
     invoke: async ({ operations }, invocation, input: z.infer<typeof explainInputSchema>) => ({ result: await operations.explain(invocation.workspaceId, planIdOf(invocation), input) }),
@@ -106,7 +106,7 @@ export const planningOperations: ReadonlyArray<Operation<any>> = [
   {
     id: 'planning.plan.read', kind: 'query', scope: 'plan', risk: 'read',
     title: 'Read a plan',
-    description: 'See where a plan stands: its settings and goals, what needs attention, when World values were last read, and the size of plan Generate is certified for. Ask for one section for the plan\'s own records: jobs with their links and methods, rules, calendars, crews, tools and purchases, equipment and World values with how each is known and when it was read, the options with their status checked again against the plan as it is now and any warning, the schedule of one option, or the change history. Long sections come in pages. Reads only.',
+    description: 'See where a plan stands: its settings and goals, what needs attention, when World values were last read, and the size of plan Generate is certified for. Ask for one section for the plan\'s own records: jobs with their links and methods, rules, calendars, crews, tools and purchases, equipment and World values with how each is known and when it was read, the options with their status checked again against the plan as it is now and any warning, the schedule of one option, the change history, or what overtime buys: the rungs of bought crew time to generate, and what each gains over the one below. Long sections come in pages. Reads only.',
     searchTerms: ['status', 'overview', 'attention', 'summary', 'rules', 'crews', 'schedule', 'history'],
     input: readInputSchema, output: inspectionViewSchema,
     invoke: async ({ operations }, invocation, input: z.infer<typeof readInputSchema>) => ({ result: await operations.read(invocation.workspaceId, planIdOf(invocation), input) }),

@@ -8,14 +8,15 @@ import { formulationOf } from '../solve/compile.ts'
 import { compiled, scheduleOf } from '../solve/preview.ts'
 import { makeExplainer, mostLimiting, refusalLines, type ExplainItem } from '../solve/explain.ts'
 import { totalFloat } from '../solve/float.ts'
-import { CERTIFIED_SIZE, generate } from '../solve/generate.ts'
+import { CERTIFIED_SIZE, generate, variantsOf } from '../solve/generate.ts'
 import { SOLVER_BUSY_WORDS, type SolverPool } from '../solve/pool.ts'
 import type { Plan, PlanInputs } from '../plan/schema.ts'
+import { rungStanding } from '../../tests/harness/buys-honesty.ts'
 import { clip, nameOf, timeWords } from '../plan/summary.ts'
 import { isPlanningError, planningError } from '../errors.ts'
 import { byteLength } from '../plan/summary.ts'
 import { resultLimitBytes } from './contract.ts'
-import type { ExplainResult, SolverPort } from './operations.ts'
+import type { ExplainResult, SolverAsk, SolverPort } from './operations.ts'
 
 type Option = NonNullable<Plan['options']>['options'][number]
 
@@ -42,6 +43,18 @@ const bounded = (result: ExplainResult): ExplainResult => {
   return next
 }
 
+/** The explainer on `option`'s own compile and schedule, in this process. */
+const explainerOf = (inputs: PlanInputs, option: Option) => {
+  const { problem, index, prep } = compiled(inputs, option)
+  const schedule = scheduleOf(prep, index, option)
+  const dataDate = inputs.settings.dataDate === null ? undefined : Math.floor((Date.parse(inputs.settings.dataDate) - index.origin) / index.slotMs)
+  const explainer = makeExplainer({ prep, index, schedule, floats: totalFloat(prep, index, schedule), purchases: option.variant.purchases, inputs, ...(dataDate === undefined || dataDate < 0 || dataDate >= index.windowSlots ? {} : { dataDateSlot: dataDate }) })
+  return { explainer, index }
+}
+
+/** Each solver ask by name: an ask with no answer here is a programming error, never the finish chain. */
+const solverAsks: Readonly<Record<SolverAsk, true>> = { 'why-start': true, finish: true, refusal: true }
+
 /** Lane S's Generate on the Worker pool, its explainer and preview re-timing, checked by lane K. */
 export const createRealSolver = (pool: SolverPool): SolverPort => {
   let generating = false
@@ -55,16 +68,16 @@ export const createRealSolver = (pool: SolverPool): SolverPort => {
       try {
         return (await generate({ engine: pool, check: checkForSolver, verify: verifyCertificate, verifyBound, subSolver: pool.subSolver, certifiedSize: CERTIFIED_SIZE }, {
           inputs: request.inputs, revision: request.inputsRevision, previous: request.stored,
-          input: { ...(request.variants === undefined ? {} : { variants: [...request.variants] }), seconds: request.seconds },
+          input: { ...(request.variants === undefined ? {} : { variants: [...request.variants] }), seconds: request.seconds, ...(request.keep === undefined ? {} : { keep: request.keep }) },
           by: request.by, signal: request.signal, ...(request.stoppedByWho === undefined ? {} : { stoppedByWho: request.stoppedByWho }),
         })).optionSet
       } finally { generating = false }
     },
     explain: async ({ inputs, option, ask, job }) => {
-      // Increment 2 asks: refused, never answered with the finish chain, until lane P builds them.
-      if (ask === 'recommended' || ask === 'versus') throw planningError(501, 'not_built', `Explaining ${ask === 'recommended' ? 'why an option is recommended' : 'what differs from the previous options'} is not built in this version of Planning`, { ask })
-      const { problem, index, prep } = compiled(inputs, option)
+      // Why recommended and versus are the service's (api/operations.ts), from stored options; any other ask is refused.
+      if (!Object.hasOwn(solverAsks, ask)) throw planningError(500, 'invalid_planning_request', `The solver has no explain ask ${String(ask)}`)
       if (ask === 'refusal') {
+        const { problem, index, prep } = compiled(inputs, option)
         if (option.status.word !== 'proven infeasible') {
           const attempt = option.status.word === 'unresolved' ? option.status.attempt : undefined
           return { lines: [attempt === undefined ? 'No proof either way: the search found no plan in the time allowed. That is not proof that none exists.'
@@ -75,9 +88,7 @@ export const createRealSolver = (pool: SolverPool): SolverPort => {
         const shown = span?.alsoProven === undefined || verifyCertificate(inputs, option.variant, span.alsoProven).proves ? span : (({ alsoProven: _also, ...rest }) => rest)(span)
         return bounded({ lines: refusalLines(option.status.cause, inputs, shown, option.variant.purchases, option.variant.methods), items: [] })
       }
-      const schedule = scheduleOf(prep, index, option)
-      const dataDate = inputs.settings.dataDate === null ? undefined : Math.floor((Date.parse(inputs.settings.dataDate) - index.origin) / index.slotMs)
-      const explainer = makeExplainer({ prep, index, schedule, floats: totalFloat(prep, index, schedule), purchases: option.variant.purchases, inputs, ...(dataDate === undefined || dataDate < 0 || dataDate >= index.windowSlots ? {} : { dataDateSlot: dataDate }) })
+      const { explainer, index } = explainerOf(inputs, option)
       const activity = job === undefined ? undefined : index.jobs.indexOf(job)
       if (job !== undefined && (activity === undefined || activity < 0)) throw planningError(400, 'unknown_reference', `${job} is not in this option's schedule`, { about: [job] })
       const items = ask === 'why-start'
@@ -93,6 +104,12 @@ export const createRealSolver = (pool: SolverPool): SolverPort => {
       })
       return bounded({ lines: items.map(item => lineOf(inputs, item)), items, ...(limiting === null ? {} : { limiting }) })
     },
+    // Lane S's variant keys, as Generate gives them (without the service's set suffix).
+    variantKey: (inputs, variant) => variantsOf(inputs, { variants: [variant] })[0]!.key,
+    // The first cause on the finish chain of the option's own schedule; no solver child.
+    finishCause: async ({ inputs, option }) => explainerOf(inputs, option).explainer.finishChain()[0]?.because[0],
+    // Lane K's re-check of the stored option on this plan, revision and formulation.
+    standing: (plan, option) => rungStanding(plan, option, formulationOf(plan.inputs.settings.grid)),
     // In a solver child, like Generate: one child at a time across the service, so a preview while a Generate
     // runs is refused 'solver_busy'.
     preview: async ({ inputs, option, signal }) => {

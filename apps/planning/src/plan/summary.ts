@@ -1,8 +1,8 @@
 // The presenter: planner words generated from structure (never stored), and the bounded sections that
 // planning.plan.read returns. The UI's format.ts mirrors these rules. Every section fits the 4 KB result.
-import { planningError } from '../errors.ts'
 import { goalResolution, type Certificate, type CertifiedSize, type Plan, type PlanInputs, type Status } from './schema.ts'
 import { resultLimitBytes, type OptionWarning, type SectionName } from '../api/contract.ts'
+import type { BuysItem } from './buys.ts'
 import type { ChangeRecord, Weakening } from './edits.ts'
 import type { OutTogether, Precondition, ReadinessItem } from './readiness.ts'
 
@@ -376,6 +376,8 @@ export interface SectionContext {
   readonly readiness: readonly ReadinessItem[]
   readonly options: ReadonlyMap<string, OptionState>
   readonly certifiedSize: CertifiedSize
+  /** The buys section's items, for that section only (plan/buys.ts buysItems). */
+  readonly buys?: readonly BuysItem[]
 }
 
 export interface Section { readonly id: string; readonly title: string; readonly description?: string; readonly data: unknown }
@@ -437,7 +439,13 @@ export const buildSection = (name: SectionName, context: SectionContext, offset:
       return pagedSection(name, [...option.rows].sort((left, right) => left.start.localeCompare(right.start) || left.job.localeCompare(right.job)), offset, budget, { option: option.key })
     }
     case 'history': return pagedSection(name, [...plan.changes].reverse(), offset, budget)
-    // The ladder rows are the service lane's (design §4.1). Until they are built the section is refused, never empty.
-    case 'buys': throw planningError(501, 'not_built', 'What overtime buys is not built in this version of Planning')
+    case 'buys': {
+      // Built by the service from the stored options and lane K's standing of each (plan/buys.ts).
+      if (context.buys === undefined) throw new Error('The buys section is built from its ladder')
+      return [{ ...pagedSection(name, context.buys, offset, budget)[0]!, description: buysPointer }]
+    }
   }
 }
+
+/** Under the ladder (design §4.1): the finer trade is a what-if, not a rung. */
+export const buysPointer = 'Each row compares two rungs solved on the plan as it is now. For a finer trade, ask for \'at most … h out\'.'

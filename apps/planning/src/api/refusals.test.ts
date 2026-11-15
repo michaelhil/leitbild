@@ -2,7 +2,7 @@ import { afterAll, describe, expect, test } from 'bun:test'
 import { planInputsSchema } from '../plan/schema.ts'
 import { bundledPlanDefinitions } from '../definitions/index.ts'
 import { createSolverDouble, testCertifiedSize } from './fixtures/doubles.ts'
-import { jobsPerSolve } from '../plan/summary.ts'
+import { clip, jobsPerSolve } from '../plan/summary.ts'
 import { createHarness } from './fixtures/harness.ts'
 
 const harness = await createHarness()
@@ -229,5 +229,23 @@ describe('refusals name their cause and stay within 4 KB', () => {
       access: { workspaceId: harness.workspaceId, requestId: crypto.randomUUID(), actor: { kind: 'human' } },
     }) })
     expect(error(answer)).toEqual([404, 'definition_not_found'])
+  })
+})
+
+describe('a what-if\'s extra rule (design §6.6)', () => {
+  test('an extra rule that reuses a plan rule\'s key is refused as invalid input, naming it; nothing reaches the solver or the store', async () => {
+    const plan = await harness.create('train-a-work-week')
+    const spanRule = trainA.rules.find(rule => rule.kind === 'span-limit')!
+    const words = 'Train A cooling chain back within 48 h'
+    const also = (key: string) => ({ kind: 'span-limit', key, group: spanRule.kind === 'span-limit' ? spanRule.group : '', limit: { value: 48, unit: 'h' }, singleEntry: true, words, source: { by: 'planner' } })
+    const generate = (key: string) => harness.call('planning.plan.generate', { resource: plan.id, input: { variants: [{ label: 'At most 48 h out', also: [also(key)] }] }, expectedRevision: 1 })
+    const refused = await generate(spanRule.key)
+    expect([...error(refused), refused.body.error.details.about, refused.body.error.details.issues[0].path]).toEqual([400, 'invalid_request', [spanRule.key], ['variants', '0', 'also', '0', 'key']])
+    expect(refused.body.error.message).toBe(`The extra rule's key ${spanRule.key} is the key of the plan's rule "${clip(spanRule.words, 120)}"; give the extra rule a key no plan rule has`)
+    expect((await harness.store.read(harness.workspaceId, plan.id)).options).toBeNull()
+    // A due what-if under a plan rule's key is refused the same way; a key no plan rule has goes on to Generate.
+    const due = { kind: 'due', key: trainA.rules[0]!.key, job: minimumTest.key, finishBy: trainA.settings.window!.end, words: 'Back by the window end', source: { by: 'planner' } }
+    expect(error(await harness.call('planning.plan.generate', { resource: plan.id, input: { variants: [{ also: [due] }] }, expectedRevision: 1 }))).toEqual([400, 'invalid_request'])
+    expect((await generate('W48')).status).toBe(200)
   })
 })
