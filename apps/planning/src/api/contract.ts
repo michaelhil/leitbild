@@ -18,6 +18,7 @@ export const createInputSchema = z.object({
 export const editInputSchema = z.object({
   edits: z.array(editSchema).min(1).max(60).describe('Applied together or not at all'),
   preview: z.boolean().optional().describe('true: show the consequence and the rule check without saving'),
+  option: keySchema.optional().describe('With preview: the option to re-time, as on the timeline; default the recommended one'),
   reason: wordsSchema.optional().describe('Why, for the change log'),
   authority: z.object({ name: labelSchema.describe('The named person who agreed, as they gave their name in this conversation'), reason: wordsSchema.describe('Their reason, in their words') }).strict().optional()
     .describe('A named person\'s agreement to remove or weaken a hard rule, a support, a group membership, a tag-out or test, a precondition or a test minimum, given by that person in the plan screen. An Assistant\'s edit that needs it is refused. Ask them; never fill this in yourself'),
