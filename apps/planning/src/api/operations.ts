@@ -18,13 +18,12 @@ import { buysItems, methodLadders, type FinishCause } from '../plan/buys.ts'
 import { rungStanding } from '../check/buys.ts'
 import { changesSince, versus } from '../plan/versus.ts'
 import { dominatedWithin, optionName, outageFloor, whyRecommended } from '../plan/why.ts'
-import { withoutProof } from '../solve/status.ts'
 import {
   certificateSchema, certifiedSizeSchema, optionSetSchema, planInputsSchema,
   type CertifiedSize, type Plan, type PlanInputs, type Status, type WorldFactCopy,
 } from '../plan/schema.ts'
 import type { Edit } from '../plan/edit-schema.ts'
-import { assertRevision, type PlanStore, type RevisionGuard } from '../plan/store.ts'
+import { assertRevision, ownOption, type PlanStore, type RevisionGuard } from '../plan/store.ts'
 import {
   attentionKind, basisWords, buildSection, clip, datedWords, names, jobsPerSolve, sizeBand, sizeCautionWarning, sizeRefusalWords, weakeningWords, byteLength, changeLines, changeSummary, nameOf, optionWarning, readinessText,
   spanAndCost, statusSentence, timeWords, valueWords, type OptionState, type Section, type SectionContext,
@@ -246,16 +245,18 @@ export const createPlanningOperations = (ports: PlanningOperationsPorts) => {
   /**
    * A stored status stands only on the plan revision and the solver formulation it was generated on: lane
    * K checked it then, inside Generate's solver child, and nothing it rests on has changed. Otherwise the
-   * option is out of date: shown without proof (lane S's withoutProof), never baselined. No checker runs
-   * on a read (coordinator's memory decision, 11 Nov).
+   * option is out of date (`stale`, with its reason): its stored status is kept unchanged, as a fact about
+   * the plan it was made on, never relabelled ("unresolved", "best found") nor re-derived on the current
+   * inputs (walk V2). It is never baselined, recommended, compared or used as a current proof, and no
+   * checker runs on a read (coordinator's memory decision, 11 Nov).
    */
   const optionState = (plan: Plan, option: Option): OptionState => {
     const stored = option.status
     const reason = option.inputsRevision !== plan.revision ? 'revision' as const
       : 'run' in stored && stored.run.formulation !== solver.formulation(plan.inputs.settings.grid) ? 'formulation' as const : undefined
-    const shown: Status = reason === undefined ? stored : withoutProof(stored)
-    // The function-key rule; lane S's redundancyWarning fires on one train's series chain until it adopts it.
-    const warning = shown.word === 'validated feasible' ? outTogether(plan.inputs, option.rows) : undefined
+    const shown: Status = stored
+    // The function-key rule, judged on the current inputs, so only for a fresh option: nothing is re-derived on a stale one.
+    const warning = reason === undefined && shown.word === 'validated feasible' ? outTogether(plan.inputs, option.rows) : undefined
     // An option solved above the certified size says so beside its status (lane S's sizeCaution).
     const warnings = [...(shown.word === 'validated feasible' && option.sizeCaution === true ? [sizeCautionWarning(certifiedSize)] : []), ...(warning === undefined ? [] : [optionWarning(warning, plan.inputs)])]
     return { stale: reason !== undefined, ...(reason === undefined ? {} : { reason }), warnings, shown, baselineAllowed: reason === undefined && stored.word === 'validated feasible' }
@@ -264,7 +265,8 @@ export const createPlanningOperations = (ports: PlanningOperationsPorts) => {
     new Map((plan.options?.options ?? []).map(option => [option.key, optionState(plan, option)]))
 
   const readinessOf = (plan: Plan, states: ReadonlyMap<string, OptionState>): readonly ReadinessItem[] =>
-    readiness(plan, { staleOptions: [...states].filter(([, state]) => state.stale).map(([key]) => key), now: now() })
+    // "N options no longer match the plan" counts the plan's own options, the table's rows, as the Workspace card does (V11).
+    readiness(plan, { staleOptions: (plan.options?.options ?? []).filter(option => ownOption(option) && states.get(option.key)?.stale === true).map(option => option.key), now: now() })
 
   const writeResult = (plan: Plan, changed: readonly string[], extra: Partial<Pick<WriteResult, 'preview'>> = {}): WriteResult => {
     const items = readinessOf(plan, optionStates(plan))
@@ -537,6 +539,9 @@ export const createPlanningOperations = (ports: PlanningOperationsPorts) => {
       const at = now()
       const by = storedActor(access)
       refuseAgentAuthorityField(input.authority, access)
+      if (input.option !== undefined && input.preview !== true) {
+        throw planningError(400, 'invalid_request', 'An option is named only with preview: it says which option the preview re-times', { issues: [{ path: ['option'], message: 'Name an option only with preview: true' }] })
+      }
       if (input.preview === true) {
         const plan = await readGuarded(workspaceId, planId, { expectedRevision, required: false })
         // An edit that is invalid in itself is refused in a preview exactly as on save (walk 2, R2-4): the
@@ -544,7 +549,9 @@ export const createPlanningOperations = (ports: PlanningOperationsPorts) => {
         const outcome: EditOutcome = applyEdits(plan.inputs, input.edits, { now: at, by, drafts: draftsOf(plan) })
         const previewed: Plan = withDrafts({ ...plan, inputs: outcome.inputs }, outcome.drafts)
         const weakens = [...new Set(outcome.weakens.flatMap(weakening => weakening.about.slice(0, 1)))].slice(0, 6)
-        const recommended = plan.options?.options.find(option => option.key === plan.options?.recommended)
+        // The option the planner has on the timeline (V4), else the recommended one; its name opens the answer.
+        const recommended = input.option === undefined ? plan.options?.options.find(option => option.key === plan.options?.recommended) : findOption(plan, input.option)
+        const shownName = recommended === undefined ? '' : optionName(plan.inputs, recommended)
         // An Assistant is told what a save would answer it (adversary recheck 5): it never gives the agreement.
         // The summary is never cut (walk 7, screenshot 06): each part is said whole, in its long form when the
         // sentence fits 300 characters, else in a shorter one. What a short form leaves out is in the result's
@@ -571,10 +578,15 @@ export const createPlanningOperations = (ports: PlanningOperationsPorts) => {
         // A valid change is saved even when this option cannot keep a rule: every option made before it goes
         // out of date, and Generate makes new ones (walk 2, R2-4). The breaks are shortened first (the findings
         // list names each), then the nearest start, then the agreement.
-        const moves = `Not saved yet. ${moved.length === 0 ? 'No job moves' : `${moved.length} job${moved.length === 1 ? ' moves' : 's move'}`}; the last finish ${finish(timed.rows) === finish(recommended.rows) ? 'stays' : `moves from ${timeWords(finish(recommended.rows), zone)} to ${timeWords(finish(timed.rows), zone)}`}.`
+        // A job the edits change that this option does not have: said as that, never as "no job moves" (V4).
+        const absent = [...new Set(input.edits.flatMap(entry => entry.edit === 'job' && plan.inputs.jobs.some(job => job.key === entry.key) && !recommended.rows.some(row => row.job === entry.key) ? [entry.key] : []))]
+        const notPart = absent.length === 0 ? undefined : `${absent.map(key => `'${nameOf(plan.inputs, key)}'`).join(' and ')} ${absent.length === 1 ? 'is' : 'are'} not part of '${shownName}'`
+        const moves = moved.length === 0 && notPart !== undefined
+          ? `Not saved yet. ${notPart}, so this preview cannot show what the change does to ${absent.length === 1 ? 'it' : 'them'}: preview it on an option with that job, or generate after saving.`
+          : `Not saved yet. On '${shownName}': ${moved.length === 0 ? 'no job moves' : `${moved.length} job${moved.length === 1 ? ' moves' : 's move'}`}; the last finish ${finish(timed.rows) === finish(recommended.rows) ? 'stays' : `moves from ${timeWords(finish(recommended.rows), zone)} to ${timeWords(finish(timed.rows), zone)}`}.${notPart === undefined ? '' : ` ${notPart}.`}`
         const consequence = wholeWithin(findings.length === 0 ? authorities.map(authority => `${moves}${authority}`)
           : authorities.flatMap(authority => nearests.flatMap(nearest => ([2, 1, 0] as const).map(shown =>
-            `Not saved yet. This option would break ${retimingBreaks(findings, outcome.inputs, shown)}; generate new options after saving.${nearest}${authority}`))))
+            `Not saved yet. '${shownName}' would break ${retimingBreaks(findings, outcome.inputs, shown)}; generate new options after saving.${nearest}${authority}`))))
         return writeResult(previewed, changeLines(outcome.changes, outcome.inputs), { preview: {
           saved: false, consequence,
           // Whole, so a rule's words are never cut (walk 3, R3-6); within the 4 KB result, later findings go first.
@@ -643,8 +655,12 @@ export const createPlanningOperations = (ports: PlanningOperationsPorts) => {
         const wanted = input.versus!.previous
         const previous = plan.previousOptions.options.find(entry => entry.key === wanted)
         if (previous === undefined) throw planningError(400, 'unknown_reference', `No option ${wanted} in the previous options`, { about: [wanted] })
-        const compared = versus({ inputs: plan.inputs, option, previous, plan })
-        return resultOf(explainResultSchema, withinResult({ lines: compared.lines, items: [], versus: compared.facts }))
+        // The moved jobs come in pages (walk V10): `cursor` is the first one to give, `more` the next page's.
+        const from = sliceCursor(input.cursor)
+        const compared = versus({ inputs: plan.inputs, option, previous, plan, movedFrom: from })
+        const result = withinResult({ lines: compared.lines, items: [], versus: compared.facts })
+        const next = result.versus!.movedMore > 0 ? String(from + result.versus!.moved.length) : undefined
+        return resultOf(explainResultSchema, next === undefined ? result : { ...result, more: next })
       }
       const option = findOption(plan, input.option)
       requireFresh(plan, option)
