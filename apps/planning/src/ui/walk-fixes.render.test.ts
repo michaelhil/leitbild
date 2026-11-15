@@ -46,20 +46,25 @@ const daysOnly = (): PlanModel => {
 }
 
 describe('maint walk defects on the plan screen', () => {
-  test('T5-01, T5-02: every refused option says its cause in hours in the banner and the attention column', () => {
+  test('T5-01, T5-02: every refused option says its cause in hours on the plan screen: one line in the options table, in full in its detail (walk 7)', () => {
     const model = daysOnly()
     const banner = outcomeBanner(model, contextOf(model))!
-    expect(banner.title).toBe('No option can be recommended: both are proven infeasible.')
-    expect(banner.lines).toEqual([
-      'Rebuild in place, days only: proven infeasible. 3 jobs must run one after another and need 37 h of work, but from Mon 07:00 to Fri 15:00 their crews and tools are on duty together for only 32 h.',
-      'Swap in refurbished spare, days only: proven infeasible. the cooling chain must be back within 72 h. The shortest span this plan allows is 80 h, against 72 h: first tag-out Mon 07:00, last test passed Thu 15:00.',
-    ])
+    // The banner says there is none and where the reason is; it repeats no cause.
+    expect(banner.title).toBe('No option can be recommended: both are not possible. See why on the right.')
+    expect(banner.lines).toEqual([])
+    expect(outcomeBanner(model, contextOf(model), 'below')!.title).toBe('No option can be recommended: both are not possible. See why below.')
     const cards = attentionCards(model, contextOf(model)).map(card => `${card.title} ${card.text}`)
-    expect(cards.some(card => card.startsWith('Rebuild in place, days only: proven infeasible.') && card.includes('37 h of work') && card.includes('only 32 h'))).toBe(true)
-    expect(cards.some(card => card.startsWith('Swap in refurbished spare, days only: proven infeasible.'))).toBe(true)
+    expect(cards).toContain('Rebuild in place, days only: proven infeasible. Not possible. The options table says why.')
+    expect(cards).toContain('Swap in refurbished spare, days only: proven infeasible. Not possible. The options table says why.')
     const text = screen(model)
-    expect(text).toContain('No option can be recommended: both are proven infeasible.')
-    expect(text.indexOf('only 32 h')).toBeLessThan(text.indexOf('Needs your attention'))
+    expect(text).toContain('No option can be recommended: both are not possible.')
+    // The table: each cause as one short line with its hours.
+    expect(text).toContain('Not possible: 37 h of work one after another, only 32 h of working time.')
+    expect(text).toContain('Not possible: The shortest span this plan allows is 80 h, against 72 h.')
+    // The first refused option's proof is open in full; so its hours are on the screen twice, the other's once.
+    expect(text).toContain('Not possible: 3 jobs must run one after another and need 37 h of work, but from Mon 07:00 to Fri 15:00 their crews and tools are on duty together for only 32 h.')
+    expect(text.split('only 32 h').length - 1).toBe(2)
+    expect(text.split('80 h, against 72 h').length - 1).toBe(1)
   })
 
   test('T20-02: a refused edit shows the rule in words and the nearest allowed time, moves nothing, and never shows raw kinds', () => {

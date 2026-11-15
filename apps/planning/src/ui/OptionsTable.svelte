@@ -1,6 +1,6 @@
 <script lang="ts">
   import MarkTag from './MarkTag.svelte'
-  import type { OptionView } from './model.ts'
+  import { otherWarnings, sizeCautionOf, type OptionView } from './model.ts'
   import type { NameKind } from './explain-text.ts'
   import { refusalProof } from './outcome.ts'
   import { requestText } from './request.ts'
@@ -46,7 +46,7 @@
           {/if}
         </div>
         {#if requestText(option, context.inputs)}<p class="hint">{requestText(option, context.inputs)}</p>{/if}
-        <StatusBlock {view} warnings={option.warnings.map(warning => warning.text)} stale={!option.fresh} proof={option.status.word === 'proven infeasible' ? refusalProof(refusals[option.key], context) : null} {onPick} />
+        <StatusBlock {view} warnings={otherWarnings(option)} caution={sizeCautionOf(option)} stale={!option.fresh} proof={option.status.word === 'proven infeasible' ? refusalProof(refusals[option.key], context) : null} {onPick} />
         {#if baselineFor === option.key}
           <form class="mini-form" onsubmit={(event) => { event.preventDefault(); onBaseline(option.key, name.trim(), note.trim()); baselineFor = null }}>
             <h3>Baseline</h3>

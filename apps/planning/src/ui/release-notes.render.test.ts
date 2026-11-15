@@ -26,7 +26,7 @@ describe('before the release', () => {
     expect(text).not.toMatch(/increment|Release A|phase/i)
   })
 
-  test('a span-limit refusal shows its hours on the plan screen itself: in the banner and in its attention card', () => {
+  test('a span-limit refusal shows its hours on the plan screen itself: in the options table and in its detail', () => {
     const inputs = trainAInputs()
     const refused = status({ word: 'proven infeasible', run: runBasis(inputs.settings.grid), cause: { kind: 'temporal', steps: [{ job: 'SWA-TAG', via: 'span-limit' }, { job: 'SWA-RTS', via: 'link' }] } })
     const rule = inputs.rules.find(item => item.kind === 'span-limit')!.words
@@ -40,12 +40,13 @@ describe('before the release', () => {
     ]
     const model = modelOf(inputs, { options: { at: '2026-11-12T09:05:00.000Z', recommended: null, items: [optionOf('v2', 'Swap in refurbished spare, days only', refused)] }, refusals: { v2: lines } })
     const hours = 'The shortest span this plan allows is 80.5 h, against 72 h'
-    expect(outcomeBanner(model, contextOf(model))!.lines[0]).toContain(hours)
+    // Walk 7: the cause is said once in the table and once in full in the option's detail, not in the banner or a card.
+    expect(outcomeBanner(model, contextOf(model))!.lines).toEqual([])
     const card = attentionCards(model, contextOf(model)).find(item => item.title.startsWith('Swap in refurbished spare, days only'))!
-    expect(card.text).toContain(hours)
-    expect(card.text).not.toContain('What sets the last test')
+    expect(card.text).not.toContain(hours)
     const screen = readableText(renderHtml(PlanScreen, { client: offline, planId: model.id, initial: model, onChanged: none, onOpenWorkspace: none, onOpenLibrary: none }))
-    expect(screen.split(hours).length - 1).toBeGreaterThanOrEqual(2)
+    expect(screen.split(hours).length - 1).toBe(2)
+    expect(screen).toContain(`Not possible: ${hours}.`)
     expect(screen).not.toContain('- Remove SW A from service and hang tags: Mon 21:00')
   })
 })

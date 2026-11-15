@@ -30,6 +30,15 @@ export interface OptionView {
   readonly warnings: readonly OptionWarning[]
 }
 
+/** The caution an option carries when it was solved above the certified size, in the Module's words; null when it has none. */
+export const sizeCautionOf = (option: Pick<OptionView, 'warnings'>): string | null =>
+  option.warnings.find(warning => warning.kind === 'above-certified-size')?.text ?? null
+/** Every other warning beside an option's status. */
+export const otherWarnings = (option: Pick<OptionView, 'warnings'>): readonly string[] =>
+  option.warnings.filter(warning => warning.kind !== 'above-certified-size').map(warning => warning.text)
+/** The chip that stands beside the status of an option carrying the size caution. */
+export const sizeCautionMark = { shape: '!', word: 'Above the certified size' } as const
+
 /** The plan screen's views. */
 export type PlanView = 'schedule' | 'add' | 'rules' | 'crews' | 'equipment' | 'options'
 

@@ -70,7 +70,7 @@ describe('demo layout pass', () => {
     // The finish chain, the job panel and the previews are in the detail column; the attention column holds cards only.
     const screen = source('PlanScreen.svelte')
     const detail = screen.slice(screen.indexOf('<div class="col-panel"'))
-    for (const panel of ['<EditPreview ', '<JobPanel ', '<FinishPanel ', 'optionDetail()']) expect(detail).toContain(panel)
+    for (const panel of ['<EditPreview ', '<JobPanel ', 'finishPanel()', 'optionDetail()']) expect(detail).toContain(panel)
     expect(screen.slice(screen.indexOf('<div class="col-attention">'), screen.indexOf('<nav class="views"'))).not.toMatch(/FinishPanel|JobPanel|EditPreview/)
     const model = trainAPlanned()
     const context = contextOf(model)
@@ -113,12 +113,13 @@ describe('demo layout pass', () => {
     expect(out).toBe('32.5 h of 72 h')
     // The fixture's option reports two of the three goals; a goal it has no value for is an empty cell.
     expect(glance.rows[0]).toMatchObject({ label: 'Swap in refurbished spare', recommended: true, cause: null, cells: [{ value: out, mark: null }, { value: '0 h', mark: { word: 'proven optimal' } }, { value: 'NOK 0', mark: { word: 'best found' } }, null] })
-    expect(glance.rows[1]).toMatchObject({ recommended: false, cells: null, cause: 'Not possible: The shortest span this plan allows is 80.5 h, against 72 h: first tag-out Mon 11:00, last test passed Thu 19:30.' })
+    // One short line: the Module's sentence with the hours, without the detail after its colon.
+    expect(glance.rows[1]).toMatchObject({ recommended: false, cells: null, cause: 'Not possible: The shortest span this plan allows is 80.5 h, against 72 h.' })
     const html = renderHtml(OptionsGlance, { glance, selected: 'opt-1', onSelect: none })
     const text = readableText(html)
     for (const part of ['Longest outage', '32.5 h of 72 h', '★ Recommended', '✓ validated feasible', '✕ proven infeasible', 'Not possible: The shortest span this plan allows is 80.5 h, against 72 h']) expect(text).toContain(part)
     // A row is chosen by its name, a button; the row shown is marked.
-    expect(plain(html)).toMatch(/<tr class="[^"]*selected[^"]*"/)
+    expect(plain(html)).toMatch(/<tbody class="[^"]*selected[^"]*"/)
     expect(plain(html)).toMatch(/<button type="button" class="link option-name"[^>]*title="Show on the timeline"[^>]*>Swap in refurbished spare, days only<\/button>/)
     // It sits above the timeline on the Schedule view; the Options view keeps the detail.
     const screen = plain(screenOf(model))
@@ -151,7 +152,8 @@ describe('demo layout pass', () => {
     const trucks = layoutTimeline(supply.inputs, supply.rows['opt-1']!, contextOf(supply).format)!
     expect([trucks.availability.length, trucks.otherJobs.map(bar => bar.key)]).toEqual([0, ['R-1', 'U-1']])
     expect(css).toMatch(/\.views \{ display: flex; flex-wrap: nowrap;/)
-    expect(css).toMatch(/\.lane, \.axis \{ display: grid; grid-template-columns: 200px minmax\(380px, 1fr\);/)
+    // The label column gives way before the track does: the day labels keep their room (380 px for the track).
+    expect(css).toMatch(/\.lane, \.axis \{ display: grid; grid-template-columns: minmax\(150px, 200px\) minmax\(380px, 1fr\);/)
   })
 
   test('5. an explanation is a short list: the job as the only plain link, its time, one sentence; a refusal uses the same form', () => {
@@ -260,16 +262,31 @@ describe('demo layout pass', () => {
     expect(source('EquipmentPicker.svelte')).toContain(`{#if addedAs(context.inputs, subject.locator)} <MarkTag mark={{ shape: '✓', word: 'added' }} tone="good" />`)
   })
 
+  test('walk 7 [05]: the newest answer is on top of the detail column, so "What sets the finish" never opens under an open job panel', () => {
+    const screen = source('PlanScreen.svelte')
+    const detail = screen.slice(screen.indexOf('<div class="col-panel"'))
+    // Asked after a job or a preview opened, the finish chain is rendered above them; a job chosen from it goes back on top.
+    expect(detail.indexOf('{#if finishOnTop}{@render finishPanel()}{/if}')).toBeGreaterThan(-1)
+    expect(detail.indexOf('{#if finishOnTop}{@render finishPanel()}{/if}')).toBeLessThan(detail.indexOf('<EditPreview '))
+    expect(detail.indexOf('{#if !finishOnTop}{@render finishPanel()}{/if}')).toBeGreaterThan(detail.indexOf('<JobPanel '))
+    expect(screen).toMatch(/limiting = answer\.limiting; finishOnTop = true; reveal\('\.finish-panel'\)/)
+    expect(screen).toMatch(/selectedJob = job\s+why = null\s+finishOnTop = false\s+reveal\('\.job-panel'\)/)
+  })
+
   test('the size caution shows beside the status of each option that carries it', () => {
     const model = trainAPlanned()
     const size = { decided: true, family: 'one system window', maxJobs: 33, limitJobs: 40, evidence: 'Measured 11 Nov.' }
     const caution = sizeCautionWarning(size)
     const cautioned: PlanModel = { ...model, options: { ...model.options!, items: model.options!.items.map(option => ({ ...option, warnings: [caution] })) } }
     const context = contextOf(cautioned)
-    expect(optionsGlance(cautioned, context)!.rows[0]!.warnings).toEqual([caution.text])
-    const screen = readableText(screenOf(cautioned))
-    // Beside the status in the comparison table and in the shown option's detail.
-    expect(screen.split(`! Warning ${caution.text}`).length).toBe(3)
+    expect(optionsGlance(cautioned, context)!.rows[0]).toMatchObject({ caution: caution.text, warnings: [] })
+    // A chip beside the status word, in the comparison table and in the shown option's detail (walk 7).
+    const html = plain(screenOf(cautioned))
+    const chip = '<span class="mark mark-warning"[^>]*><span aria-hidden="true">!</span> Above the certified size</span>'
+    expect(html).toMatch(new RegExp(`<span class="mark mark-good"><span aria-hidden="true">✓</span> validated feasible</span>\\s*<span class="mark mark-warning" title="${caution.text.replace(/[.()]/g, '\\$&')}"><span aria-hidden="true">!</span> Above the certified size</span>`))
+    expect(html.match(new RegExp(chip, 'g'))?.length).toBe(2)
+    // The Module's sentence is written out once, under the status in the detail.
+    expect(html.split(`<p class="beside caution">${caution.text}</p>`).length).toBe(2)
     expect(caution.text).toContain('Above the certified size (33 jobs)')
   })
 })

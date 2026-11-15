@@ -148,21 +148,23 @@
     .views button.current { background: var(--accent); color: var(--on-accent); border-color: var(--accent); }
     /* The options side by side: one row per option, a click shows it on the timeline. */
     .options-glance { padding: 6px 12px 8px; }
+    /* The table fits its column from 1024 px to 1440 px (layout.test.ts); a plan with many goals scrolls it here. */
     .glance-scroll { overflow-x: auto; }
     .options-glance table { width: 100%; border-collapse: collapse; font-size: 13px; overflow-wrap: break-word; }
     .options-glance th, .options-glance td { padding: 5px 6px; text-align: left; vertical-align: top; border-top: 1px solid var(--line-2); font-weight: 400; }
     .options-glance thead th { border-top: 0; font-size: 11px; font-weight: 600; color: var(--ink-3); vertical-align: bottom; line-height: 1.3; }
     .options-glance .number { text-align: right; }
-    .options-glance tbody tr { cursor: pointer; }
-    .options-glance tbody tr.beside-row { cursor: default; font-size: 12px; }
-    .options-glance tbody tr.beside-row td { border-top: 0; padding-top: 0; }
-    .options-glance tbody tr:hover:not(.beside-row), .options-glance tr.selected { background: var(--accent-2); }
-    .options-glance tr.selected { box-shadow: inset 3px 0 var(--accent); }
+    /* An option is two rows: its values, then its status and any caution across the whole width, which wrap. */
+    .options-glance tbody { cursor: pointer; }
+    .options-glance tbody:hover, .options-glance tbody.selected { background: var(--accent-2); }
+    .options-glance tbody.selected { box-shadow: inset 3px 0 var(--accent); }
+    .options-glance tr.chips-row td { border-top: 0; padding-top: 0; }
+    .options-glance .chips { display: flex; flex-wrap: wrap; gap: 4px 6px; }
+    .options-glance .beside { margin: 4px 0 0; }
     .options-glance button.option-name { font-weight: 600; color: var(--ink); text-decoration: none; margin-right: 6px; }
     .options-glance button.option-name:hover:not(:disabled) { background: none; text-decoration: underline; }
     .options-glance td strong, .options-glance .goal-word { white-space: nowrap; }
     .options-glance .cause { color: var(--refusal); }
-    .options-glance .status-cell { white-space: nowrap; }
     .legend { margin: 6px 0 0; padding: 0 8px; font-size: 11px; color: var(--ink-3); }
     .legend-word { font-weight: 600; }
     .status-line { display: flex; flex-wrap: wrap; gap: 6px; align-items: baseline; }
@@ -173,7 +175,7 @@
 
     /* The right padding holds the last tick's label, so a label at the window's end never starts a scroll bar. */
     .timeline { overflow-x: auto; padding: 8px 52px 12px 12px; }
-    .lane, .axis { display: grid; grid-template-columns: 200px minmax(380px, 1fr); gap: 8px; align-items: center; min-height: 24px; border-bottom: 1px solid var(--line-2); }
+    .lane, .axis { display: grid; grid-template-columns: minmax(150px, 200px) minmax(380px, 1fr); gap: 8px; align-items: center; min-height: 24px; border-bottom: 1px solid var(--line-2); }
     .axis { border-bottom: 1px solid var(--line); font-size: 10px; color: var(--ink-3); min-height: 30px; }
     .lane-heading { margin: 10px 0 2px; }
     .lane-heading .key { display: inline; margin-left: 8px; }

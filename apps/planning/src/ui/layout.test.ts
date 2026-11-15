@@ -5,6 +5,10 @@
 import { describe, expect, test } from 'bun:test'
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
+import { optionOf, runBasis, status, trainAPlanned } from './fixtures/plans.ts'
+import { createTimeFormat } from './format.ts'
+import { createNames, sizeCautionMark, type PlanModel } from './model.ts'
+import { optionsGlance, type OptionsGlance } from './options-glance.ts'
 
 const css = /<style>([\s\S]*)<\/style>/.exec(readFileSync(join(import.meta.dir, 'App.svelte'), 'utf8'))?.[1] ?? ''
 
@@ -142,5 +146,80 @@ describe('the plan screen lays out without overlap', () => {
     }
     // Only the timeline scrolls sideways; it scrolls inside its own card.
     expect(valueAt('.timeline', 'overflow-x', 1600)).toBe('auto')
+  })
+})
+
+// The options table fits its column (maint's walk 7, screenshot 14: at 1280 px the Status chips and the
+// caution text were cut off). The table's narrowest possible width is estimated from what cannot wrap in
+// it: each value, each goal word and the longest word of each header and option name. Letters are counted
+// at 0.58 em each, wider than this typeface sets these strings (the walked screenshots give about 0.5 em),
+// so the estimate errs towards "does not fit".
+describe('the options table fits its column from 1024 px to 1440 px', () => {
+  const em = 0.58
+  const wide = (text: string, size: number): number => text.length * size * em
+  const words = (text: string): readonly string[] => text.split(/\s+|(?<=-)/).filter(word => word !== '')
+  const longestWord = (text: string, size: number): number => Math.max(...words(text).map(word => wide(word, size)))
+  const cellPadding = (): number => 2 * px((valueAt('.options-glance th', 'padding', 1440) ?? '').split(' ')[1])
+  /** A chip: its shape, a space and its word at 11 px, with the chip's own padding (6 px each side) and border. */
+  const chip = (word: string): number => wide(`x ${word}`, 11) + 14
+  const needs = (glance: OptionsGlance): number => {
+    const option = Math.max(...glance.rows.map(row => Math.max(longestWord(row.label, 13), row.recommended ? chip('Recommended') : 0)))
+    const columns = glance.columns.map((column, index) => Math.max(
+      longestWord(column, 11),
+      ...glance.rows.map(row => { const cell = row.cells?.[index]; return cell == null ? 0 : Math.max(wide(cell.value, 13), cell.mark === null ? 0 : wide(`x ${cell.mark.word}`, 11)) }),
+    ))
+    // The status row spans the table and wraps; it needs only its widest chip.
+    const chips = Math.max(...glance.rows.flatMap(row => [chip(row.mark.word), row.caution === null ? 0 : chip(sizeCautionMark.word)]))
+    return Math.max(chips + cellPadding(), [option, ...columns].reduce((sum, column) => sum + column + cellPadding(), 0))
+  }
+  const room = (width: number): number => {
+    const main = boxOf(width, 'main')
+    const [, side] = (valueAt('.options-glance', 'padding', width) ?? '').split(' ')
+    return main.right - main.left - 2 * px(side) - 2
+  }
+  /**
+   * The flagship's two options as the local stack generated them on 15 Nov (TEST INPUTS: the widest values
+   * the demo shows), each carrying the size caution so its chip is counted too.
+   */
+  const flagship = (): OptionsGlance => {
+    const planned = trainAPlanned()
+    const run = runBasis(planned.inputs.settings.grid)
+    const caution = { kind: 'above-certified-size' as const, text: 'Above the certified size (33 jobs). This plan keeps every hard rule, but it may not be near the best.', about: [] }
+    const option = (key: string, label: string, span: number, over: number, cost: number, hours: number) => optionOf(key, label, status({ word: 'validated feasible', run, goals: [
+      { word: over === 0 ? 'proven optimal' : 'best found under budget', goal: 0, value: over, unit: 'h', bound: { value: 0, source: 'logic+calendars', certificate: { kind: 'zero' } } },
+      { word: 'best found under budget', goal: 1, value: cost, unit: 'NOK' },
+      { word: 'best found under budget', goal: 2, value: hours, unit: 'h' },
+    ] }), { metrics: [{ id: 'goal:0:COOL-A', value: span, unit: 'h' }], warnings: [caution] })
+    const model: PlanModel = { ...planned, options: { ...planned.options!, recommended: 'swap', items: [option('swap', 'Swap in refurbished spare', 49, 0, 472650, 242.5), option('rebuild', 'Rebuild in place', 65, 11, 243200, 322.5)] } }
+    return optionsGlance(model, { inputs: model.inputs, names: createNames(model.inputs), format: createTimeFormat(model.inputs.settings.timeZone) })!
+  }
+
+  test('the estimate reads the flagship as the demo shows it', () => {
+    const glance = flagship()
+    expect(glance.columns).toEqual(['Longest outage', 'Over the 54 h guideline', 'Extra cost', 'Equipment-hours out of service'])
+    expect(glance.rows.map(row => row.cells?.map(cell => cell?.value))).toEqual([['49 h of 72 h', '0 h', 'NOK 472,650', '242.5 h'], ['65 h of 72 h', '11 h', 'NOK 243,200', '322.5 h']])
+    expect(glance.rows.every(row => row.caution !== null)).toBe(true)
+  })
+
+  for (const width of [1024, 1280, 1366, 1440]) {
+    test(`at ${width} px the table needs no more than its column gives, so nothing scrolls sideways or is cut off`, () => {
+      expect({ width, needs: Math.ceil(needs(flagship())), fits: needs(flagship()) <= room(width) }).toEqual({ width, needs: Math.ceil(needs(flagship())), fits: true })
+    })
+  }
+
+  test('the tightest width is 1280 px, where the detail column first sits beside the work', () => {
+    expect(room(1280)).toBeLessThan(room(1024))
+    expect(room(1280)).toBeLessThan(room(1366))
+  })
+
+  test('the status and the caution are a row of their own that wraps; only values and goal words stay on one line', () => {
+    const source = readFileSync(join(import.meta.dir, 'OptionsGlance.svelte'), 'utf8')
+    // No Status column: the chips row spans the whole table.
+    expect(source).not.toContain('<th scope="col">Status</th>')
+    expect(source).toMatch(/<tr class="chips-row">\s*<td colspan=\{glance\.columns\.length \+ 1\}>/)
+    expect(valueAt('.options-glance .chips', 'flex-wrap', 1280)).toBe('wrap')
+    expect(valueAt('.options-glance td strong', 'white-space', 1280)).toBe('nowrap')
+    expect(valueAt('.options-glance thead th', 'white-space', 1280)).toBeUndefined()
+    expect(valueAt('.options-glance .cause', 'white-space', 1280)).toBeUndefined()
   })
 })

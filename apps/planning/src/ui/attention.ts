@@ -103,7 +103,8 @@ export const attentionCards = (model: PlanModel, context: Context, wallNowMs: nu
 
   // Every current option that is not validated feasible says why, here, not only in the Options view.
   for (const outcome of outcomes(model, context).filter(item => item.word !== 'validated feasible')) {
-    cards.push({ mark: outcome.mark, title: `${outcome.label}: ${outcome.word}.`, text: outcome.cause, steps: [], actions: [] })
+    // A refused option's cause is said in the options table and, in full, in its detail: not a third time here.
+    cards.push({ mark: outcome.mark, title: `${outcome.label}: ${outcome.word}.`, text: outcome.word === 'proven infeasible' ? 'Not possible. The options table says why.' : outcome.cause, steps: [], actions: [] })
   }
   const early = (model.options?.items ?? []).filter(option => option.fresh).map(stoppedEarly).find(reason => reason !== null)
   if (early !== undefined) {

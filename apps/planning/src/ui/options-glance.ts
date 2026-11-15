@@ -1,10 +1,10 @@
-// The options side by side, above the timeline: one row per option with its longest outage against the
-// limit, its value on each goal and its status. A refused option's row says "Not possible" and its cause in
-// hours. Built from the options as read; nothing here is computed about a schedule.
+// The options side by side, above the timeline: per option its longest outage against the limit and its
+// value on each goal, and under its name its status. A refused option says "Not possible" and its cause in
+// hours, in one short line. Built from the options as read; nothing here is computed about a schedule.
 import { quantityText, type Mark } from './format.ts'
-import type { OptionView, PlanModel } from './model.ts'
-import { refusalLine } from './outcome.ts'
-import { certificateText, goalShort, statusView, type Context, type GoalLine } from './status-text.ts'
+import { otherWarnings, sizeCautionOf, type OptionView, type PlanModel } from './model.ts'
+import { shortCause } from './outcome.ts'
+import { goalShort, statusView, type Context, type GoalLine } from './status-text.ts'
 
 export interface GlanceCell {
   readonly value: string
@@ -21,9 +21,11 @@ export interface GlanceRow {
   readonly tone: 'good' | 'refusal' | 'unknown' | 'warning'
   /** One cell per column for an option with values; null for one that has none. */
   readonly cells: readonly (GlanceCell | null)[] | null
-  /** For an option without values: "Not possible: …" with its hours, or what its status says. */
+  /** For an option without values: "Not possible: …" in one short line with its hours, or what its status says. */
   readonly cause: string | null
   readonly stale: boolean
+  /** The size caution in the Module's words, shown as a chip beside the status; null when the option has none. */
+  readonly caution: string | null
   readonly warnings: readonly string[]
 }
 export interface OptionsGlance { readonly columns: readonly string[]; readonly rows: readonly GlanceRow[] }
@@ -55,11 +57,11 @@ export const optionsGlance = (model: PlanModel, context: Context): OptionsGlance
     const base = {
       key: option.key, label: option.label, recommended: option.key === model.options?.recommended, mark: view.mark,
       tone: view.word === 'validated feasible' ? 'good' as const : view.word === 'proven infeasible' ? 'refusal' as const : view.word === 'unresolved' ? 'unknown' as const : 'warning' as const,
-      stale: !option.fresh, warnings: option.warnings.map(warning => warning.text),
+      stale: !option.fresh, caution: sizeCautionOf(option), warnings: otherWarnings(option),
     }
     if (option.status.word !== 'validated feasible') {
       const cause = option.status.word === 'proven infeasible'
-        ? `Not possible: ${refusalLine(model.refusals[option.key]) ?? certificateText(option.status.cause, context)}`
+        ? `Not possible: ${shortCause(option, model, context)}`
         : [view.sentence, view.details[0]].filter(part => part !== undefined).join(' ')
       return { ...base, cells: null, cause }
     }

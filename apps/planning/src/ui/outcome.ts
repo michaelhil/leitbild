@@ -1,7 +1,7 @@
 // What the latest Generate found, said where the planner looks first: the banner and the attention column.
 // A refused option says its cause in hours, from the Module's refusal (explain, ask refusal), never only
 // "none is validated feasible".
-import type { Mark } from './format.ts'
+import { hoursNumber, hoursText, type Mark } from './format.ts'
 import type { OptionView, PlanModel } from './model.ts'
 import { certificateText, goalResult, statusView, type Context } from './status-text.ts'
 
@@ -81,17 +81,38 @@ export const stoppedEarly = (option: OptionView): string | null => {
 export const outcomes = (model: PlanModel, context: Context): readonly Outcome[] =>
   (model.options?.items ?? []).filter(option => option.fresh).map(option => outcomeOf(option, model, context))
 
-/** The banner under the plan's title: the recommendation, or that there is none, and every refusal's cause. */
-export const outcomeBanner = (model: PlanModel, context: Context): { readonly title: string; readonly lines: readonly string[]; readonly recommended: boolean } | null => {
+/**
+ * A refused option's cause in one short line, for the options table: the proof's own hours where it has them
+ * ("37 h of work one after another, only 32 h of working time."), else the Module's sentence that carries the
+ * hours, without the detail after its colon ("The shortest span this plan allows is 80.5 h, against 72 h.").
+ * The full proof is beside the timeline, once.
+ */
+export const shortCause = (option: OptionView, model: PlanModel, context: Context): string | null => {
+  if (option.status.word !== 'proven infeasible') return null
+  const cause = option.status.cause
+  if (cause.kind === 'chain') return `${hoursText(cause.workHours)} of work one after another, only ${hoursText(cause.availableHours)} of working time.`
+  if (cause.kind === 'energy') return `${hoursNumber(cause.requiredHours)} crew-hours needed, at most ${hoursNumber(cause.availableHours)} exist.`
+  const line = refusalLine(model.refusals[option.key])
+  if (line === null) return certificateText(cause, context)
+  const cut = line.indexOf(': ')
+  return cut === -1 ? line : `${line.slice(0, cut)}.`
+}
+
+/**
+ * The banner under the plan's title: the recommendation, or that there is none and where the reason is.
+ * A cause is not repeated here: each is in the options table in one line and in full in the option's detail
+ * (`where`: "on the right" when the detail column is beside the work, "below" when the columns stack).
+ */
+export const outcomeBanner = (model: PlanModel, context: Context, where: 'on the right' | 'below' = 'on the right'): { readonly title: string; readonly lines: readonly string[]; readonly recommended: boolean } | null => {
   const found = outcomes(model, context)
   if (found.length === 0) return null
   const recommended = found.find(outcome => outcome.recommended)
   const title = recommended !== undefined
     ? `Recommended: ${recommended.label}, ${recommended.word}.`
     : found.every(outcome => outcome.word === 'proven infeasible')
-      ? `No option can be recommended: ${found.length === 1 ? 'it is' : found.length === 2 ? 'both are' : `all ${found.length} are`} proven infeasible.`
-      : 'No option can be recommended: none is validated feasible.'
-  const lines = found.filter(outcome => outcome.word !== 'validated feasible').map(outcome => `${outcome.label}: ${outcome.word}. ${outcome.cause}`)
+      ? `No option can be recommended: ${found.length === 1 ? 'it is' : found.length === 2 ? 'both are' : `all ${found.length} are`} not possible. See why ${where}.`
+      : `No option can be recommended: none is validated feasible. See why ${where}.`
+  const lines: string[] = []
   // A search that stopped early may have missed a better plan: said where the planner looks first.
   const early = (model.options?.items ?? []).filter(option => option.fresh).map(stoppedEarly).find(reason => reason !== null)
   if (early !== undefined) lines.unshift(`The search stopped early, ${early}: ${recommended === undefined ? 'a plan may still exist' : 'this option may not be the best'}. Generate again.`)

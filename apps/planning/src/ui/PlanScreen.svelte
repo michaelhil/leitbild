@@ -19,7 +19,7 @@
   import { planSizeLine } from './size-text.ts'
   import JobForm from './JobForm.svelte'
   import JobPanel from './JobPanel.svelte'
-  import { createNames, type PlanModel, type PlanView, type RunChoice } from './model.ts'
+  import { createNames, otherWarnings, sizeCautionOf, type PlanModel, type PlanView, type RunChoice } from './model.ts'
   import OptionsTable from './OptionsTable.svelte'
   import PlanHeader from './PlanHeader.svelte'
   import type { Preview } from './preview.ts'
@@ -71,6 +71,8 @@
   let notice = $state<string | null>(null)
   let finish = $state<readonly FinishStep[] | null>(null)
   let limiting = $state<{ readonly parts: readonly Part[] } | null>(null)
+  /** The newest answer is on top of the detail column: the finish chain when it was asked after a job or a preview opened. */
+  let finishOnTop = $state(false)
   let why = $state<WhyStart | null>(null)
   let preview = $state<Preview | null>(null)
   let pending = $state<readonly Edit[]>([])
@@ -111,6 +113,7 @@
   const selectJob = (job: string): void => {
     selectedJob = job
     why = null
+    finishOnTop = false
     reveal('.job-panel')
   }
 
@@ -118,7 +121,7 @@
   const rows = $derived(model !== null && selectedOption !== null ? model.rows[selectedOption] ?? [] : [])
   const layout = $derived(model !== null && context !== null ? layoutTimeline(model.inputs, rows, context.format) : null)
   const cards = $derived(model !== null && context !== null ? attentionCards(model, context) : [])
-  const banner = $derived(model !== null && context !== null ? outcomeBanner(model, context) : null)
+  const banner = $derived(model !== null && context !== null ? outcomeBanner(model, context, wide ? 'on the right' : 'below') : null)
   const shifts = $derived(model !== null && context !== null ? shiftList(model.inputs, rows, context.format) : [])
   const shown = $derived(model?.options?.items.find(option => option.key === selectedOption) ?? null)
   const linkedRun = $derived(model?.inputs.settings.run ? runs.find(run => run.id === model?.inputs.settings.run?.id)?.title ?? null : null)
@@ -179,6 +182,7 @@
   const runPreview = (edits: readonly Edit[], label: string): void => withModel(async current => {
     pending = edits
     preview = await actions.preview(current, edits, label)
+    finishOnTop = false
     reveal('.preview')
   })
   const apply = (authority: { name: string; reason: string } | null): void => withModel(async current => {
@@ -224,7 +228,7 @@
   })
   const explainFinish = (): void => {
     const shownContext = context
-    if (shownContext !== null) void attempt(async () => { const answer = await actions.finish(shownContext, selectedOption); finish = answer.steps; limiting = answer.limiting; reveal('.finish-panel') })
+    if (shownContext !== null) void attempt(async () => { const answer = await actions.finish(shownContext, selectedOption); finish = answer.steps; limiting = answer.limiting; finishOnTop = true; reveal('.finish-panel') })
   }
   const explainStart = (job: string): void => {
     const shownContext = context
@@ -262,9 +266,13 @@
     <section class="shown-option" aria-labelledby="shown-title">
       <h2 id="shown-title">{shown.label}</h2>
       {#if requestText(shown, model.inputs)}<p class="hint">{requestText(shown, model.inputs)}</p>{/if}
-      <StatusBlock view={statusView(shown.status, context)} warnings={shown.warnings.map(warning => warning.text)} stale={!shown.fresh} {proof} onPick={pick} />
+      <StatusBlock view={statusView(shown.status, context)} warnings={otherWarnings(shown)} caution={sizeCautionOf(shown)} stale={!shown.fresh} {proof} onPick={pick} />
     </section>
   {/if}
+{/snippet}
+
+{#snippet finishPanel()}
+  {#if finish !== null}<FinishPanel steps={finish} {limiting} onPick={pick} onClose={() => { finish = null; limiting = null }} />{/if}
 {/snippet}
 
 {#if model !== null && context !== null}
@@ -311,12 +319,13 @@
       </div>
       <!-- The detail column: an edit's preview, the selected job, what sets the finish, and the shown option. -->
       <div class="col-panel" bind:this={panel}>
+        {#if finishOnTop}{@render finishPanel()}{/if}
         {#if preview}
           <EditPreview {preview} {pending} {context} {busy} onApply={apply} onDiscard={() => { preview = null }} onUseTime={useTime} onAddEdits={extra => previewEdits([...pending, ...extra], preview?.label ?? 'the change')} />
         {:else if selectedJob}
           {#key applied}<JobPanel jobKey={selectedJob} {context} row={rows.find(row => row.job === selectedJob)} scheduled={rows.length === 0 ? null : new Set(rows.map(row => row.job))} {why} busy={busy || generating !== null} onWhy={explainStart} onPick={pick} onPreview={previewEdits} onClose={() => { selectedJob = null; why = null }} />{/key}
         {/if}
-        {#if finish !== null}<FinishPanel steps={finish} {limiting} onPick={pick} onClose={() => { finish = null; limiting = null }} />{/if}
+        {#if !finishOnTop}{@render finishPanel()}{/if}
         {#if wide && view === 'schedule'}{@render optionDetail()}{/if}
       </div>
     </div>

@@ -1,15 +1,18 @@
 <script lang="ts">
   import type { NameKind } from './explain-text.ts'
   import MarkTag from './MarkTag.svelte'
+  import { sizeCautionMark } from './model.ts'
   import type { RefusalProof } from './outcome.ts'
   import Said from './Said.svelte'
   import type { StatusView } from './status-text.ts'
 
   // The status word, what it covers, each goal with how far from the best, and any warning beside it.
   // A refused option's proof is a list: "Not possible: …" with its hours, then the jobs that set it.
-  let { view, warnings = [], stale = false, proof = null, onPick }: {
+  let { view, warnings = [], caution = null, stale = false, proof = null, onPick }: {
     view: StatusView
     warnings?: readonly string[]
+    /** The size caution in the Module's words: a chip beside the status word, and the sentence under it. */
+    caution?: string | null
     stale?: boolean
     proof?: RefusalProof | null
     onPick?: ((kind: NameKind, key: string) => void) | undefined
@@ -18,7 +21,8 @@
 </script>
 
 <div class="status">
-  <p class="status-line"><MarkTag mark={view.mark} {tone} /> <span>{view.sentence}</span></p>
+  <p class="status-line"><MarkTag mark={view.mark} {tone} />{#if caution} <MarkTag mark={sizeCautionMark} tone="warning" />{/if} <span>{view.sentence}</span></p>
+  {#if caution}<p class="beside caution">{caution}</p>{/if}
   {#if stale}
     <p class="stale"><MarkTag mark={{ shape: '↻', word: 'Out of date' }} tone="warning" /> Made before the latest change: its status is not claimed for the current plan. Generate again.</p>
   {/if}
