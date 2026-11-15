@@ -152,10 +152,11 @@
     /** The order preview a hovered object's card shows, when the selected controller's Pack describes targets. */
     readonly targetPreviewFor?: ((object: OperationalObject) => PackTargetPreview | null) | undefined
     /**
-     * Objects a click opens a display for: a mouse click or hover anywhere on
-     * their coloured disk is theirs on every surface, not only while the
-     * surface picks targets. Every other object's disk picks as before. It
-     * answers by the object alone, so the icons are not drawn again for it.
+     * Objects a click opens a display or a closed map-target panel for: a
+     * mouse click or hover anywhere on their coloured disk is theirs on every
+     * surface, not only while the surface picks targets. Every other object's
+     * disk picks as before. It answers by the object alone, so the icons are
+     * not drawn again for it.
      */
     readonly takesDiskClicks?: (object: OperationalObject) => boolean
   }
