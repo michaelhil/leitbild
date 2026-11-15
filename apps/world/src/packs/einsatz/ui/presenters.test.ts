@@ -332,11 +332,22 @@ describe('Call card', () => {
 describe('Site card', () => {
   test('accepting state, a toggle naming its effect, slots and inbound units', () => {
     expect(siteCard(situation.sites[0]!, 0)).toEqual({
-      kind: 'site', id: 'depot-a', icon: 'warehouse', title: 'Depot A · Depot', accepting: dispatchWords.accepting,
-      toggle: { label: `${dispatchWords.closeArrivals} (R2 will go elsewhere)`, accepting: false },
-      slots: `1 of 2 ${dispatchWords.slots}`, inbound: ['R2 · 6 min'], states: [],
+      kind: 'site', id: 'depot-a', icon: 'warehouse', title: 'Depot A · Depot',
+      receiving: {
+        accepting: dispatchWords.accepting,
+        toggle: { label: `${dispatchWords.closeArrivals} (R2 will go elsewhere)`, accepting: false },
+        slots: `1 of 2 ${dispatchWords.slots}`,
+      },
+      inbound: ['R2 · 6 min'], states: [],
     })
-    expect(siteCard(situation.sites[1]!, 0).toggle).toEqual({ label: dispatchWords.openArrivals, accepting: true })
+    expect(siteCard(situation.sites[1]!, 0).receiving?.toggle).toEqual({ label: dispatchWords.openArrivals, accepting: true })
+  })
+
+  test('a place that receives no load (a depot, an objective) shows no accepting state, toggle or slots, only its inbound units', () => {
+    const place = { ...situation.sites[0]!, id: 'post', label: 'Post', typeLabel: 'Post', accepting: null, slots: null }
+    expect(siteCard(place, 0)).toEqual({ kind: 'site', id: 'post', icon: 'warehouse', title: 'Post · Post', receiving: null, inbound: ['R2 · 6 min'], states: [] })
+    const view = overview(situationOf({ sites: [...situation.sites, place] }), { kind: 'none', marked: null }, opened, 0)
+    expect(view.sites!.rows.at(-1)!.receiving).toBeNull()
   })
 })
 
@@ -359,9 +370,9 @@ describe('Overview', () => {
     const r2 = view.units.groups[0]!.rows[1]!
     expect([r2.current, r2.actor, r2.carry, r2.properties]).toEqual(['J-2 Bay · 3 min', 'by Assistant', '0/2', ['Range 40 km']])
     expect(view.units.groups[1]!.rows[0]!.carry).toBeNull()
-    expect(view.sites!.rows.map(row => [row.label, row.accepting, row.slots, row.inbound])).toEqual([
-      ['Depot A', dispatchWords.accepting, '1/2', `${dispatchWords.inbound} R2`],
-      ['Depot B', dispatchWords.notAccepting, '0/1', null],
+    expect(view.sites!.rows.map(row => [row.label, row.receiving, row.inbound])).toEqual([
+      ['Depot A', { accepting: dispatchWords.accepting, slots: '1/2' }, `${dispatchWords.inbound} R2`],
+      ['Depot B', { accepting: dispatchWords.notAccepting, slots: '0/1' }, null],
     ])
     expect(view.columns).toEqual({ carry: true })
     expect([view.contacts, view.folded]).toEqual([false, false])
@@ -457,11 +468,13 @@ describe('Contacts', () => {
       ['T3', 'circle-question-mark', 'Destroyed', null, true, false],
     ])
   })
-  test('Einsatz objects are classified by their one record schema: a receiving unit is a site; a record that does not match is refused', () => {
+  test('Einsatz objects are classified as the situation lists them: a unit record that does not move is a site, receiving or not; a record that does not match is refused', () => {
     const presentation = { icon: 'cog', typeLabel: 'Rover' }
     const unitRecord = { type: 'unit', presentation, phase: 'available', integrity: 'healthy', load: {} }
-    const of = (packData: unknown, packId: string = einsatzPackId) => dispatchKindOf({ packId: packId as never, packData: packData as never })
-    expect(of({ ...unitRecord, accepting: true })).toBe('site')
+    const of = (packData: unknown, packId: string = einsatzPackId, kind: OperationalObject['kind'] = 'mobile_entity') => dispatchKindOf({ packId: packId as never, packData: packData as never, kind })
+    expect(of({ ...unitRecord, accepting: true }, einsatzPackId, 'facility')).toBe('site')
+    // A place that receives no load (a depot, an objective) is a site too.
+    expect(of(unitRecord, einsatzPackId, 'facility')).toBe('site')
     expect(of(unitRecord)).toBe('unit')
     expect(of({ type: 'task', presentation })).toBe('call')
     expect(of({ type: 'track', tier: 'contact', fix: false })).toBe('track')

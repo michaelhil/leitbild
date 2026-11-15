@@ -208,8 +208,11 @@
       <button type="button" class="x" aria-label={dispatchWords.close} onclick={props.back}>×</button>
     </header>
     {@render slot()}
-    <p class="status">{card.accepting} · {card.slots}</p>
-    <button type="button" class="secondary" onclick={() => props.setSite(card.id, card.toggle.accepting)}>{card.toggle.label}</button>
+    {#if card.receiving !== null}
+      {@const receiving = card.receiving}
+      <p class="status">{receiving.accepting} · {receiving.slots}</p>
+      <button type="button" class="secondary" onclick={() => props.setSite(card.id, receiving.toggle.accepting)}>{receiving.toggle.label}</button>
+    {/if}
     {#if card.inbound.length > 0}
       <h4>{dispatchWords.inbound}</h4>
       <ul class="needs">{#each card.inbound as unit, index (index)}<li>{unit}</li>{/each}</ul>

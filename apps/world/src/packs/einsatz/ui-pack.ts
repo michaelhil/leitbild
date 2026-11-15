@@ -6,7 +6,7 @@ import { einsatzColors } from './colors.ts'
 import { einsatzPackId, einsatzRuntimeId } from './ids.ts'
 import { neutralLexicon, type UnitPhase } from './lexicon.ts'
 import { contactIcon } from './situation/text.ts'
-import { dispatchWords, einsatzRecordOf, kindOfRecord, tierWord, trackAgeText, type EinsatzRecord } from './ui/presenters.ts'
+import { dispatchWords, einsatzRecordOf, tierWord, trackAgeText, type EinsatzRecord } from './ui/presenters.ts'
 
 /**
  * The browser-safe Einsatz view. It reads only the presentation each object
@@ -142,7 +142,8 @@ const presentEinsatzObject = (object: OperationalObject, context: PackObjectPres
   const data = einsatzRecordOf(object)
   switch (data.type) {
     case 'unit': {
-      const site = kindOfRecord(data) === 'site'
+      // A site that receives load carries its accepting state.
+      const receiving = data.accepting !== undefined
       return {
         categoryId: unitsCategory,
         icon: data.presentation.icon,
@@ -150,7 +151,7 @@ const presentEinsatzObject = (object: OperationalObject, context: PackObjectPres
         summary: data.presentation.typeLabel,
         muted: object.lifecycle !== 'active' || data.integrity === 'destroyed',
         fields: [],
-        ...(site ? { mapLabel: data.accepting === true ? object.label : `${object.label} · closed` } : { mapLabel: unitLabel(object, data), ...(object.kind === 'facility' && data.integrity !== 'destroyed' ? {} : { status: unitStatus(data) }) }),
+        ...(receiving ? { mapLabel: data.accepting === true ? object.label : `${object.label} · closed` } : { mapLabel: unitLabel(object, data), ...(object.kind === 'facility' && data.integrity !== 'destroyed' ? {} : { status: unitStatus(data) }) }),
       }
     }
     case 'task':

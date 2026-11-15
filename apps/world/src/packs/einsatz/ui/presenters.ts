@@ -155,19 +155,23 @@ export type EinsatzRecord = z.output<typeof einsatzRecordSchema>
 /** The record of an Einsatz object; one that does not match is refused loudly. */
 export const einsatzRecordOf = (object: Pick<OperationalObject, 'packData'>): EinsatzRecord => einsatzRecordSchema.parse(object.packData)
 
-/** What a record is to the panel: a unit that receives load is a site, any other unit a unit, a task a call, a track a track; a track index none of them. */
-export const kindOfRecord = (record: EinsatzRecord): DispatchObjectKind | null => {
+/**
+ * What an object is to the panel, as `world.einsatz.situation` lists it: a
+ * unit whose type moves (a core `mobile_entity`) is a unit, any other unit
+ * record a site, a place units go to whether it receives load or not (a
+ * core `facility`); a task is a call, a track a track; a track index, and
+ * another Pack's object, none of them.
+ */
+export const dispatchKindOf = (object: Pick<OperationalObject, 'packId' | 'packData' | 'kind'>): DispatchObjectKind | null => {
+  if (object.packId !== einsatzPackId) return null
+  const record = einsatzRecordOf(object)
   switch (record.type) {
-    case 'unit': return record.accepting === undefined ? 'unit' : 'site'
+    case 'unit': return object.kind === 'facility' ? 'site' : 'unit'
     case 'task': return 'call'
     case 'track': return 'track'
     case 'track-index': return null
   }
 }
-
-/** What an object is to the panel; another Pack's object is none of them. */
-export const dispatchKindOf = (object: Pick<OperationalObject, 'packId' | 'packData'>): DispatchObjectKind | null =>
-  object.packId === einsatzPackId ? kindOfRecord(einsatzRecordOf(object)) : null
 
 /** A track's tier in the neutral words. */
 export const tierWord = (tier: TrackTier): string => {
@@ -600,25 +604,31 @@ export interface SiteCardView {
   readonly id: string
   readonly icon: string
   readonly title: string
-  readonly accepting: string
-  readonly toggle: { readonly label: string; readonly accepting: boolean }
-  readonly slots: string
+  /** What a site that receives load shows: its accepting state, the toggle naming its effect, its slots; null for a place that receives none (a depot, an objective). */
+  readonly receiving: {
+    readonly accepting: string
+    readonly toggle: { readonly label: string; readonly accepting: boolean }
+    readonly slots: string
+  } | null
   readonly inbound: ReadonlyArray<string>
   readonly states: ReadonlyArray<string>
 }
 
 export const siteCard = (site: SituationSite, elapsedS: number): SiteCardView => {
   const inbound = site.inbound.map(unit => unit.label)
+  const { accepting, slots } = site
   return {
     kind: 'site',
     id: site.id,
     icon: site.icon,
     title: `${site.label} · ${site.typeLabel}`,
-    accepting: site.accepting ? dispatchWords.accepting : dispatchWords.notAccepting,
-    toggle: site.accepting
-      ? { label: inbound.length === 0 ? dispatchWords.closeArrivals : `${dispatchWords.closeArrivals} (${joined(inbound)} will go elsewhere)`, accepting: false }
-      : { label: dispatchWords.openArrivals, accepting: true },
-    slots: `${site.slots.used} of ${site.slots.total} ${dispatchWords.slots}`,
+    receiving: accepting === null || slots === null ? null : {
+      accepting: accepting ? dispatchWords.accepting : dispatchWords.notAccepting,
+      toggle: accepting
+        ? { label: inbound.length === 0 ? dispatchWords.closeArrivals : `${dispatchWords.closeArrivals} (${joined(inbound)} will go elsewhere)`, accepting: false }
+        : { label: dispatchWords.openArrivals, accepting: true },
+      slots: `${slots.used} of ${slots.total} ${dispatchWords.slots}`,
+    },
     inbound: site.inbound.map(unit => [unit.label, ...(unit.eta === null ? [] : [etaText(unit.eta, elapsedS)!])].join(' · ')),
     states: site.states.map(state => state.text),
   }
@@ -698,8 +708,8 @@ export interface SiteRowView {
   readonly id: string
   readonly icon: string
   readonly label: string
-  readonly accepting: string
-  readonly slots: string
+  /** A site that receives load: its accepting state and slots; null for a place that receives none. */
+  readonly receiving: { readonly accepting: string; readonly slots: string } | null
   readonly inbound: string | null
   readonly states: ReadonlyArray<string>
   readonly selected: boolean
@@ -778,8 +788,7 @@ const siteRow = (site: SituationSite, selectedId: string | null): SiteRowView =>
   id: site.id,
   icon: site.icon,
   label: site.label,
-  accepting: site.accepting ? dispatchWords.accepting : dispatchWords.notAccepting,
-  slots: `${site.slots.used}/${site.slots.total}`,
+  receiving: site.accepting === null || site.slots === null ? null : { accepting: site.accepting ? dispatchWords.accepting : dispatchWords.notAccepting, slots: `${site.slots.used}/${site.slots.total}` },
   inbound: site.inbound.length === 0 ? null : `${dispatchWords.inbound} ${joined(site.inbound.map(unit => unit.label))}`,
   states: site.states.map(state => state.text),
   selected: site.id === selectedId,

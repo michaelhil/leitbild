@@ -433,7 +433,10 @@ export const openCardScreen = async (run: OpenRun, options: { readonly actor?: A
         default: throw new Error(`A call card has no ${control.kind}`)
       }
     }
-    if (card.kind === 'site' && control.kind === 'site-toggle') return await command(async () => await client.setSite(card.id, card.toggle.accepting), null)
+    if (card.kind === 'site' && control.kind === 'site-toggle') {
+      const receiving = required(card.receiving, `Accepting toggle on ${card.title}`)
+      return await command(async () => await client.setSite(card.id, receiving.toggle.accepting), null)
+    }
     throw new Error(`A ${card.kind} card has no ${control.kind}`)
   }
 

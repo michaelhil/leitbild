@@ -80,7 +80,7 @@
             <button type="button" class="row" class:selected={row.selected} aria-pressed={row.selected} onclick={() => props.open({ id: row.id, kind: 'site' })}>
               {@render badge(row.icon, einsatzColors.unit)}
               <span class="text">
-                <span class="line"><strong>{row.label}</strong><span class="sub">{row.accepting}</span><span class="num age">{row.slots}</span></span>
+                <span class="line"><strong>{row.label}</strong>{#if row.receiving !== null}<span class="sub">{row.receiving.accepting}</span><span class="num age">{row.receiving.slots}</span>{/if}</span>
                 {#if row.inbound !== null}<span class="line sub">{row.inbound}</span>{/if}
                 {#each row.states as state, index (index)}<span class="line state">{state}</span>{/each}
               </span>
