@@ -45,10 +45,11 @@ const keysOf = (inputs: PlanInputs, option: Option): readonly number[] => rankab
 
 /**
  * Dominance within one option set (design §4.1, lane S's dominatedBy): each dominated option's key, and the
- * best-ranked option of the set that dominates it. Lead what-ifs are left out: they are cards, never folded.
+ * best-ranked option of the set that dominates it. Only the plan's own ranked options take part: a what-if
+ * (an extra rule or a lead, `whatIf`) is a card, never folded nor folding (recheck R2).
  */
 export const dominatedWithin = (inputs: PlanInputs, options: readonly Option[]): ReadonlyMap<string, string> =>
-  new Map(dominatedBy(options.filter(option => option.variant.lead === undefined).map(option => rankableOf(option, inputs))).map(entry => [entry.key, entry.by] as const))
+  new Map(dominatedBy(options.filter(option => !whatIf(option)).map(option => rankableOf(option, inputs))).map(entry => [entry.key, entry.by] as const))
 const differ = (left: number, right: number): boolean => Math.abs(left - right) > EPSILON
 const goalsOf = (option: Option): readonly GoalLine[] => option.status.word === 'validated feasible' ? option.status.goals : []
 /** A what-if (an extra rule or a leading goal) is a card: never ranked, recommended or compared (G2). */

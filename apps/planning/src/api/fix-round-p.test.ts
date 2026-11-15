@@ -101,3 +101,16 @@ describe('G4: explain recommended gives the proven floor of the longest outage o
     expect((await harness.call('planning.plan.explain', { resource: zero.id, input: { ask: 'recommended' } })).body.result.recommended.outage).toBeUndefined()
   })
 })
+
+describe('R2: dominance only among the plan\'s own ranked options, never a what-if card', () => {
+  test('an "at most 50 h out" card that is better on one goal folds no row, in options or previous', async () => {
+    const also = { kind: 'span-limit' as const, key: 'W50', group: 'COOL-A', limit: { value: 50, unit: 'h' as const }, singleEntry: true, words: 'Train A cooling chain back within 50 h', source: { by: 'planner' as const } }
+    // The card is Rebuild with one hour fewer out of service: on the plan's goals it would dominate Rebuild.
+    const card = (revision: number) => optionSchema.parse({ ...rebuild, key: 'at-50', label: 'At most 50 h out', inputsRevision: revision, variant: { ...rebuild.variant, also: [also] }, metrics: rebuild.metrics.map(metric => metric.id === 'goal:2' ? { ...metric, value: metric.value - 1 } : metric) })
+    const base = planWith(harness.workspaceId, [swap, rebuild, card(3)])
+    const plan = await harness.store.create(harness.workspaceId, { ...base, previousOptions: { at: base.options!.at, by: { kind: 'human' as const }, options: [variantOf(rebuild, { revision: 2 }), card(2)] } })
+    for (const section of ['options', 'previous'] as const) {
+      expect([section, (await read(plan.id, section)).map(item => [item.key, item.dominated?.by ?? null])]).toEqual([section, (section === 'options' ? [swap.key, rebuild.key, 'at-50'] : [rebuild.key, 'at-50']).map(key => [key, null])])
+    }
+  })
+})
