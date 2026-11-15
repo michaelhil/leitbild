@@ -163,3 +163,34 @@ describe("Train A: tube cleaning at its high estimate leaves the eddy-current te
     expect(judgeRetiming(flagship, option.variant, option.rows, placedRows, ['CCWHXA-CLEAN'])).toEqual({ ok: true, outcome: { holds: false, unplaced: { job: 'CCWHXA-ECT', resource: 'ect-team', after: '2026-11-18T10:30:00.000Z' } } })
   })
 })
+
+describe('the continued calendars are bounded: the window\'s length again past the window end (F3)', () => {
+  // A 30 s grid, window Mon 16 Nov 06:00Z to Tue 17 Nov 06:00Z (one day), so the search runs to Wed 18 Nov
+  // 06:00Z. The test R needs the inspection team, booked Mon 08:00Z-10:00Z and then only Fridays 09:00-17:00
+  // local (Fri 20 Nov 08:00Z on), past that bound. With W at its high 4 h, R is ready at 11:00Z; within the
+  // bound a 1 h test fits no later than 09:00Z, so none of the team's time fits from 09:00:30Z.
+  const fine = (): PlanInputs => planInputsSchema.parse({
+    settings: { title: 'Fine grid', timeZone: 'Europe/Oslo', window: { start: at(6), end: at(30) }, dataDate: null, grid: '30s', currency: 'NOK', run: null },
+    equipment: [{ key: 'X', label: 'Item X', group: 'G', supportedBy: [] }], groups: [{ key: 'G', label: 'Group G' }],
+    calendars: [
+      { key: 'always', label: 'Always', weekly: [{ days: ['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun'], from: '00:00', to: '00:00' }], periods: [], except: [], source: planner },
+      { key: 'fridays', label: 'Team on Fridays', weekly: [{ days: ['fri'], from: '09:00', to: '17:00' }], periods: [{ start: at(8), end: at(10) }], except: [], source: planner },
+    ],
+    resources: [
+      { key: 'ops', label: 'ops', kind: 'crew', count: 1, calendar: 'always', attributes: [], source: planner },
+      { key: 'helper', label: 'helper', kind: 'crew', count: 1, calendar: 'always', attributes: [], source: planner },
+      { key: 'team', label: 'Inspection team', kind: 'crew', count: 1, calendar: 'fridays', attributes: [], source: planner },
+    ],
+    purchases: [], methods: [], links: [], rules: [],
+    jobs: jobs.map(job => job.key === 'R' ? { ...job, needs: onOps(['team']) } : job),
+    goals: [{ metric: 'span-over', scope: { groups: ['G'] }, tolerance: { value: 0, unit: 'h' } }], world: { refreshedAt: null, facts: [] },
+  })
+  const plannedFine = [rowOf('T', 6, 7), rowOf('W', 7, 9), rowOf('R', 9, 10, 'team')]
+  test('nothing fits within the bound: R unplaced, the team has no slot long enough from 09:00:30Z', () => {
+    const started = performance.now()
+    const judged = judgeRetiming(fine(), none, plannedFine, [rowOf('T', 6, 7), rowOf('W', 7, 11)], ['W'])
+    const ms = performance.now() - started
+    expect(judged).toEqual({ ok: true, outcome: { holds: false, unplaced: { job: 'R', resource: 'team', after: '2026-11-16T09:00:30.000Z' } } })
+    console.log(`30 s grid re-timing judged in ${ms.toFixed(1)} ms`)
+  })
+})

@@ -10,9 +10,11 @@
 // - the window: work that runs past the window end is judged on the plan's calendars continued past it; the
 //   window runs out at its end, the job is the first one past it, and `window.by` is when the work would end;
 // - unplaced: the job the repair could not place, and a crew or tool of its planned row that has no stretch
-//   long enough for it at or after the job is ready, on the plan's calendars continued a year past the last
-//   dated entry; `after` is the instant from which none of that resource's time fits the job, and it runs out
-//   then. The findings that only follow from the jobs left out (not scheduled, never returned, a span left
+//   long enough for it at or after the job is ready, on the plan's calendars continued for the window's
+//   length again past the window end, at the plan grid (F3: no further, so a fine grid stays cheap); `after` is
+//   the instant from which no stretch of that resource's time long enough for the job remains within that
+//   bound, and it runs out then. What lies past the bound is not searched, so the words name it: "no slot long
+//   enough left after <after>, within <the window's length> after the window". The findings that only follow from the jobs left out (not scheduled, never returned, a span left
 //   open) are part of it. A job whose crews still have time is refused: the repair, not the plan, lost it.
 // At one instant a rule comes first, then the window, then an unplaced job. Any other finding (a link, a
 // crew, a keep-in-service or protection rule the repair path keeps by construction) is no outcome of a
@@ -100,7 +102,6 @@ export const judgedInputs = (inputs: PlanInputs, high: readonly string[], retime
   const start = Date.parse(window.start), slotMs = gridMs[pessimistic.settings.grid]
   return { ...pessimistic, settings: { ...pessimistic.settings, window: { start: window.start, end: new Date(start + Math.ceil((lastFinish - start) / slotMs) * slotMs).toISOString() } } }
 }
-const yearMs = 366 * 86_400_000
 
 /** Jobs that must follow each job: its links, a tag-out's work and tests, inside work's tests, a supporter's tests. */
 const followers = (context: Context): ReadonlyMap<string, ReadonlySet<string>> => {
@@ -138,8 +139,8 @@ type UnplacedResult = { readonly ok: true; readonly unplaced: Unplaced; readonly
  * and every other job left out follows one of them; the re-timing places nothing that follows one. Each must
  * be unplaceable, and the first in time is the outcome (at one instant, the first in plan order). A job is
  * unplaceable when a crew or tool of its planned row has no
- * stretch long enough for it at or after it is ready, on the calendars continued a year past the last dated
- * entry. Ready: no earlier than planned, its release and the data date, its links from the placed jobs
+ * stretch long enough for it at or after it is ready, on the calendars continued for the window's length again
+ * past the window end. Ready: no earlier than planned, its release and the data date, its links from the placed jobs
  * (finish-to-start after the finish, start-to-start after the start, each with its lag), and the orders the
  * checker holds every schedule to (an item with one tag-out: its work after the tag-out, its tests after the
  * tag-out and the work; a supported item's tests after its supporters'): a lower bound, so "nothing fits
@@ -193,14 +194,9 @@ const unplaceable = (context: Context, planned: readonly CheckRow[], retimed: re
   const work = duration.slots
   const together = job.continuous || job.duration.calendar === 'elapsed'
 
-  // the calendars continued: past every dated entry and the last finish, then a year (every weekly pattern, both clock changes)
+  // the calendars continued for the window's length again past the window end, on the plan grid (the bound)
   const purchasesOn = (resource: string) => inputs.purchases.filter(purchase => purchase.resource === resource)
-  const datedEnds = [context.windowEnd, ready, ...retimed.map(row => Date.parse(row.finish)), ...resources.flatMap(resource => {
-    const calendar = inputs.calendars.find(entry => entry.key === context.resources.get(resource)?.calendar)
-    return [...(calendar?.periods ?? []), ...(calendar?.except ?? []), ...purchasesOn(resource).flatMap(purchase => [...('periods' in purchase.adds ? purchase.adds.periods : []), ...purchase.replaces])].map(period => Date.parse(period.end))
-  })]
-  const end = Math.max(...datedEnds.filter(Number.isFinite)) + yearMs + work * grid.slotMs
-  const continued: Grid = { ...grid, origin: windowStart, slots: Math.ceil((end - windowStart) / grid.slotMs) }
+  const continued: Grid = { ...grid, origin: windowStart, slots: 2 * grid.slots }
   const slotOf = (instant: number) => Math.round((instant - windowStart) / grid.slotMs)
   const readySlot = Math.ceil((ready - windowStart) / grid.slotMs - 1e-9)
   const usedByAny = new Set(retimed.flatMap(row => row.uses.flatMap(use => use.purchase === undefined ? [] : [use.purchase])))
@@ -229,7 +225,8 @@ const unplaceable = (context: Context, planned: readonly CheckRow[], retimed: re
     for (const row of retimed) for (const use of row.uses) if (use.resource === resource) for (let slot = Math.max(0, slotOf(Date.parse(use.from))); slot < Math.min(continued.slots, slotOf(Date.parse(use.to))); slot++) load[slot]!++
     const own = new Int32Array(continued.slots)
     for (const use of plannedRow.uses) if (use.resource === resource) for (let slot = Math.max(0, slotOf(Date.parse(use.from))); slot < Math.min(continued.slots, slotOf(Date.parse(use.to))); slot++) own[slot]!++
-    const units = Math.max(1, ...own)
+    let units = 1   // the most units this job held at once (no spread: a fine grid has a million slots)
+    for (const count of own) if (count > units) units = count
     // the latest start that fits: `work` slots in one stretch (continuous or elapsed), or in all the time left
     let latest = -1, run = 0, total = 0
     for (let slot = continued.slots - 1; slot >= 0; slot--) {

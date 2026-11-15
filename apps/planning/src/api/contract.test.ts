@@ -294,7 +294,7 @@ describe('increment 2: explain recommended and versus {previous}; read buys', ()
     expect(row({ from: 1, to: 2, ...ends('proven', 'found'), word: 'found', outage: -2, cost: 9_000 })).toEqual([])
     expect(row({ from: 1, to: 2, ...ends('proven', 'proven'), word: 'found', outage: -2, cost: 9_000 })).toEqual(['word'])
     expect(row({ from: 1, to: 2, ...ends('found', 'unsolved'), word: 'found', outage: -2, cost: 9_000 })).toEqual(['word', 'outage'])
-    expect(row({ from: 1, to: 2, ...ends('found', 'found'), word: 'found', outage: 0, cost: 0, finish })).toEqual(['finish', 'outage'])
+    expect(row({ from: 1, to: 2, ...ends('found', 'found'), word: 'found', outage: 0, cost: 0, finish })).toEqual(['outage'])
     // not solved: an unsolved end, with no differences.
     expect(row({ from: 1, to: 2, ...ends('found', 'unsolved'), word: 'not solved' })).toEqual([])
     expect(row({ from: 0, to: 1, ...ends('unsolved', 'refused'), word: 'not solved' })).toEqual([])
@@ -343,7 +343,7 @@ describe('increment 2: explain recommended gives its facts', () => {
     option: 'swap.b1', against: 'rebuild.b1', deciding: 1,
     goals: [{ goal: 0, value: 0, against: 0, unit: 'h' }, { goal: 1, value: 472_650, against: 498_200, unit: 'NOK' }, { goal: 2, value: 242.5, against: 322.5, unit: 'h' }],
     caveats: [{ choice: 'SWA-method', option: 'swap', label: 'Weeks without a ready SW spare', value: 10, unit: 'weeks', against: 0 }],
-    outage: { goal: 0, word: 'proven optimal', value: 0, unit: 'h', bound: 0 },
+    outage: { goal: 0, group: 'COOL-A', hours: 49 },
   }
   const paths = (value: object) => recommendedFactsSchema.safeParse(value).error?.issues.map(issue => issue.path.join('.')) ?? []
 
@@ -352,10 +352,10 @@ describe('increment 2: explain recommended gives its facts', () => {
     expect(explainResultSchema.safeParse({ lines: ['Swap in the spare is recommended.'], items: [], recommended: facts }).success).toBe(true)
     const { against: _against, deciding: _deciding, ...alone } = facts
     expect(paths({ ...alone, goals: alone.goals.map(({ against: _value, ...line }) => line), caveats: [{ choice: 'SWA-method', option: 'swap', label: 'Depends on a delivery' }] })).toEqual([])
-    expect(paths({ ...facts, outage: { goal: 0, word: 'best found under budget', value: 2.5, unit: 'h' } })).toEqual([])
+    expect(paths({ ...facts, outage: undefined })).toEqual([])
   })
 
-  test('refused: a deciding goal or other values without an option to compare with, against itself, out of order, or a proof without its bound', () => {
+  test('refused: a deciding goal or other values without an option to compare with, against itself, out of order, or an outage that is not a floor in hours (G4)', () => {
     const { against: _against, ...alone } = facts
     expect(paths(alone)).toEqual(expect.arrayContaining(['deciding', 'goals.0.against', 'caveats.0.against']))
     expect(paths({ ...facts, against: facts.option })).toEqual(['against'])
@@ -363,9 +363,11 @@ describe('increment 2: explain recommended gives its facts', () => {
     expect(paths({ ...facts, deciding: 4 })).toEqual(['deciding'])
     expect(paths({ ...facts, goals: [facts.goals[0], { ...facts.goals[1], against: undefined }, facts.goals[2]] })).toEqual(['goals.1.against'])
     expect(paths({ ...facts, caveats: [{ ...facts.caveats[0], unit: undefined }] })).toEqual(['caveats.0.unit'])
-    expect(paths({ ...facts, outage: { goal: 0, word: 'proven optimal', value: 0, unit: 'h' } })).toEqual(['outage.bound'])
+    expect(paths({ ...facts, outage: { goal: 0, word: 'proven optimal', value: 0, unit: 'h', bound: 0 } }).length).toBeGreaterThan(0)
     expect(paths({ ...facts, outage: { ...facts.outage, goal: 5 } })).toEqual(['outage.goal'])
-    expect(paths({ ...facts, outage: { ...facts.outage, word: 'optimal' } }).length).toBeGreaterThan(0)
+    expect(paths({ ...facts, outage: { ...facts.outage, hours: -1 } }).length).toBeGreaterThan(0)
+    expect(paths({ ...facts, outage: { goal: 0, hours: 49 } }).length).toBeGreaterThan(0)
+    expect(paths({ ...facts, outage: { ...facts.outage, group: 'COOL A' } }).length).toBeGreaterThan(0)
     expect(paths({ ...facts, note: 'x' }).length).toBeGreaterThan(0)
   })
 })
@@ -425,5 +427,36 @@ describe('increment 2: the previous options page, and dominated options', () => 
     for (const section of ['options', 'previous'] as const) {
       expect(sectionDataSchemas[section].safeParse(page([item('swap.b1', { dominated: { by: 'swap.b1' } })])).success).toBe(false)
     }
+  })
+})
+
+describe('fix round: what sets the finish on any compared row (G3); each group\'s outage in versus (G5)', () => {
+  const finish = { kind: 'crew', about: [{ kind: 'resource', key: 'crane' }] }
+  const row = (value: object) => buysRowSchema.safeParse(value).error?.issues.map(issue => issue.path.join('.')) ?? []
+  const ends = (from: string, to: string) => ({ ends: { from, to } })
+
+  test('G3: the higher rung\'s cause rides on every row between two solved rungs, and is required only with "proven: no gain"', () => {
+    expect(row({ from: 1, to: 2, ...ends('found', 'found'), word: 'found', outage: -2, cost: 9_000, finish })).toEqual([])
+    expect(row({ from: 1, to: 2, ...ends('proven', 'proven'), word: 'proven', outage: -2, cost: 9_000, finish })).toEqual([])
+    expect(row({ from: 1, to: 2, ...ends('found', 'found'), word: 'not found better', outage: 0, cost: 0, finish })).toEqual([])
+    // A "no gain" without its cause reads "not found better"; with both ends proven it still needs its cause.
+    expect(row({ from: 1, to: 2, ...ends('found', 'proven'), word: 'not found better', outage: 0, cost: 0 })).toEqual([])
+    expect(row({ from: 1, to: 2, ...ends('proven', 'proven'), word: 'proven: no gain', outage: 0, cost: 0 })).toEqual(['finish'])
+    expect(row({ from: 0, to: 1, ...ends('refused', 'found'), word: 'makes it possible', finish })).toEqual(['finish'])
+    expect(row({ from: 1, to: 2, ...ends('found', 'unsolved'), word: 'not solved', finish })).toEqual(['finish'])
+    expect(row({ from: 1, to: 2, ...ends('found', 'found'), word: 'found', outage: -2, cost: 9_000, finish: { kind: 'crew' } }).length).toBeGreaterThan(0)
+  })
+
+  test('G5: versus gives each group\'s longest outage now and then, in hours, once per group', () => {
+    const facts = { option: 'swap.c1', previous: 'swap.b1', from: 3, to: 4, complete: true, changes: [], methods: [], buys: { added: [], dropped: [] }, moved: [], movedMore: 0, added: [], removed: [] }
+    const paths = (value: object) => versusFactsSchema.safeParse(value).error?.issues.map(issue => issue.path.join('.')) ?? []
+    const outages = [{ group: 'COOL-A', now: 51, was: 49 }, { group: 'CS-A', now: 7.5, was: 7.5 }, { group: 'AFW-A', now: 9, was: 9 }]
+    expect(paths({ ...facts, outages })).toEqual([])
+    expect(paths({ ...facts, outages: [] })).toEqual([])
+    expect(paths(facts)).toEqual([])
+    expect(paths({ ...facts, outages: [outages[0], outages[0]] })).toEqual(['outages'])
+    expect(paths({ ...facts, outages: [{ ...outages[0], now: -1 }] }).length).toBeGreaterThan(0)
+    expect(paths({ ...facts, outages: [{ group: 'COOL-A', now: 51 }] }).length).toBeGreaterThan(0)
+    expect(paths({ ...facts, outages: [{ ...outages[0], unit: 'h' }] }).length).toBeGreaterThan(0)
   })
 })

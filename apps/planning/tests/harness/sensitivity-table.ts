@@ -1,10 +1,11 @@
-// The +25 % sensitivity table (lane K batch 2, decision 3) for the Train A flagship, printed as markdown:
-//   bun apps/planning/tests/harness/sensitivity-table.ts
-// The flagship's recommended option (lane S's search, seed 1, 600 evaluations per sub-solve, so the same
-// option on any machine) is re-timed by lane S's repair path (solve/retime.ts: the same order, crews and
-// bought time, nothing earlier) in each case, and lane K judges each re-timing (check/retime.ts). Every
-// figure in the table is lane K's: the longest outage from the checker on the judged rows, the outcome from
-// judgeRetiming. The coordinator copies the output into the wiki at release, naming the commit.
+// The +25 % sensitivity table (lane K batch 2, decision 3; fix round): a stored plan's baseline option, as
+// markdown. The coordinator runs it on the published demo's plan, the baseline the walkthrough names:
+//   bun apps/planning/tests/harness/sensitivity-table.ts <data root> <workspace id> <plan id> [baseline key]
+// It reads the plan through Planning's own store, takes the named baseline (else the plan in force, the latest
+// baseline) on the inputs frozen with it, and prints at the top which plan, revision, baseline and option it
+// used. Each case re-times that option by lane S's repair path (solve/retime.ts: the same order, crews and
+// bought time, nothing earlier) and lane K judges it (check/retime.ts): the longest outage from the checker
+// on the judged rows, the outcome from judgeRetiming. The wiki copy names what the header says.
 // Cases: every job with its own estimate at +25 %; every three-point job at its high estimate; each alone.
 import { judgedInputs, judgeRetiming, rangedJobs, type RetimeJudgement } from '../../src/check/retime.ts'
 import { checkPlan, type CheckRow } from '../../src/check/check.ts'
@@ -12,11 +13,9 @@ import type { Plan, PlanInputs } from '../../src/plan/schema.ts'
 import { compile } from '../../src/solve/compile.ts'
 import { dateSchedule, undate } from '../../src/solve/date.ts'
 import { finishOf, prepare, repair } from '../../src/solve/decode.ts'
-import { laneKCheck, laneKVerify, laneKVerifyBound } from '../../src/solve/fixtures/lane-k.ts'
-import { trainAInputs } from '../../src/solve/fixtures/train-a-case.ts'
-import { generate } from '../../src/solve/generate.ts'
 import { atHigh, retimedRows } from '../../src/solve/retime.ts'
-import { searchEngine } from '../../src/solve/search.ts'
+import { workspaceIdSchema } from '@leitbild/contracts'
+import { createPlanStore } from '../../src/plan/store.ts'
 
 type Option = NonNullable<Plan['options']>['options'][number]
 
@@ -102,8 +101,18 @@ export const sensitivityRows = (inputs: PlanInputs, option: Option): Sensitivity
 
 const hours = (value: number): string => `${Number(value.toFixed(2))} h`
 
-/** The table as markdown, from the plan, the option and its rows; every figure from the rows' lane K results. */
-export const renderTable = (inputs: PlanInputs, option: Option, rows: readonly SensitivityRow[]): string => {
+type Baseline = Plan['baselines'][number]
+
+/** The named baseline, else the plan in force (the latest baseline). Refused when there is none or no such key. */
+export const baselineOf = (plan: Plan, key?: string): Baseline => {
+  const named = key === undefined ? [...plan.baselines].sort((x, y) => Date.parse(y.at) - Date.parse(x.at))[0] : plan.baselines.find(baseline => baseline.key === key)
+  if (named === undefined) throw new Error(`The plan has ${key === undefined ? 'no baseline' : `no baseline '${key}'`}; its baselines: ${plan.baselines.map(baseline => `${baseline.key} ('${baseline.name}')`).join(', ') || 'none'}`)
+  return named
+}
+
+/** The table as markdown for one baseline of a plan; every figure from the rows' lane K results. */
+export const renderTable = (plan: Plan, baseline: Baseline, rows: readonly SensitivityRow[]): string => {
+  const { inputs, option } = baseline
   const group = outageGroup(inputs)
   const zone = inputs.settings.timeZone ?? 'UTC'
   const when = (instant: string): string => {
@@ -115,6 +124,9 @@ export const renderTable = (inputs: PlanInputs, option: Option, rows: readonly S
   const resource = (key: string) => inputs.resources.find(entry => entry.key === key)?.label ?? key
   const groupLabel = inputs.groups.find(entry => entry.key === group)?.label ?? group
   const limit = inputs.rules.find(rule => rule.kind === 'span-limit' && rule.group === group)
+  // the bound the unplaced search used (check/retime.ts): the window's length again past the window end
+  const windowMs = inputs.settings.window === null ? 0 : Date.parse(inputs.settings.window.end) - Date.parse(inputs.settings.window.start)
+  const bound = windowMs % 86_400_000 === 0 ? `${windowMs / 86_400_000} day${windowMs === 86_400_000 ? '' : 's'}` : hours(windowMs / 3_600_000)
   const ruleWords = (key: string): string => {
     const rule = inputs.rules.find(entry => entry.key === key)
     if (rule?.kind === 'span-limit') return `the ${rule.limit.value} ${rule.limit.unit} limit on ${inputs.groups.find(entry => entry.key === rule.group)?.label ?? rule.group}`
@@ -129,12 +141,13 @@ export const renderTable = (inputs: PlanInputs, option: Option, rows: readonly S
     if (result.holds) return 'keeps every rule'
     if ('rule' in result) return `breaks ${ruleWords(result.rule)} at '${title(result.job)}', by ${hours(result.by.value)}`
     if ('window' in result) return `runs past the window end at '${title(result.job)}'; the work would end ${when(result.window.by)}`
-    return `'${title(result.unplaced.job)}' could not be done: ${resource(result.unplaced.resource)} has no time left after ${when(result.unplaced.after)}`
+    return `'${title(result.unplaced.job)}' could not be done: ${resource(result.unplaced.resource)} has no slot long enough left after ${when(result.unplaced.after)}, within ${bound} after the window`
   }
   const outage = (row: SensitivityRow): string => row.outage === undefined ? 'not measured' : row.outage === 'open' ? 'not returned' : hours(row.outage)
   const planned = outageOf(inputs, option.variant, option.rows, group)
   return [
-    `Pessimistic re-timing of "${option.label}" on the Train A flagship: the same order and crews, nothing earlier than planned; judged by lane K's checker.`,
+    `Plan '${plan.inputs.settings.title}' (${plan.id}) at revision ${plan.revision}. Baseline '${baseline.name}' (${baseline.key}), saved ${when(baseline.at)}: option '${option.label}' (${option.key}), solved on inputs revision ${option.inputsRevision}, re-timed on the inputs frozen with the baseline.`,
+    'Pessimistic re-timing: the same order and crews, nothing earlier than planned; judged by lane K\'s checker.',
     '',
     `| Case | Longest outage, ${groupLabel}${limit?.kind === 'span-limit' ? ` (limit ${limit.limit.value} ${limit.limit.unit})` : ''} | Pessimistic check |`,
     '|---|---|---|',
@@ -143,18 +156,16 @@ export const renderTable = (inputs: PlanInputs, option: Option, rows: readonly S
   ].join('\n')
 }
 
-/** The flagship's recommended option, solved the same way on every machine. */
-export const flagshipOption = async (inputs: PlanInputs): Promise<Option> => {
-  const set = (await generate({ engine: searchEngine(), check: laneKCheck, verify: laneKVerify, verifyBound: laneKVerifyBound }, {
-    inputs, revision: 1, previous: null, input: {}, by: { kind: 'service', name: 'sensitivity table' }, signal: new AbortController().signal, seed: 1, evals: 600,
-  })).optionSet
-  const option = set.options.find(entry => entry.key === set.recommended)
-  if (option === undefined) throw new Error('The flagship has no recommended option')
-  return option
+/** The table for a stored plan, read through Planning's own store. */
+export const tableFor = async (root: string, workspaceId: string, planId: string, key?: string): Promise<{ readonly plan: Plan; readonly baseline: Baseline; readonly rows: SensitivityRow[]; readonly markdown: string }> => {
+  const plan = await createPlanStore(root).read(workspaceIdSchema.parse(workspaceId), planId)
+  const baseline = baselineOf(plan, key)
+  const rows = sensitivityRows(baseline.inputs, baseline.option)
+  return { plan, baseline, rows, markdown: renderTable(plan, baseline, rows) }
 }
 
 if (import.meta.main) {
-  const inputs = trainAInputs({ read: true })
-  const option = await flagshipOption(inputs)
-  console.log(renderTable(inputs, option, sensitivityRows(inputs, option)))
+  const [root, workspaceId, planId, key] = process.argv.slice(2)
+  if (root === undefined || workspaceId === undefined || planId === undefined) throw new Error('usage: sensitivity-table.ts <data root> <workspace id> <plan id> [baseline key]')
+  console.log((await tableFor(root, workspaceId, planId, key)).markdown)
 }

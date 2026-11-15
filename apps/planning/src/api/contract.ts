@@ -161,8 +161,9 @@ const issuesOf = (context: z.core.$RefinementCtx): Issue => (path, message) => c
  * explain recommended (decision "Lane P batch 2", 3): why `option` is recommended, against `against`, the best
  * other ranked option (absent: none to compare with). `deciding`: the first goal on which their ranking keys
  * differ. `goals`: each plan goal's value, and the other option's beside it. `caveats`: what each method pick
- * leaves unpriced, with the other option's value for the same caveat. `outage`: what the option's status says
- * about the plan's outage goal. Prose is generated from these, never stored.
+ * leaves unpriced, with the other option's value for the same caveat. `outage`: the proven floor of the
+ * longest outage, in hours, for the outage goal's group, present only when lane K has stored one (fix round
+ * G4); without it the outage line is left out. Prose is generated from these, never stored.
  */
 export const recommendedFactsSchema = z.object({
   option: keySchema, against: keySchema.optional(), deciding: goalIdSchema.optional(),
@@ -170,7 +171,7 @@ export const recommendedFactsSchema = z.object({
   caveats: z.array(z.object({
     choice: keySchema, option: keySchema, label: caveatSchema.shape.label, value: z.number().finite().optional(), unit: caveatSchema.shape.unit, against: z.number().finite().optional(),
   }).strict()).max(32),
-  outage: z.object({ goal: goalIdSchema, word: goalWordSchema, value: z.number().finite(), unit: z.string(), bound: z.number().finite().optional() }).strict().optional(),
+  outage: z.object({ goal: goalIdSchema, group: keySchema, hours: z.number().finite().nonnegative() }).strict().optional(),
 }).strict().superRefine((facts, context) => {
   const issue = issuesOf(context)
   const compared = facts.against !== undefined
@@ -185,7 +186,6 @@ export const recommendedFactsSchema = z.object({
     if (caveat.against !== undefined && (!compared || caveat.value === undefined)) issue(['caveats', index, 'against'], 'The other option\'s caveat value is given only beside a value, against an option')
   })
   const outage = facts.outage
-  if (outage !== undefined && outage.word === 'proven optimal' && outage.bound === undefined) issue(['outage', 'bound'], 'Proven optimal names its bound')
   if (outage !== undefined && !ids.includes(outage.goal)) issue(['outage', 'goal'], 'The outage goal is one of the goals listed')
 })
 export type RecommendedFacts = z.infer<typeof recommendedFactsSchema>
@@ -195,15 +195,17 @@ const timesSchema = z.object({ start: instantSchema, finish: instantSchema }).st
  * explain versus {previous} (decision "Lane P batch 2", 3): `option` of the current set against `previous` of
  * the previous set. `from` is the previous option's inputs revision and `to` the plan's; `changes` the change
  * log's own summaries between them, and `complete` whether the log still holds every one. `goals` only when
- * the goals stayed as they were. `methods` the picks that differ; `buys` the purchases added and dropped;
- * `moved` jobs in both at another start or finish (at most 20, `movedMore` counts the rest); `added` and
- * `removed` jobs in only one of the two.
+ * the goals stayed as they were. `outages`: the longest outage of each group with a span rule, now and then,
+ * in hours, one entry per group (fix round G5; absent until both options' figures are stored). `methods`
+ * the picks that differ; `buys` the purchases added and dropped; `moved` jobs in both at another start or
+ * finish (at most 20, `movedMore` counts the rest); `added` and `removed` jobs in only one of the two.
  */
 export const versusFactsSchema = z.object({
   option: keySchema, previous: keySchema,
   from: z.number().int().positive(), to: z.number().int().positive(), complete: z.boolean(),
   changes: z.array(z.object({ revision: z.number().int().positive(), summary: changeSchema.shape.summary }).strict()).max(20),
   goals: z.array(z.object({ goal: goalIdSchema, now: z.number().finite(), was: z.number().finite(), unit: z.string() }).strict()).max(6).optional(),
+  outages: z.array(z.object({ group: keySchema, now: z.number().finite().nonnegative(), was: z.number().finite().nonnegative() }).strict()).max(64).optional(),
   methods: z.array(z.object({ choice: keySchema, now: keySchema, was: keySchema }).strict()).max(8),
   buys: z.object({ added: z.array(keySchema).max(64), dropped: z.array(keySchema).max(64) }).strict(),
   moved: z.array(z.object({ job: keySchema, now: timesSchema, was: timesSchema }).strict()).max(20),
@@ -215,6 +217,7 @@ export const versusFactsSchema = z.object({
   const revisions = facts.changes.map(change => change.revision)
   if (revisions.some((revision, index) => revision <= facts.from || revision > facts.to || (index > 0 && revision < revisions[index - 1]!))) issue(['changes'], 'Changes lie after the previous options\' revision and up to now, in order')
   if (facts.goals !== undefined && !ascending(facts.goals.map(line => line.goal))) issue(['goals'], 'Goals are listed once each, in the plan\'s order')
+  if (facts.outages !== undefined && !distinct(facts.outages.map(outage => outage.group))) issue(['outages'], 'Each group\'s outage is listed once')
   if (!distinct(facts.methods.map(method => method.choice))) issue(['methods'], 'Each method choice is listed once')
   facts.methods.forEach((method, index) => { if (method.now === method.was) issue(['methods', index, 'now'], 'Only a pick that differs is listed') })
   const { added, dropped } = facts.buys
@@ -287,8 +290,9 @@ const solved = (end: BuysEnd): boolean => end === 'proven' || end === 'found'
  * solved" an unsolved end; "not found better" both solved and no shorter outage above. No word fits two
  * refused rungs, or a solved rung below a refused one, so no such row is shown.
  * outage: the higher rung's longest outage minus the lower's, in h; cost: its extra cost minus the lower's, in
- * the plan currency; both exactly when both ends are solved. With "proven: no gain", `finish` is the higher
- * rung's first cause of what sets the finish.
+ * the plan currency; both exactly when both ends are solved. `finish` is the higher rung's first cause of what
+ * sets the finish: allowed on any row whose two ends are solved, and required with "proven: no gain" (fix
+ * round G3). A "no gain" without its cause reads "not found better".
  */
 export const buysRowSchema = z.object({
   from: rungSchema, to: rungSchema, ends: z.object({ from: buysEndSchema, to: buysEndSchema }).strict(), word: buysWordSchema,
@@ -308,7 +312,8 @@ export const buysRowSchema = z.object({
   }
   if (!stands[row.word]) issue('word', `"${row.word}" does not stand on a ${from} lower rung and a ${to} higher one`)
   if (both !== (row.outage !== undefined && row.cost !== undefined)) issue('outage', 'A row gives both differences exactly when both rungs are solved')
-  if ((row.word === 'proven: no gain') !== (row.finish !== undefined)) issue('finish', '"Proven: no gain" names what sets the finish, and only it does')
+  if (row.word === 'proven: no gain' && row.finish === undefined) issue('finish', '"Proven: no gain" names what sets the finish')
+  if (row.finish !== undefined && !both) issue('finish', 'What sets the finish is named only between two solved rungs')
   if (row.outage === undefined) return
   if (row.word === 'proven: no gain' && row.outage !== 0) issue('outage', '"Proven: no gain" means both outages are equal')
   if ((row.word === 'found' || row.word === 'proven') && !(row.outage < 0)) issue('outage', 'A gain is a shorter outage on the higher rung')
