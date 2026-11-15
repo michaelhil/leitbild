@@ -15,6 +15,12 @@ import type { MapPrompt } from '../surface-panel-interaction.ts'
  * dismissal is never silent: `onDismiss` hears of each one, once, so the
  * surface drops the prompt and tells its panel. A prompt the panel replaces
  * or clears, or the map's teardown, is no dismissal.
+ *
+ * Layout: the × stands first, set apart from the options by a rule, and the
+ * options follow in the order given, so a near-miss on × never lands on the
+ * last option, the one that drops work in a busy prompt. The options sit
+ * side by side while both fit and stack otherwise, each label whole; every
+ * control is at least 44 px and 8 px from the next (`OperationalMap.svelte`).
  */
 
 /** How far the popup stands off its point, per anchor MapLibre picks: clear of a 44 px tap around the point. */
@@ -31,6 +37,9 @@ export const mapPromptOffsets: Readonly<Record<PositionAnchor, [number, number]>
   'bottom-left': [diagonalPx, -diagonalPx],
   'bottom-right': [-diagonalPx, -diagonalPx],
 }
+
+/** The prompt's widest: room for two options of a few words side by side, never wider than the screen less its gutters. */
+export const mapPromptMaxWidth = 'min(480px, calc(100vw - 32px))'
 
 /** A prompt drawn on the map. */
 export interface MapPromptView {
@@ -49,7 +58,7 @@ export interface MapPromptController {
   readonly destroy: () => void
 }
 
-/** The MapLibre popup: the options, then the ×. */
+/** The MapLibre popup: the ×, a rule, then the options. */
 const drawPopup: MapPromptDraw = (map, prompt, dismiss) => {
   const buttons = prompt.options.map(option => {
     const button = document.createElement('button')
@@ -68,11 +77,14 @@ const drawPopup: MapPromptDraw = (map, prompt, dismiss) => {
   close.setAttribute('aria-label', 'Dismiss map prompt')
   close.textContent = '×'
   close.addEventListener('click', event => { event.stopPropagation(); dismiss() })
+  const options = document.createElement('div')
+  options.className = 'map-prompt-options'
+  options.append(...buttons)
   const content = document.createElement('div')
   content.className = 'map-prompt-actions'
-  content.append(...buttons, close)
+  content.append(close, options)
   const [lon, lat] = prompt.point.coordinates
-  const popup = new Popup({ closeButton: false, closeOnClick: false, offset: { ...mapPromptOffsets }, className: 'map-prompt' })
+  const popup = new Popup({ closeButton: false, closeOnClick: false, offset: { ...mapPromptOffsets }, maxWidth: mapPromptMaxWidth, className: 'map-prompt' })
     .setLngLat([lon, lat])
     .setDOMContent(content)
     .addTo(map)

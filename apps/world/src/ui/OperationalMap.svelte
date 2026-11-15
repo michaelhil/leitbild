@@ -1032,10 +1032,29 @@
     left: var(--map-cover-left);
   }
 
+  /* A panel's prompt: the × first, a rule, then the options (map-prompt.ts). */
   .map :global(.map-prompt-actions) {
     display: flex;
+    align-items: flex-start;
+    gap: 8px;
+    padding: 8px;
     border-radius: 10px;
     background: var(--panel);
+  }
+
+  .map :global(.map-prompt-actions > .map-popup-dismiss) {
+    flex: none;
+  }
+
+  /* Side by side while both options fit, stacked otherwise; a label longer than the prompt wraps, never clips. */
+  .map :global(.map-prompt-options) {
+    display: flex;
+    flex: 1 1 auto;
+    flex-wrap: wrap;
+    gap: 8px;
+    min-width: 0;
+    padding-left: 8px;
+    border-left: 1px solid var(--border);
   }
 
   .map :global(.map-popup-dismiss) {
@@ -1099,6 +1118,10 @@
   }
 
   .map :global(.map-prompt-button) {
+    flex-grow: 1;
+    flex-shrink: 1;
+    flex-basis: max-content;
+    max-width: 100%;
     min-width: 44px;
     min-height: 44px;
     padding: 10px 16px;
@@ -1108,11 +1131,9 @@
     color: white;
     font: inherit;
     font-weight: 650;
+    text-align: center;
+    overflow-wrap: anywhere;
     cursor: pointer;
-  }
-
-  .map :global(.map-prompt-actions .map-prompt-button + .map-prompt-button) {
-    margin-left: 6px;
   }
 
   /* An option that drops work, such as "Now (drops C-3 · P3)". */
