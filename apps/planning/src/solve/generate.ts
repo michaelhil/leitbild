@@ -483,13 +483,22 @@ export const generate = async (deps: GenerateDeps, request: GenerateRequest): Pr
    * order: the best feasible one; with none, "proven infeasible" only when every combination is proven
    * infeasible. When some are and another is unresolved or stopped, no plan was ruled out for that one, so
    * the option carries no proof: it is unresolved, with that combination's run and attempt. An input finding
-   * stands as it is: the inputs need fixing whatever is searched.
+   * stands as it is: the inputs need fixing whatever is searched. A Generate stopped before every combination
+   * ran proves nothing about the rest (recheck R1): with no feasible attempt it is cancelled when it was
+   * stopped, or unresolved.
    */
-  const variantOption = (attempts: readonly Option[]): Option => {
+  const variantOption = (attempts: readonly Option[], combinations: number): Option => {
     const picks = (option: Option): string => JSON.stringify(option.variant.methods)
     const ordered = [...attempts].sort((x, y) => compareOptions(rankable(x, inputs), rankable(y, inputs)) || (picks(x) < picks(y) ? -1 : picks(x) > picks(y) ? 1 : 0))
     const first = ordered[0]!
-    if (first.status.word === 'validated feasible' || ordered.every(option => option.status.word === 'proven infeasible')) return first
+    if (first.status.word === 'validated feasible') return first
+    if (attempts.length < combinations && first.status.word === 'proven infeasible') {
+      const run = first.status.run
+      if (!request.signal.aborted) return { ...first, status: unresolvedStatus(run) }
+      const who = request.stoppedByWho?.()
+      return { ...first, status: cancelledStatus({ ...run, stoppedBy: 'cancelled', ...(who === undefined ? {} : { stoppedByWho: who }) }) }
+    }
+    if (ordered.every(option => option.status.word === 'proven infeasible')) return first
     const input = ordered.find(option => option.status.word === 'invalid input') ?? ordered.find(option => option.status.word === 'unsupported feature')
     if (input !== undefined) return input
     if (!ordered.some(option => option.status.word === 'proven infeasible')) return first
@@ -505,7 +514,7 @@ export const generate = async (deps: GenerateDeps, request: GenerateRequest): Pr
       if (request.signal.aborted) break
     }
     if (attempts.length === 0) continue
-    fresh.push(variantOption(attempts))
+    fresh.push(variantOption(attempts, variant.combos.length))
     if (request.signal.aborted) break
   }
 
