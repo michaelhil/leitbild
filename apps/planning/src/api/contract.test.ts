@@ -251,24 +251,24 @@ describe('increment 2: explain recommended and versus {previous}; read buys', ()
     expect(ok({ ask: 'versus', versus: { baseline: 'B1' } })).toBe(false)
   })
 
-  const rung = (number: number, buy: string[], option?: string) => ({ rung: { rung: number, buy, ...(option === undefined ? {} : { option }), bought: [] } })
+  const rung = (number: number, buy: string[], option?: string, methods: object[] = []) => ({ rung: { rung: number, methods, buy, ...(option === undefined ? {} : { option }), bought: [] } })
   const page = (items: unknown[]) => sectionDataSchemas.buys.safeParse({ items }).success
-  const row = (value: object) => buysRowSchema.safeParse(value).error?.issues.map(issue => issue.path.join('.')) ?? []
+  const row = (value: object) => buysRowSchema.safeParse({ methods: [], ...value }).error?.issues.map(issue => issue.path.join('.')) ?? []
   const finish = { kind: 'crew', about: [{ kind: 'resource', key: 'crane' }] }
   const ends = (from: string, to: string) => ({ ends: { from, to } })
 
   test('the buys section pages rungs and rows; a row says one ladder word, never "buys nothing"', () => {
     expect(readInputSchema.safeParse({ section: 'buys' }).success).toBe(true)
     const days = ['ect-friday', 'crane-fri']
-    expect(page([rung(0, days, 'r0'), rung(1, [...days, 'ot-mech'], 'r1'), rung(2, [...days, 'ot-mech', 'contractor-nights']), { row: { from: 0, to: 1, ...ends('found', 'found'), word: 'found', outage: -6, cost: 41_000 } }])).toBe(true)
-    expect(page([{ row: { from: 0, to: 1, ...ends('found', 'found'), word: 'buys nothing', outage: 0, cost: 0 } }])).toBe(false)
-    expect(page([{ row: { from: 0, to: 1, word: 'found', outage: -6, cost: 41_000 } }])).toBe(false)
+    expect(page([rung(0, days, 'r0'), rung(1, [...days, 'ot-mech'], 'r1'), rung(2, [...days, 'ot-mech', 'contractor-nights']), { row: { methods: [], from: 0, to: 1, ...ends('found', 'found'), word: 'found', outage: -6, cost: 41_000 } }])).toBe(true)
+    expect(page([{ row: { methods: [], from: 0, to: 1, ...ends('found', 'found'), word: 'buys nothing', outage: 0, cost: 0 } }])).toBe(false)
+    expect(page([{ row: { methods: [], from: 0, to: 1, word: 'found', outage: -6, cost: 41_000 } }])).toBe(false)
   })
 
   test('rungs follow the rungs offered: with one price form, rungs 0 and 1, and rung 1 buys all crew time', () => {
     // A plan whose crew time is priced per period only (contractor nights): days only, then everything.
     const days = ['crane-fri'], all = ['crane-fri', 'contractor-nights']
-    expect(page([rung(0, days, 'r0'), rung(1, all, 'r1'), { row: { from: 0, to: 1, ...ends('refused', 'found'), word: 'makes it possible' } }])).toBe(true)
+    expect(page([rung(0, days, 'r0'), rung(1, all, 'r1'), { row: { methods: [], from: 0, to: 1, ...ends('refused', 'found'), word: 'makes it possible' } }])).toBe(true)
     expect(row({ from: 0, to: 2, ...ends('refused', 'found'), word: 'makes it possible' })).toEqual(['to'])
     // With three rungs offered, rung 1 to rung 2 is adjacent too.
     expect(row({ from: 1, to: 2, ...ends('found', 'found'), word: 'found', outage: -3, cost: 9_000 })).toEqual([])
@@ -432,7 +432,7 @@ describe('increment 2: the previous options page, and dominated options', () => 
 
 describe('fix round: what sets the finish on any compared row (G3); each group\'s outage in versus (G5)', () => {
   const finish = { kind: 'crew', about: [{ kind: 'resource', key: 'crane' }] }
-  const row = (value: object) => buysRowSchema.safeParse(value).error?.issues.map(issue => issue.path.join('.')) ?? []
+  const row = (value: object) => buysRowSchema.safeParse({ methods: [], ...value }).error?.issues.map(issue => issue.path.join('.')) ?? []
   const ends = (from: string, to: string) => ({ ends: { from, to } })
 
   test('G3: the higher rung\'s cause rides on every row between two solved rungs, and is required only with "proven: no gain"', () => {
@@ -458,5 +458,34 @@ describe('fix round: what sets the finish on any compared row (G3); each group\'
     expect(paths({ ...facts, outages: [{ ...outages[0], now: -1 }] }).length).toBeGreaterThan(0)
     expect(paths({ ...facts, outages: [{ group: 'COOL-A', now: 51 }] }).length).toBeGreaterThan(0)
     expect(paths({ ...facts, outages: [{ ...outages[0], unit: 'h' }] }).length).toBeGreaterThan(0)
+  })
+})
+
+describe('one ladder per method (U3): rungs name their method picks, rows compare two rungs of one method', () => {
+  const rebuild = [{ choice: 'SWA-method', option: 'rebuild' }], swap = [{ choice: 'SWA-method', option: 'swap' }]
+  const rung = (number: number, methods: object[], buy: string[] = []) => ({ rung: { rung: number, methods, buy, bought: [] } })
+  const row = (methods: object[], from: number) => ({ row: { methods, from, to: from + 1, ends: { from: 'found', to: 'found' }, word: 'found', outage: -3, cost: 9_000 } })
+  const page = (items: unknown[]) => sectionDataSchemas.buys.safeParse({ items })
+
+  test('accepted: each method numbers its own rungs from 0, and each row names the method of its two rungs', () => {
+    expect(page([rung(0, rebuild), rung(1, rebuild, ['ot-mech']), rung(0, swap), rung(1, swap, ['ot-mech']), row(rebuild, 0), row(swap, 0)]).success).toBe(true)
+    // The picks are one set: their order does not make another ladder.
+    const two = [{ choice: 'SWA-method', option: 'swap' }, { choice: 'CCW-method', option: 'replace' }]
+    expect(page([rung(0, two), rung(1, [...two].reverse()), row(two, 0)]).success).toBe(true)
+    // A plan with no method choice, or a request that fixes none: no picks.
+    expect(page([rung(0, []), rung(1, []), row([], 0)]).success).toBe(true)
+  })
+
+  test('refused: a rung or row without its picks, a choice picked twice, or a rung listed twice in one method\'s ladder', () => {
+    const { methods: _methods, ...unpicked } = rung(0, rebuild).rung
+    expect(page([{ rung: unpicked }]).success).toBe(false)
+    const { methods: _rowMethods, ...unnamed } = row(rebuild, 0).row
+    expect(page([{ row: unnamed }]).success).toBe(false)
+    expect(page([rung(0, [...rebuild, ...swap])]).success).toBe(false)
+    expect(page([row([...rebuild, ...swap], 0)]).success).toBe(false)
+    expect(page([rung(0, rebuild), rung(0, rebuild, ['ot-mech'])]).error?.issues.map(issue => issue.path.join('.'))).toEqual(['items.1.rung'])
+    expect(page([rung(0, [{ choice: 'SWA-method' }])]).success).toBe(false)
+    // A row names one method's picks, so it cannot compare a rebuild rung with a swap rung.
+    expect(page([{ row: { ...row(rebuild, 0).row, toMethods: swap } }]).success).toBe(false)
   })
 })

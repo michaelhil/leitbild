@@ -590,7 +590,7 @@ describe('increment 2: keep, the previous set, why recommended, versus and what 
       // A plan with no options lists the rungs to solve and no row.
       const empty = await local.create('train-a-work-week')
       const listed = sectionDataSchemas.buys.parse((await local.call('planning.plan.read', { resource: empty.id, input: { section: 'buys' } })).body.result.sections[0].data)
-      expect(listed.items).toEqual(rungsOf(plan.inputs).map(rung => ({ rung: { rung: rung.rung, buy: [...rung.buy], bought: [] } })))
+      expect(listed.items).toEqual(rungsOf(plan.inputs).map(rung => ({ rung: { rung: rung.rung, methods: [], buy: [...rung.buy], bought: [] } })))
     } finally { await local.close() }
   })
 })

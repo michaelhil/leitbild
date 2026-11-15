@@ -62,9 +62,9 @@ const solved = (end: BuysEnd): boolean => end === 'proven' || end === 'found'
 const exact = (value: number): number => (Math.abs(value) < 1e-9 ? 0 : value)
 
 /** The row between two adjacent solved-on-this-revision rungs, or none when no word stands on their ends. */
-const rowOf = (lower: Required<LadderRung>, upper: Required<LadderRung>): Ladder['rows'][number] | undefined => {
+const rowOf = (lower: Required<LadderRung>, upper: Required<LadderRung>, methods: BuysRung['methods']): Ladder['rows'][number] | undefined => {
   const from = lower.option.standing, to = upper.option.standing
-  const head = { from: lower.rung, to: upper.rung, ends: { from: from.end, to: to.end } }
+  const head = { methods: [...methods], from: lower.rung, to: upper.rung, ends: { from: from.end, to: to.end } }
   if (from.end === 'refused') {
     if (solved(to.end)) return { row: { ...head, word: 'makes it possible' } }
     return to.end === 'unsolved' ? { row: { ...head, word: 'not solved' } } : undefined   // two refused rungs: no word fits
@@ -79,13 +79,13 @@ const rowOf = (lower: Required<LadderRung>, upper: Required<LadderRung>): Ladder
   return { row: { ...head, word, outage, cost }, ...(word === 'proven: no gain' ? { finishFrom: upper.option.key } : {}) }
 }
 
-/** The rungs, each with its option and that option's bought time, and a row for each adjacent pair solved here. */
-export const ladderOf = (rungs: readonly LadderRung[]): Ladder => ({
-  rungs: rungs.map(rung => ({ rung: rung.rung, buy: [...rung.buy], ...(rung.option === undefined ? {} : { option: rung.option.key }), bought: [...(rung.option?.standing.bought ?? [])] })),
+/** One method's ladder (U3): its rungs, solved for `methods`, each with its option and that option's bought time, and a row for each adjacent pair solved here. */
+export const ladderOf = (rungs: readonly LadderRung[], methods: BuysRung['methods']): Ladder => ({
+  rungs: rungs.map(rung => ({ rung: rung.rung, methods: [...methods], buy: [...rung.buy], ...(rung.option === undefined ? {} : { option: rung.option.key }), bought: [...(rung.option?.standing.bought ?? [])] })),
   rows: rungs.slice(1).flatMap((upper, index) => {
     const lower = rungs[index]!
     if (lower.option === undefined || upper.option === undefined) return []
-    const row = rowOf(lower as Required<LadderRung>, upper as Required<LadderRung>)
+    const row = rowOf(lower as Required<LadderRung>, upper as Required<LadderRung>, methods)
     return row === undefined ? [] : [row]
   }),
 })

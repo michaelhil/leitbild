@@ -54,11 +54,11 @@ const swapLadder = (): { model: PlanModel; pages: BuysPage[] } => {
   const model = modelOf(inputs, { options: { at: '2026-11-12T09:05:00.000Z', recommended: 'rung-2', items: options } })
   const [days, overtime, all] = buyLists(inputs)
   const pages = [page([
-    { rung: { rung: 0, buy: days, option: 'rung-0', bought: [] } },
-    { rung: { rung: 1, buy: overtime, option: 'rung-1', bought: [] } },
-    { rung: { rung: 2, buy: all, option: 'rung-2', bought: [{ id: 'bought:contractor-nights', value: or.nights.nights, unit: 'periods' }] } },
-    { row: { from: 0, to: 1, ends: { from: 'refused', to: 'found' }, word: 'makes it possible' } },
-    { row: { from: 1, to: 2, ends: { from: 'found', to: 'found' }, word: 'found', outage: or.nights.span - or.overtime.span, cost: or.nights.cost - or.overtime.cost } },
+    { rung: { rung: 0, methods: [], buy: days, option: 'rung-0', bought: [] } },
+    { rung: { rung: 1, methods: [], buy: overtime, option: 'rung-1', bought: [] } },
+    { rung: { rung: 2, methods: [], buy: all, option: 'rung-2', bought: [{ id: 'bought:contractor-nights', value: or.nights.nights, unit: 'periods' }] } },
+    { row: { methods: [], from: 0, to: 1, ends: { from: 'refused', to: 'found' }, word: 'makes it possible' } },
+    { row: { methods: [], from: 1, to: 2, ends: { from: 'found', to: 'found' }, word: 'found', outage: or.nights.span - or.overtime.span, cost: or.nights.cost - or.overtime.cost } },
   ])]
   return { model, pages }
 }
@@ -74,7 +74,7 @@ describe('what overtime buys', () => {
     const inputs = { ...model.inputs, purchases: model.inputs.purchases.map(purchase => purchase.key === 'contractor-nights' ? { ...purchase, ordered: { at: '2026-11-12T08:00:00Z', by: { kind: 'human' as const } } } : purchase) }
     const ordered = modelOf(inputs)
     const [days] = buyLists(inputs)
-    expect(ladderView([page([{ rung: { rung: 0, buy: [...days, 'contractor-nights'], bought: [] } }])], ordered, contextOf(ordered)).rungs[0]!.name).toBe(`Days only, with ${label('contractor-nights')} already ordered`)
+    expect(ladderView([page([{ rung: { rung: 0, methods: [], buy: [...days, 'contractor-nights'], bought: [] } }])], ordered, contextOf(ordered)).rungs[0]!.name).toBe(`Days only, with ${label('contractor-nights')} already ordered`)
     // Each rung is solved by one Generate with its own buy list, kept beside the options already there.
     expect(view.rungs[2]!.label).toBe(`Rung 3 of 3: ${view.rungs[2]!.name}`)
     expect(rungRequest(view.rungs[2]!)).toEqual({ variants: [{ label: view.rungs[2]!.label, buy: [...buyLists(model.inputs)[2]] }], keep: true })
@@ -109,7 +109,7 @@ describe('what overtime buys', () => {
     const crew = model.inputs.resources.find(resource => resource.key === 'mech-station')!.crewSize!
     expect(evening * crew).toBe(12)
     const [, , all] = buyLists(model.inputs)
-    const uses = (bought: unknown[]) => ladderView([page([{ rung: { rung: 0, buy: [...buyLists(model.inputs)[0]], option: 'rung-1', bought: [] } }, { rung: { rung: 1, buy: [...all], option: 'rung-2', bought } }])], model, context).rungs[1]!.uses
+    const uses = (bought: unknown[]) => ladderView([page([{ rung: { rung: 0, methods: [], buy: [...buyLists(model.inputs)[0]], option: 'rung-1', bought: [] } }, { rung: { rung: 1, methods: [], buy: [...all], option: 'rung-2', bought } }])], model, context).rungs[1]!.uses
     expect(uses([{ id: 'bought:ot-mech', value: evening * crew, unit: 'person-h' }, { id: 'bought:contractor-nights', value: 1, unit: 'periods' }]))
       .toEqual([`${label('ot-mech')}: 12 person-hours`, `${label('contractor-nights')}: 1 night`])
     // The nights are overnight periods in the plan zone (19:00 to 07:00 local), so they are said as nights.
@@ -128,9 +128,9 @@ describe('what overtime buys', () => {
     const [days, overtime, all] = buyLists(model.inputs)
     const crane = { kind: 'shift', about: [{ kind: 'resource', key: 'crane' }] }
     const pages = [page([
-      { rung: { rung: 0, buy: days, bought: [] } }, { rung: { rung: 1, buy: overtime, option: 'r1', bought: [] } }, { rung: { rung: 2, buy: all, option: 'r2', bought: [] } },
-      { row: { from: 0, to: 1, ends: { from: 'unsolved', to: 'proven' }, word: 'not solved' } },
-      { row: { from: 1, to: 2, ends: { from: 'proven', to: 'proven' }, word: 'proven: no gain', outage: 0, cost: 0, finish: crane } },
+      { rung: { rung: 0, methods: [], buy: days, bought: [] } }, { rung: { rung: 1, methods: [], buy: overtime, option: 'r1', bought: [] } }, { rung: { rung: 2, methods: [], buy: all, option: 'r2', bought: [] } },
+      { row: { methods: [], from: 0, to: 1, ends: { from: 'unsolved', to: 'proven' }, word: 'not solved' } },
+      { row: { methods: [], from: 1, to: 2, ends: { from: 'proven', to: 'proven' }, word: 'proven: no gain', outage: 0, cost: 0, finish: crane } },
     ])]
     const context = contextOf(model)
     const view = ladderView(pages, model, context)
