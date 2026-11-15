@@ -80,11 +80,14 @@ describe('a preview runs in a solver child too', () => {
     const pool = createSolverPool()
     try {
       const solver = createRealSolver(pool)
-      const request = { inputs: flagship, inputsRevision: 1, variants: undefined, seconds: 2, stored: null, at: new Date().toISOString(), by: { kind: 'service' as const, name: 'test' }, signal: new AbortController().signal }
-      const set = await solver.generate(request)
+      // A plan to preview needs a full Generate: at 2 s the flagship's searches end before any plan on a
+      // loaded machine (as before increment 2), and nothing is recommended.
+      const request = (seconds: number) => ({ inputs: flagship, inputsRevision: 1, variants: undefined, seconds, stored: null, at: new Date().toISOString(), by: { kind: 'service' as const, name: 'test' }, signal: new AbortController().signal })
+      const set = await solver.generate(request(20))
+      expect(set.recommended).toBeDefined()
       const option = set.options.find(candidate => candidate.key === set.recommended)!
       expect(await pool.preview(flagship, option)).toEqual(previewOption(flagship, option))
-      const running = solver.generate(request)
+      const running = solver.generate(request(2))
       await expect(solver.preview({ inputs: flagship, option })).rejects.toMatchObject({ status: 409, code: 'solver_busy', message: SOLVER_BUSY_WORDS })
       await running
     } finally { await pool.shutdown() }
