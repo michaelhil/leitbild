@@ -179,6 +179,11 @@ const paged = <T extends z.ZodType>(item: T) => z.object({ items: z.array(item),
  * on the same revision and formulation. A rung's `buy` is the list its Generate sends; `option` is its stored
  * option, fresh on the current revision and formulation (absent: still to solve there); `bought` are that
  * option's own 'bought:<purchase>' metrics. A row's word comes from this list, never "buys nothing".
+ *
+ * Rungs are numbered in the order they are offered, from 0, with no gaps: rung 0 buys no crew time, and each
+ * next rung adds the crew-time purchases of one more price form (per person-hour first, then the rest). A plan
+ * with crew time in one price form only offers rungs 0 and 1, and its rung 1 buys all of it. A row compares
+ * two adjacent offered rungs, so `to` is always `from + 1`.
  */
 export const buysWordSchema = z.enum(['makes it possible', 'not solved', 'proven: no gain', 'found', 'proven', 'not found better'])
 const rungSchema = z.number().int().min(0).max(2)
@@ -186,22 +191,46 @@ export const buysRungSchema = z.object({
   rung: rungSchema, buy: z.array(keySchema).max(64), option: keySchema.optional(), bought: z.array(metricSchema).max(64),
 }).strict()
 /**
+ * Where a row's rung stands: proven (validated feasible, proven optimal on the goal the row compares), found
+ * (validated feasible, not proven on it), refused (proven infeasible, with a certificate) or unsolved (any
+ * other status: stopped, unresolved, cancelled, invalid input).
+ */
+export const buysEndSchema = z.enum(['proven', 'found', 'refused', 'unsolved'])
+type BuysEnd = z.infer<typeof buysEndSchema>
+const solved = (end: BuysEnd): boolean => end === 'proven' || end === 'found'
+/**
+ * Each word stands only on its ends: "makes it possible" a refused lower rung and a solved higher one;
+ * "proven" and "proven: no gain" both ends proven; "found" both solved and at least one not proven; "not
+ * solved" an unsolved end; "not found better" both solved and no shorter outage above. No word fits two
+ * refused rungs, or a solved rung below a refused one, so no such row is shown.
  * outage: the higher rung's longest outage minus the lower's, in h; cost: its extra cost minus the lower's, in
- * the plan currency. With "proven: no gain", `finish` is the higher rung's first cause of what sets the finish.
+ * the plan currency; both exactly when both ends are solved. With "proven: no gain", `finish` is the higher
+ * rung's first cause of what sets the finish.
  */
 export const buysRowSchema = z.object({
-  from: rungSchema, to: rungSchema, word: buysWordSchema,
+  from: rungSchema, to: rungSchema, ends: z.object({ from: buysEndSchema, to: buysEndSchema }).strict(), word: buysWordSchema,
   outage: z.number().finite().optional(), cost: z.number().finite().optional(), finish: becauseSchema.optional(),
 }).strict().superRefine((row, context) => {
   const issue = (path: string, message: string) => context.addIssue({ code: 'custom', path: [path], message })
-  if (row.to !== row.from + 1) issue('to', 'A row compares a rung with the one above it')
-  const compared = row.word !== 'makes it possible' && row.word !== 'not solved'
-  if (compared !== (row.outage !== undefined && row.cost !== undefined)) issue('outage', 'A row gives both differences exactly when both rungs are solved and comparable')
+  if (row.to !== row.from + 1) issue('to', 'A row compares a rung with the next one offered')
+  const { from, to } = row.ends
+  const both = solved(from) && solved(to)
+  const stands: Readonly<Record<z.infer<typeof buysWordSchema>, boolean>> = {
+    'makes it possible': from === 'refused' && solved(to),
+    proven: from === 'proven' && to === 'proven',
+    'proven: no gain': from === 'proven' && to === 'proven',
+    found: both && (from !== 'proven' || to !== 'proven'),
+    'not solved': from === 'unsolved' || to === 'unsolved',
+    'not found better': both,
+  }
+  if (!stands[row.word]) issue('word', `"${row.word}" does not stand on a ${from} lower rung and a ${to} higher one`)
+  if (both !== (row.outage !== undefined && row.cost !== undefined)) issue('outage', 'A row gives both differences exactly when both rungs are solved')
   if ((row.word === 'proven: no gain') !== (row.finish !== undefined)) issue('finish', '"Proven: no gain" names what sets the finish, and only it does')
   if (row.outage === undefined) return
   if (row.word === 'proven: no gain' && row.outage !== 0) issue('outage', '"Proven: no gain" means both outages are equal')
   if ((row.word === 'found' || row.word === 'proven') && !(row.outage < 0)) issue('outage', 'A gain is a shorter outage on the higher rung')
   if (row.word === 'not found better' && row.outage < 0) issue('outage', 'A shorter outage on the higher rung is a gain')
+  if (row.word === 'not found better' && from === 'proven' && to === 'proven' && row.outage === 0) issue('word', 'Two proven rungs with equal outages read "proven: no gain"')
 })
 
 export const summaryDataSchema = z.object({

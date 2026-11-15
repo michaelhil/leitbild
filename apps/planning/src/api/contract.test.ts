@@ -251,23 +251,64 @@ describe('increment 2: explain recommended and versus {previous}; read buys', ()
     expect(ok({ ask: 'versus', versus: { baseline: 'B1' } })).toBe(false)
   })
 
+  const rung = (number: number, buy: string[], option?: string) => ({ rung: { rung: number, buy, ...(option === undefined ? {} : { option }), bought: [] } })
+  const page = (items: unknown[]) => sectionDataSchemas.buys.safeParse({ items }).success
+  const row = (value: object) => buysRowSchema.safeParse(value).error?.issues.map(issue => issue.path.join('.')) ?? []
+  const finish = { kind: 'crew', about: [{ kind: 'resource', key: 'crane' }] }
+  const ends = (from: string, to: string) => ({ ends: { from, to } })
+
   test('the buys section pages rungs and rows; a row says one ladder word, never "buys nothing"', () => {
     expect(readInputSchema.safeParse({ section: 'buys' }).success).toBe(true)
-    const rung = (number: number, option?: string) => ({ rung: { rung: number, buy: number === 0 ? ['ect-friday', 'crane-fri'] : ['ect-friday', 'crane-fri', 'ot-mech'], ...(option === undefined ? {} : { option }), bought: [] } })
-    const page = (items: unknown[]) => sectionDataSchemas.buys.safeParse({ items }).success
-    expect(page([rung(0, 'r0'), rung(1, 'r1'), rung(2), { row: { from: 0, to: 1, word: 'found', outage: -6, cost: 41_000 } }])).toBe(true)
-    expect(page([{ row: { from: 0, to: 1, word: 'buys nothing', outage: 0, cost: 0 } }])).toBe(false)
-    const row = (value: object) => buysRowSchema.safeParse(value).error?.issues.map(issue => issue.path.join('.')) ?? []
-    const finish = { kind: 'crew', about: [{ kind: 'resource', key: 'crane' }] }
-    expect(row({ from: 0, to: 1, word: 'makes it possible' })).toEqual([])
-    expect(row({ from: 1, to: 2, word: 'not solved' })).toEqual([])
-    expect(row({ from: 1, to: 2, word: 'proven: no gain', outage: 0, cost: 0, finish })).toEqual([])
-    expect(row({ from: 1, to: 2, word: 'proven: no gain', outage: 0, cost: 0 })).toEqual(['finish'])
-    expect(row({ from: 1, to: 2, word: 'proven: no gain', outage: -1, cost: 0, finish })).toEqual(['outage'])
-    expect(row({ from: 1, to: 2, word: 'found', outage: 0, cost: 0, finish })).toEqual(['finish', 'outage'])
-    expect(row({ from: 1, to: 2, word: 'not found better', outage: -2, cost: 0 })).toEqual(['outage'])
-    expect(row({ from: 0, to: 1, word: 'makes it possible', outage: -2, cost: 0 })).toEqual(['outage'])
-    expect(row({ from: 0, to: 2, word: 'not solved' })).toEqual(['to'])
+    const days = ['ect-friday', 'crane-fri']
+    expect(page([rung(0, days, 'r0'), rung(1, [...days, 'ot-mech'], 'r1'), rung(2, [...days, 'ot-mech', 'contractor-nights']), { row: { from: 0, to: 1, ...ends('found', 'found'), word: 'found', outage: -6, cost: 41_000 } }])).toBe(true)
+    expect(page([{ row: { from: 0, to: 1, ...ends('found', 'found'), word: 'buys nothing', outage: 0, cost: 0 } }])).toBe(false)
+    expect(page([{ row: { from: 0, to: 1, word: 'found', outage: -6, cost: 41_000 } }])).toBe(false)
+  })
+
+  test('rungs follow the rungs offered: with one price form, rungs 0 and 1, and rung 1 buys all crew time', () => {
+    // A plan whose crew time is priced per period only (contractor nights): days only, then everything.
+    const days = ['crane-fri'], all = ['crane-fri', 'contractor-nights']
+    expect(page([rung(0, days, 'r0'), rung(1, all, 'r1'), { row: { from: 0, to: 1, ...ends('refused', 'found'), word: 'makes it possible' } }])).toBe(true)
+    expect(row({ from: 0, to: 2, ...ends('refused', 'found'), word: 'makes it possible' })).toEqual(['to'])
+    // With three rungs offered, rung 1 to rung 2 is adjacent too.
+    expect(row({ from: 1, to: 2, ...ends('found', 'found'), word: 'found', outage: -3, cost: 9_000 })).toEqual([])
+    expect(row({ from: 1, to: 0, ...ends('found', 'found'), word: 'not found better', outage: 0, cost: 0 })).toEqual(['to'])
+    expect(sectionDataSchemas.buys.safeParse({ items: [rung(3, all)] }).success).toBe(false)
+  })
+
+  test('each word stands on its two ends', () => {
+    // makes it possible: a refused lower rung and a solved higher one, with no differences.
+    expect(row({ from: 0, to: 1, ...ends('refused', 'proven'), word: 'makes it possible' })).toEqual([])
+    expect(row({ from: 0, to: 1, ...ends('refused', 'found'), word: 'makes it possible' })).toEqual([])
+    expect(row({ from: 0, to: 1, ...ends('found', 'found'), word: 'makes it possible', outage: -2, cost: 0 })).toEqual(['word'])
+    expect(row({ from: 0, to: 1, ...ends('refused', 'unsolved'), word: 'makes it possible' })).toEqual(['word'])
+    expect(row({ from: 0, to: 1, ...ends('refused', 'found'), word: 'makes it possible', outage: -2, cost: 0 })).toEqual(['outage'])
+    // proven and proven: no gain: both ends proven.
+    expect(row({ from: 1, to: 2, ...ends('proven', 'proven'), word: 'proven', outage: -2, cost: 9_000 })).toEqual([])
+    expect(row({ from: 1, to: 2, ...ends('found', 'proven'), word: 'proven', outage: -2, cost: 9_000 })).toEqual(['word'])
+    expect(row({ from: 1, to: 2, ...ends('proven', 'proven'), word: 'proven: no gain', outage: 0, cost: 0, finish })).toEqual([])
+    expect(row({ from: 1, to: 2, ...ends('proven', 'found'), word: 'proven: no gain', outage: 0, cost: 0, finish })).toEqual(['word'])
+    expect(row({ from: 1, to: 2, ...ends('proven', 'proven'), word: 'proven: no gain', outage: 0, cost: 0 })).toEqual(['finish'])
+    expect(row({ from: 1, to: 2, ...ends('proven', 'proven'), word: 'proven: no gain', outage: -1, cost: 0, finish })).toEqual(['outage'])
+    // found: both solved, at least one not proven.
+    expect(row({ from: 1, to: 2, ...ends('proven', 'found'), word: 'found', outage: -2, cost: 9_000 })).toEqual([])
+    expect(row({ from: 1, to: 2, ...ends('proven', 'proven'), word: 'found', outage: -2, cost: 9_000 })).toEqual(['word'])
+    expect(row({ from: 1, to: 2, ...ends('found', 'unsolved'), word: 'found', outage: -2, cost: 9_000 })).toEqual(['word', 'outage'])
+    expect(row({ from: 1, to: 2, ...ends('found', 'found'), word: 'found', outage: 0, cost: 0, finish })).toEqual(['finish', 'outage'])
+    // not solved: an unsolved end, with no differences.
+    expect(row({ from: 1, to: 2, ...ends('found', 'unsolved'), word: 'not solved' })).toEqual([])
+    expect(row({ from: 0, to: 1, ...ends('unsolved', 'refused'), word: 'not solved' })).toEqual([])
+    expect(row({ from: 1, to: 2, ...ends('found', 'found'), word: 'not solved', outage: 0, cost: 0 })).toEqual(['word'])
+    // not found better: both solved and no shorter outage above; two proven equal ends read "proven: no gain".
+    expect(row({ from: 1, to: 2, ...ends('found', 'found'), word: 'not found better', outage: 0, cost: 0 })).toEqual([])
+    expect(row({ from: 1, to: 2, ...ends('found', 'found'), word: 'not found better', outage: -2, cost: 0 })).toEqual(['outage'])
+    expect(row({ from: 1, to: 2, ...ends('proven', 'proven'), word: 'not found better', outage: 0, cost: 0 })).toEqual(['word'])
+    expect(row({ from: 0, to: 1, ...ends('refused', 'found'), word: 'not found better' })).toEqual(['word'])
+    // No word fits two refused rungs, or a solved rung below a refused one.
+    for (const word of ['makes it possible', 'not solved', 'proven: no gain', 'found', 'proven', 'not found better']) {
+      expect(row({ from: 0, to: 1, ...ends('refused', 'refused'), word })).toContain('word')
+      expect(row({ from: 0, to: 1, ...ends('found', 'refused'), word })).toContain('word')
+    }
   })
 })
 
