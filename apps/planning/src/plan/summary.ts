@@ -1,7 +1,7 @@
 // The presenter: planner words generated from structure (never stored), and the bounded sections that
 // planning.plan.read returns. The UI's format.ts mirrors these rules. Every section fits the 4 KB result.
 import { goalResolution, type Certificate, type CertifiedSize, type Plan, type PlanInputs, type Status } from './schema.ts'
-import { resultLimitBytes, type OptionWarning, type SectionName } from '../api/contract.ts'
+import { resultLimitBytes, type ItemStatus, type OptionWarning, type SectionName } from '../api/contract.ts'
 import type { BuysItem } from './buys.ts'
 import type { ChangeRecord, Weakening } from './edits.ts'
 import type { OutTogether, Precondition, ReadinessItem } from './readiness.ts'
@@ -368,6 +368,8 @@ export interface OptionState {
   readonly warnings: readonly OptionWarning[]
   /** The stored status, checked by lane K inside Generate: a current claim only when not `stale`, else a fact about its own revision. */
   readonly shown: Status
+  /** `shown` as the options and previous sections page it: a refusal in its compact form (api/contract.ts compactRefusalSchema). */
+  readonly item: ItemStatus
   readonly baselineAllowed: boolean
 }
 
@@ -388,8 +390,9 @@ export interface SectionContext {
 const optionItems = (options: readonly Option[], states: ReadonlyMap<string, OptionState>, dominated: ReadonlyMap<string, string> | undefined) =>
   options.map(({ rows: _rows, ...rest }) => {
     const state = states.get(rest.key)
+    if (state === undefined) throw new Error(`No state for option ${rest.key}`)
     const by = dominated?.get(rest.key)
-    return { ...rest, status: state?.shown ?? rest.status, fresh: state !== undefined && !state.stale, warnings: [...(state?.warnings ?? []).slice(0, 4)], ...(by === undefined ? {} : { dominated: { by } }) }
+    return { ...rest, status: state.item, fresh: !state.stale, warnings: [...state.warnings.slice(0, 4)], ...(by === undefined ? {} : { dominated: { by } }) }
   })
 
 export interface Section { readonly id: string; readonly title: string; readonly description?: string; readonly data: unknown }

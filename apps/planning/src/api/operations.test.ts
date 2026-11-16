@@ -642,7 +642,7 @@ describe('increment 2: the structured facts, dominance and the previous section 
       const before = await page('previous')
       expect(before.items.map(item => [item.key, item.dominated?.by ?? null, item.fresh])).toEqual([[swap.key, null, false], [rebuild.key, null, false], ['rebuild-later', rebuild.key, false]])
       // Out of date (fresh false), its stored statuses as they were, proofs too: never relabelled (walk V2).
-      expect(before.items.map(item => item.status)).toEqual(previous.options.map(option => option.status))
+      expect(before.items.map(item => item.status) as unknown[]).toEqual(previous.options.map(option => option.status))
       expect(before.at).toBe(previous.at)
       const none = await local.create('train-a-work-week')
       expect(sectionDataSchemas.previous.parse((await local.call('planning.plan.read', { resource: none.id, input: { section: 'previous' } })).body.result.sections[0].data)).toEqual({ items: [], at: null, recommended: null })

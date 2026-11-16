@@ -18,6 +18,8 @@ import { buysItems, methodLadders, type FinishCause } from '../plan/buys.ts'
 import { rungStanding } from '../check/buys.ts'
 import { changesSince, versus } from '../plan/versus.ts'
 import { dominatedWithin, optionName, outageFloor, whyRecommended } from '../plan/why.ts'
+import { refusalLines } from '../solve/explain.ts'
+import { withExtraRules } from '../solve/keys.ts'
 import {
   certificateSchema, certifiedSizeSchema, optionSetSchema, planInputsSchema,
   type CertifiedSize, type Plan, type PlanInputs, type Status, type WorldFactCopy,
@@ -30,7 +32,7 @@ import {
 } from '../plan/summary.ts'
 import type { Grid } from '../time/units.ts'
 import {
-  explainResultSchema, generateResultSchema, resultLimitBytes, sectionDataSchemas, writeResultSchema,
+  explainResultSchema, generateResultSchema, resultLimitBytes, sectionDataSchemas, writeResultSchema, type ItemStatus,
   type baselineInputSchema, type createInputSchema, type editInputSchema, type explainInputSchema, type generateInputSchema, type readInputSchema, type StatusOut,
 } from './contract.ts'
 
@@ -266,7 +268,26 @@ export const createPlanningOperations = (ports: PlanningOperationsPorts) => {
     const warning = reason === undefined && shown.word === 'validated feasible' ? outTogether(plan.inputs, option.rows) : undefined
     // An option solved above the certified size says so beside its status (lane S's sizeCaution).
     const warnings = [...(shown.word === 'validated feasible' && option.sizeCaution === true ? [sizeCautionWarning(certifiedSize)] : []), ...(warning === undefined ? [] : [optionWarning(warning, plan.inputs)])]
-    return { stale: reason !== undefined, ...(reason === undefined ? {} : { reason }), warnings, shown, baselineAllowed: reason === undefined && stored.word === 'validated feasible' }
+    return { stale: reason !== undefined, ...(reason === undefined ? {} : { reason }), warnings, shown, item: itemStatus(plan.inputs, option, shown), baselineAllowed: reason === undefined && stored.word === 'validated feasible' }
+  }
+  /**
+   * A status as the options and previous sections page it (coordinator, after the re-walk sizes): a refusal
+   * keeps its own method's cause; each span is cut to its summary, and each method gets one sentence, from its
+   * stored span or cause with no checker. The path, later start and energy proof stay for explain refusal.
+   */
+  const itemStatus = (inputs: PlanInputs, option: Option, status: Status): ItemStatus => {
+    if (status.word !== 'proven infeasible') return status
+    const summary = (span: NonNullable<typeof status.span>) => ({ rule: span.rule, leastHours: span.leastHours, limitHours: span.limitHours })
+    const ruled = withExtraRules(inputs, option.variant.also)
+    const asked = new Set((option.variant.also ?? []).map(rule => rule.key))
+    const line = (entry: NonNullable<typeof status.byMethod>[number]): string => clip(entry.span !== undefined
+      ? `Out at least ${valueWords(entry.span.leastHours, 'h')}, against the ${valueWords(entry.span.limitHours, 'h')} ${asked.has(entry.span.rule) ? 'asked' : 'limit'}.`
+      : refusalLines(entry.cause, ruled, undefined, entry.purchases, entry.methods)[0] ?? 'Not possible with what this method may use.', 200)
+    return {
+      word: status.word, cause: status.cause, run: status.run,
+      ...(status.span === undefined ? {} : { span: summary(status.span) }),
+      ...(status.byMethod === undefined ? {} : { byMethod: status.byMethod.map(entry => ({ methods: entry.methods, purchases: entry.purchases, ...(entry.span === undefined ? {} : { span: summary(entry.span) }), line: line(entry) })) }),
+    }
   }
   const optionStates = (plan: Plan): ReadonlyMap<string, OptionState> =>
     new Map((plan.options?.options ?? []).map(option => [option.key, optionState(plan, option)]))
