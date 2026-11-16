@@ -102,6 +102,8 @@ export interface SolverPort {
      * jobs waiting on it are not in `rows`); with lane K's crew or tool that has no slot long enough left, and from when.
      */
     readonly unplaced?: { readonly job: string; readonly resource?: string; readonly after?: string }
+    /** Lane S: the edit leaves this job's row on crews or tools that no longer serve it; `rows` are then the option's own, not re-timed. */
+    readonly crewsChanged?: { readonly job: string }
   }>
 }
 
@@ -599,7 +601,10 @@ export const createPlanningOperations = (ports: PlanningOperationsPorts) => {
         // The preview keeps the option's current order; Generate re-plans. So a break is said as the current
         // order's, with the way to a new one, never as the plan's last word (walk V4, T12).
         const broken = (what: string, nearest: string, authority: string) => `With its current order, '${shownName}' would break: ${what}.${nearest}${authority} Generate again to look for a new order.`
-        const consequence = unplaced !== undefined ? wholeWithin(authorities.map(authority => broken(unplaced, '', authority)))
+        // A change of crews is beyond what a preview re-times: said as that, never as "no job moves" or a fault (L1).
+        const crews = timed.crewsChanged === undefined ? undefined : `Not saved yet. A preview cannot re-time '${nameOf(outcome.inputs, timed.crewsChanged.job)}' on other crews; save the change and Generate to see it.`
+        const consequence = crews !== undefined ? wholeWithin(authorities.map(authority => `${crews}${authority}`))
+          : unplaced !== undefined ? wholeWithin(authorities.map(authority => broken(unplaced, '', authority)))
           : wholeWithin(findings.length === 0 ? authorities.map(authority => `${moves}${authority}`)
           : authorities.flatMap(authority => nearests.flatMap(nearest => ([2, 1, 0] as const).map(shown =>
             broken(retimingBreaks(findings, outcome.inputs, shown), nearest, authority)))))
@@ -679,10 +684,15 @@ export const createPlanningOperations = (ports: PlanningOperationsPorts) => {
         return resultOf(explainResultSchema, next === undefined ? result : { ...result, more: next })
       }
       const option = findOption(plan, input.option)
-      requireFresh(plan, option)
+      // A refusal is worded from its stored status alone, so it answers for an out-of-date option too, as a fact
+      // about the plan before the latest change (re-walk N4, as B1); every other ask needs a fresh option.
+      const stale = optionState(plan, option).stale
+      if (ask !== 'refusal' || !stale) requireFresh(plan, option)
       if (input.job !== undefined && !plan.inputs.jobs.some(job => job.key === input.job)) throw planningError(400, 'unknown_reference', `No job ${input.job} in this plan`, { about: [input.job] })
       if (ask === 'refusal' && option.status.word === 'validated feasible') throw planningError(409, 'option_not_feasible', `Option ${option.label} was not refused; ask why a job starts then or what sets the finish`, { about: [option.key] })
-      return resultOf(explainResultSchema, await solver.explain({ inputs: plan.inputs, option, ask, job: input.job, cursor: input.cursor }))
+      const answer = await solver.explain({ inputs: plan.inputs, option, ask, job: input.job, cursor: input.cursor })
+      if (ask !== 'refusal' || !stale) return resultOf(explainResultSchema, answer)
+      return resultOf(explainResultSchema, withinResult({ ...answer, lines: ['On the plan before your latest change: generate again to know for the plan as it is now.', ...answer.lines].slice(0, 20) }))
     },
 
     read: async (workspaceId: WorkspaceId, planId: string, input: z.infer<typeof readInputSchema>): Promise<InspectionView> => {

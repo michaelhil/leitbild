@@ -4,10 +4,22 @@
 // real wiring. read buys fails it until lane K's rungStanding over stored data lands and the service uses it.
 import { afterAll, expect, mock, test } from 'bun:test'
 import * as check from '../check/check.ts'
+import * as certificate from '../check/certificate.ts'
+import * as compiling from '../solve/compile.ts'
+import * as bounding from '../solve/bounds.ts'
 
+// Lane K's checker counts on every read; compile and bounds count too, and none may run when a refusal is
+// worded (re-walk N2, N4). The finish cause of "what overtime buys" is increment 1's explanation path, allowed in process.
 const original = check.checkPlan
+const originals = { verifyCertificate: certificate.verifyCertificate, verifySpanRefusal: certificate.verifySpanRefusal, compile: compiling.compile, bounds: bounding.bounds }
 let checks = 0
+let solving = 0
 mock.module('../check/check.ts', () => ({ ...check, checkPlan: (...args: Parameters<typeof original>) => { checks += 1; return original(...args) } }))
+mock.module('../check/certificate.ts', () => ({ ...certificate,
+  verifyCertificate: (...args: Parameters<typeof originals.verifyCertificate>) => { checks += 1; return originals.verifyCertificate(...args) },
+  verifySpanRefusal: (...args: Parameters<typeof originals.verifySpanRefusal>) => { checks += 1; return originals.verifySpanRefusal(...args) } }))
+mock.module('../solve/compile.ts', () => ({ ...compiling, compile: (...args: Parameters<typeof originals.compile>) => { solving += 1; return originals.compile(...args) } }))
+mock.module('../solve/bounds.ts', () => ({ ...bounding, bounds: (...args: Parameters<typeof originals.bounds>) => { solving += 1; return originals.bounds(...args) } }))
 
 const { createSolverPool } = await import('../solve/pool.ts')
 const { createRealSolver } = await import('./wiring.ts')
@@ -36,4 +48,8 @@ test('read buys, why recommended and versus run no checker in the service', asyn
   expect(await counted(explain({ ask: 'versus', versus: { previous: swap.key } }))).toEqual([200, 0])
   expect(await counted(read({ section: 'options' }))).toEqual([200, 0])
   expect(await counted(read({ section: 'buys' }))).toEqual([200, 0])
+  // A refusal is worded from its stored status: no checker, and no compile or bounds either.
+  const before = solving
+  expect(await counted(explain({ ask: 'refusal', option: options[0]!.key }))).toEqual([200, 0])
+  expect(solving - before).toBe(0)
 }, 60_000)
