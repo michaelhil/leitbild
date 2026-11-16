@@ -6,13 +6,15 @@
   // What differs from the earlier options, beside the timeline, from the Module's facts (explain versus): the
   // earlier set itself, the changes since, the measures that changed, the methods and purchases that differ,
   // and the jobs that moved, were added or are gone.
-  let { answer, unpaired = false, previous = [], against = null, more = null, onMore, onAgainst, onClose }: {
+  let { answer, unpaired = false, previous = [], against = null, more = null, moreLeft = 0, onMore, onAgainst, onClose }: {
     answer: Answer<CompareView>
     /** The earlier set has no option of the shown option's variant: the planner chooses one. */
     unpaired?: boolean
     /** The moved jobs after the first ones, in plan order, once read. */
     more?: CompareView['moved'] | null
-    /** Reads the moved jobs after the first ones, when the Module pages them. */
+    /** How many moved jobs remain after the pages read. */
+    moreLeft?: number
+    /** Reads the next page of moved jobs, while the Module has more. */
     onMore?: (() => void) | undefined
     /** The earlier set, from the previous read section. */
     previous?: readonly PreviousRow[]
@@ -86,9 +88,11 @@
         {/each}
       </ol>
       {#if view.moreCount > 0}
+        <!-- Every moved job is reachable: the Module's pages behind "Show the other N", in plan order (walk V10). -->
         {#if more !== null && more.length > 0}
           <details class="more-moved" open><summary>Show the other {view.moreCount}</summary>
             <ol class="chain">{#each more as job, index (index)}<li><span class="step-name">{job.job}</span> · <span class="when">{job.was} → {job.now}</span> · <span class="because">{job.shift}</span></li>{/each}</ol>
+            {#if onMore && moreLeft > 0}<button type="button" class="link" onclick={onMore}>Show the other {moreLeft}</button>{/if}
           </details>
         {:else if onMore}
           <button type="button" class="link" onclick={onMore}>Show the other {view.moreCount}</button>

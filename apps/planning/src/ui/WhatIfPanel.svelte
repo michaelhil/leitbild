@@ -4,7 +4,7 @@
   import type { RefusalProof } from './outcome.ts'
   import type { Context } from './status-text.ts'
   import WhatIfCard from './WhatIfCard.svelte'
-  import { whatIfChoices, whatIfVariant, type WhatIfAsk, type WhatIfCardView, type WhatIfKind, type WhatIfVariant } from './what-if.ts'
+  import { whatIfChoices, whatIfKeepRule, whatIfVariant, type WhatIfAsk, type WhatIfCardView, type WhatIfKind, type WhatIfVariant } from './what-if.ts'
 
   // Ask a what-if, beside the timeline: one question at a time, sent as one Generate request kept beside the
   // plan's own options. The answers are cards under the question, newest first; none is a row of the options
@@ -55,6 +55,7 @@
     <button type="button" class="quiet" onclick={onClose}>Close</button>
   </div>
   <p class="hint">A what-if never changes the plan. Its answer is a card here, apart from the plan's options.</p>
+  <p class="hint what-if-keep">{whatIfKeepRule}</p>
   {#if choices.kinds.length === 0}
     <p class="hint">This plan has no function group or extra-cost goal to ask about.</p>
   {:else}

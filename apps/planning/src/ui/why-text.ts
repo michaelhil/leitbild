@@ -164,7 +164,7 @@ const movedRows = (moved: VersusFacts['moved'], context: Context): CompareView['
   moved.map(entry => ({ job: context.names.job(entry.job), was: context.format.range(entry.was.start, entry.was.finish), now: context.format.range(entry.now.start, entry.now.finish), shift: shiftText(entry.was, entry.now) }))
 
 /** The moved jobs the Module pages after the first ones, in plan order (walk V10: every moved job is reachable). */
-export const moreMoved = (facts: VersusFacts, context: Context): CompareView['moved'] => {
+export const moreMoved = (facts: Pick<VersusFacts, 'moved'>, context: Context): CompareView['moved'] => {
   const order = new Map(context.inputs.jobs.map((job, index) => [job.key, index]))
   return movedRows([...facts.moved].sort((left, right) => (order.get(left.job) ?? Infinity) - (order.get(right.job) ?? Infinity)), context)
 }

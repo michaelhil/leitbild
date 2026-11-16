@@ -228,3 +228,10 @@ export const whatIfAskedNotice = (label: string, before: ReadonlyArray<Pick<Opti
 export const whatIfsClearedNotice = (before: readonly unknown[], after: readonly unknown[]): string | null =>
   before.length === 0 || after.length > 0 ? null
     : `The ${before.length === 1 ? 'what-if was' : `${before.length} what-ifs were`} asked against the earlier options, so Generate cleared ${before.length === 1 ? 'it' : 'them'}. Ask again for the plan as it is now.`
+
+/**
+ * The keep rule, as the Module states it in Generate's description (walk V9): of at most 8 options the new
+ * what-ifs stay, then the plan's own, then earlier what-ifs; the same what-if replaces itself; without keep
+ * none stay. Said with the what-ifs, so a card never vanishes unexplained.
+ */
+export const whatIfKeepRule = 'A plan holds at most 8 options. The newest what-ifs stay first, then the plan\'s own options, then earlier what-ifs, so an earlier what-if can be replaced. The same what-if asked again replaces itself. Generate without a what-if clears them all.'

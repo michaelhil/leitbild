@@ -115,14 +115,17 @@
   let compareUnpaired = $state(false)
   /** The moved jobs after the first ones, once read, and the cursor that reads them (walk V10). */
   let compareCursor = $state<string | null>(null)
-  let compareMore = $state<CompareView['moved'] | null>(null)
+  /** Every moved job read from the further pages, kept as the Module gave it, and how many remain. */
+  let compareMoreMoved = $state<VersusFacts['moved']>([])
+  let compareMoreLeft = $state(0)
   const readMoreMoved = (): void => {
     const option = compareFor, against = compareAgainst, cursor = compareCursor
     if (option === null || against === null || cursor === null || context === null) return
     void attempt(async () => {
       const result = await actions.versus(option, against, cursor)
       if (result.versus === undefined) return
-      compareMore = [...compareMore ?? [], ...moreMoved(result.versus, context)]
+      compareMoreMoved = [...compareMoreMoved, ...result.versus.moved]
+      compareMoreLeft = result.versus.movedMore
       compareCursor = result.more ?? null
     })
   }
@@ -168,6 +171,8 @@
   }
 
   const context = $derived<Context | null>(model === null ? null : { inputs: model.inputs, names: createNames(model.inputs), format: createTimeFormat(model.inputs.settings.timeZone) })
+  /** The moved jobs read from the further pages, in plan order (walk V10). */
+  const compareMore = $derived(context === null || compareMoreMoved.length === 0 ? null : moreMoved({ moved: compareMoreMoved }, context))
   const rows = $derived(model !== null && selectedOption !== null ? model.rows[selectedOption] ?? [] : [])
   const layout = $derived(model !== null && context !== null ? layoutTimeline(model.inputs, rows, context.format) : null)
   const cards = $derived(model !== null && context !== null ? attentionCards(model, context) : [])
@@ -258,7 +263,8 @@
         if (page.at === null || against === null) { compareAnswer = { state: 'none' }; return }
         const result = await actions.versus(option, against)
         compareCursor = result.more ?? null
-        compareMore = null
+        compareMoreMoved = []
+        compareMoreLeft = 0
         compareAnswer = versusAnswer(result)
       }).catch(cause => { compareAnswer = missing(cause) })
     }
@@ -311,7 +317,7 @@
   }
   const runPreview = (edits: readonly Edit[], label: string): void => withModel(async current => {
     pending = edits
-    preview = await actions.preview(current, edits, label)
+    preview = await actions.preview(current, edits, label, selectedOption)
     finishOnTop = false
     reveal('.preview')
   })
@@ -482,7 +488,7 @@
           <section class="why-panel"><div class="panel-heading"><h2 tabindex="-1">Why recommended</h2><button type="button" class="quiet" onclick={() => { choosing = null }}>Close</button></div><p class="hint">No option is recommended on the plan as it is now. Generate first.</p></section>
         {/if}
       {:else if compareOption}
-        <ComparePanel answer={compareShown} unpaired={compareUnpaired} more={compareMore} onMore={compareCursor === null ? undefined : readMoreMoved} previous={previousSet === null ? [] : previousRows(previousSet)} against={compareAgainst} onAgainst={option => { compareAgainst = option; ask('compare') }} onClose={() => { choosing = null }} />
+        <ComparePanel answer={compareShown} unpaired={compareUnpaired} more={compareMore} moreLeft={compareMoreLeft} onMore={compareCursor === null ? undefined : readMoreMoved} previous={previousSet === null ? [] : previousRows(previousSet)} against={compareAgainst} onAgainst={option => { compareAgainst = option; ask('compare') }} onClose={() => { choosing = null }} />
       {/if}
     </div>
   {/if}
