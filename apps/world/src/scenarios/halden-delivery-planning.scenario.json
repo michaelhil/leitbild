@@ -42,7 +42,7 @@
         "completion": { "kind": "acknowledge" }
       },
       {
-        "id": "compare-orders",
+        "id": "explore",
         "title": "Try both orders in Planning",
         "instruction": "Choose Open planning demo, then Generate schedules. Select each delivery order to see when deliveries finish and which are on time. The truck stays on the World map while you work on the schedule.",
         "completion": { "kind": "acknowledge" }
