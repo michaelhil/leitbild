@@ -99,10 +99,18 @@ test('selecting a unit allows direct dispatch and editing its assigned stops', a
 
     await clinic.click()
     const add = dialog.getByRole('button', { name: 'Add to plan' })
+    const clinicRoute = page.waitForResponse(response => isUnitCommand(response.request(), 'plan.routes')
+      && response.request().postDataJSON().input.expectedPlan.length === 2, { timeout: 15_000 })
     expect(await unitCommand(page, 'order', () => add.click())).toMatchObject({
       input: { stops: [{ siteId: 'site:halden-clinic' }], when: 'after' },
     })
     await expect(unit.getByRole('button', { name: /Remove stop 2:.*Halden emergency clinic/ })).toBeVisible()
+    const route = await clinicRoute
+    expect(route.status()).toBe(200)
+    expect(await route.json()).toMatchObject({
+      kind: 'query',
+      result: { features: [expect.objectContaining({ lineDashed: true, geometry: { type: 'LineString', coordinates: expect.any(Array) } })] },
+    })
 
     const triage = unit.getByRole('button', { name: /Remmen triage post/ })
     await triage.click()
