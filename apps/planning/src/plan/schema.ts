@@ -260,6 +260,11 @@ export type PlanInputs = z.infer<typeof planInputsSchema>
 
 // ───────────── results kept in the plan ─────────────
 const before = (earlier: string, later: string): boolean => Date.parse(earlier) < Date.parse(later)
+const energyCertificateSchema = z.object({ kind: z.literal('energy'), resources: z.array(keySchema).min(1).max(8), jobs: z.array(keySchema).max(128), requiredHours: z.number().finite(), availableHours: z.number().finite().nonnegative(), from: instantSchema, to: instantSchema, span: keySchema.optional() }).strict()
+  .superRefine((cause, context) => {
+    if (!(cause.requiredHours > cause.availableHours)) context.addIssue({ code: 'custom', path: ['requiredHours'], message: 'An energy certificate needs more required than available hours' })
+    if (!before(cause.from, cause.to)) context.addIssue({ code: 'custom', path: ['to'], message: 'An energy certificate interval ends after it starts' })
+  })
 /** A certificate proves infeasibility: the work it names exceeds the capacity it names, over a real interval. */
 export const certificateSchema = z.discriminatedUnion('kind', [
   z.object({ kind: z.literal('chain'), jobs: z.array(keySchema).min(1).max(64), workHours: z.number().finite(), calendars: z.array(keySchema), availableHours: z.number().finite().nonnegative(), from: instantSchema, by: instantSchema }).strict()
@@ -267,16 +272,33 @@ export const certificateSchema = z.discriminatedUnion('kind', [
       if (!(cause.workHours > cause.availableHours)) context.addIssue({ code: 'custom', path: ['workHours'], message: 'A chain certificate needs more work than available hours' })
       if (!before(cause.from, cause.by)) context.addIssue({ code: 'custom', path: ['by'], message: 'A chain certificate interval ends after it starts' })
     }),
-  z.object({ kind: z.literal('energy'), resources: z.array(keySchema).min(1).max(8), jobs: z.array(keySchema).max(128), requiredHours: z.number().finite(), availableHours: z.number().finite().nonnegative(), from: instantSchema, to: instantSchema, span: keySchema.optional() }).strict()
-    .superRefine((cause, context) => {
-      if (!(cause.requiredHours > cause.availableHours)) context.addIssue({ code: 'custom', path: ['requiredHours'], message: 'An energy certificate needs more required than available hours' })
-      if (!before(cause.from, cause.to)) context.addIssue({ code: 'custom', path: ['to'], message: 'An energy certificate interval ends after it starts' })
-    }),
+  energyCertificateSchema,
   z.object({ kind: z.literal('availability'), rule: keySchema, items: z.array(keySchema).max(32), from: instantSchema, to: instantSchema }).strict()
     .refine(cause => before(cause.from, cause.to), { message: 'An availability certificate interval ends after it starts', path: ['to'] }),
   z.object({ kind: z.literal('temporal'), steps: z.array(z.object({ job: keySchema, via: z.enum(['link', 'bracket', 'support-order', 'span-limit', 'window', 'due', 'release', 'lock']) }).strict()).max(32) }).strict(),
 ])
 export type Certificate = z.infer<typeof certificateSchema>
+
+const spanStepSchema = z.object({ job: keySchema, start: instantSchema, finish: instantSchema }).strict()
+/**
+ * A refusal by an outage limit, as proven in the solver child (N2, N4): the rule, the least span the other
+ * rules allow (lane K's figure) against its limit, the first tag-out and last test that give it, and what
+ * sets the last test (each job at its earliest, as the refusal shows it). `later`: from the best later first
+ * tag-out, the span and what changes (stored when it agrees with lane K's least span over every opening).
+ * `alsoProven`: a second, energy proof (stored when lane K re-verifies it). Stored only when lane K proves
+ * the span, so the words read from storage and an out-of-date option keeps them as they were.
+ */
+export const spanRecordSchema = z.object({
+  rule: keySchema, leastHours: z.number().finite().nonnegative(), limitHours: z.number().finite().positive(),
+  firstOut: instantSchema, lastBack: instantSchema, path: z.array(spanStepSchema).max(9),
+  later: z.object({ firstOut: instantSchema, hours: z.number().finite().nonnegative(), path: z.array(spanStepSchema).max(6) }).strict().optional(),
+  alsoProven: energyCertificateSchema.optional(),
+}).strict().superRefine((span, context) => {
+  if (!(span.leastHours > span.limitHours)) context.addIssue({ code: 'custom', path: ['leastHours'], message: 'A span refusal states a least span above the limit' })
+  if (!before(span.firstOut, span.lastBack)) context.addIssue({ code: 'custom', path: ['lastBack'], message: 'A span refusal\'s last test comes after its first tag-out' })
+  if (span.later !== undefined && span.later.hours < span.leastHours) context.addIssue({ code: 'custom', path: ['later', 'hours'], message: 'A later first tag-out gives no shorter span than the least' })
+})
+export type SpanRecord = z.infer<typeof spanRecordSchema>
 
 const boundSourceSchema = z.enum(['logic+calendars', 'crew-energy', 'availability-rule', 'fixed-costs'])
 /**
@@ -402,10 +424,14 @@ export const statusSchema = z.discriminatedUnion('word', [
     }),
   // byMethod: a what-if over two or more method combinations, refused for each, with each combination's own
   // cause as lane K verified it; `cause` is then the entry of the option's own methods (optionLeadRefinement).
+  // span: a refusal by an outage limit, proven in the child (spanRecordSchema), beside its temporal cause.
   z.object({
-    word: z.literal(statusWordSchema.enum['proven infeasible']), cause: certificateSchema, run: runBasisSchema,
-    byMethod: z.array(z.object({ methods: z.array(z.object({ choice: keySchema, option: keySchema }).strict()), purchases: z.array(keySchema), cause: certificateSchema }).strict()).min(2).max(8).optional(),
-  }).strict(),
+    word: z.literal(statusWordSchema.enum['proven infeasible']), cause: certificateSchema, span: spanRecordSchema.optional(), run: runBasisSchema,
+    byMethod: z.array(z.object({ methods: z.array(z.object({ choice: keySchema, option: keySchema }).strict()), purchases: z.array(keySchema), cause: certificateSchema, span: spanRecordSchema.optional() }).strict()).min(2).max(8).optional(),
+  }).strict().superRefine((status, context) => {
+    const spans = [{ cause: status.cause, span: status.span, path: ['span'] }, ...(status.byMethod ?? []).map((entry, k) => ({ cause: entry.cause, span: entry.span, path: ['byMethod', k, 'span'] }))]
+    for (const { cause, span, path } of spans) if (span !== undefined && cause.kind !== 'temporal') context.addIssue({ code: 'custom', path, message: 'A span refusal stands beside a temporal cause' })
+  }),
   z.object({ word: z.literal(statusWordSchema.enum['invalid input']), problems: z.array(problemSchema).min(1).max(16) }).strict(),
   z.object({ word: z.literal(statusWordSchema.enum['unsupported feature']), problems: z.array(problemSchema).min(1).max(16) }).strict(),   // an unmodelled rule only
   z.object({ word: z.literal(statusWordSchema.enum.cancelled), run: runBasisSchema }).strict(),   // nothing found before the stop
@@ -512,7 +538,7 @@ export const optionByMethodIssue = (option: OptionShape): string | undefined => 
   if (new Set(names).size !== names.length) return 'Each method combination of a refusal is named once'
   const own = option.status.byMethod.find(entry => picks(entry.methods) === picks(option.variant.methods))
   if (own === undefined) return 'A refusal over several methods names the option\'s own methods'
-  return JSON.stringify(own.cause) === JSON.stringify(option.status.cause) ? undefined : 'The cause is the one of the option\'s own methods'
+  return JSON.stringify([own.cause, own.span]) === JSON.stringify([option.status.cause, option.status.span]) ? undefined : 'The cause is the one of the option\'s own methods'
 }
 /** The option-level rules (its lead, a refusal's causes by method); every schema of an option applies them. */
 export const optionLeadRefinement = (option: OptionShape, context: z.core.$RefinementCtx): void => {

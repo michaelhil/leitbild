@@ -73,9 +73,10 @@ export const undate = (prep: Prepared, index: CompileIndex, rows: ReadonlyArray<
     const fits = (k: number) => Number.isInteger(s) && finishOf(prep, a, k, s) === f
     // After an edit the row's finish may no longer match (an estimate changed), and another mode can match it
     // by chance (bought time making up the longer work). The mode is read from the row itself: the same crews
-    // and tools, with bought time exactly when the row used some, as the re-timing reads it.
-    const bought = row.uses.some(use => use.purchase !== undefined)
-    const sameTime = (k: number) => index.modes[a]![k]!.needs.some(need => need.purchased) === bought
+    // and tools, and on each need bought time exactly when the row used some on that need's crews or tools, as
+    // the re-timing reads it (crew overtime with the crane in its own hours is not the crane's extra day).
+    const boughtOn = (resources: readonly string[]) => row.uses.some(use => use.purchase !== undefined && resources.includes(use.resource))
+    const sameTime = (k: number) => index.modes[a]![k]!.needs.every(need => need.purchased === boughtOn(need.resources))
     const sameCrews = (k: number) => { const own = new Set(modes[k]!.demands.map(demand => index.resources[demand.resource]!)); return own.size === used.size && [...used].every(key => own.has(key)) }
     const m = !edited ? modes.findIndex((_, k) => fits(k) && serves(k))
       : [(k: number) => sameCrews(k) && sameTime(k) && fits(k), (k: number) => sameCrews(k) && sameTime(k), (k: number) => sameCrews(k) && fits(k), sameCrews, (k: number) => serves(k) && fits(k), serves]

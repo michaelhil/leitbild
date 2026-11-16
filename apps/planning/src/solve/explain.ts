@@ -5,16 +5,16 @@
 // to 20 hops back through those causes. Each item carries its float. Prose is rendered elsewhere.
 import type { z } from 'zod'
 import type { explainResultSchema } from '../api/contract.ts'
-import type { Certificate, PlanInputs } from '../plan/schema.ts'
+import type { Certificate, PlanInputs, SpanRecord } from '../plan/schema.ts'
 import { clip as clipWords } from '../plan/summary.ts'
 import { dueTimeWords } from '../plan/refusal-words.ts'
 import type { CheckVariant } from '../check/check.ts'
 import { expandCalendar } from '../time/calendar.ts'
-import { gridSlotMs } from '../time/units.ts'
+import { gridSlotMs, timeUnitMs } from '../time/units.ts'
 import { localParts } from '../time/zone.ts'
-import { bounds, type SpanRefusal } from './bounds.ts'
+import { bounds } from './bounds.ts'
 import { compile, type CompileIndex, type SubSolve } from './compile.ts'
-import type { VerifyCertificate } from './status.ts'
+import { spanRecordOf, type VerifyCertificate } from './status.ts'
 import { ffHolds, finishOf, progressAt, workedSlots, type Prepared } from './decode.ts'
 import type { Float } from './float.ts'
 import type { Schedule } from './problem.ts'
@@ -296,9 +296,9 @@ const clip = (line: string): string => clipWords(line, 240)
 
 /**
  * A proven-infeasible refusal in planner words and hours, generated from the certificate (and, for a
- * span limit, the least span bounds() found). Never a raw propagation fact.
+ * span limit, the span refusal as the status stores it, status.span). Never a raw propagation fact.
  */
-export const refusalLines = (cause: Certificate, inputs: PlanInputs, span?: SpanRefusal, purchases?: readonly string[], methods?: CheckVariant['methods'], subject = 'this plan'): string[] => {
+export const refusalLines = (cause: Certificate, inputs: PlanInputs, span?: SpanRecord, purchases?: readonly string[], methods?: CheckVariant['methods'], subject = 'this plan'): string[] => {
   const lines = refusalBody(cause, inputs, span, { methods: methods ?? [], purchases: purchases ?? [] }, subject)
   if (purchases === undefined) return lines
   // Say what the answer assumes may be bought (e.g. "days only": a tool day and a rebooking, no crew hours).
@@ -324,13 +324,12 @@ export const explainRefusal = (inputs: PlanInputs, sub: SubSolve, verify: Verify
   const variant = { methods: sub.methods, purchases: compiled.index.allowedPurchases }
   const proves = verify(inputs, variant, found.certificate).proves
   const also = found.span?.alsoProven
-  const span = found.span === undefined ? undefined
-    : also !== undefined && verify(inputs, variant, also).proves ? found.span : (({ alsoProven: _also, ...rest }) => rest)(found.span)
+  const span = found.span === undefined ? undefined : spanRecordOf(found.span, found.span.leastHours, also !== undefined && verify(inputs, variant, also).proves)
   return { cause: found.certificate, proves, lines: refusalLines(found.certificate, inputs, span, compiled.index.allowedPurchases, sub.methods) }
 }
 
 /** `subject`: what the span line says allows the least span: "this plan", or for a what-if "this option (<method>)". */
-const refusalBody = (cause: Certificate, inputs: PlanInputs, span: SpanRefusal | undefined, variant: CheckVariant, subject: string): string[] => {
+const refusalBody = (cause: Certificate, inputs: PlanInputs, span: SpanRecord | undefined, variant: CheckVariant, subject: string): string[] => {
   const zone = inputs.settings.timeZone
   const slotMs = gridSlotMs[inputs.settings.grid]
   const lastStart = (to: string) => localTime(new Date(Date.parse(to) - slotMs).toISOString(), zone)
@@ -366,10 +365,8 @@ const refusalBody = (cause: Certificate, inputs: PlanInputs, span: SpanRefusal |
       'What sets the last test, each job at its earliest:',
       ...span.path.slice(0, 9).map(step),
     ]
-    if (span.later !== undefined) {
-      const changed = span.later.path.filter(entry => !span.path.some(known => known.job === entry.job && known.start === entry.start))
-      lines.push(clip(`A later first tag-out does not help: from ${localTime(span.later.firstOut, zone)} the span is ${hoursText(span.later.hours)}, because:`), ...(changed.length > 0 ? changed : span.later.path).slice(0, 6).map(step))
-    }
+    // The later chain is stored as shown: the jobs that change from the earliest one (spanRecordOf).
+    if (span.later !== undefined) lines.push(clip(`A later first tag-out does not help: from ${localTime(span.later.firstOut, zone)} the span is ${hoursText(span.later.hours)}, because:`), ...span.later.path.slice(0, 6).map(step))
     if (span.alsoProven?.kind === 'energy') {
       const energy = span.alsoProven
       lines.push(clip(`Also: in any such span starting between ${localTime(energy.from, zone)} and ${lastStart(energy.to)}, ${hoursText(energy.requiredHours)} of ${list(energy.resources.map(crew))} work must fit, and only ${hoursText(energy.availableHours)} exist.`))
@@ -383,11 +380,30 @@ const refusalBody = (cause: Certificate, inputs: PlanInputs, span: SpanRefusal |
   // Each slot is filled or left out: never "after ." (walk 3, R3-1); no solver words such as "release".
   const before = cause.steps.slice(1).map(entry => title(entry.job))
   const notBefore = first === undefined ? undefined : job(first.job)?.notBefore?.words
-  const where = first?.via === 'due' ? 'before its due time' : first?.via === 'release' ? `after its earliest start${notBefore === undefined ? '' : ` ('${notBefore}')`}` : first?.via === 'lock' ? 'at its fixed start' : 'inside the plan window'
+  const limit = first?.via === 'span-limit' ? outageLimitOf(inputs, first.job) : undefined
+  const where = first?.via === 'due' ? 'before its due time' : first?.via === 'release' ? `after its earliest start${notBefore === undefined ? '' : ` ('${notBefore}')`}` : first?.via === 'lock' ? 'at its fixed start'
+    : first?.via === 'span-limit' ? (limit === undefined ? 'inside its outage limit' : `inside any outage that '${limit.words}' allows`) : 'inside the plan window'
   return [clip(`Not possible: ${first === undefined ? 'the plan' : title(first.job)} cannot fit ${where}${before.length === 0 ? '' : `, after ${list(before)}`}.`)]
 }
 
 type ChainStepText = { readonly job: string; readonly start: string; readonly finish: string }
+
+/**
+ * The outage limit that holds a job opening a span, in words: the tightest span limit (the plan's, or the
+ * what-if's when its rules are among `inputs`) over a group the job takes out, an item of it or what supports one.
+ */
+const outageLimitOf = (inputs: PlanInputs, jobKey: string): Extract<PlanInputs['rules'][number], { kind: 'span-limit' }> | undefined => {
+  const job = inputs.jobs.find(entry => entry.key === jobKey)
+  if (job === undefined) return undefined
+  const supportersOf = (item: string, seen: ReadonlySet<string>): string[] => (inputs.equipment.find(entry => entry.key === item)?.supportedBy ?? [])
+    .filter(key => !seen.has(key)).flatMap(key => [key, ...supportersOf(key, new Set([...seen, key]))])
+  const takesOut = (group: string) => {
+    const covered = new Set(inputs.equipment.filter(item => item.group === group).flatMap(item => [item.key, ...supportersOf(item.key, new Set([item.key]))]))
+    return job.equipment.some(item => covered.has(item))
+  }
+  const hoursOf = (rule: Extract<PlanInputs['rules'][number], { kind: 'span-limit' }>) => rule.limit.value * timeUnitMs[rule.limit.unit]
+  return inputs.rules.flatMap(rule => (rule.kind === 'span-limit' && takesOut(rule.group) ? [rule] : [])).sort((x, y) => hoursOf(x) - hoursOf(y))[0]
+}
 
 /**
  * The most limiting resources along a finish chain: those named in the most crew, tool or shift causes

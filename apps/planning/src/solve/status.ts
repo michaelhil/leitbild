@@ -4,7 +4,8 @@
 // status shown is re-checked against the current inputs, and a stored proof is reused only when the
 // option's inputs revision and formulation both equal the current ones. Prose is never built here.
 import type { z } from 'zod'
-import { goalResolution, statusSchema, type alsoRuleSchema, type BoundCertificate, type Certificate, type GoalWord, type PlanInputs, type Status } from '../plan/schema.ts'
+import { goalResolution, spanRecordSchema, statusSchema, type alsoRuleSchema, type BoundCertificate, type Certificate, type GoalWord, type PlanInputs, type SpanRecord, type Status } from '../plan/schema.ts'
+import type { SpanRefusal } from './bounds.ts'
 import type { BoundSource } from './problem.ts'
 import { goalExcess, type RawMetric } from './rank.ts'
 import type { DatedRow } from './date.ts'
@@ -46,6 +47,40 @@ export type VerifyCertificate = (inputs: PlanInputs, variant: Option['variant'],
  * `goal` is a plan goal's id, or a group lead's own goal (its group's outage, in `unit`).
  */
 export type VerifyBound = (inputs: PlanInputs, variant: Option['variant'], goal: number | { readonly group: string; readonly unit: string }, bound: { readonly value: number }) => { readonly proves: boolean }
+/**
+ * Lane K's proof of a span refusal (check/certificate.ts verifySpanRefusal): the rule is a span limit of the
+ * plan or of the what-if, and lane K's own least span for its group with that rule lifted (`checkerLeastHours`,
+ * over every opening) is the figure stated and exceeds the limit.
+ */
+export type VerifySpan = (inputs: PlanInputs, variant: Option['variant'], claim: { readonly rule: string; readonly leastHours: number }) => { readonly proves: boolean; readonly checkerLeastHours?: number }
+
+/**
+ * A span refusal from bounds as the refusal shows it and a status stores it: what sets the last test is its
+ * first 9 jobs; the later first tag-out keeps its first 6 jobs that change (its first 6 when none change),
+ * and stands only when it is no shorter than `leastHours`; the energy proof only when `alsoProves`.
+ */
+export const spanRecordOf = (span: SpanRefusal, leastHours: number, alsoProves: boolean): SpanRecord => {
+  const step = ({ job, start, finish }: SpanRefusal['path'][number]) => ({ job, start, finish })
+  const later = span.later === undefined || span.later.hours < leastHours ? undefined : (() => {
+    const changed = span.later.path.filter(entry => !span.path.some(known => known.job === entry.job && known.start === entry.start))
+    return { firstOut: span.later.firstOut, hours: span.later.hours, path: (changed.length > 0 ? changed : span.later.path).slice(0, 6).map(step) }
+  })()
+  const also = alsoProves && span.alsoProven?.kind === 'energy' ? span.alsoProven : undefined
+  return spanRecordSchema.parse({
+    rule: span.rule, leastHours, limitHours: span.limitHours, firstOut: span.firstOut, lastBack: span.lastBack, path: span.path.slice(0, 9).map(step),
+    ...(later === undefined ? {} : { later }), ...(also === undefined ? {} : { alsoProven: also }),
+  })
+}
+
+/**
+ * The span refusal a proven-infeasible status stores (N2, N4), only when lane K proves it here, in the child:
+ * its least span is lane K's figure, and the energy proof stands only when lane K re-verifies it.
+ */
+export const provenSpan = (inputs: PlanInputs, variant: Option['variant'], span: SpanRefusal, ports: { readonly verifySpan: VerifySpan; readonly verify: VerifyCertificate }): SpanRecord | undefined => {
+  const proof = ports.verifySpan(inputs, variant, { rule: span.rule, leastHours: span.leastHours })
+  if (!proof.proves || proof.checkerLeastHours === undefined) return undefined
+  return spanRecordOf(span, proof.checkerLeastHours, span.alsoProven !== undefined && ports.verify(inputs, variant, span.alsoProven).proves)
+}
 
 /**
  * Checker findings that come from the inputs, not from a schedule: lane K's input codes and the readiness
@@ -153,7 +188,7 @@ export const onPlanGoals = (solved: Status, lead: { readonly goal: number } | { 
       : { word: first.word, group: lead.group, value: first.value, unit: first.unit, ...(first.bound === undefined ? {} : { bound: first.bound }) }
   return parse({ word: solved.word, goals, run: solved.run, lead: leadLine })
 }
-export const infeasibleStatus = (cause: Certificate, run: RunBasis): Status => parse({ word: 'proven infeasible', cause, run })
+export const infeasibleStatus = (cause: Certificate, run: RunBasis, span?: SpanRecord): Status => parse({ word: 'proven infeasible', cause, ...(span === undefined ? {} : { span }), run })
 export const unresolvedStatus = (run: RunBasis, attempt?: { job: string; wouldFinish: string; pastWindowHours: number }): Status =>
   parse({ word: 'unresolved', run, ...(attempt === undefined ? {} : { attempt }) })
 export const cancelledStatus = (run: RunBasis): Status => parse({ word: 'cancelled', run })
