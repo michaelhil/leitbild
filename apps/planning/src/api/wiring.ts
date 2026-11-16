@@ -8,6 +8,7 @@ import { formulationOf } from '../solve/compile.ts'
 import { compiled, scheduleOf } from '../solve/preview.ts'
 import { withExtraRules } from '../solve/keys.ts'
 import { makeExplainer, mostLimiting, refusalLines, type ExplainItem } from '../solve/explain.ts'
+import { spanRecordOf } from '../solve/status.ts'
 import { totalFloat } from '../solve/float.ts'
 import { CERTIFIED_SIZE, generate } from '../solve/generate.ts'
 import { SOLVER_BUSY_WORDS, type SolverPool } from '../solve/pool.ts'
@@ -95,7 +96,7 @@ export const createRealSolver = (pool: SolverPool): SolverPort => {
         const ruled = withExtraRules(inputs, option.variant.also)
         const found = bounds(problem, index, prep).span
         const span = found === undefined || !verifySpanRefusal(ruled, option.variant, found).proves ? undefined : found
-        const shown = span?.alsoProven === undefined || verifyCertificate(ruled, option.variant, span.alsoProven).proves ? span : (({ alsoProven: _also, ...rest }) => rest)(span)
+        const shown = span === undefined ? undefined : spanRecordOf(span, span.leastHours, span.alsoProven !== undefined && verifyCertificate(ruled, option.variant, span.alsoProven).proves)
         const whatIf = option.variant.also !== undefined || option.variant.lead !== undefined || option.status.byMethod !== undefined
         const method = methodWords(inputs, option.variant.methods)
         if (!whatIf || method === undefined) return bounded({ lines: refusalLines(option.status.cause, ruled, shown, option.variant.purchases, option.variant.methods), items: [] })

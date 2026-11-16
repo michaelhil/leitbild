@@ -11,15 +11,19 @@ import { prepare } from './decode.ts'
 import { generate, solveInputsOf, type AlsoRule, type GenerateDeps } from './generate.ts'
 import { createSolverPool } from './pool.ts'
 import { searchEngine } from './search.ts'
-import { laneKCheck, laneKVerify, laneKVerifyBound } from './fixtures/lane-k.ts'
+import { laneKCheck, laneKVerify, laneKVerifyBound, laneKVerifySpan } from './fixtures/lane-k.ts'
+import { refusalLines } from './explain.ts'
+import { withExtraRules } from './keys.ts'
 import { trainAInputs } from './fixtures/train-a-case.ts'
 
 const by = { kind: 'service' as const, name: 'test' }
 const deps: GenerateDeps = { engine: searchEngine(), check: laneKCheck, verify: laneKVerify, verifyBound: laneKVerifyBound }
+// As production: the child proves a span refusal and stores it (N2, N4); a read words it from storage.
+const proving: GenerateDeps = { ...deps, verifySpan: laneKVerifySpan }
 const flagship = trainAInputs({ read: true })
 const plan72 = flagship.rules.find(rule => rule.kind === 'span-limit' && rule.group === 'COOL-A')!
 const at40: Extract<AlsoRule, { kind: 'span-limit' }> = { kind: 'span-limit', key: 'what-if-COOL-A-40h', group: 'COOL-A', limit: { value: 40, unit: 'h' }, singleEntry: true, words: 'At most 40 h out', source: { by: 'planner' } }
-const asked = await generate(deps, { inputs: flagship, revision: 1, previous: null, input: { variants: [{ label: 'At most 40 h out', also: [at40] }] }, by, signal: new AbortController().signal, seed: 1, evals: 600 })
+const asked = await generate(proving, { inputs: flagship, revision: 1, previous: null, input: { variants: [{ label: 'At most 40 h out', also: [at40] }] }, by, signal: new AbortController().signal, seed: 1, evals: 600 })
 const option = asked.optionSet.options[0]!
 const pool = createSolverPool()
 afterAll(() => pool.shutdown())
@@ -67,5 +71,63 @@ describe('a span refusal names the rule breached and that rule\'s limit', () => 
     expect(answer.lines.length).toBeGreaterThan(0)
     expect(text).toContain(`against ${at40.limit.value} h`)
     expect(text).not.toContain(`against ${plan72.kind === 'span-limit' ? plan72.limit.value : 0} h`)
+  })
+})
+
+describe('N2, N4: a span refusal is stored as lane K proved it in the sub-solve, and worded from storage', () => {
+  const stored = async (with_: GenerateDeps) => (await generate(with_, { inputs: flagship, revision: 1, previous: null, input: { variants: [{ label: 'At most 40 h out', also: [at40] }] }, by, signal: new AbortController().signal, seed: 1, evals: 600 })).optionSet.options[0]!
+
+  test('each method\'s refusal keeps the what-if\'s rule, lane K\'s least span against 40 h, and the chains, in the child too', async () => {
+    for (const refused of [await stored(proving), await stored({ ...deps, subSolver: pool.subSolver })]) {
+      if (refused.status.word !== 'proven infeasible') throw new Error('refused')
+      expect(optionSchema.safeParse(refused).success).toBe(true)
+      const entries = refused.status.byMethod ?? []
+      expect(entries.length).toBe(flagship.methods[0]!.options.length)
+      for (const entry of entries) {
+        const span = entry.span!
+        const variant = { methods: entry.methods, purchases: entry.purchases, also: [at40] }
+        // Lane K's own figure, against the what-if's own limit.
+        expect([span.rule, span.limitHours, span.leastHours]).toEqual([at40.key, at40.limit.value, verifySpanRefusal(flagship, variant, span).checkerLeastHours!])
+        expect(span.path.length).toBeGreaterThan(0)
+        if (span.alsoProven !== undefined) expect(laneKVerify(flagship, variant, span.alsoProven).proves).toBe(true)
+      }
+      // The option's own entry is the status's.
+      expect(entries.find(entry => JSON.stringify(entry.methods) === JSON.stringify(refused.variant.methods))!.span).toEqual(refused.status.span)
+    }
+  }, 120_000)
+
+  test('the words from storage are the words a read worded with lane K\'s check, so a later read changes nothing', async () => {
+    const refused = await stored(proving)
+    if (refused.status.word !== 'proven infeasible') throw new Error('refused')
+    const solver = createRealSolver(pool)
+    const read = await solver.explain({ inputs: flagship, option: refused, ask: 'refusal', job: undefined, cursor: undefined })
+    const ruled = withExtraRules(flagship, [at40])
+    const own = refusalLines(refused.status.cause, ruled, refused.status.span, refused.variant.purchases, refused.variant.methods, `this option (${flagship.methods[0]!.options.find(choice => choice.key === refused.variant.methods[0]!.option)!.label})`)
+    expect(read.lines).toContain(`For ${flagship.methods[0]!.options.find(choice => choice.key === refused.variant.methods[0]!.option)!.label}: ${own[0]}`)
+    // From its first span line on, the read is the stored refusal's own lines, until the 20 lines run out.
+    const from = read.lines.indexOf(own[1]!)
+    expect(from).toBeGreaterThan(0)
+    expect(read.lines.slice(from)).toEqual(own.slice(1, 1 + read.lines.length - from))
+    expect(own.join(' ')).toContain(`against ${at40.limit.value} h`)
+  }, 120_000)
+
+  test('a span lane K does not prove is not stored, and the stored shape keeps a span beside a temporal cause only', async () => {
+    const unproven = await stored({ ...deps, verifySpan: () => ({ proves: false, reasons: ['test'] }) })
+    if (unproven.status.word !== 'proven infeasible') throw new Error('refused')
+    expect([unproven.status.span, ...(unproven.status.byMethod ?? []).map(entry => entry.span)].every(span => span === undefined)).toBe(true)
+    const refused = await stored(proving)
+    if (refused.status.word !== 'proven infeasible') throw new Error('refused')
+    const energy = { kind: 'energy' as const, resources: ['mech-station'], jobs: [], requiredHours: 2, availableHours: 1, from: flagship.settings.window!.start, to: flagship.settings.window!.end }
+    expect(optionSchema.safeParse({ ...refused, status: { ...refused.status, cause: energy, byMethod: undefined } }).success).toBe(false)
+    const other = refused.status.byMethod!.find(entry => JSON.stringify(entry.methods) !== JSON.stringify(refused.variant.methods))!
+    expect(optionSchema.safeParse({ ...refused, status: { ...refused.status, span: other.span } }).success).toBe(JSON.stringify(other.span) === JSON.stringify(refused.status.span))
+  }, 120_000)
+
+  test('a refusal held by an outage limit, with no span figures, names that limit in words: the what-if\'s, the tightest', () => {
+    const covered = new Set(flagship.equipment.filter(item => item.group === 'COOL-A').map(item => item.key))
+    const opener = flagship.jobs.find(job => job.kind === 'tag-out' && job.equipment.some(item => covered.has(item)))!
+    const cause = { kind: 'temporal' as const, steps: [{ job: opener.key, via: 'span-limit' as const }] }
+    expect(refusalLines(cause, withExtraRules(flagship, [at40]), undefined, [], [])[0]).toBe(`Not possible: ${opener.title} cannot fit inside any outage that '${at40.words}' allows.`)
+    expect(refusalLines(cause, flagship, undefined, [], [])[0]!.startsWith(`Not possible: ${opener.title} cannot fit inside any outage that '${plan72.words.slice(0, 80)}`)).toBe(true)
   })
 })
