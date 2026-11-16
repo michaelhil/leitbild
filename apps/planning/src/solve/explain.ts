@@ -298,8 +298,8 @@ const clip = (line: string): string => clipWords(line, 240)
  * A proven-infeasible refusal in planner words and hours, generated from the certificate (and, for a
  * span limit, the least span bounds() found). Never a raw propagation fact.
  */
-export const refusalLines = (cause: Certificate, inputs: PlanInputs, span?: SpanRefusal, purchases?: readonly string[], methods?: CheckVariant['methods']): string[] => {
-  const lines = refusalBody(cause, inputs, span, { methods: methods ?? [], purchases: purchases ?? [] })
+export const refusalLines = (cause: Certificate, inputs: PlanInputs, span?: SpanRefusal, purchases?: readonly string[], methods?: CheckVariant['methods'], subject = 'this plan'): string[] => {
+  const lines = refusalBody(cause, inputs, span, { methods: methods ?? [], purchases: purchases ?? [] }, subject)
   if (purchases === undefined) return lines
   // Say what the answer assumes may be bought (e.g. "days only": a tool day and a rebooking, no crew hours).
   const label = (key: string) => inputs.purchases.find(purchase => purchase.key === key)?.label ?? key
@@ -329,7 +329,8 @@ export const explainRefusal = (inputs: PlanInputs, sub: SubSolve, verify: Verify
   return { cause: found.certificate, proves, lines: refusalLines(found.certificate, inputs, span, compiled.index.allowedPurchases, sub.methods) }
 }
 
-const refusalBody = (cause: Certificate, inputs: PlanInputs, span: SpanRefusal | undefined, variant: CheckVariant): string[] => {
+/** `subject`: what the span line says allows the least span: "this plan", or for a what-if "this option (<method>)". */
+const refusalBody = (cause: Certificate, inputs: PlanInputs, span: SpanRefusal | undefined, variant: CheckVariant, subject: string): string[] => {
   const zone = inputs.settings.timeZone
   const slotMs = gridSlotMs[inputs.settings.grid]
   const lastStart = (to: string) => localTime(new Date(Date.parse(to) - slotMs).toISOString(), zone)
@@ -361,7 +362,7 @@ const refusalBody = (cause: Certificate, inputs: PlanInputs, span: SpanRefusal |
   if (span !== undefined) {
     const lines = [
       clip(`Not possible: ${ruleWords(span.rule)}`),
-      clip(`The shortest span this plan allows is ${hoursText(span.leastHours)}, against ${hoursText(span.limitHours)}: first tag-out ${localTime(span.firstOut, zone)}, last test passed ${localTime(span.lastBack, zone)}.`),
+      clip(`The shortest span ${subject} allows is ${hoursText(span.leastHours)}, against ${hoursText(span.limitHours)}: first tag-out ${localTime(span.firstOut, zone)}, last test passed ${localTime(span.lastBack, zone)}.`),
       'What sets the last test, each job at its earliest:',
       ...span.path.slice(0, 9).map(step),
     ]

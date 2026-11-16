@@ -61,3 +61,19 @@ describe('B1: the read says what a status of an earlier plan is, and the data ag
   })
 })
 
+describe('B3: a refused what-if is explained for each method, its rule in words', () => {
+  test('the 40 h what-if\'s refusal names both methods and the 40 h rule in its own words, never its key or "this plan"', async () => {
+    const what = refused40()
+    const plan = await real.store.create(real.workspaceId, planWith(real.workspaceId, [swap, rebuild, what]))
+    const answer = await real.call('planning.plan.explain', { resource: plan.id, input: { ask: 'refusal', option: what.key } })
+    expect(answer.status).toBe(200)
+    const lines: string[] = answer.body.result.lines
+    console.log('B3:', lines.join(' | '))
+    const text = lines.join(' ')
+    expect(lines[0]).toStartWith(`For ${label(rebuild)}: Not possible: `)
+    expect(lines.some(line => line.startsWith(`For ${label(swap)}: Not possible: `))).toBe(true)
+    expect(text).toContain(at40.words)
+    expect(text).not.toContain(at40.key)
+    expect(text).not.toContain('this plan allows')
+  }, 60_000)
+})
