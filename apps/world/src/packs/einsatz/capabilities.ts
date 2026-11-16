@@ -1,7 +1,9 @@
 import { z } from 'zod'
 import { commandResultSchema, idSchema, objectIdSchema, type ObjectId } from '../../core/model/index.ts'
+import { packMapFeatureSchema } from '../../core/packs/protocol.ts'
 import { defineSimulationCommandCapability, defineSimulationQueryCapability } from '../../simulation/capabilities.ts'
 import type { SimulationCapability } from '../../simulation/protocol.ts'
+import { queuedPlanRoutesId, queuedPlanRoutesInputSchema } from './chain-path.ts'
 import { configurationOutputSchema } from './config-schema.ts'
 import { intentFields } from './engine/intents.ts'
 import { unitOrderInputSchema, unitPlanReorderInputSchema, unitRecallInputSchema, unitStopRemoveInputSchema, unitUndoInputSchema } from './order-schema.ts'
@@ -11,7 +13,7 @@ import { situationInputSchema, situationSchema, unitOptionsInputSchema, unitOpti
 import { stepTargetId } from './steps.ts'
 
 /**
- * The Einsatz Capabilities: five queries and twelve commands. Commands are
+ * The Einsatz Capabilities: six queries and twelve commands. Commands are
  * validated against the current state when they commit, never against a
  * token: a refusal reads `<code>: <message>` in the configuration's own
  * words and sets `code`. Every command is schedulable from the Scenario
@@ -43,6 +45,7 @@ export const einsatzQueryIds = {
   situation: 'world.einsatz.situation',
   recommend: 'world.einsatz.recommend',
   unitOptions: 'world.einsatz.unit.options',
+  queuedRoutes: queuedPlanRoutesId,
   configuration: 'world.einsatz.configuration',
   planningBasis: einsatzPlanningCapability.id,
 } as const
@@ -142,6 +145,16 @@ export const einsatzCapabilities: ReadonlyArray<SimulationCapability> = [
     searchTerms: ['configuration', 'unit types', 'task templates', 'priorities'],
     input: z.object({}).strict(),
     output: configurationOutputSchema,
+  }),
+  defineSimulationQueryCapability({
+    readScope: 'object',
+    id: einsatzQueryIds.queuedRoutes,
+    title: 'Read queued map routes',
+    description: 'Routes the selected unit’s queued destinations for map display while its observed plan still holds. Example: `{unitId:"unit:a4",expectedPlan:[{id:"step-1",state:"active"},{id:"step-2",state:"queued"}]}`.',
+    searchTerms: ['queued route', 'map', 'next stop'],
+    input: queuedPlanRoutesInputSchema,
+    output: z.object({ features: z.array(packMapFeatureSchema) }).strict(),
+    inspectObjectIds: raw => objectIds(queuedPlanRoutesInputSchema.parse(raw).unitId),
   }),
   command({
     id: einsatzCommandIds.order,

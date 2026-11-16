@@ -23,9 +23,8 @@ export interface MapFeatureRuntimeConfig {
    */
   readonly seenRoleIds: () => ReadonlyArray<string> | null
   /**
-   * The object the map selects, or null. Only the `mapFeatures` of a Pack
-   * that declares `mapFeaturesFollowSelection` receive it, to draw what
-   * belongs to it more strongly; no map-area query does.
+   * The object the map selects, or null. Only the map feature hooks of a
+   * Pack that declares `mapFeaturesFollowSelection` receive it.
    */
   readonly selectedObjectId: () => string | null
   /**
@@ -89,17 +88,18 @@ interface QueriedLoad {
   readonly key: string
   readonly objects: ReadonlyArray<OperationalObject>
   readonly selectedObjectId: string | null
+  readonly results: ReadonlyMap<string, MapQueryResult>
+}
+
+interface MapQueryResult {
   readonly features: ReadonlyArray<PackMapFeature>
-  readonly warnings: ReadonlyArray<string>
+  readonly warning?: string
 }
 
 /**
- * Loads the active Packs' map features: their synchronous `mapFeatures`, and
- * the map-area queries they ask the Run. No query reads the selection, so a
- * load that differs from the last one only in the selected object (the same
- * objects, data revision, roles seen and requests) asks the Run nothing: it
- * redraws the synchronous features and keeps the last query results, and
- * the next refresh for anything else asks again.
+ * Loads the active Packs' synchronous features and typed Run queries.
+ * A selection change redraws synchronous features and keeps the results of
+ * unchanged queries over the same objects, data revision and roles.
  */
 export const createMapFeatureLoader = (
   config: MapFeatureRuntimeConfig,
@@ -110,27 +110,23 @@ export const createMapFeatureLoader = (
     const seenRoleIds = config.seenRoleIds()
     const selectedObjectId = config.selectedObjectId()
     const objects = config.objects()
-    const unselected: PackObjectPresentationContext = {
+    const presentation: PackObjectPresentationContext = {
       objects,
       map: { viewport: context.viewport, zoom: context.zoom },
       ...(currentTime === undefined ? {} : { currentTime }),
       ...(seenRoleIds === null ? {} : { seenRoleIds }),
+      ...(selectedObjectId === null ? {} : { selectedObjectId }),
     }
     const pack = config.pack()
     if (!pack) { lastQueried = null; config.onWarnings?.([]); return [] }
-    // The active Pack views hand the selection only to the Packs that follow it.
-    const syncFeatures = pack.presentation.mapFeatures?.(selectedObjectId === null ? unselected : { ...unselected, selectedObjectId }) ?? []
+    const syncFeatures = pack.presentation.mapFeatures?.(presentation) ?? []
     const simulationRunId = config.simulationRunId()
     if (!simulationRunId) { lastQueried = null; config.onWarnings?.([]); return syncFeatures }
-    const requests = pack.presentation.mapFeatureQueries?.(unselected) ?? []
+    const requests = pack.presentation.mapFeatureQueries?.(presentation) ?? []
     if (requests.length === 0) { lastQueried = null; config.onWarnings?.([]); return syncFeatures }
-    const key = JSON.stringify([simulationRunId, config.dataRevision(), seenRoleIds, requests])
-    const reused = lastQueried
-    if (reused !== null && reused.key === key && reused.objects === objects && reused.selectedObjectId !== selectedObjectId) {
-      lastQueried = { ...reused, selectedObjectId }
-      config.onWarnings?.(reused.warnings)
-      return [...syncFeatures, ...reused.features]
-    }
+    const key = JSON.stringify([simulationRunId, config.dataRevision(), seenRoleIds])
+    const previous = lastQueried
+    const reused = previous?.key === key && previous.objects === objects && previous.selectedObjectId !== selectedObjectId ? previous.results : undefined
     const query = config.queryCapability ?? (async (id, request, options) =>
       await querySimulationRunCapability(id, request.capabilityId, request.input, options))
     const timeout = createAbortSignalWithTimeout(
@@ -138,23 +134,27 @@ export const createMapFeatureLoader = (
       config.queryTimeoutMs ?? defaultMapFeatureQueryTimeoutMs,
     )
     try {
-      const warnings: string[] = []
-      const responses = await Promise.all(requests.map(async request => {
+      const responses = await Promise.all(requests.map(async (request): Promise<readonly [string, MapQueryResult]> => {
+        const requestKey = JSON.stringify(request)
+        const known = reused?.get(requestKey)
+        if (known !== undefined) return [requestKey, known]
         try {
           const result = await query(simulationRunId, request, { signal: timeout.signal })
-          if (typeof result === 'object' && result !== null && 'truncated' in result && result.truncated === true) warnings.push(request.capabilityId + ': map coverage limited; zoom in for more detail.')
-          return mapFeaturesFromQueryResult(result)
+          const truncated = typeof result === 'object' && result !== null && 'truncated' in result && result.truncated === true
+          return [requestKey, {
+            features: mapFeaturesFromQueryResult(result),
+            ...(truncated ? { warning: request.capabilityId + ': map coverage limited; zoom in for more detail.' } : {}),
+          }]
         } catch (error) {
           if (context.signal?.aborted) throw error
           if (!config.onWarnings) throw error
-          warnings.push(request.capabilityId + ': ' + String(error)); return []
+          return [requestKey, { features: [], warning: request.capabilityId + ': ' + String(error) }]
         }
       }))
       if (context.signal?.aborted) throw context.signal.reason
-      const queried = responses.flat()
-      lastQueried = { key, objects, selectedObjectId, features: queried, warnings }
-      config.onWarnings?.(warnings)
-      return [...syncFeatures, ...queried]
+      lastQueried = { key, objects, selectedObjectId, results: new Map(responses) }
+      config.onWarnings?.(responses.flatMap(([, result]) => result.warning === undefined ? [] : [result.warning]))
+      return [...syncFeatures, ...responses.flatMap(([, result]) => result.features)]
     } finally {
       timeout.dispose()
     }

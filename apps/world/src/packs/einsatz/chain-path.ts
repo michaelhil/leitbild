@@ -1,7 +1,8 @@
 import { z } from 'zod'
-import { geoPointFromLonLat, type GeoJsonLineString, type GeoJsonPoint, type OperationalObject } from '../../core/model/index.ts'
-import type { PackMapFeature } from '../../core/packs/protocol.ts'
+import { geoPointFromLonLat, idSchema, type GeoJsonLineString, type GeoJsonPoint, type OperationalObject } from '../../core/model/index.ts'
+import type { PackMapFeature, PackMapFeatureQuery } from '../../core/packs/protocol.ts'
 import { einsatzPackId } from './ids.ts'
+import { planExpectationSchema } from './order-schema.ts'
 import { ordersSchema, type Step } from './steps.ts'
 
 /**
@@ -9,15 +10,14 @@ import { ordersSchema, type Step } from './steps.ts'
  * viewer's picture: presentation only, derived like everything the map
  * shows, never a simulation input. The active leg is the route the unit's
  * object carries (`spatial.route.planned`), which the World map already
- * draws as the unit's route; each queued step adds a straight segment from
- * where the leg ends, or the unit stands, to the step's target. An engage
- * step moves nothing and adds no segment. This module imports no engine, so
- * the dispatch surface and the Pack's map presentation run it in the browser.
+ * draws as the unit's route. We derive the endpoints of each queued leg
+ * from the plan, and the runtime obtains its geometry for display. A step
+ * without travel adds no leg.
  */
 
 const unitSchema = z.object({ type: z.literal('unit'), integrity: z.string(), orders: ordersSchema }).loose()
 
-/** One straight segment of the path: towards a queued step's target. */
+/** The endpoints of a queued travel leg, before routing. */
 export interface PlannedSegment {
   readonly stepId: string
   readonly from: GeoJsonPoint
@@ -60,7 +60,10 @@ export const plannedPaths = (objects: ReadonlyArray<OperationalObject>): Planned
     const orders = unit.orders
     const head = orders[0]!
     const route = head.state === 'active' ? object.spatial.route?.planned : undefined
-    let from = route === undefined ? pointOf(object) : geoPointFromLonLat(...route.coordinates.at(-1)!)
+    const activeEnd = head.state === 'active' ? stepEnd(head, byId) : 'none'
+    let from = activeEnd === 'unseen' ? undefined
+      : route !== undefined ? geoPointFromLonLat(...route.coordinates.at(-1)!)
+      : activeEnd === 'none' ? pointOf(object) : activeEnd.point
     if (from === undefined) return []
     const segments: PlannedSegment[] = []
     for (const step of head.state === 'active' ? orders.slice(1) : orders) {
@@ -76,34 +79,37 @@ export const plannedPaths = (objects: ReadonlyArray<OperationalObject>): Planned
 
 const pathColor = '#0a7daf'
 
-/**
- * How a queued segment is drawn: dashed and thin, beneath every operational
- * icon (the map draws its icons above Pack lines), so a straight segment that
- * crosses other units stays readable as a plan; faint for every unit, a
- * little stronger for the one the map selects.
- * The active leg is the unit's route, drawn solid by the map.
- */
-export const pathLine = {
-  plain: { lineOpacity: 0.45, lineWidth: 1.5, lineDashed: true, sortKey: 22 },
-  selected: { lineOpacity: 0.9, lineWidth: 2.5, lineDashed: true, sortKey: 23 },
-} as const
+export const queuedPlanRoutesId = 'world.einsatz.unit.plan.routes'
 
-/**
- * The queued segments as Pack map features in the routes layer, one per
- * step, keyed by unit and step id. The selected unit's path is drawn
- * strongly, above the others. The active leg is the unit's own route,
- * which the map draws already.
- */
-export const plannedPathFeatures = (objects: ReadonlyArray<OperationalObject>, categoryId: string, selectedId?: string): PackMapFeature[] =>
-  plannedPaths(objects).flatMap(path => path.segments.map(segment => ({
-    id: `einsatz-plan:${path.unitId}:${segment.stepId}`,
-    categoryId,
-    geometry: { type: 'LineString' as const, coordinates: [segment.from.coordinates, segment.to.coordinates] },
-    color: pathColor,
-    lineColor: pathColor,
-    ...(path.unitId === selectedId ? pathLine.selected : pathLine.plain),
-    summary: `${path.label} · next: ${segment.targetLabel ?? 'a map point'}`,
-  })))
+export const queuedPlanRoutesInputSchema = z.object({
+  unitId: idSchema.describe('A unit whose queued routes the map should show.'),
+  expectedPlan: planExpectationSchema,
+}).strict()
+
+export const queuedPlanRoutesQuery = (objects: ReadonlyArray<OperationalObject>, selectedId?: string): ReadonlyArray<PackMapFeatureQuery> => {
+  const object = objects.find(entry => entry.id === selectedId && entry.packId === einsatzPackId)
+  if (object === undefined || (object.packData as { readonly type?: unknown } | undefined)?.type !== 'unit') return []
+  const unit = unitSchema.parse(object.packData)
+  if (unit.integrity === 'destroyed' || !unit.orders.some(step => step.state === 'queued' && !('trackId' in step.target))) return []
+  return [{
+    capabilityId: queuedPlanRoutesId,
+    input: { unitId: object.id, expectedPlan: unit.orders.map(({ id, state }) => ({ id, state })) },
+  }]
+}
+
+/** A dotted queued route under the operational icons, separate from the active solid route. */
+export const queuedRouteFeature = (path: PlannedPath, segment: PlannedSegment, geometry: GeoJsonLineString): PackMapFeature => ({
+  id: `einsatz-plan:${path.unitId}:${segment.stepId}`,
+  categoryId: 'einsatz-units',
+  geometry,
+  color: pathColor,
+  lineColor: pathColor,
+  lineOpacity: 0.9,
+  lineWidth: 2.5,
+  lineDashed: true,
+  sortKey: 23,
+  summary: `${path.label} · next: ${segment.targetLabel ?? 'a map point'}`,
+})
 
 /** Stop IDs repeat across units, so a map selection names both records. */
 export const waypointItemId = (unitId: string, stopId: string): string => `einsatz-waypoint:${encodeURIComponent(unitId)}:${stopId}`

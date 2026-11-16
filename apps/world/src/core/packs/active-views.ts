@@ -142,14 +142,14 @@ export const createActivePackViews = (packs: ReadonlyArray<WorldPackView>): Acti
           fields: [...presentation.fields, ...contextualFields],
         }
       },
-      // The selection reaches only the map features of a Pack that follows it, and never a query.
+      // The selection reaches only the map feature hooks of a Pack that follows it.
       mapFeatures: (context): ReadonlyArray<PackMapFeature> =>
         packs.flatMap(pack => pack.presentation.mapFeatures?.(pack.presentation.mapFeaturesFollowSelection === true ? context : withoutSelection(context)) ?? []),
       ...(packs.some(pack => pack.presentation.mapFeaturesFollowSelection === true) ? { mapFeaturesFollowSelection: true as const } : {}),
       mapFeatureLayers,
       mapFeatureSourcePackIds,
       mapFeatureQueries: (context): ReadonlyArray<PackMapFeatureQuery> =>
-        packs.flatMap(pack => (pack.presentation.mapFeatureQueries?.(withoutSelection(context)) ?? []).map(request => {
+        packs.flatMap(pack => (pack.presentation.mapFeatureQueries?.(pack.presentation.mapFeaturesFollowSelection === true ? context : withoutSelection(context)) ?? []).map(request => {
           if (!request.capabilityId.startsWith(`world.${pack.descriptor.id}.`)) {
             throw new Error(`Pack ${pack.descriptor.id} map feature query uses foreign Capability ${request.capabilityId}`)
           }

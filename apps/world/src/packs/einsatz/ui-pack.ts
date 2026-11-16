@@ -1,7 +1,7 @@
 import type { OperationalObject } from '../../core/model/index.ts'
 import { createWorldPackDescriptor, type PackObjectField, type PackObjectPresentation, type PackObjectPresentationContext, type PackObjectStatusPresentation, type WorldPackView } from '../../core/packs/protocol.ts'
 import { packField } from '../../core/packs/presentation.ts'
-import { plannedPathFeatures, plannedWaypointFeatures } from './chain-path.ts'
+import { plannedWaypointFeatures, queuedPlanRoutesQuery } from './chain-path.ts'
 import { einsatzColors } from './colors.ts'
 import type { TaskData } from './engine/model.ts'
 import { einsatzPackId, einsatzRuntimeId } from './ids.ts'
@@ -22,9 +22,8 @@ import { dispatchWords, einsatzRecordOf, tierWord, trackAgeText, type EinsatzRec
  * which names the unit each track follows, reaches truth roles only and is
  * never drawn on the map.
  *
- * Each unit's plan shows as its planned path: its route, then a straight
- * segment to each queued stop's target (`chain-path.ts`). The path of the
- * unit the map selects is drawn strongly; every other one faintly.
+ * The map draws each unit’s active route. For the selected unit, it asks
+ * the runtime for the queued travel legs and draws them as dotted routes.
  *
  * Map labels: a unit shows its callsign and a short code of its phase, and
  * whether it is damaged; a place that does not move, its name, and whether
@@ -201,12 +200,8 @@ export const einsatzPackView = {
       { id: trackIndexesCategory, label: 'Track indexes', emptyLabel: 'No track indexes', matches: object => typeOf(object) === 'track-index', rail: false },
     ],
     presentObject: (object, context) => presentEinsatzObject(object, context),
-    /** Draw queued paths and the selected unit's coordinate stops. */
-    mapFeatures: context => [
-      ...plannedPathFeatures(context.objects, unitsCategory, context.selectedObjectId),
-      ...plannedWaypointFeatures(context.objects, unitsCategory, einsatzDispatchPanelId, context.selectedObjectId),
-    ],
-    // The selected unit's path is drawn strongly, so the map redraws these features when the selection changes.
+    mapFeatures: context => plannedWaypointFeatures(context.objects, unitsCategory, einsatzDispatchPanelId, context.selectedObjectId),
+    mapFeatureQueries: context => queuedPlanRoutesQuery(context.objects, context.selectedObjectId),
     mapFeaturesFollowSelection: true,
     mapFeatureLayers: ['routes'],
     mapFeatureSourcePackIds: [einsatzPackId],
