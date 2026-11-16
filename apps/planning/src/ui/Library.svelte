@@ -1,14 +1,14 @@
 <script lang="ts">
   import { onMount } from 'svelte'
   import type { ModuleDefinitionDescriptor, ModuleResourceDescriptor } from '@leitbild/contracts'
+  import { deliveryDemoDefinitionId } from '../definitions/delivery-demo.ts'
   import { PLAN, refusalText, type PlanningClient } from './api.ts'
   import { goalsEdit, localInputValue, planEdits, type PlanForm } from './edit-forms.ts'
   import { changedText } from './format.ts'
   import NewPlanForm from './NewPlanForm.svelte'
   import { summaryDataSchema } from '../api/contract.ts'
 
-  // The plans in this Workspace, "New plan", and the two demonstrations. Each is started through its
-  // Definition's own Capability, planning.plan.create.
+  // The plans and templates in this Workspace. The guided demo starts on the World map.
   let { client, onOpen }: { client: PlanningClient; onOpen: (plan: string) => void } = $props()
 
   let plans = $state<readonly ModuleResourceDescriptor[]>([])
@@ -20,6 +20,7 @@
 
   const blank = $derived(definitions.find(definition => definition.ref.id === 'blank'))
   const demos = $derived(definitions.filter(definition => definition.ref.id !== 'blank'))
+  const worldDemoHref = `/workspaces?${new URLSearchParams({ demos: `world:${deliveryDemoDefinitionId}` })}`
   const zone = Intl.DateTimeFormat().resolvedOptions().timeZone
   const startDefault = (): string => {
     const tomorrow = new Date(Date.now() + 86_400_000)
@@ -102,7 +103,11 @@
           <article class="demo-card">
             <h2>{definition.title}</h2>
             {#if definition.description}<p>{definition.description}</p>{/if}
-            <button type="button" disabled={busy} onclick={() => start(definition)}>Start this plan</button>
+            {#if definition.ref.id === deliveryDemoDefinitionId}
+              <a class="world-demo-link" href={worldDemoHref} target="_top">Open World demo</a>
+            {:else}
+              <button type="button" disabled={busy} onclick={() => start(definition)}>Start this plan</button>
+            {/if}
           </article>
         {/each}
       </div>
@@ -116,3 +121,7 @@
     </ul>
   {/if}
 </main>
+
+<style>
+  .world-demo-link { color: var(--accent); font-weight: 600; text-underline-offset: 3px; }
+</style>

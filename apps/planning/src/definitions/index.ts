@@ -1,4 +1,4 @@
-// Bundled plan Definitions. Host launches them only through their primary Capability, planning.plan.create.
+// Bundled plan Definitions. Planning creates them through planning.plan.create.
 // The Train A and Supply run case documents are lane A's fixtures, copied unchanged
 // (definitions/fidelity.test.ts keeps them equal), and hold no schedule numbers.
 import { createHash } from 'node:crypto'
@@ -10,7 +10,9 @@ import blank from './blank.plan-definition.json' with { type: 'json' }
 import trainA from './train-a-work-week.plan-definition.json' with { type: 'json' }
 import supplyRun from './supply-run.plan-definition.json' with { type: 'json' }
 import deliveryDemo from './halden-delivery-planning.plan-definition.json' with { type: 'json' }
-export { deliveryDemoDefinitionId } from './delivery-demo.ts'
+import { deliveryDemoDefinitionId } from './delivery-demo.ts'
+
+export { deliveryDemoDefinitionId }
 
 export const planDefinitionType = 'planning.plan-definition'
 
@@ -55,5 +57,5 @@ export const definitionDescriptors = (workspaceId: WorkspaceId, definitions: Pla
     category: 'Plans',
     currentRevisionId: definition.revisionId,
     capabilityIds: [...capabilityIds],
-    primaryCapabilityId: 'planning.plan.create',
+    ...(definition.id === deliveryDemoDefinitionId ? {} : { primaryCapabilityId: 'planning.plan.create' }),
   })) }).definitions

@@ -640,6 +640,9 @@ export const createPlanningOperations = (ports: PlanningOperationsPorts) => {
           ...(created ? { created: planReference(workspaceId, plan.id) } : {}),
         }
       }
+      if (found.id === deliveryDemoDefinitionId) {
+        throw planningError(400, 'demo_run_required', 'Start the Halden delivery demo from Demos, then open its plan from the World guide.')
+      }
       const { plan, changes } = startPlan({ definition: found, workspaceId, id: crypto.randomUUID(), at: now(), by: storedActor(access), edits: input.edits ?? [], ...(input.grid === undefined ? {} : { grid: input.grid }) })
       const stored = await store.create(workspaceId, plan)
       return { result: writeResult(stored, [`Created '${stored.inputs.settings.title}' from '${found.title}'`, ...changeLines(changes, stored.inputs, 11)]), created: planReference(workspaceId, stored.id) }
