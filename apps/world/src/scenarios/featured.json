@@ -58,7 +58,7 @@
   {
     "scenarioId": "halden-emergency",
     "summary": "Send ambulances, patrol cars and fire engines to a steady stream of fictional calls in Halden, by touch or with a mouse.",
-    "about": "Tap or click a waiting call, then Dispatch to send its suggested unit; or tap a unit, Dispatch, then its target on the map. Calls keep coming for 30 minutes, some at the same moment, and the Dispatch panel lists every call, unit and site. It shows Leitbild configuring units, calls and their words through Einsatz, its general dispatch engine.",
+    "about": "Tap or click a waiting call, then Dispatch to send its suggested unit; or tap a unit, then a highlighted target on the map. Calls keep coming for 30 minutes, some at the same moment, and the Dispatch panel lists every call, unit and site. It shows Leitbild configuring units, calls and their words through Einsatz, its general dispatch engine.",
     "tags": [
       "Emergency dispatch",
       "30 min",
