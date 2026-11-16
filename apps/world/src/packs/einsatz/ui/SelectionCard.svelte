@@ -149,6 +149,7 @@
     </header>
     {@render slot()}
     <p class="status"><span class="priority">{card.priority}</span> · <span class="num">{card.waiting}</span>{#if card.overdue !== null} · <span class="overdue">{card.overdue}</span>{/if}</p>
+    {#if card.observed !== null}<p class="note">{card.observed}</p>{/if}
     <ul class="needs">
       {#each card.needs as need, index (index)}<li class:met={need.met}>{need.met ? '✓' : '✗'} {need.text}</li>{/each}
     </ul>

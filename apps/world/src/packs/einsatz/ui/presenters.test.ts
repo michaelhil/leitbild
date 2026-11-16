@@ -334,6 +334,12 @@ describe('Call card', () => {
     expect(card.deliverTo).toEqual([{ unitLabel: 'R1', heading: `${dispatchWords.deliverTo} (R1)`, enabled: true, sites: [{ siteId: 'depot-a', text: 'Depot A · 5 min', order: { units: ['r1'], stops: [{ siteId: 'depot-a' }], when: 'after' } }] }])
   })
 
+  test('D.5: a call another Pack\'s sensor observed says by whom and at what Run time', () => {
+    expect(callCard(situation, situation.calls[0]!, null, opened, 0).observed).toBeNull()
+    const seen = situationOf({ calls: [{ ...baseSituation.calls[0]!, observed: { by: 'D-1', at: '2026-11-16T14:02:41.000Z' } }] })
+    expect(callCard(seen, seen.calls[0]!, null, opened, 0).observed).toBe(`${dispatchWords.observedBy} D-1 at 14:02 UTC`)
+  })
+
   test('a call that closed shows who served it and offers nothing', () => {
     expect(closedCallCard(situation.calls[1]!)).toEqual({ kind: 'closed-call', id: 'job-2', label: 'J-2 Bay', text: `${dispatchWords.closed} · served by R2` })
     const inputs = { options: null, armedOrder: null, pinned: null, opened, lastSeenCall: { ...situation.calls[1]!, id: 'job-9' }, elapsedS: 0 }

@@ -68,6 +68,7 @@ export const dispatchWords = {
   readingJob: 'Reading the current job…',
   refreshing: 'Reading the suggestion again…',
   suggestionHolds: 'The suggestion still holds',
+  observedBy: 'Observed by',
   mapPoint: 'the map point',
 } as const
 
@@ -498,6 +499,8 @@ export interface CallCardView {
   readonly isNew: boolean
   readonly waiting: string
   readonly overdue: string | null
+  /** "Observed by D-1 at 14:02 UTC": the latest observation by another Pack's sensor; null before one. */
+  readonly observed: string | null
   readonly needs: ReadonlyArray<{ readonly text: string; readonly met: boolean }>
   readonly proposal: ProposalView
   /** The proposed carriers' Deliver-to chips, directly under the command block: shown from pinning, live once the carrier is on the call. */
@@ -571,6 +574,7 @@ export const callCard = (situation: Situation, call: SituationCall, pinned: Pinn
     isNew: isNewCall(call, opened),
     waiting: `${dispatchWords.waiting} ${clockText(waitedS)}`,
     overdue: target === undefined ? null : waitedS < target ? `overdue in ${clockText(target - waitedS)}` : `${dispatchWords.overdue} by ${clockText(waitedS - target)}`,
+    observed: call.observed === undefined ? null : `${dispatchWords.observedBy} ${call.observed.by} at ${call.observed.at.slice(11, 16)} UTC`,
     needs: call.needs.map(needText),
     proposal: proposalView(situation, answer),
     deliverTo: answer === null ? [] : answer.answer.deliverTo.map(entry => {
