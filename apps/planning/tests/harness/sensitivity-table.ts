@@ -141,6 +141,7 @@ export const renderTable = (plan: Plan, baseline: Baseline, rows: readonly Sensi
     if (result.holds) return 'keeps every rule'
     if ('rule' in result) return `breaks ${ruleWords(result.rule)} at '${title(result.job)}', by ${hours(result.by.value)}`
     if ('window' in result) return `runs past the window end at '${title(result.job)}'; the work would end ${when(result.window.by)}`
+    if ('lock' in result) return `'${title(result.lock.job)}' could not keep its fixed start: '${title(result.lock.after)}' would finish ${hours(result.by.value)} later`
     return `'${title(result.unplaced.job)}' could not be done: ${resource(result.unplaced.resource)} has no slot long enough left after ${when(result.unplaced.after)}, within ${bound} after the window`
   }
   const outage = (row: SensitivityRow): string => row.outage === undefined ? 'not measured' : row.outage === 'open' ? 'not returned' : hours(row.outage)

@@ -442,6 +442,9 @@ const retimedSchema = z.union([
   z.object({ holds: z.literal(false), rule: keySchema, job: keySchema, by: z.object({ value: z.number().positive(), unit: timeUnitSchema }).strict() }).strict(),
   z.object({ holds: z.literal(false), window: z.object({ by: instantSchema }).strict(), job: keySchema }).strict(),
   z.object({ holds: z.literal(false), unplaced: z.object({ job: keySchema, resource: keySchema, after: instantSchema }).strict() }).strict(),
+  // A locked job the re-timing pushes past its fixed start (B2): `lock.job` keeps its fixed start, `lock.after`
+  // finishes `by` later than that allows ("<job> could not keep its fixed start <time>: <after> would finish N h later").
+  z.object({ holds: z.literal(false), lock: z.object({ job: keySchema, after: keySchema }).strict(), by: z.object({ value: z.number().positive(), unit: timeUnitSchema }).strict() }).strict(),
 ])
 /** allPessimistic: every ranged job at its high estimate together; single: each ranged job alone at its high estimate. */
 export const robustSchema = z.object({ allPessimistic: retimedSchema, single: z.array(z.object({ job: keySchema, outcome: retimedSchema }).strict()).max(12) }).strict()
