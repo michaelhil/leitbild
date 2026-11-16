@@ -8,6 +8,7 @@ import { createDirectRoutingAdapter } from '../../routing/direct-adapter.ts'
 import emergencyJson from '../../scenarios/halden-emergency.scenario.json'
 import supplyJson from '../../scenarios/supply-run.scenario.json'
 import { startingZoomFor } from '../../ui/map/map-camera.ts'
+import { weatherPack } from '../weather/pack.ts'
 import { einsatzCommandIds as ids, einsatzQueryIds } from './capabilities.ts'
 import { openCardScreen, type CardScreen } from './fixtures/card-harness.ts'
 import { afterNearestBusy, bothToOne, configOf, lonLatOf, metresBetween, playDemo, slowedRouting, type Beat, type CallLog, type PlayLog, type Policy } from './fixtures/demo-play.ts'
@@ -221,7 +222,7 @@ for (const demo of Object.values(demos)) {
 
     test('it is an open Run, its icons are catalogue symbols, and no call is one that only the Controller could close', async () => {
       for (const entry of [...config.unitTypes, ...config.taskTemplates]) expect(isMapSymbol(entry.icon)).toBe(true)
-      const compiled = await compileScenarioDefinition(definition, [einsatzPack], { routing: createDirectRoutingAdapter() })
+      const compiled = await compileScenarioDefinition(definition, [einsatzPack, weatherPack], { routing: createDirectRoutingAdapter() })
       expect(compiled.id).toBe(definition.id)
       // Open mode (plan C.5, decision 2): no role gate, so groups create no roles.
       expect([compiled.roles ?? [], compiled.rolePresets ?? []]).toEqual([[], []])

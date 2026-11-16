@@ -1,7 +1,7 @@
 {
   "id": "halden-emergency",
   "title": "Halden dispatch: medical, police, fire",
-  "description": "A fictional 30-minute emergency dispatch exercise in Halden. Calls keep coming: falls, chest pain and a cardiac arrest for four road ambulances and an air ambulance; crashes, a fight and a break-in for three patrol cars; kitchen, grass, shed and car fires for two fire engines, one of which carries too little water for a building fire. Three moments test the dispatcher: a twisted ankle and chest pain arrive together, the Torget fight needs two patrol cars while one is on its way to a fallen tree, and a car catches fire beside the kitchen fire Engine 1 is about to finish. Places, calls, crews and timings are invented for the exercise and make no claim about real services. How to play: tap a waiting call, then Dispatch to send the suggested unit. Or tap a unit, then tap a highlighted target. If the unit already has a plan, choose Replace current target or Add to plan. To choose where an ambulance delivers, select a receiving site and add it to the plan.",
+  "description": "A fictional 30-minute emergency dispatch exercise in Halden. Calls keep coming: falls, chest pain and a cardiac arrest for four road ambulances and an air ambulance; crashes, a fight and a break-in for three patrol cars; kitchen, grass, shed and car fires for two fire engines, one of which carries too little water for a building fire. Three moments test the dispatcher: a twisted ankle and chest pain arrive together, the Torget fight needs two patrol cars while one is on its way to a fallen tree, and a car catches fire beside the kitchen fire Engine 1 is about to finish. A rain shower moves northeast past Tistedal, where you can inspect local weather. Places, calls, crews and timings are invented for the exercise and make no claim about real services. How to play: tap a waiting call, then Dispatch to send the suggested unit. Or tap a unit, then tap a highlighted target. If the unit already has a plan, choose Replace current target or Add to plan. To choose where an ambulance delivers, select a receiving site and add it to the plan.",
   "objectives": [
     "Get a unit on scene at every top-priority (P1) call within 8 minutes of the call.",
     "Get a fire engine to the guest harbour car fire within 4 minutes of the call.",
@@ -31,7 +31,7 @@
             "icon": "ambulance",
             "tags": ["medical"],
             "components": {
-              "mobility": {"mode": "road", "mobilizeS": 60},
+              "mobility": {"mode": "road", "mobilizeS": 3},
               "service": {"provides": ["patient-care"], "onSceneS": 180},
               "carry": {"capacity": 1, "classes": ["acute", "urgent", "routine"]}
             },
@@ -43,7 +43,7 @@
             "icon": "helicopter",
             "tags": ["medical"],
             "components": {
-              "mobility": {"mode": "direct", "speedMps": 60, "mobilizeS": 240},
+              "mobility": {"mode": "direct", "speedMps": 60, "mobilizeS": 3},
               "service": {"provides": ["patient-care"], "onSceneS": 180},
               "carry": {"capacity": 2, "classes": ["acute", "urgent", "routine"]}
             },
@@ -54,7 +54,7 @@
             "label": "Patrol car",
             "icon": "car",
             "tags": ["police"],
-            "components": {"mobility": {"mode": "road"}, "service": {"provides": ["policing"], "onSceneS": 300}},
+            "components": {"mobility": {"mode": "road", "mobilizeS": 3}, "service": {"provides": ["policing"], "onSceneS": 300}},
             "standingOrders": {"return": {"afterIdleS": 60}}
           },
           {
@@ -62,7 +62,7 @@
             "label": "Fire engine",
             "icon": "fire-extinguisher",
             "tags": ["fire"],
-            "components": {"mobility": {"mode": "road", "speedFactor": 0.8, "mobilizeS": 60}, "service": {"provides": ["fire-suppression"], "onSceneS": 480}},
+            "components": {"mobility": {"mode": "road", "speedFactor": 0.8, "mobilizeS": 3}, "service": {"provides": ["fire-suppression"], "onSceneS": 480}},
             "properties": [{"id": "waterL", "label": "Water", "kind": "number", "unit": "l", "min": 0, "max": 10000, "default": 3000, "show": true}],
             "standingOrders": {"return": {"afterIdleS": 60}}
           },
@@ -138,7 +138,7 @@
         {"type": "unit", "id": "site:remmen-triage", "label": "Remmen triage post — exercise", "unitType": "triage-post", "position": [11.41, 59.138]},
         {"type": "unit", "id": "unit:amb-1", "label": "A1", "unitType": "ambulance", "group": "ambulance", "position": [11.392, 59.126]},
         {"type": "unit", "id": "unit:amb-2", "label": "A2", "unitType": "ambulance", "group": "ambulance", "position": [11.392, 59.126]},
-        {"type": "unit", "id": "unit:amb-3", "label": "A3", "unitType": "ambulance", "group": "ambulance", "position": [11.405, 59.142]},
+        {"type": "unit", "id": "unit:amb-3", "label": "A3", "unitType": "ambulance", "group": "ambulance", "position": [11.410, 59.140]},
         {"type": "unit", "id": "unit:amb-4", "label": "A4", "unitType": "ambulance", "group": "ambulance", "position": [11.437, 59.128]},
         {"type": "unit", "id": "unit:air-1", "label": "H1", "unitType": "air-ambulance", "group": "air-ambulance", "position": [11.43, 59.108]},
         {"type": "unit", "id": "unit:patrol-1", "label": "Patrol 1", "unitType": "patrol-car", "group": "police", "position": [11.388, 59.124]},
@@ -151,10 +151,37 @@
           "label": "Engine 2",
           "unitType": "fire-engine",
           "group": "fire",
-          "position": [11.365, 59.142],
+          "position": [11.365, 59.143],
           "properties": {"waterL": 1500}
         },
         {"type": "task", "id": "task:tistedal-fall", "label": "C-1 Tistedal fall", "template": "medical", "position": [11.442, 59.124], "loads": {"urgent": 1}}
+      ]
+    },
+    {
+      "id": "weather",
+      "config": {"gridResolution": 7},
+      "items": [
+        {
+          "type": "weather_area",
+          "id": "weather:halden-dispatch-shower",
+          "label": "Rain shower over Halden",
+          "center": [11.423, 59.119],
+          "semiMajorAxisM": 3500,
+          "semiMinorAxisM": 1900,
+          "rotationDeg": 65,
+          "falloff": "linear",
+          "atmosphere": {
+            "humidity": 0.95,
+            "visibilityM": 4500,
+            "cloudCover": 1,
+            "precipitation": {"type": "rain", "intensityMmPerHour": 9}
+          },
+          "keyframes": [
+            {"atSeconds": 600, "center": [11.475, 59.142]},
+            {"atSeconds": 1200, "center": [11.522, 59.163], "atmosphere": {"precipitation": {"type": "none", "intensityMmPerHour": 0}}}
+          ]
+        },
+        {"type": "weather_probe", "id": "weather-probe:tistedal", "label": "Tistedal weather", "point": [11.438, 59.121]}
       ]
     }
   ],
@@ -246,7 +273,7 @@
       },
       {
         "id": "harbour-car-fire",
-        "at": {"kind": "after_scenario_start", "seconds": 660},
+        "at": {"kind": "after_scenario_start", "seconds": 600},
         "title": "A car catches fire beside the harbour kitchen fire",
         "actions": [
           {
