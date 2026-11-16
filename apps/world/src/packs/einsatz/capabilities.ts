@@ -15,8 +15,8 @@ import { stepTargetId } from './steps.ts'
  * validated against the current state when they commit, never against a
  * token: a refusal reads `<code>: <message>` in the configuration's own
  * words and sets `code`. Every command is schedulable from the Scenario
- * timeline; creating units and tasks and adjusting property values are
- * controller-only.
+ * timeline; in a Run that declares roles, creating units and tasks and
+ * adjusting property values are controller-only.
  *
  * Every unit carries out a plan of stops (`orders`, see `steps.ts`):
  * `unit.order` gives it one, all or nothing; `unit.stop.remove` takes one
@@ -192,7 +192,7 @@ export const einsatzCapabilities: ReadonlyArray<SimulationCapability> = [
   command({
     id: einsatzCommandIds.taskCreate,
     title: 'Create a task',
-    description: 'Controller only. Add a task from a declared template at a point, with counted load per load class and an optional priority (else the template\'s, else the lowest). The runtime gives the id. Example: `{template:\'<template id>\', label:\'C-21\', at:{type:\'Point\', coordinates:[11.4, 59.12]}, loads:{\'<class>\':1}}`.',
+    description: 'In a Run that declares roles: controller only. Add a task from a declared template at a point, with counted load per load class and an optional priority (else the template\'s, else the lowest). The runtime gives the id. Example: `{template:\'<template id>\', label:\'C-21\', at:{type:\'Point\', coordinates:[11.4, 59.12]}, loads:{\'<class>\':1}}`.',
     searchTerms: ['create task', 'new call', 'add call', 'incident'],
     idempotent: false,
     targets: () => [],
@@ -200,7 +200,7 @@ export const einsatzCapabilities: ReadonlyArray<SimulationCapability> = [
   command({
     id: einsatzCommandIds.unitCreate,
     title: 'Create a unit',
-    description: 'Controller only. Add a unit of a declared type at a point, with an optional base, label and property values; unnamed properties take the type\'s defaults. The runtime gives the id. A side is required exactly when the Run declares sides, and a group once the configuration declares groups, unless the type is public. Example: `{type:\'<type id>\', at:{type:\'Point\', coordinates:[11.4, 59.12]}}`.',
+    description: 'In a Run that declares roles: controller only. Add a unit of a declared type at a point, with an optional base, label and property values; unnamed properties take the type\'s defaults. The runtime gives the id. A side is required exactly when the Run declares sides, and a group once the configuration declares groups, unless the type is public. Example: `{type:\'<type id>\', at:{type:\'Point\', coordinates:[11.4, 59.12]}}`.',
     searchTerms: ['create unit', 'add unit', 'new unit'],
     idempotent: false,
     targets: () => [],
@@ -208,7 +208,7 @@ export const einsatzCapabilities: ReadonlyArray<SimulationCapability> = [
   command({
     id: einsatzCommandIds.unitAdjust,
     title: 'Adjust unit properties',
-    description: 'Controller only. Set property values of a unit, validated against its type, with a recorded reason. A unit on a task may not drop below a condition of its task\'s requirement. Example: `{unitId:\'unit:e2\', properties:{\'<property>\':2500}, reason:\'Refilled\'}`.',
+    description: 'In a Run that declares roles: controller only. Set property values of a unit, validated against its type, with a recorded reason. A unit on a task may not drop below a condition of its task\'s requirement. Example: `{unitId:\'unit:e2\', properties:{\'<property>\':2500}, reason:\'Refilled\'}`.',
     searchTerms: ['adjust', 'properties', 'set value'],
     idempotent: true,
     targets: input => objectIds(input.unitId),
