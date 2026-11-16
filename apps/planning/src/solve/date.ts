@@ -48,7 +48,11 @@ export const dateSchedule = (prep: Prepared, index: CompileIndex, schedule: Sche
   return rows
 }
 
-export type Undated = { readonly ok: true; readonly schedule: Schedule } | { readonly ok: false; readonly job: string; readonly reason: 'no-row' | 'no-fit' }
+/**
+ * `crews` (only `edited`): the row's crews and tools serve no way of doing the job on these inputs, which the
+ * edit changed (what the job needs, or who may do it); the row cannot be re-timed, only planned again.
+ */
+export type Undated = { readonly ok: true; readonly schedule: Schedule } | { readonly ok: false; readonly job: string; readonly reason: 'no-row' | 'no-fit' | 'crews' }
 
 /**
  * Dated rows back on a compiled grid: each row's start slot and the mode its uses match (the inverse of
@@ -81,7 +85,7 @@ export const undate = (prep: Prepared, index: CompileIndex, rows: ReadonlyArray<
     const m = !edited ? modes.findIndex((_, k) => fits(k) && serves(k))
       : [(k: number) => sameCrews(k) && sameTime(k) && fits(k), (k: number) => sameCrews(k) && sameTime(k), (k: number) => sameCrews(k) && fits(k), sameCrews, (k: number) => serves(k) && fits(k), serves]
         .map(test => modes.findIndex((_, k) => test(k))).find(k => k >= 0) ?? -1
-    if (!Number.isInteger(s) || m < 0) return { ok: false, job, reason: 'no-fit' }
+    if (!Number.isInteger(s) || m < 0) return { ok: false, job, reason: edited && Number.isInteger(s) ? 'crews' : 'no-fit' }
     start[a] = s
     mode[a] = m
   }
