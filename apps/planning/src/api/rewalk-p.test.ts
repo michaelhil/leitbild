@@ -65,3 +65,16 @@ describe('N2: a refused what-if gives each method\'s least outage against the ho
     expect(lines.join(' ')).not.toContain(at40.key)
   }, 120_000)
 })
+
+describe('L1: a preview of a change of crews says what it cannot show, never "no job moves" or a fault', () => {
+  test('on the real solver: the seal given to the electricians is said as a preview limit, with the job named', async () => {
+    const { swap } = await import('./fixtures/choose.ts')
+    const plan = await real.store.create(real.workspaceId, planWith(real.workspaceId, [swap]))
+    const seal = trainAInputs.jobs.find(entry => entry.key === 'CCWA-SEAL')!
+    const answer = await real.call('planning.plan.edit', { resource: plan.id, input: { edits: [{ edit: 'job', key: seal.key, needs: [{ anyOf: ['elec-station'], amount: 1 }] }], preview: true } })
+    console.log('L1:', answer.status, answer.body.result?.preview?.consequence ?? answer.body.error?.message)
+    expect(answer.status).toBe(200)
+    expect(answer.body.result.preview.consequence).toBe(`Not saved yet. A preview cannot re-time '${seal.title}' on other crews; save the change and Generate to see it.`)
+    expect(answer.body.result.preview.violations).toEqual([])
+  }, 60_000)
+})

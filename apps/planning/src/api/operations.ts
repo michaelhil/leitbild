@@ -102,6 +102,8 @@ export interface SolverPort {
      * jobs waiting on it are not in `rows`); with lane K's crew or tool that has no slot long enough left, and from when.
      */
     readonly unplaced?: { readonly job: string; readonly resource?: string; readonly after?: string }
+    /** Lane S: the edit leaves this job's row on crews or tools that no longer serve it; `rows` are then the option's own, not re-timed. */
+    readonly crewsChanged?: { readonly job: string }
   }>
 }
 
@@ -599,7 +601,10 @@ export const createPlanningOperations = (ports: PlanningOperationsPorts) => {
         // The preview keeps the option's current order; Generate re-plans. So a break is said as the current
         // order's, with the way to a new one, never as the plan's last word (walk V4, T12).
         const broken = (what: string, nearest: string, authority: string) => `With its current order, '${shownName}' would break: ${what}.${nearest}${authority} Generate again to look for a new order.`
-        const consequence = unplaced !== undefined ? wholeWithin(authorities.map(authority => broken(unplaced, '', authority)))
+        // A change of crews is beyond what a preview re-times: said as that, never as "no job moves" or a fault (L1).
+        const crews = timed.crewsChanged === undefined ? undefined : `Not saved yet. A preview cannot re-time '${nameOf(outcome.inputs, timed.crewsChanged.job)}' on other crews; save the change and Generate to see it.`
+        const consequence = crews !== undefined ? wholeWithin(authorities.map(authority => `${crews}${authority}`))
+          : unplaced !== undefined ? wholeWithin(authorities.map(authority => broken(unplaced, '', authority)))
           : wholeWithin(findings.length === 0 ? authorities.map(authority => `${moves}${authority}`)
           : authorities.flatMap(authority => nearests.flatMap(nearest => ([2, 1, 0] as const).map(shown =>
             broken(retimingBreaks(findings, outcome.inputs, shown), nearest, authority)))))
