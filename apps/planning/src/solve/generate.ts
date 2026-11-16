@@ -255,6 +255,8 @@ export interface SubSolveTask {
    * spare time, from which the re-timings' reserve is taken first. Otherwise the slot limits the search.
    */
   readonly shareCapped?: boolean
+  /** When the pool kills this sub-solve's process (epoch ms): its granted wall plus the pool's margin, or the deadline. */
+  readonly killAt?: number
 }
 export interface SubSolveOutcome {
   readonly option: Option
@@ -329,7 +331,9 @@ export const subSolve = (deps: SubSolveDeps): SubSolver => async (task, signal, 
   // time first and only then off the search, so a sub-solve short of time never loses search to them. Either way each
   // re-timing starts only when its estimate ends before the sub-solve must answer (robustOf), else the record
   // says the time ran out. Never killed for running past its time.
-  const by = Math.min(task.answerBy ?? Infinity, task.deadlineAt ?? Infinity)
+  // It answers by the earliest of its answer-by time, the Generate's deadline and the moment its process would
+  // be killed: a plan validated after the search is never lost to the kill, and re-timings stop in time.
+  const by = Math.min(task.answerBy ?? Infinity, task.deadlineAt ?? Infinity, task.killAt ?? Infinity)
   const usedBy = (rows: ReadonlyArray<Pick<DatedRow, 'uses'>>): string[] => [...new Set([...rows.flatMap(row => row.uses.flatMap(use => (use.purchase === undefined ? [] : [use.purchase]))), ...index.purchases.filter(purchase => purchase.committed).map(purchase => purchase.key)])]
   // One re-timing is two compiles and lane K's judgement, a full check of rows: timed as an identity judgement
   // of the starting option's own rows when there are any, else as the readiness check (lighter: under heavy

@@ -181,3 +181,21 @@ describe('V12: a re-timing that holds keeps lane K\'s spans against their limits
     }
   }, 60_000)
 })
+
+describe('M2: the re-timings stop before the process would be killed', () => {
+  test('a sub-solve whose slot outlasts its kill time answers before the kill, with its plan, the record "time ran out"', async () => {
+    const { subSolve } = await import('./generate.ts')
+    // A slow judgement, as lane K's on a loaded machine: every re-timing takes most of a second.
+    const slow: JudgeRetimed = plan => { const until = performance.now() + 700; while (performance.now() < until) { /* busy */ } return laneKJudgeRetimed(plan) }
+    const now = Date.now()
+    const killAt = now + 4_000
+    const outcome = await subSolve({ ...deps, judgeRetimed: slow })({
+      inputs: flagship, revision: 1, variant: { key: 'swap', label: 'Swap', buy: 'allowed' }, combo: swap, budget: { evals: 600, cpuMs: 1_200, wallMs: 1_500 }, seed: 1,
+      // A refused first sub-solve leaves the second a slot of nearly the whole Generate, far past its kill.
+      answerBy: now + 20_000, deadlineAt: now + 20_000, killAt,
+    }, new AbortController().signal)
+    expect(Date.now()).toBeLessThan(killAt)
+    expect(outcome.option.status.word).toBe('validated feasible')
+    expect(outcome.option.robust).toEqual({ notWorkedOut: 'time' })
+  }, 30_000)
+})
