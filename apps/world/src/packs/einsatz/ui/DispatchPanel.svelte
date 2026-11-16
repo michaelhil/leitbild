@@ -202,7 +202,7 @@
         const unitId = effect.input.units[0]!
         void editUnit(unitId, async () => await client.order(effect.input), {
           unitIds: [unitId], target: stopLabel(effect.input.stops[0]!), dropped: effect.job === null ? null : jobText(effect.job),
-        })
+        }, effect.input.when === undefined)
         return
       }
       case 'remove':
@@ -233,29 +233,32 @@
   }
 
   /** A card's command: a refusal shows in the card's slot; an accepted order leaves a receipt. */
-  const command = async (run: () => Promise<CommandOutcome>, receipt: { readonly unitIds: ReadonlyArray<string>; readonly target: string; readonly dropped?: string | null } | null): Promise<void> => {
+  const command = async (run: () => Promise<CommandOutcome>, receipt: { readonly unitIds: ReadonlyArray<string>; readonly target: string; readonly dropped?: string | null } | null): Promise<boolean> => {
     feedback = null
     const outcome = await outcomeOf(run)
-    if (disposed) return
+    if (disposed) return false
     if (!outcome.ok) {
       feedback = outcome.text
-      return
+      return false
     }
     if (receipt !== null) {
       receipts = withReceipts(receipts, [ownReceipt({ commandId: outcome.commandId, unitIds: receipt.unitIds, unitLabel: receipt.unitIds.map(unitLabel).join(', '), targetLabel: receipt.target, dropped: receipt.dropped ?? null, atMs: Date.now() })])
     }
+    return true
   }
 
   const order = (input: UnitOrderInput): void => {
     void command(async () => await client.order(input), { unitIds: input.units, target: input.stops.map(stopLabel).join(' → ') })
   }
 
-  const editUnit = async (unitId: string, run: () => Promise<CommandOutcome>, receipt: Parameters<typeof command>[1] = null): Promise<void> => {
+  const editUnit = async (unitId: string, run: () => Promise<CommandOutcome>, receipt: Parameters<typeof command>[1] = null, initialOrder = false): Promise<void> => {
     if (unitPending) return
+    const startedFrom = selection.selection
     unitPending = true
     try {
-      await command(run, receipt)
+      const accepted = await command(run, receipt)
       if (!disposed) {
+        if (accepted && initialOrder && selection.selection === startedFrom) send({ kind: 'initial-order-accepted', unitId })
         await readSituation()
         const shown = selection.selection
         if (shown.kind === 'unit' && shown.unitId === unitId) await readOptions(unitId)

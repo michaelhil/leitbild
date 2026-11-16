@@ -29,6 +29,18 @@ describe('map-first dispatch', () => {
     expect(reduceSelection(opened.state, click({ kind: 'call', id: 'call:c' }), options, free).effects).toEqual([{ kind: 'feedback', text: 'This need is covered' }])
   })
 
+  test('an accepted first order clears targeting and lets the same unit rearm immediately', () => {
+    const opened = selected()
+    const finished = reduceSelection(opened, { kind: 'initial-order-accepted', unitId: unit.id })
+    expect(finished.effects).toEqual([{ kind: 'select', objectId: null }])
+    expect(finished.state.selection.kind).toBe('none')
+    const reopened = reduceSelection(finished.state, click(unit, 1_100))
+    expect(reopened.effects).toEqual([{ kind: 'select', objectId: unit.id }, { kind: 'options', unitId: unit.id }])
+    expect(reduceSelection(reopened.state, click({ kind: 'call', id: 'call:a' }, 1_110), assigned, busy).state.selection)
+      .toMatchObject({ decision: { kind: 'remove', stops: [{ id: old.id }] } })
+    expect(reduceSelection(opened, { kind: 'initial-order-accepted', unitId: 'unit:other' }).state).toBe(opened)
+  })
+
   test('assigned units ask once, and choosing Cancel or a stale plan sends no order', () => {
     const picked = reduceSelection(selected(), click(call), assigned, busy)
     expect(picked.effects).toEqual([])

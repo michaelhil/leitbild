@@ -34,6 +34,7 @@ export type SelectionEvent =
   | { readonly kind: 'target-row'; readonly target: Stop }
   | { readonly kind: 'stop'; readonly stopId: string }
   | { readonly kind: 'decide'; readonly choice: 'replace' | 'add' | 'cancel' | { readonly remove: string } }
+  | { readonly kind: 'initial-order-accepted'; readonly unitId: string }
   | { readonly kind: 'back' | 'cleared' }
 
 export type SelectionEffect =
@@ -173,6 +174,9 @@ export const reduceSelection = (state: SelectionState, event: SelectionEvent, op
         ...(job === null ? {} : { drops: job.taskId }),
       } }] }
     }
+    case 'initial-order-accepted': return selection.kind === 'unit' && selection.unitId === event.unitId
+      ? transition({ ...state, lastClick: null }, none)
+      : unchanged(state)
     case 'cleared': return unchanged({ ...state, selection: none })
     case 'back': return selection.kind === 'unit' && selection.decision !== undefined
       ? unchanged({ ...state, selection: { kind: 'unit', unitId: selection.unitId } })

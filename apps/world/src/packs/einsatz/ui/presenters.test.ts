@@ -329,6 +329,23 @@ describe('Overview', () => {
     expect(overview(situation, su('r1'), opened, 0).folded).toBe(true)
   })
 
+  test('only covered active calls and busy units without attention states pulse', () => {
+    const covered = { ...situation.calls[1]!, states: [] }
+    const finished = {
+      ...covered,
+      id: 'job-3',
+      assigned: [],
+      needs: [{ kind: 'requirement', provides: 'survey', label: 'Survey', where: [], count: 1, enRoute: 0, onTask: 0, completed: 1 }],
+    }
+    const partial = { ...covered, id: 'job-4', needs: [{ kind: 'load', classId: 'crate', code: 'C', label: '2 crates', waiting: 2, covered: 1 }] }
+    const view = overview(situationOf({ calls: [situation.calls[0], covered, finished, partial] }), none, opened, 0)
+    expect(view.calls.rows.map(row => row.progress)).toEqual([null, 'active', 'covered', null])
+    expect(view.calls.rows[2]!.isNew).toBeFalse()
+    expect(view.units.groups[0]!.rows.map(row => row.progress)).toEqual([null, 'active'])
+    expect(view.sites!.rows.map(row => row.progress)).toEqual(['active', null])
+    expect(overview(situation, none, opened, 0).calls.rows[1]!.progress).toBeNull()
+  })
+
   test('sections and columns follow the configuration: no carriers, no sites, no shown properties, no contacts', () => {
     const plain = situationOf({ sites: [], features: { hasCarry: false, hasSites: false, hasContacts: false, propertyColumns: [] } })
     const view = overview(plain, none, opened, 0)

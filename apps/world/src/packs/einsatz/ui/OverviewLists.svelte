@@ -37,7 +37,7 @@
     <ol class="rows">
       {#each view.calls.rows as row (row.id)}
         <li>
-          <button type="button" class="row" class:selected={row.selected} class:fresh={row.isNew} aria-pressed={row.selected} onclick={() => props.open({ id: row.id, kind: 'call' })}>
+          <button type="button" class="row" class:selected={row.selected} class:fresh={row.isNew} data-progress={row.progress} aria-pressed={row.selected} onclick={() => props.open({ id: row.id, kind: 'call' })}>
             {@render badge(row.icon, einsatzColors.task)}
             <span class="text">
               <span class="line"><span class="code">{row.code}</span><strong>{row.label}</strong>{#if row.isNew}<span class="new">{dispatchWords.newBadge}</span>{/if}{#if row.overdue}<span class="overdue">{dispatchWords.overdue}</span>{/if}<span class="num age">{row.waiting}</span></span>
@@ -57,7 +57,7 @@
       <ol class="rows unit-rows">
         {#each group.rows as row (row.id)}
           <li>
-            <button type="button" class="row unit-tile" class:selected={row.selected} aria-pressed={row.selected} onclick={() => props.open({ id: row.id, kind: 'unit' })}>
+            <button type="button" class="row unit-tile" class:selected={row.selected} data-progress={row.progress} aria-pressed={row.selected} onclick={() => props.open({ id: row.id, kind: 'unit' })}>
               {@render badge(row.icon, einsatzColors.unit)}
               <span class="text">
                 <strong>{row.label}</strong>
@@ -76,7 +76,7 @@
       <ol class="rows">
         {#each view.sites.rows as row (row.id)}
           <li>
-            <button type="button" class="row" class:selected={row.selected} aria-pressed={row.selected} onclick={() => props.open({ id: row.id, kind: 'site' })}>
+            <button type="button" class="row" class:selected={row.selected} data-progress={row.progress} aria-pressed={row.selected} onclick={() => props.open({ id: row.id, kind: 'site' })}>
               {@render badge(row.icon, einsatzColors.unit)}
               <span class="text">
                 <span class="line"><strong>{row.label}</strong>{#if row.receiving !== null}<span class="sub">{row.receiving.accepting}</span><span class="num age">{row.receiving.slots}</span>{/if}</span>
@@ -102,6 +102,11 @@
   .row { width: 100%; min-height: 44px; display: flex; gap: 8px; align-items: flex-start; padding: 6px 8px; border: 1px solid var(--border); border-radius: 8px; background: var(--panel); color: inherit; font: inherit; text-align: left; cursor: pointer; touch-action: manipulation; }
   .unit-tile { height: 100%; align-items: center; gap: 6px; }
   .unit-tile .text { overflow-wrap: anywhere; }
+  .row[data-progress] { background: color-mix(in srgb, var(--panel) 65%, var(--panel-strong)); }
+  .row[data-progress]:not(:hover, :focus-visible, .selected) strong { color: color-mix(in srgb, currentColor 65%, var(--muted)); }
+  .row[data-progress]:not(:hover, :focus-visible, .selected) .badge { opacity: .62; }
+  .row[data-progress='active'] { animation: progress 2.5s ease-in-out infinite; }
+  @keyframes progress { 50% { border-color: color-mix(in srgb, var(--accent) 55%, var(--border)); } }
   .row.selected { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent); }
   .row.fresh { animation: fresh 1s ease-in-out 3; }
   @keyframes fresh { 50% { background: color-mix(in srgb, var(--warning) 22%, var(--panel)); } }
@@ -121,4 +126,7 @@
   .status[data-tone='returning'] span { color: var(--muted); }
   .status[data-tone='attention'] span, .status[data-tone='out'] span { color: var(--critical); }
   .num { font-variant-numeric: tabular-nums; }
+  @media (prefers-reduced-motion: reduce) {
+    .row[data-progress='active'], .row.fresh { animation: none; }
+  }
 </style>

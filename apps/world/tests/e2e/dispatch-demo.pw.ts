@@ -70,7 +70,8 @@ test('selecting a unit allows direct dispatch and editing its assigned stops', a
     // Keep arrivals from changing the plan while this test exercises its edits.
     await page.getByRole('button', { name: 'Pause simulation', exact: true }).click()
     await expect(page.getByRole('button', { name: 'Play simulation', exact: true })).toBeVisible()
-    await panel.getByRole('region', { name: 'Units' }).getByRole('button', { name: /^A4\b/ }).click()
+    const asset = panel.getByRole('region', { name: 'Units' }).getByRole('button', { name: /^A4\b/ })
+    await asset.click()
     const unit = panel.getByRole('article', { name: /^A4\b/ })
     await unit.getByText('Targets', { exact: true }).click()
 
@@ -78,7 +79,12 @@ test('selecting a unit allows direct dispatch and editing its assigned stops', a
     expect(await unitCommand(page, 'order', () => call.click())).toMatchObject({
       input: { stops: [{ taskId: 'task:tistedal-fall' }] },
     })
+    await expect(unit).toBeHidden()
+    await expect(asset).toHaveAttribute('data-progress', 'active', { timeout: 15_000 })
+    await expect(panel.getByRole('region', { name: 'Calls' }).getByRole('button', { name: /C-1 Tistedal fall/ })).toHaveAttribute('data-progress', 'active')
+    await asset.click()
     await expect(unit.getByRole('button', { name: /Remove stop 1:.*C-1 Tistedal fall/ })).toBeVisible({ timeout: 15_000 })
+    await unit.getByText('Targets', { exact: true }).click()
 
     const dialog = world.getByRole('dialog', { name: 'Change the plan?' })
     const clinic = unit.getByRole('button', { name: /Halden emergency clinic/ })

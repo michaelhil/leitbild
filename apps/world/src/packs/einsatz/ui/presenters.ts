@@ -592,6 +592,8 @@ export const emptySelectionText = (words: Words): string => `Click one of the ${
 
 // ——— Overview ———
 
+type RowProgress = 'active' | 'covered' | null
+
 export interface CallRowView {
   readonly id: string
   readonly icon: string
@@ -603,6 +605,7 @@ export interface CallRowView {
   readonly isNew: boolean
   readonly overdue: boolean
   readonly states: ReadonlyArray<string>
+  readonly progress: RowProgress
   readonly selected: boolean
 }
 
@@ -618,6 +621,7 @@ export interface UnitRowView {
   /** "Water 3,000 l" per property column, in column order, label and value as the card shows them; none where the type has none. */
   readonly properties: ReadonlyArray<string>
   readonly states: ReadonlyArray<string>
+  readonly progress: RowProgress
   readonly selected: boolean
 }
 
@@ -629,6 +633,7 @@ export interface SiteRowView {
   readonly receiving: { readonly accepting: string; readonly slots: string } | null
   readonly inbound: string | null
   readonly states: ReadonlyArray<string>
+  readonly progress: RowProgress
   readonly selected: boolean
 }
 
@@ -661,22 +666,29 @@ export const countsLine = (situation: Situation, elapsedS: number): string => {
 export const edgeTabText = (situation: Situation): string =>
   `${situation.words.calls} ${situation.calls.length} · ${situation.counts.freeUnits} ${dispatchWords.free}`
 
-const callRow = (call: SituationCall, opened: ReadonlySet<string>, selectedId: string | null, elapsedS: number): CallRowView => ({
-  id: call.id,
-  icon: call.icon,
-  code: call.priority.code,
-  label: call.label,
-  waiting: clockText(call.waitingS + elapsedS),
-  needs: call.needs.map(need => needText(need).text).join(' · '),
-  assigned: call.assigned.length === 0 ? null : joined(call.assigned.map(unit => unit.label)),
-  isNew: isNewCall(call, opened),
-  overdue: call.overdue === true,
-  states: call.states.map(state => state.text),
-  selected: call.id === selectedId,
-})
+const callRow = (call: SituationCall, opened: ReadonlySet<string>, selectedId: string | null, elapsedS: number): CallRowView => {
+  const needs = call.needs.map(needText)
+  const covered = call.states.length === 0 && needs.every(need => need.met)
+  const completedWork = call.needs.some(need => need.kind === 'requirement' && need.completed > 0)
+  return {
+    id: call.id,
+    icon: call.icon,
+    code: call.priority.code,
+    label: call.label,
+    waiting: clockText(call.waitingS + elapsedS),
+    needs: needs.map(need => need.text).join(' · '),
+    assigned: call.assigned.length === 0 ? null : joined(call.assigned.map(unit => unit.label)),
+    isNew: isNewCall(call, opened) && !(covered && completedWork),
+    overdue: call.overdue === true,
+    states: call.states.map(state => state.text),
+    progress: covered ? call.assigned.length > 0 ? 'active' : completedWork ? 'covered' : null : null,
+    selected: call.id === selectedId,
+  }
+}
 
 const unitRow = (situation: Situation, unit: SituationUnit, selectedId: string | null, elapsedS: number): UnitRowView => {
   const current = unit.plan[0]
+  const active = current?.state === 'active' || unit.status.tone === 'busy' || unit.status.tone === 'returning'
   return {
     id: unit.id,
     icon: unit.icon,
@@ -687,6 +699,7 @@ const unitRow = (situation: Situation, unit: SituationUnit, selectedId: string |
     carry: !situation.features.hasCarry || unit.carry === null ? null : `${unit.carry.load.reduce((sum, entry) => sum + entry.count, 0)}/${unit.carry.capacity}`,
     properties: situation.features.propertyColumns.flatMap(column => unit.properties.filter(property => property.id === column.id).map(property => `${property.label} ${property.value}`)),
     states: unit.states.map(state => state.text),
+    progress: unit.states.length === 0 && !unavailableTones.has(unit.status.tone) && active ? 'active' : null,
     selected: unit.id === selectedId,
   }
 }
@@ -707,6 +720,7 @@ const siteRow = (site: SituationSite, selectedId: string | null): SiteRowView =>
   receiving: site.accepting === null || site.slots === null ? null : { accepting: site.accepting ? dispatchWords.accepting : dispatchWords.notAccepting, slots: `${site.slots.used}/${site.slots.total}` },
   inbound: site.inbound.length === 0 ? null : `${dispatchWords.inbound} ${joined(site.inbound.map(unit => unit.label))}`,
   states: site.states.map(state => state.text),
+  progress: site.states.length === 0 && site.inbound.length > 0 ? 'active' : null,
   selected: site.id === selectedId,
 })
 
