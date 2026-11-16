@@ -46,12 +46,18 @@
         {#if feedbackStatus && feedback.tone !== 'pending'}<span class="command-feedback-state">· {feedbackStatus}{#if feedback.detail !== undefined}:{/if}</span>{/if}
         {#if feedback.detail !== undefined}<span class="command-feedback-detail">{feedback.detail}</span>{/if}
       </p>
-    {:else if mapFocusLabel}
+    {:else if mapFocusLabel && !planningDemoHref}
       <p class="command-feedback" data-tone="notice"><span class="command-feedback-subject">Showing {mapFocusLabel} on the map.</span></p>
     {/if}
   </div>
-  {#if planningDemoHref}<a class="command-feedback planning-link" href={planningDemoHref} target="_top">Back to planning demo</a>{/if}
 </div>
+
+{#if planningDemoHref}
+  <div class="planning-return command-feedback" data-tone="notice">
+    {#if mapFocusLabel}<span role="status">Showing {mapFocusLabel} on the map.</span>{/if}
+    <a href={planningDemoHref} target="_top">Back to planning demo</a>
+  </div>
+{/if}
 
 <style>
   .world-status-line {
@@ -113,7 +119,18 @@
     overflow-wrap: anywhere;
   }
 
-  .planning-link { color: var(--text); font-weight: 650; align-items: center; }
+  .planning-return {
+    position: fixed;
+    left: calc(var(--rail-width, 0px) + 12px);
+    top: 12px;
+    z-index: 16;
+    gap: 4px 10px;
+    color: var(--text);
+    align-items: center;
+    font-size: 12px;
+  }
+
+  .planning-return a { color: inherit; font-weight: 650; }
 
   .command-feedback-subject {
     font-weight: 600;
