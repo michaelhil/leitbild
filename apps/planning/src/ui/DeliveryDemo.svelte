@@ -1,6 +1,6 @@
 <script lang="ts">
   import { onMount } from 'svelte'
-  import { deliveryDemoDefinitionId } from '../definitions/delivery-demo.ts'
+  import { deliveryDemoDefinitionId, deliveryDemoMapTargets } from '../definitions/delivery-demo.ts'
   import { combineWorldFacts } from '../plan/schema.ts'
   import { isRequestError, refusalText, type PlanningClient } from './api.ts'
   import { createTimeFormat, quantityText } from './format.ts'
@@ -46,13 +46,7 @@
   const rows = $derived(selected === null ? [] : schedules[selected] ?? [])
   const shownRows = $derived([...rows].sort((left, right) => Date.parse(left.start) - Date.parse(right.start)))
 
-  // This guide uses this scenario's Einsatz unit and task locators. World resolves and verifies the target.
-  const worldObject = (locator: string | undefined): string | undefined => {
-    const path = locator?.match(/^einsatz\/(?:unit|task)\/([^/]+)$/)?.[1]
-    if (path === undefined) return undefined
-    try { return decodeURIComponent(path) } catch { return undefined }
-  }
-  const truckObject = $derived(worldObject(truck?.locator))
+  const truckObject = $derived(deliveryDemoMapTargets.get(truck?.locator ?? ''))
   const targetResult = (finish: string, finishBy: string): string => {
     const late = (Date.parse(finish) - Date.parse(finishBy)) / 60_000
     return late <= 0 ? 'On time' : `${quantityText(late, 'min')} late`
@@ -149,7 +143,7 @@
         <dt>In the plan</dt>
         <dd>
           {#if transfer && target}
-            Allow {quantityText(transfer.value, transfer.unit)} between stops. Both want unloading finished by {time.time(target)}.
+            Allow {quantityText(transfer.value, transfer.unit)} between stops. Both want unloading finished by {time.time(target)} local time.
           {:else}
             The plan sets the time between stops and delivery targets.
           {/if}
@@ -164,7 +158,7 @@
           {#if choices.length === 0}
             <p>Generate schedules to see when the truck can unload at each stop.</p>
           {:else}
-            <p>Switch the order and see which stop meets its target.</p>
+            <p>Switch the order and see which stop meets its target. Times in {time.zone === 'Europe/Oslo' ? 'Halden' : time.zone}.</p>
           {/if}
         </div>
         {#if choices.length < (order?.options.length ?? 2)}
@@ -184,7 +178,7 @@
           {#each shownRows as row (row.job)}
             {@const job = inputs?.jobs.find(item => item.key === row.job)}
             {@const finishBy = job?.target?.finishBy}
-            {@const objectId = worldObject(job?.locator)}
+            {@const objectId = deliveryDemoMapTargets.get(job?.locator ?? '')}
             <li class="stop">
               <span class="stop-time"><time datetime={row.start}>{time.time(row.start)}</time>–<time datetime={row.finish}>{time.time(row.finish)}</time></span>
               <strong>{job?.title ?? row.job}</strong>
