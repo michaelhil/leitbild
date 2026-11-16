@@ -1499,7 +1499,7 @@
     clock = clockOrder.published(body.snapshot.clock)
   }
 
-  /** A reconnected channel missed what happened while it was down: read the Run again, as joining did. */
+  /** A reconnected channel without a perspective missed what happened while it was down: read the Run again, as joining did. */
   const resyncAfterReconnect = async (): Promise<void> => {
     try {
       await syncSimulationRunSnapshot()
@@ -1705,7 +1705,11 @@
         status = 'Connected'
         completeStep('realtime')
         completeReadyWhenReady()
-        if (resumed) void resyncAfterReconnect()
+        // A role Run's ready carries the perspective's snapshot, and adoptPerspective has already read it in.
+        if (resumed) {
+          if (parsed.perspective) liveUpdatesProblem = null
+          else void resyncAfterReconnect()
+        }
       },
       onEvent: (parsed) => {
         if (parsed.simulationRunId !== id) return
