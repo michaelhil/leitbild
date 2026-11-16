@@ -1,8 +1,9 @@
 // The options and previous sections page a compact item for a refusal (coordinator, shape E): the option's own
 // cause and span summary, and per method combination one `line`, the figures first and then the method's name;
 // each combination's picks, purchases, cause and full proof only in explain refusal. Each record fits its 4 KB
-// page with room to spare: the 40 h what-if, a plain refusal with its stored energy proof, and the walk's full
-// 8-option set.
+// page with room to spare on the cases a plan within the certified size can have: the 40 h what-if, 8
+// combinations of 3 open method choices with keys and labels at 64 characters, a plain refusal with its stored
+// energy proof, and the walk's full 8-option set. (The schema's most is a known limit, for increment 3.)
 import { afterAll, describe, expect, test } from 'bun:test'
 import { generate, type GenerateDeps } from '../solve/generate.ts'
 import { ladderRungs, rungRequest } from '../solve/ladder.ts'
@@ -10,9 +11,9 @@ import { searchEngine } from '../solve/search.ts'
 import { refusalLines } from '../solve/explain.ts'
 import { withExtraRules } from '../solve/keys.ts'
 import { laneKCheck, laneKVerify, laneKVerifyBound, laneKVerifySpan } from '../solve/fixtures/lane-k.ts'
-import { optionSchema, type PlanInputs } from '../plan/schema.ts'
+import { optionSchema, planInputsSchema, type PlanInputs } from '../plan/schema.ts'
 import { clip } from '../plan/summary.ts'
-import { sectionDataSchemas } from './contract.ts'
+import { compactLineLength, sectionDataSchemas } from './contract.ts'
 import { createSolverDouble } from './fixtures/doubles.ts'
 import { formulation, planWith, rebuild, swap, trainAInputs, type Option } from './fixtures/choose.ts'
 import { createHarness } from './fixtures/harness.ts'
@@ -78,7 +79,48 @@ describe('a refusal is a compact item in the options and previous sections', () 
     const item = (await read(plan.id, 'options')).find(entry => entry.key === 'one-without-span')!
     if (item.status.word !== 'proven infeasible') throw new Error('refused')
     const sentence = refusalLines(plain.cause, withExtraRules(trainAInputs, at40.variant.also), undefined, plain.purchases, plain.methods)[0]!
-    expect(item.status.byMethod![1]).toEqual({ line: clip(`${sentence.replace(/\.$/, '')}: ${labels(trainAInputs, plain.methods)}.`, 200) })
+    expect(item.status.byMethod![1]).toEqual({ line: clip(`${sentence.replace(/\.$/, '')}: ${labels(trainAInputs, plain.methods)}.`, compactLineLength) })
+  }, 120_000)
+
+  test('release size: 8 combinations of 3 open method choices, keys and labels at 64 characters, rule words at 200, the flagship\'s cause and run', async () => {
+    if (at40.status.word !== 'proven infeasible') throw new Error('refused')
+    // What a plan within the certified size can have (coordinator): keys and labels at 64 characters, the what-if's
+    // words at 200; the cause and run as the flagship's 40 h proof stores them. The schema's most is a known limit.
+    const key = (stem: string) => stem.padEnd(64, 'x')
+    const label = (stem: string) => `${`${stem} `.padEnd(63, 'word ')}x`
+    const renames = [['SWA-method', key('SWA-method-')], ['swap', key('swap-')], ['rebuild', key('rebuild-')], ['COOL-A', key('COOL-A-')], [asked(40).key, key('what-if-COOL-A-')]] as const
+    const renamed = <T>(value: T): T => JSON.parse(renames.reduce((text, [from, to]) => text.replaceAll(`"${from}"`, `"${to}"`), JSON.stringify(value)))
+    const base = renamed(trainAInputs)
+    const real = { ...base.methods[0]!, label: label('Pump A method'), options: base.methods[0]!.options.map(option => ({ ...option, label: label(option.label) })) }
+    const more = [2, 3].map(n => ({ ...real, key: key(`PMP-${n}-method-`), label: label(`Pump ${n} method`), options: real.options.map((option, k) => ({ ...option, key: key(`pmp-${n}-${k}-`), label: label(`Pump ${n} option ${k}`) })) }))
+    const inputs = planInputsSchema.parse({ ...base, methods: [real, ...more] })
+    const what = renamed(at40)
+    if (what.status.word !== 'proven infeasible') throw new Error('refused')
+    const [own, other] = what.status.byMethod!
+    // Combination k flips choice c from the option's own pick when bit c is set; k = 0 is the option's own.
+    const ownAt = real.options.findIndex(option => option.key === own!.methods[0]!.option)
+    const place = (k: number) => inputs.methods.map((_, c) => ((k >> c) & 1) === 1 ? 1 - ownAt : ownAt)
+    const picks = (k: number) => inputs.methods.map((choice, c) => ({ choice: choice.key, option: choice.options[place(k)[c]!]!.key }))
+    const entries = Array.from({ length: 8 }, (_, k) => ({ ...((k & 1) === 1 ? other! : own!), methods: picks(k) }))
+    const option = optionSchema.parse({
+      ...what, key: key('what-if-option-'), label: label('At most 40 h out'),
+      variant: { ...what.variant, methods: picks(0), also: [{ ...what.variant.also![0]!, words: `${'Train A cooling chain back within 40 h, '.repeat(6).slice(0, 199)}x` }] },
+      status: { ...what.status, byMethod: [5, 3, 0, 7, 1, 6, 2, 4].map(k => entries[k]!) },   // stored in no particular order
+    })
+    // The option's own first, then the plan's combination order: by each choice's option, the first choice first.
+    const rest = [1, 2, 3, 4, 5, 6, 7].sort((a, b) => { const [x, y] = [place(a), place(b)]; const c = x.findIndex((at, index) => at !== y[index]); return c === -1 ? 0 : x[c]! - y[c]! })
+    const figures = (k: number) => `Out at least ${entries[k]!.span!.leastHours} h, against the 40 h asked: `
+    console.log('stored release case, without rows:', bytes({ ...option, rows: undefined }))
+    const plan = await stored([renamed(swap), renamed(rebuild), option], inputs)
+    for (const section of ['options', 'previous'] as const) {
+      const item = (await read(plan.id, section)).find(entry => entry.key === option.key)!
+      if (item.status.word !== 'proven infeasible') throw new Error('refused')
+      expect(item.status.byMethod).toEqual([0, ...rest].map(k => ({ line: clip(`${figures(k)}${labels(inputs, picks(k))}.`, compactLineLength) })))
+      // A clip cuts the name, never the figures.
+      expect(item.status.byMethod!.every((entry, at) => entry.line.length <= compactLineLength && entry.line.startsWith(figures([0, ...rest][at]!)))).toBe(true)
+      console.log(`${section}: release-case item`, bytes(item))
+      expect(bytes(item)).toBeLessThanOrEqual(roomy)
+    }
   }, 120_000)
 
   test('a plain refusal with its stored energy proof, and the walk\'s full 8-option set: every record fits', async () => {
