@@ -224,3 +224,19 @@ export const finerTrade = 'For a finer trade, ask for “at most … h out”.'
 
 /** What each ladder word claims, in one line under the rows. */
 export const ladderLegend = 'makes it possible: the lower rung is proven impossible · found: a better plan was found, not proven best · proven: both rungs are proven best on the outage · proven: no gain: both proven, with the same outage · not found better: the search found no shorter outage · not solved: a rung stopped before it found a plan'
+
+/**
+ * What a re-timing uses beyond the planned rows (lane K's `extra.bought`), in the ladder's units and words:
+ * "10.5 more person-hours of Station mechanical crew overtime to 19:00", "1 more night of Contractor night
+ * crew (nights Mon to Thu)". Only purchases it uses more of.
+ */
+export const extraUseText = (bought: ReadonlyArray<{ readonly purchase: string; readonly value: number; readonly unit: string }>, context: Context): readonly string[] =>
+  bought.filter(item => item.value > 0).flatMap(item => {
+    const purchase = context.inputs.purchases.find(entry => entry.key === item.purchase)
+    if (purchase === undefined) return []
+    if (item.unit === 'person-h') return [`${hoursNumber(item.value)} more person-hours of ${purchase.label}`]
+    if (isTimeUnit(item.unit)) return [`${hoursNumber(item.value * timeUnitMs[item.unit] / timeUnitMs.h)} more person-hours of ${purchase.label}`]
+    if (item.unit !== 'periods') return [`${quantityText(item.value, item.unit)} more of ${purchase.label}`]
+    const word = periodWord(context.inputs, purchase.key, context.format)
+    return [`${hoursNumber(item.value)} more ${item.value === 1 ? word.one : word.many} of ${purchase.label}`]
+  })

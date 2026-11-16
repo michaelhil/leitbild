@@ -8,7 +8,7 @@ import type { BuysPage } from './ladder.ts'
 import { whatIfRequest, type WhatIfVariant } from './what-if.ts'
 import { finishChain, mostLimiting, whyStart, type FinishStep, type Part, type WhyStart } from './explain-text.ts'
 import { createTimeFormat } from './format.ts'
-import { createNames, namesInEdits, type DatedRow, type OptionView, type PlanModel, type RunChoice } from './model.ts'
+import { createNames, namesInEdits, planOptions, type DatedRow, type OptionView, type PlanModel, type RunChoice } from './model.ts'
 import type { Preview } from './preview.ts'
 import { loadPlan, loadRows, readAll } from './read-plan.ts'
 import type { Context } from './status-text.ts'
@@ -66,7 +66,8 @@ const pause = (ms: number, signal: AbortSignal): Promise<void> => new Promise(do
 export const createPlanActions = (client: PlanningClient, planId: string, progress: Progress = () => {}) => {
   /** Every current option the Module proved impossible, with its refusal in words and hours. */
   const refusalsOf = async (model: PlanModel): Promise<PlanModel['refusals']> => {
-    const refused = model.options?.items.filter(item => item.fresh && item.status.word === 'proven infeasible') ?? []
+    // A what-if's refusal is its causes by method on its card (walk V1, adversary B3): only the plan's own options are asked.
+    const refused = planOptions(model).filter(item => item.fresh && item.status.word === 'proven infeasible')
     const answers = await Promise.all(refused.map(async item => [item.key, (await client.explain(planId, { ask: 'refusal', option: item.key })).lines] as const))
     return Object.fromEntries(answers)
   }
