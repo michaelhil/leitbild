@@ -5,7 +5,7 @@ import { describe, expect, test } from 'bun:test'
 import { judgeRetiming } from '../check/retime.ts'
 import { robustSchema, type PlanInputs } from '../plan/schema.ts'
 import { generate, type GenerateDeps } from './generate.ts'
-import { atHigh, rangedJobs, retimedRows, robustOf, type JudgeRetimed } from './retime.ts'
+import { atHigh, rangedJobs, retimedRows, retimingCount, robustOf, type JudgeRetimed } from './retime.ts'
 import { searchEngine } from './search.ts'
 import { laneKCheck, laneKJudgeRetimed, laneKVerify, laneKVerifyBound } from './fixtures/lane-k.ts'
 import { trainAInputs } from './fixtures/train-a-case.ts'
@@ -186,8 +186,10 @@ describe('V12: a re-timing that holds keeps lane K\'s spans against their limits
 describe('M2: the re-timings stop before the process would be killed', () => {
   test('a sub-solve whose slot outlasts its kill time answers before the kill, with its plan, the record "time ran out"', async () => {
     const { subSolve } = await import('./generate.ts')
-    // A slow judgement, as lane K's on a loaded machine: every re-timing takes most of a second.
-    const slow: JudgeRetimed = plan => { const until = performance.now() + 700; while (performance.now() < until) { /* busy */ } return laneKJudgeRetimed(plan) }
+    // A slow judgement, as lane K's on a loaded machine: every re-timing takes a second. Swap has 5 re-timings
+    // (all jobs at their high, then each of 4 ranged jobs), so they cannot all fit before the kill however
+    // fast the search ends (a warm search can end in a fraction of a second).
+    const slow: JudgeRetimed = plan => { const until = performance.now() + 1_000; while (performance.now() < until) { /* busy */ } return laneKJudgeRetimed(plan) }
     const now = Date.now()
     const killAt = now + 4_000
     const outcome = await subSolve({ ...deps, judgeRetimed: slow })({
@@ -195,6 +197,7 @@ describe('M2: the re-timings stop before the process would be killed', () => {
       // A refused first sub-solve leaves the second a slot of nearly the whole Generate, far past its kill.
       answerBy: now + 20_000, deadlineAt: now + 20_000, killAt,
     }, new AbortController().signal)
+    expect(retimingCount(flagship, outcome.option.rows.map(row => row.job)) * 1_000).toBeGreaterThan(killAt - now)
     expect(Date.now()).toBeLessThan(killAt)
     expect(outcome.option.status.word).toBe('validated feasible')
     expect(outcome.option.robust).toEqual({ notWorkedOut: 'time' })

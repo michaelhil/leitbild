@@ -18,10 +18,12 @@ import { trainAInputs } from './fixtures/train-a-case.ts'
 
 const by = { kind: 'service' as const, name: 'test' }
 const deps: GenerateDeps = { engine: searchEngine(), check: laneKCheck, verify: laneKVerify, verifyBound: laneKVerifyBound }
+// As production: the child proves a span refusal and stores it (N2, N4); a read words it from storage.
+const proving: GenerateDeps = { ...deps, verifySpan: laneKVerifySpan }
 const flagship = trainAInputs({ read: true })
 const plan72 = flagship.rules.find(rule => rule.kind === 'span-limit' && rule.group === 'COOL-A')!
 const at40: Extract<AlsoRule, { kind: 'span-limit' }> = { kind: 'span-limit', key: 'what-if-COOL-A-40h', group: 'COOL-A', limit: { value: 40, unit: 'h' }, singleEntry: true, words: 'At most 40 h out', source: { by: 'planner' } }
-const asked = await generate(deps, { inputs: flagship, revision: 1, previous: null, input: { variants: [{ label: 'At most 40 h out', also: [at40] }] }, by, signal: new AbortController().signal, seed: 1, evals: 600 })
+const asked = await generate(proving, { inputs: flagship, revision: 1, previous: null, input: { variants: [{ label: 'At most 40 h out', also: [at40] }] }, by, signal: new AbortController().signal, seed: 1, evals: 600 })
 const option = asked.optionSet.options[0]!
 const pool = createSolverPool()
 afterAll(() => pool.shutdown())
@@ -73,7 +75,6 @@ describe('a span refusal names the rule breached and that rule\'s limit', () => 
 })
 
 describe('N2, N4: a span refusal is stored as lane K proved it in the sub-solve, and worded from storage', () => {
-  const proving = { ...deps, verifySpan: laneKVerifySpan }
   const stored = async (with_: GenerateDeps) => (await generate(with_, { inputs: flagship, revision: 1, previous: null, input: { variants: [{ label: 'At most 40 h out', also: [at40] }] }, by, signal: new AbortController().signal, seed: 1, evals: 600 })).optionSet.options[0]!
 
   test('each method\'s refusal keeps the what-if\'s rule, lane K\'s least span against 40 h, and the chains, in the child too', async () => {
@@ -103,8 +104,10 @@ describe('N2, N4: a span refusal is stored as lane K proved it in the sub-solve,
     const ruled = withExtraRules(flagship, [at40])
     const own = refusalLines(refused.status.cause, ruled, refused.status.span, refused.variant.purchases, refused.variant.methods, `this option (${flagship.methods[0]!.options.find(choice => choice.key === refused.variant.methods[0]!.option)!.label})`)
     expect(read.lines).toContain(`For ${flagship.methods[0]!.options.find(choice => choice.key === refused.variant.methods[0]!.option)!.label}: ${own[0]}`)
-    // The span's own lines (the purchases allowed may give way to the other method's line in the 20).
-    for (const line of own.slice(1).filter(entry => !/^(This request allowed|It did not allow)/.test(entry))) expect(read.lines).toContain(line)
+    // From its first span line on, the read is the stored refusal's own lines, until the 20 lines run out.
+    const from = read.lines.indexOf(own[1]!)
+    expect(from).toBeGreaterThan(0)
+    expect(read.lines.slice(from)).toEqual(own.slice(1, 1 + read.lines.length - from))
     expect(own.join(' ')).toContain(`against ${at40.limit.value} h`)
   }, 120_000)
 
