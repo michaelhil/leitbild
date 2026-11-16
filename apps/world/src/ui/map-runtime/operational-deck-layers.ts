@@ -110,16 +110,15 @@ const pointFill = (point: OperationalPointFeature): ColorRgba => {
   return point.color
 }
 
-/** An armed order's target: a green ring, apart from the selection's blue and a highlight's amber. */
-const targetHaloFill = rgba(22, 133, 92, 44)
-const targetHaloStroke = rgba(22, 133, 92, 245)
-/** The target a click was just refused for: a neutral slate ring and tag, apart from the valid targets' green and an alert's colour. */
-const refusedHaloFill = rgba(71, 85, 105, 40)
-const refusedHaloStroke = rgba(71, 85, 105, 245)
+const targetColors = {
+  valid: { fill: rgba(22, 133, 92, 44), stroke: rgba(22, 133, 92, 245) },
+  assigned: { fill: rgba(190, 32, 60, 48), stroke: rgba(190, 32, 60, 245) },
+  refused: { fill: rgba(71, 85, 105, 40), stroke: rgba(71, 85, 105, 245) },
+}
 
 const haloFill = (point: OperationalPointFeature): ColorRgba => {
   if (point.selected) return rgba(29, 102, 210, 62)
-  if (point.targeted) return point.targetRefused ? refusedHaloFill : targetHaloFill
+  if (point.targetTone !== null) return targetColors[point.targetTone].fill
   if (point.highlighted) return rgba(193, 122, 19, 58)
   if (point.alert !== null) return colorWithAlpha(point.alert.color, 52)
   return rgba(255, 255, 255, 0)
@@ -127,13 +126,13 @@ const haloFill = (point: OperationalPointFeature): ColorRgba => {
 
 const haloStroke = (point: OperationalPointFeature): ColorRgba => {
   if (point.selected) return rgba(29, 102, 210, 245)
-  if (point.targeted) return point.targetRefused ? refusedHaloStroke : targetHaloStroke
+  if (point.targetTone !== null) return targetColors[point.targetTone].stroke
   if (point.highlighted) return rgba(193, 122, 19, 230)
   if (point.alert !== null) return colorWithAlpha(point.alert.color, 230)
   return rgba(255, 255, 255, 0)
 }
 
-const haloRingged = (point: OperationalPointFeature): boolean => point.selected || point.targeted || point.highlighted
+const haloRingged = (point: OperationalPointFeature): boolean => point.selected || point.targetTone !== null || point.highlighted
 
 /** A glyph's colour: faint while dimmed by an armed order, softened while muted. */
 const glyphColor = (point: OperationalPointFeature): ColorRgba => point.dimmed ? white(95) : point.muted ? white(150) : white(245)
@@ -566,7 +565,7 @@ export const createOperationalDeckLayers = (config: OperationalDeckLayerConfig):
           background: true,
           maxWidth: 22,
           wordBreak: 'break-word',
-          getBackgroundColor: point => point.targetRefused ? refusedHaloStroke : targetHaloStroke,
+          getBackgroundColor: point => targetColors[point.targetTone ?? 'valid'].stroke,
           backgroundPadding: [6, 3],
           onClick: onSymbolClick,
           onHover: onSymbolHover,

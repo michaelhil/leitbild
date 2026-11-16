@@ -66,18 +66,17 @@ export const assertMapPrompt = (panelId: string, prompt: MapPrompt): MapPrompt =
 export const mapTargetingMaxTags = 8
 
 /**
- * One target an armed order marks. A valid one (the default) gets a green
- * halo; the nearest few also carry a tag, the verb or ETA a click there
- * gives, e.g. "4 min". A refused one is the target a click was just refused
- * for: it gets a neutral ring apart from the valid ones, and its tag is the
- * refusal, shown beside the target for as long as the panel keeps it in the
- * targeting (plan B.3: 4 s).
+ * One target a selected controller marks. A valid target gets a green
+ * halo, an assigned target gets a red one, and both remain pickable.
+ * A refused target gets a neutral ring and a tag explaining the refusal.
  */
+export type MapTargetingTone = 'valid' | 'assigned' | 'refused'
+
 export interface MapTargetingTarget {
   readonly id: ObjectId
   /** Worded when given; a refused target always has one, a valid one only among the nearest. */
   readonly tag?: string
-  readonly tone?: 'valid' | 'refused'
+  readonly tone?: MapTargetingTone
 }
 
 /**
@@ -85,11 +84,11 @@ export interface MapTargetingTarget {
  * of its objects, `from`: each target gets a halo, tagged or not
  * (`MapTargetingTarget`), and a line runs from `from` to a mouse pointer
  * (never to a finger, which has none between taps). Once `complete`,
- * `targets` lists every valid target, and every other object is dimmed: a
- * dimmed object is never one the order would take. Until then (the panel is
+ * `targets` lists the valid and assigned targets, and every other object is
+ * dimmed. Until then (the panel is
  * still reading them) nothing is dimmed. The map only draws it; clicks route
  * as always (`map-target-routing.ts`), a tap on a tag is a tap on its
- * target, and a tap on a stack of icons offers only its valid targets.
+ * target, and a tap on a stack of icons offers its valid and assigned targets.
  */
 export interface MapTargeting {
   readonly from: ObjectId

@@ -104,3 +104,33 @@ export const plannedPathFeatures = (objects: ReadonlyArray<OperationalObject>, c
     ...(path.unitId === selectedId ? pathLine.selected : pathLine.plain),
     summary: `${path.label} · next: ${segment.targetLabel ?? 'a map point'}`,
   })))
+
+/** Stop IDs repeat across units, so a map selection names both records. */
+export const waypointItemId = (unitId: string, stopId: string): string => `einsatz-waypoint:${encodeURIComponent(unitId)}:${stopId}`
+
+/** Draw a selectable pin where the selected unit's stop has no map object. */
+export const plannedWaypointFeatures = (
+  objects: ReadonlyArray<OperationalObject>,
+  categoryId: string,
+  panelId: string,
+  selectedId?: string,
+): PackMapFeature[] => {
+  if (selectedId === undefined) return []
+  const object = objects.find(entry => entry.id === selectedId && entry.packId === einsatzPackId)
+  if (object === undefined || (object.packData as { readonly type?: unknown } | undefined)?.type !== 'unit') return []
+  const unit = unitSchema.parse(object.packData)
+  if (unit.integrity === 'destroyed') return []
+  return unit.orders.flatMap((step, index) => {
+    if (!('point' in step.target)) return []
+    const itemId = waypointItemId(object.id, step.id)
+    return [{
+      id: itemId,
+      categoryId,
+      geometry: step.target.point,
+      symbol: { icon: 'map-pin' },
+      color: '#be203c',
+      selection: { panelId, itemId },
+      summary: `${object.label} · Stop ${index + 1}`,
+    }]
+  })
+}

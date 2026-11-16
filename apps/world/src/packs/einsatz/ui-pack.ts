@@ -1,7 +1,7 @@
 import type { OperationalObject } from '../../core/model/index.ts'
 import { createWorldPackDescriptor, type PackObjectField, type PackObjectPresentation, type PackObjectPresentationContext, type PackObjectStatusPresentation, type WorldPackView } from '../../core/packs/protocol.ts'
 import { packField } from '../../core/packs/presentation.ts'
-import { plannedPathFeatures } from './chain-path.ts'
+import { plannedPathFeatures, plannedWaypointFeatures } from './chain-path.ts'
 import { einsatzColors } from './colors.ts'
 import { einsatzPackId, einsatzRuntimeId } from './ids.ts'
 import { neutralLexicon, type UnitPhase } from './lexicon.ts'
@@ -205,8 +205,11 @@ export const einsatzPackView = {
       { id: trackIndexesCategory, label: 'Track indexes', emptyLabel: 'No track indexes', matches: object => typeOf(object) === 'track-index', rail: false },
     ],
     presentObject: (object, context) => presentEinsatzObject(object, context),
-    /** Each unit's queued stops as straight segments after its route: the planned path of its plan, the selected unit's drawn strongly. */
-    mapFeatures: context => plannedPathFeatures(context.objects, unitsCategory, context.selectedObjectId),
+    /** Draw queued paths and the selected unit's coordinate stops. */
+    mapFeatures: context => [
+      ...plannedPathFeatures(context.objects, unitsCategory, context.selectedObjectId),
+      ...plannedWaypointFeatures(context.objects, unitsCategory, einsatzDispatchPanelId, context.selectedObjectId),
+    ],
     // The selected unit's path is drawn strongly, so the map redraws these features when the selection changes.
     mapFeaturesFollowSelection: true,
     mapFeatureLayers: ['routes'],

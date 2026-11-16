@@ -8,6 +8,7 @@ import type { MapPerformanceDiagnosticsSnapshot } from './map-performance-diagno
 import type { SymbolAtlas } from './symbol-kit.ts'
 import type { CameraInteraction } from '../map/map-camera.ts'
 import type { MapFocusTarget } from '../map-view.ts'
+import type { MapTargetingTone } from '../surface-panel-interaction.ts'
 
 export type RenderPhase =
   | 'base'
@@ -50,14 +51,12 @@ export interface OperationalPointFeature {
   readonly highlighted: boolean
   readonly hasNewInfo: boolean
   readonly muted: boolean
-  /** A target of the armed order (`MapTargeting`): haloed. */
-  readonly targeted: boolean
+  /** The target's halo, or null when it is outside the current targeting. */
+  readonly targetTone: MapTargetingTone | null
   /** A tagged target's tag above its halo; null for any other object. */
   readonly targetTag: string | null
   /** Which way the tag runs from its target, so it stays on the map near an edge. */
   readonly targetTagAnchor: TargetTagAnchor
-  /** The target a click was just refused for: ringed apart, its tag the refusal. */
-  readonly targetRefused: boolean
   /** Dimmed while an order is armed whose targets are known: neither its object nor one of its targets. */
   readonly dimmed: boolean
   readonly sizePx: number
@@ -112,7 +111,7 @@ export type TargetTagAnchor = 'start' | 'middle' | 'end'
  */
 export interface MapTargetingRender {
   readonly fromId: string
-  readonly targets: ReadonlyMap<string, { readonly tag: string | null; readonly anchor: TargetTagAnchor; readonly refused: boolean }>
+  readonly targets: ReadonlyMap<string, { readonly tag: string | null; readonly anchor: TargetTagAnchor; readonly tone: MapTargetingTone }>
   readonly complete: boolean
 }
 
