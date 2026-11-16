@@ -548,7 +548,13 @@ export const generate = async (deps: GenerateDeps, request: GenerateRequest): Pr
       if (request.signal.aborted) break
     }
     if (attempts.length === 0) continue
-    fresh.push(variantOption(attempts, variant.combos.length))
+    const option = variantOption(attempts, variant.combos.length)
+    // A what-if's option carries what it asked, on every outcome: one without it would be a plain, ranked
+    // option. That is a solver fault, refused loudly and never stored.
+    if (!same(option.variant.also, variant.also) || !same(option.variant.lead, variant.lead)) {
+      throw new Error(`The solver answered the what-if '${variant.label}' with an option that does not carry its ${variant.also === undefined ? 'leading goal' : 'extra rule'}`)
+    }
+    fresh.push(option)
     if (request.signal.aborted) break
   }
 
