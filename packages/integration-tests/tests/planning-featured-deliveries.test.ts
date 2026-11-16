@@ -1,5 +1,5 @@
 import { afterAll, expect, test } from 'bun:test'
-import { definitionIdSchema, featuredDefinitionCatalogSchema, moduleCapabilityInvocationResultSchema } from '@leitbild/contracts'
+import { definitionIdSchema, featuredDefinitionCatalogSchema, moduleCapabilityInvocationResultSchema, moduleIdSchema } from '@leitbild/contracts'
 import { createPlanningClient } from '../../../apps/planning/src/ui/api.ts'
 import { createWorkspaceApi } from '../../../apps/leitbild/src/ui/launch-workspace.ts'
 import { createPlanningStack } from './planning-stack.ts'
@@ -16,7 +16,7 @@ const launch = async (workspaceId: string): Promise<string> => {
   const catalogue = featuredDefinitionCatalogSchema.parse(await (await transport('/api/featured-definitions')).json())
   const demo = catalogue.definitions.find(item => item.definition.moduleId === 'world' && item.definition.id === scenario)
   if (!demo) throw new Error('The World demo is missing from the public carousel')
-  expect(demo.requiresModules).toContain('planning')
+  expect(demo.requiresModules).toContain(moduleIdSchema.parse('planning'))
   const started = await transport(`/api/workspaces/${workspaceId}/capabilities/world.scenario.start/invoke`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
