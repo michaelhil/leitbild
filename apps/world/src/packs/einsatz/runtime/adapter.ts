@@ -40,7 +40,7 @@ type QueryId = typeof einsatzQueryIds[keyof typeof einsatzQueryIds]
 
 /** A restored Run whose saved Einsatz state this runtime does not read: refused, never migrated. */
 const savedStateInvalid = (error: unknown): Error =>
-  new Error(refusal('einsatz_saved_state_invalid', `This Run's saved Einsatz state is of an older shape and cannot be restored; start a new Run (${error instanceof Error ? error.message.slice(0, 300) : String(error)})`))
+  new Error(refusal('einsatz_saved_state_invalid', `This runtime cannot read this Run's saved Einsatz state, so the Run cannot be restored; start a new Run (${error instanceof Error ? error.message.slice(0, 300) : String(error)})`))
 
 /** Wall-time cadence at which positions follow the Run clock between explicit advances. */
 const tickIntervalMs = 1_000
@@ -101,7 +101,7 @@ const connectEinsatz = async (config: PackRuntimeConnectionConfig, routing: Rout
   try {
     current = readState()
   } catch (error) {
-    // A restored Run whose Einsatz records this runtime does not read is an Einsatz Run of an older shape: it is refused, never migrated.
+    // A restored Run whose Einsatz records this runtime does not read is refused, never migrated.
     if (config.initialObjects !== undefined) throw savedStateInvalid(error)
     throw error
   }
