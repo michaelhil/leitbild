@@ -13,7 +13,10 @@
    * reserved slot at the top of the card, and the armed card's busy choices
    * and refusals in its own reserved slot above the target rows; in the call
    * card the commands come first and the assigned units after them, and the
-   * Close confirm stands beside Close. Every control is at least 44 px.
+   * Close confirm stands beside Close. Every control is at least 44 px. A
+   * Deliver-to choice shows where the load goes now as its selected chip;
+   * before the carrier is on the call its sites are named, never offered as
+   * buttons that cannot act.
    */
   interface Props {
     readonly card: CardView
@@ -51,6 +54,10 @@
 
 {#snippet slot()}
   <p class="slot refusal" role="alert">{props.feedback ?? ''}</p>
+{/snippet}
+
+{#snippet chosen(label: string)}
+  <span class="order-chip selected" aria-current="true">✓ {label}</span>
 {/snippet}
 
 <article class="card" data-kind={card.kind} aria-label={card.kind === 'unit' || card.kind === 'site' ? card.title : card.label}>
@@ -130,7 +137,9 @@
     {#if card.armed === null && card.deliverTo.length > 0}
       <div class="chips" role="group" aria-label={dispatchWords.deliverTo}>
         <span class="chips-label">{dispatchWords.deliverTo}</span>
-        {#each card.deliverTo as site (site.siteId)}<button type="button" class="order-chip" onclick={() => props.deliverTo(card.id, site.siteId)}>{site.label}</button>{/each}
+        {#each card.deliverTo as site (site.siteId)}
+          {#if site.selected}{@render chosen(site.label)}{:else}<button type="button" class="order-chip" onclick={() => props.deliverTo(card.id, site.siteId)}>{site.label}</button>{/if}
+        {/each}
       </div>
     {/if}
     {#if card.armed === null && card.addStop !== null}
@@ -149,6 +158,7 @@
     </header>
     {@render slot()}
     <p class="status"><span class="priority">{card.priority}</span> · <span class="num">{card.waiting}</span>{#if card.overdue !== null} · <span class="overdue">{card.overdue}</span>{/if}</p>
+    {#if card.observed !== null}<p class="note">{card.observed}</p>{/if}
     <ul class="needs">
       {#each card.needs as need, index (index)}<li class:met={need.met}>{need.met ? '✓' : '✗'} {need.text}</li>{/each}
     </ul>
@@ -170,7 +180,11 @@
     {#each card.deliverTo as carrier (carrier.unitLabel)}
       <div class="chips" role="group" aria-label={carrier.heading}>
         <span class="chips-label">{carrier.heading}</span>
-        {#each carrier.sites as site (site.siteId)}<button type="button" class="order-chip" disabled={!carrier.enabled} onclick={() => props.order(site.order)}>{site.text}</button>{/each}
+        {#each carrier.sites as site (site.siteId)}
+          {#if !carrier.enabled}<span class="site-name">{site.text}</span>
+          {:else if site.selected}{@render chosen(site.text)}
+          {:else}<button type="button" class="order-chip" onclick={() => props.order(site.order)}>{site.text}</button>{/if}
+        {/each}
       </div>
     {/each}
     {#each card.alternatives as alternative (alternative.heading)}
@@ -268,13 +282,18 @@
   .index { flex: none; width: 18px; text-align: center; color: var(--muted); }
   .what { flex: 1; min-width: 0; }
   .needs li.met { color: var(--success); }
-  .chips { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+  /* A chips row keeps one height whether its sites are named or offered, so nothing under it moves when Dispatch makes them live. */
+  .chips { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; min-height: 44px; }
   .chips-label { color: var(--muted); font-size: 12px; }
   /* A toggle chip drops or restores a proposed unit; it orders nothing. */
   .chip { border-radius: 22px; border-style: dashed; }
   .chip.dropped { opacity: .5; text-decoration: line-through; }
   /* An order chip gives an order on one tap: a solid accent button, apart from the toggles. */
   .order-chip { border-color: var(--accent); color: var(--accent); font-weight: 650; }
+  /* Where the load goes now: the chosen site, filled. */
+  .order-chip.selected { box-sizing: border-box; min-height: 44px; display: inline-flex; align-items: center; padding: 4px 10px; border: 1px solid var(--accent); border-radius: 8px; background: var(--accent); color: var(--panel); font-size: 13px; }
+  /* A site named before the carrier is on the call: plain text, not a button. */
+  .site-name { color: var(--muted); font-size: 12px; }
   .apart { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 6px; padding-top: 6px; border-top: 1px solid var(--border); }
   .destructive { border-color: var(--critical); color: var(--critical); }
   .confirm { font-weight: 700; }

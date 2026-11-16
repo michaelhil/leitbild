@@ -131,9 +131,11 @@ const operationalPointFor = (
   const hasNewInfo = presentation.noteworthyUpdates === true && context.hasNewInfo(object)
   const muted = presentation.muted === true || context.mutedObjectIds.has(object.id)
   const target = context.targeting?.targets.get(object.id) ?? null
+  const targeted = target !== null
   const targetTag = target?.tag ?? null
+  const targetTagAnchor = target?.anchor ?? 'middle'
   const targetRefused = target?.refused === true
-  const dimmed = context.targeting !== null && target === null && object.id !== context.targeting.fromId
+  const dimmed = context.targeting !== null && context.targeting.complete && target === null && object.id !== context.targeting.fromId
   const color = dimmed ? colorWithAlpha(hexToRgba(presentation.color), dimmedAlpha) : muted ? colorWithAlpha(hexToRgba(presentation.color), 132) : hexToRgba(presentation.color)
   const sizePx = presentation.mapIconSizePx ?? symbolSizePx(symbolId)
   const alert = alertBadge(object, context.alertPalette)
@@ -149,7 +151,7 @@ const operationalPointFor = (
     hasNewInfo ? 'n' : '',
     muted ? 'm' : '',
     dimmed ? 'd' : '',
-    targetTag === null ? '' : `t=${targetRefused ? 'r' : 'v'}=${targetTag}`,
+    targeted ? `t=${targetRefused ? 'r' : 'v'}=${targetTagAnchor}=${targetTag ?? ''}` : '',
     label ?? '',
     alert === null ? '' : alert.color.join(','),
   ].join(':')
@@ -167,7 +169,9 @@ const operationalPointFor = (
     highlighted,
     hasNewInfo,
     muted,
+    targeted,
     targetTag,
+    targetTagAnchor,
     targetRefused,
     dimmed,
     sizePx,

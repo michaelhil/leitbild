@@ -22,9 +22,9 @@ import { stopVerb } from './situation.ts'
  * first, and where not and why. Every candidate is judged by the engine's
  * own order validation on the current state, so a target listed as valid is
  * one `world.einsatz.unit.order` accepts, unless the Run moves on meanwhile.
- * A busy unit's target is valid when an order "after" its current job or
- * "now", dropping its task, would be accepted; `drops` is set where "now"
- * would be. ETAs are routed for road units in one router request, as an
+ * A busy unit names its current job once (`busy`, with the task's priority
+ * code), and its target is valid when an order "after" that job or "now",
+ * dropping it, would be accepted. ETAs are routed for road units in one router request, as an
  * order would route them; a target the router cannot reach is refused with
  * that refusal. Points on open ground are not listed: any may be named.
  */
@@ -46,7 +46,7 @@ export const readUnitOptions = async (input: {
   if (unauthorized) throw capabilityRejection(unauthorized.reason.startsWith('not_in_picture') ? 'capability_target_not_found' : 'capability_input_rejected', unauthorized.reason)
   const type = unitTypeOf(state.catalog, unit)
   const busyTask = isBusy(unit) ? taskIn(state, unit.taskId!) : undefined
-  const busy = busyTask === undefined ? null : { taskId: busyTask.id, label: busyTask.label, freeInS: freeInS(state, unit) ?? null }
+  const busy = busyTask === undefined ? null : { taskId: busyTask.id, label: busyTask.label, code: priorityOf(state.catalog, busyTask.priority).code, freeInS: freeInS(state, unit) ?? null }
   if (type.components.mobility === undefined && type.components.effector === undefined) return { unitId: unit.id, busy, targets: [], refused: [] }
 
   const candidates: StepTarget[] = [
@@ -62,18 +62,17 @@ export const readUnitOptions = async (input: {
     }, input.actor)
     if (busyTask === undefined) {
       const plan = verdict(undefined)
-      return { target, now: plan.ok, refusal: plan.ok ? undefined : plan.reason }
+      return { target, refusal: plan.ok ? undefined : plan.reason }
     }
     const now = verdict('now')
     const after = verdict('after')
-    return { target, now: now.ok, refusal: now.ok ? undefined : after.ok ? undefined : after.reason }
+    return { target, refusal: now.ok ? undefined : after.ok ? undefined : after.reason }
   })
   const accepted = judged.filter(entry => entry.refusal === undefined)
   const from = type.components.mobility === undefined ? undefined : motionOf(state, unit.id).point
   const moving = accepted.filter(entry => !('trackId' in entry.target))
   const etas = from === undefined ? [] : await etasFrom(state, unit, from, moving.map(entry => ({ point: stopPoint(state, entry.target)!, turnoutS: turnoutFor(state, unit, 'taskId' in entry.target) })), input.routing)
   const etaOf = new Map(moving.map((entry, index) => [entry, etas[index]!]))
-  const drops = busyTask === undefined ? undefined : { taskId: busyTask.id, label: busyTask.label, code: priorityOf(state.catalog, busyTask.priority).code }
   const targets: Array<UnitOptions['targets'][number]> = []
   const refused: Array<UnitOptions['refused'][number]> = judged.flatMap(entry => entry.refusal === undefined ? [] : [{
     target: entry.target, label: targetLabel(state, entry.target), code: refusalCode(entry.refusal), text: messageOf(entry.refusal),
@@ -89,7 +88,6 @@ export const readUnitOptions = async (input: {
       verb: stopVerb(state, unit, stepKindFor(entry.target, hasLoad(unit)), entry.target),
       label: targetLabel(state, entry.target),
       etaS: eta === undefined ? 0 : eta.seconds,
-      ...(entry.now && drops !== undefined ? { drops } : {}),
     })
   }
   targets.sort((a, b) => a.etaS - b.etaS || a.label.localeCompare(b.label, 'en', { numeric: true }))

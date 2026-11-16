@@ -15,19 +15,19 @@
     busyChoices,
     cardFor,
     contactRows,
-    currentJobOf,
     deliverToOrder,
     dispatchKindOf,
     dispatchWords,
     edgeTabText,
     einsatzRecordsKey,
     emptySelectionText,
+    jobText,
     movePromptText,
     overview,
     ownReceipt,
-    panelLayoutKey,
     pinProposal,
     receiptsFromSituation,
+    receiptText,
     receiptUndoable,
     targetingFor,
     withReceipts,
@@ -61,9 +61,9 @@
    *
    * It holds the Run's situation, read on open and whenever an Einsatz
    * record the screen sees changes (`einsatzRecordsKey`: Einsatz announces
-   * no Pack data revision); an armed unit's options, read on arming and on
-   * every such change while it stays armed, with the armed list's order
-   * fixed at arming; and the
+   * no Pack data revision); the shown unit's options, read when its card
+   * opens, again on arming, and on every such change while its card shows,
+   * with the armed list's order fixed at arming; and the
    * call card's proposal, pinned when the card opens and read again only on
    * Refresh, which keeps the old answer greyed until the new one arrives. It
    * never holds the configuration.
@@ -79,8 +79,8 @@
    * as the banner's and the card's × do.
    *
    * No card, row or footer command acts within the double-click interval of
-   * the last one that acted or of the last re-layout (`activationActs`), so
-   * a double-click never reaches what took the first click's place.
+   * the last one that acted (`activationActs`), so a double-click never
+   * reaches what took the first click's place; every other click acts.
    */
   const props: SurfacePanelProps = $props()
 
@@ -108,7 +108,7 @@
   let iconRevision = $state(0)
   let root = $state<HTMLElement | null>(null)
   let disposed = false
-  /** When the last command acted or the layout last changed: the double-click guard. */
+  /** When the last command acted: the double-click guard. */
   let quietFromMs: number | null = null
 
   const icons = createIconCache({ load: loadMapSymbols, changed: () => { iconRevision += 1 } })
@@ -185,7 +185,7 @@
       const armed = selection.selection
       if (armed.kind !== 'armed' || armed.unitId !== answer.unitId) return
       armedOrder = armedOrderWith(armedOrder, answer)
-      send({ kind: 'current-job', unitId: answer.unitId, job: currentJobOf(answer) })
+      send({ kind: 'current-job', unitId: answer.unitId, job: answer.busy })
     } catch (error) {
       if (!disposed && read === optionsRead) feedback = messageOf(error)
     }
@@ -267,7 +267,7 @@
     if (disposed) return
     send({ kind: 'result', unitId, target, outcome: outcome.ok ? { ok: true } : { ok: false, code: outcome.code, text: outcome.text }, atMs: Date.now() })
     if (outcome.ok) {
-      const dropped = drops === null ? null : `${drops.label}${drops.code === null ? '' : ` · ${drops.code}`}`
+      const dropped = drops === null ? null : jobText(drops)
       receipts = withReceipts(receipts, [ownReceipt({ commandId: outcome.commandId, unitIds: [unitId], unitLabel: unitLabel(unitId), targetLabel: stopLabel(target), dropped, atMs: Date.now() })])
     }
   }
@@ -380,14 +380,14 @@
     }
   })
 
-  // Every change of an Einsatz record the screen sees reads the situation again, and an armed unit's options; the first runs on open.
+  // Every change of an Einsatz record the screen sees reads the situation again, and the shown unit's options; the first runs on open.
   const recordsKey = $derived(einsatzRecordsKey(props.objects))
   $effect(() => {
     void recordsKey
     untrack(() => {
       void readSituation()
-      const armed = selection.selection
-      if (armed.kind === 'armed') void readOptions(armed.unitId)
+      const shown = selection.selection
+      if (shown.kind === 'unit' || shown.kind === 'armed') void readOptions(shown.unitId)
     })
   })
 
@@ -407,15 +407,6 @@
     if (shown.kind !== 'call' || current === null) return
     const row = current.calls.find(call => call.id === shown.callId)
     if (row !== undefined) untrack(() => { lastSeenCall = row })
-  })
-
-  // A change of what stands where re-arms the double-click guard.
-  let shownLayout: string | null = null
-  $effect(() => {
-    const key = panelLayoutKey(card, lists, receipts, confirming !== null)
-    if (key === shownLayout) return
-    shownLayout = key
-    quietFromMs = Date.now()
   })
 
   // The armed unit's halos and tags; sent again only when they change.
@@ -479,13 +470,14 @@
   style:height={layout.mode === 'sheet' && open ? `${layout.heightPx}px` : null}
   style:top={layout.mode === 'docked' ? `${panelTopClearancePx}px` : null}
   style:bottom={layout.mode === 'docked' ? `${panelBottomClearancePx}px` : '0px'}
+  style:padding-bottom={layout.mode === 'sheet' && open ? `${panelBottomClearancePx}px` : null}
   style:right={layout.mode === 'docked' ? `${panelEdgeGapPx}px` : '0px'}
   aria-label={dispatchWords.panel}
 >
   {#if !open}
     <button type="button" class="tab" onclick={act(() => { sheetOpenedByOperator = true })}>
       <strong>{situation === null ? dispatchWords.panel : edgeTabText(situation)}</strong>
-      {#if receipts[0] !== undefined}<span class="receipt-line">{receipts[0].text}</span>{/if}
+      {#if receipts[0] !== undefined}<span class="receipt-line">{receiptText(receipts[0])}</span>{/if}
     </button>
   {:else}
     <header class="head">
@@ -539,7 +531,7 @@
         <ol class="receipts" aria-label={dispatchWords.undo}>
           {#each receipts as receipt (receipt.commandId)}
             <li>
-              <span class="receipt-text">{receipt.text}</span>
+              <span class="receipt-text">{receiptText(receipt)}</span>
               {#if receiptUndoable(receipt, nowMs)}<button type="button" onclick={act(() => undoReceipt(receipt))}>{receipt.undo}</button>{/if}
             </li>
           {/each}
@@ -569,6 +561,7 @@
     line-height: 16px;
     pointer-events: auto;
   }
+  /* The open sheet keeps its footer above the World status line (the clock chip) drawn over its bottom edge. */
   .dispatch[data-mode='sheet'] { left: 0; border-radius: 10px 10px 0 0; }
   .dispatch[data-mode='sheet'].folded { left: auto; padding: 0; border-radius: 10px 0 0 0; }
   .head { flex: none; display: flex; align-items: center; gap: 8px; }

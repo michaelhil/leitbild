@@ -41,16 +41,16 @@ describe('Einsatz unit options', () => {
     }
   })
 
-  test('a busy unit names its task and when it is free; a "now" target names what it drops, a refused divert is listed', async () => {
+  test('a busy unit names its task once, with its priority code and when it is free; a target "after" its job takes is valid, a refused divert "now" is the server\'s', async () => {
     const state = await run(await field(), send(['c1'], { taskId: 'far' }))
     const answer = await options(state, 'c1')
-    expect(answer.busy).toMatchObject({ taskId: 'far', label: 'FAR' })
+    expect(answer.busy).toMatchObject({ taskId: 'far', label: 'FAR', code: 'Q1' })
     expect(answer.busy!.freeInS).toBeGreaterThan(0)
-    const near = answer.targets.find(target => target.label === 'NEAR')
-    // NEAR ranks lower than FAR, so a "now" divert from FAR is refused; "after" is still valid.
-    expect(near).toMatchObject({ verb: 'pick-up' })
-    expect(near!.drops).toBeUndefined()
-    expect(answer.targets.find(target => target.label === 'CLINIC')).toMatchObject({ drops: { taskId: 'far', label: 'FAR', code: 'Q1' } })
+    // No target repeats the job: the targets carry none of it.
+    for (const target of answer.targets) expect(Object.keys(target).sort()).toEqual(['etaS', 'label', 'target', 'verb'])
+    // NEAR ranks lower than FAR, so a "now" divert from FAR is refused; "after" is still valid, so NEAR is listed.
+    expect(answer.targets.find(target => target.label === 'NEAR')).toMatchObject({ verb: 'pick-up' })
+    expect(answer.targets.find(target => target.label === 'CLINIC')).toBeDefined()
     expect((await refusalOf(state, { kind: 'order', units: ['c1'], stops: [{ taskId: 'near' }], when: 'now', drops: 'far' })).code).toBe('divert_from_higher_priority')
   })
 

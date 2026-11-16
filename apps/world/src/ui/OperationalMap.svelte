@@ -57,6 +57,7 @@
     MapRuntimeHandle,
     MapTargetingLine,
     MapTargetingRender,
+    TargetTagAnchor,
     Position3,
   } from './map-runtime/types.ts'
 
@@ -83,9 +84,11 @@
     /** The operator dismissed the prompt without confirming: a map click elsewhere, its × or Esc. Once per prompt. */
     readonly onPromptDismissed: (prompt: MapPrompt) => void
     /**
-     * The open map-target panel's armed order: halos with tags on its
-     * targets, every other object dimmed, and a line from its object to a
-     * mouse pointer (`MapTargeting`); null while nothing is armed.
+     * The open map-target panel's armed order: halos on its targets, tags on
+     * the nearest, every other object dimmed once the targets are complete,
+     * and a line from its object to a mouse pointer (`MapTargeting`); null
+     * while nothing is armed. A tap on a stack of icons then offers only its
+     * valid targets.
      */
     readonly targeting?: MapTargeting | null
     readonly hiddenObjectCategoryIds?: ReadonlyArray<string>
@@ -249,7 +252,47 @@
   let objectTookClick = false
   let featureSelection: NonNullable<PackMapFeature['selection']> | null = null
 
-  const targetingRender = $derived<MapTargetingRender | null>(targeting === null ? null : { fromId: targeting.from, targets: new Map(targeting.targets.map(target => [target.id as string, { tag: target.tag, refused: target.tone === 'refused' }])) })
+  /** Which way each tag runs from its target (`TargetTagAnchor`), worked out where the camera rests and when the targeting changes. */
+  let tagAnchors = $state.raw<ReadonlyMap<string, TargetTagAnchor>>(new Map())
+  const targetingRender = $derived<MapTargetingRender | null>(targeting === null ? null : {
+    fromId: targeting.from,
+    complete: targeting.complete,
+    targets: new Map(targeting.targets.map(target => [target.id as string, { tag: target.tag ?? null, anchor: tagAnchors.get(target.id) ?? 'middle', refused: target.tone === 'refused' }])),
+  })
+  /** About how wide a tag is drawn: 13 px text wrapped at 22 em, with its padding. */
+  const tagWidthPx = (tag: string): number => Math.min(tag.length * 7.5, 22 * 13) + 12
+  /**
+   * A tag centred above its target unless that would take it past the left
+   * or right edge of the map the panels leave clear; then it runs from its
+   * target into the map.
+   */
+  const tagAnchorsNow = (): ReadonlyMap<string, TargetTagAnchor> => {
+    const current = runtime
+    if (targeting === null || current === null) return new Map()
+    const drawn = new Map(operationalRenderController.points().map(point => [point.id, point.position] as const))
+    const left = cameraPadding.left + 4
+    const right = current.map.getCanvas().clientWidth - cameraPadding.right - 4
+    const anchors = new Map<string, TargetTagAnchor>()
+    for (const target of targeting.targets) {
+      if (target.tag === undefined) continue
+      const at = drawn.get(target.id) ?? objects.find(object => object.id === target.id)?.spatial.position?.point.coordinates
+      if (at === undefined) continue
+      const x = current.map.project([at[0]!, at[1]!]).x
+      const half = tagWidthPx(target.tag) / 2
+      anchors.set(target.id, x - half < left ? 'start' : x + half > right ? 'end' : 'middle')
+    }
+    return anchors
+  }
+  const placeTags = (): void => {
+    const next = tagAnchorsNow()
+    if (next.size !== tagAnchors.size || [...next].some(([id, anchor]) => tagAnchors.get(id) !== anchor)) tagAnchors = next
+  }
+  /** The objects of a tapped stack a chooser offers: while an order is armed whose targets are known, only its valid targets. */
+  const stackChoices = (stack: ReadonlyArray<OperationalObject>): ReadonlyArray<OperationalObject> => {
+    if (targeting === null || !targeting.complete) return stack
+    const valid = new Set(targeting.targets.filter(target => target.tone !== 'refused').map(target => target.id as string))
+    return stack.filter(object => valid.has(object.id))
+  }
   /** Whether a line follows the pointer: a panel's armed order while the pointer is a mouse. */
   const pointerLineWanted = (pointerType: string | null): boolean => targeting !== null && hoverCardsFor(pointerType)
 
@@ -322,9 +365,10 @@
     const current = runtime
     if (current === null) return
     const point = current.map.unproject([lastPointerScreen.x, lastPointerScreen.y])
+    const tags = new Map((targeting?.targets ?? []).flatMap(target => target.tag === undefined ? [] : [[target.id as string, target.tag] as const]))
     stackChooser.show(geoPointFromLonLat(point.lng, point.lat), stack.map(object => ({
       id: object.id,
-      label: presentationFor(object).mapLabel ?? object.label,
+      label: [presentationFor(object).mapLabel ?? object.label, ...(tags.has(object.id) ? [tags.get(object.id)!] : [])].join(' · '),
       choose: () => {
         onObjectSeen(object)
         onObjectSelected(object)
@@ -376,7 +420,13 @@
     onObjectSelected: object => {
       clickHandled = true
       objectTookClick = true
-      const stack = stackUnderPointer()
+      const under = stackUnderPointer()
+      // While an order is armed a stack offers its valid targets only; with none, the tap is on the object it landed on, and the panel's server decides.
+      const stack = under.length > 1 ? stackChoices(under) : under
+      if (stack.length === 1 && under.length > 1) {
+        onObjectSeen(stack[0]!)
+        return onObjectSelected(stack[0]!)
+      }
       if (stack.length > 1) {
         const picked = stackPick(stack, controllerHighlighted, isController)
         if (picked === null) return showStackChooser(stack)
@@ -685,6 +735,7 @@
           if (cameraMoveStarted !== null) { mapPerformanceDiagnostics.record('camera', 'moveend', performance.now() - cameraMoveStarted.at, { userGesture: cameraMoveStarted.user }); cameraMoveStarted = null }
           if (pendingFocus !== null) { onFocusResult(pendingFocus, 'applied'); pendingFocus = null }
           if (runtime) onMapView(readMapView(runtime.map))
+          placeTags()
           packOverlayController.setCameraGestureActive(false)
           void packOverlayController.refresh()
         },
@@ -790,6 +841,13 @@
       startingCamera = true
       mapReadyNotified = false
     }
+  })
+
+  // A new targeting, or a panel reaching further over the map, places the tags anew.
+  $effect(() => {
+    targeting
+    cameraPadding
+    untrack(placeTags)
   })
 
   $effect(() => {

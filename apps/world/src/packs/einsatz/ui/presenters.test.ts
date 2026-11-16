@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test'
 import { objectIdSchema, type OperationalObject } from '../../../core/model/index.ts'
-import { assertMapTargeting, mapTargetingMaxTargets } from '../../../ui/surface-panel-interaction.ts'
+import { assertMapTargeting, mapTargetingMaxTags } from '../../../ui/surface-panel-interaction.ts'
 import { einsatzPackId } from '../ids.ts'
 import { recommendAnswerSchema, type RecommendAnswer } from '../recommendation-schema.ts'
 import { situationSchema, unitOptionsSchema, type Situation, type UnitOptions } from '../situation/schema.ts'
@@ -12,21 +12,21 @@ import {
   closedCallCard,
   contactRows,
   countsLine,
-  currentJobOf,
   deliverToOrder,
   dispatchKindOf,
   einsatzRecordsKey,
   dispatchWords,
   edgeTabText,
   emptySelectionText,
+  jobText,
   maxReceipts,
   movePromptText,
   overview,
   ownReceipt,
-  panelLayoutKey,
   pinProposal,
   proposalInvalidation,
   receiptsFromSituation,
+  receiptText,
   receiptUndoable,
   receiptUndoMs,
   siteCard,
@@ -158,8 +158,8 @@ describe('Unit card', () => {
     expect(card.recall.label).toBe('Home (drops J-2 Bay)')
     // Undo names who gave the order it takes back and where it sent the unit.
     expect(card.undo).toEqual({ label: `${dispatchWords.undoLast} (by Assistant: J-2 Bay)`, enabled: true, reason: null, commandId: 'cmd-7' })
-    // Only accepting sites are offered.
-    expect(card.deliverTo).toEqual([{ siteId: 'depot-a', label: 'Depot A' }])
+    // Only accepting sites are offered; the one its load goes to now (its predicted delivery) is the selected one.
+    expect(card.deliverTo).toEqual([{ siteId: 'depot-a', label: 'Depot A', selected: true }])
     expect(card.addStop).toEqual({ label: '+ Add leg', enabled: true, reason: null })
     expect(deliverToOrder(situation.units[1]!, 'depot-a')).toEqual({ units: ['r2'], stops: [{ siteId: 'depot-a' }], when: 'after' })
     expect(deliverToOrder(situation.units[0]!, 'depot-a')).toEqual({ units: ['r1'], stops: [{ siteId: 'depot-a' }] })
@@ -169,7 +169,29 @@ describe('Unit card', () => {
     const loaded = situationOf({ units: [unit('r1', { carry: { capacity: 2, load: [{ classId: 'crate', code: 'C', label: '1 crate', count: 1 }] } })] })
     const card = unitCard(loaded, loaded.units[0]!, su('r1'), null, null, 0)
     expect(card.recall).toEqual({ label: 'Home', enabled: false, reason: 'Carrying 1 crate: deliver first' })
-    expect(card.deliverTo.map(chip => chip.label)).toEqual(['Depot A'])
+    expect(card.deliverTo.map(chip => [chip.label, chip.selected])).toEqual([['Depot A', false]])
+  })
+
+  test('a Deliver-to chip shows where the load goes: a delivery stop in the plan before the predicted delivery', () => {
+    const chosen = situationOf({ units: [unit('r1', {
+      plan: [{ id: 'leg-1', verb: 'deliver', target: { siteId: 'depot-c' }, label: 'Depot C', state: 'active', eta: routed(60), by: viewer }],
+      predictedDelivery: { siteId: 'depot-a', label: 'Depot A', eta: routed(360) },
+      carry: { capacity: 2, load: [{ classId: 'crate', code: 'C', label: '1 crate', count: 1 }] },
+    })], sites: [...baseSituation.sites, { ...baseSituation.sites[0]!, id: 'depot-c', label: 'Depot C', inbound: [] }] })
+    expect(unitCard(chosen, chosen.units[0]!, su('r1'), null, null, 0).deliverTo.map(chip => [chip.label, chip.selected])).toEqual([['Depot A', false], ['Depot C', true]])
+  })
+
+  test('a unit whose options list no target an order would take: Dispatch is disabled with the reason most refusals give; with one valid target, or before its options, it is not', () => {
+    const stuck = optionsFor('r1', { targets: [], refused: [
+      { target: { taskId: 'job-1' }, label: 'J-1 Ridge', code: 'unit_committed', text: 'R1 is handing over at Depot A' },
+      { target: { taskId: 'job-2' }, label: 'J-2 Bay', code: 'unit_committed', text: 'R1 is handing over at Depot A' },
+      { target: { siteId: 'depot-b' }, label: 'Depot B', code: 'site_not_accepting', text: 'Depot B is closed for arrivals' },
+    ] })
+    expect(unitCard(situation, situation.units[0]!, su('r1'), stuck, null, 0).dispatch).toEqual({ label: 'Task R1…', enabled: false, reason: 'R1 is handing over at Depot A' })
+    expect(unitCard(situation, situation.units[0]!, su('r1'), optionsFor('r1'), null, 0).dispatch.enabled).toBe(true)
+    expect(unitCard(situation, situation.units[0]!, su('r1'), null, null, 0).dispatch.enabled).toBe(true)
+    // Another unit's options say nothing of this one.
+    expect(unitCard(situation, situation.units[0]!, su('r1'), { ...stuck, unitId: 'k1' }, null, 0).dispatch.enabled).toBe(true)
   })
 
   test('a unit another role commands is read-only and says who commands it', () => {
@@ -183,8 +205,8 @@ describe('Unit card', () => {
     const loading = unitCard(situation, situation.units[0]!, sa('r1'), null, null, 0)
     expect(loading.armed).toEqual({ banner: 'Task R1…', slot: { kind: 'empty' }, rows: [], loading: true })
     const busy = optionsFor('r1', {
-      busy: { taskId: 'job-2', label: 'J-2 Bay', freeInS: 300 },
-      targets: [{ target: { taskId: 'job-1' }, verb: 'pick-up', label: 'J-1 Ridge', etaS: 240, drops: { taskId: 'job-2', label: 'J-2 Bay', code: 'Q1' } }],
+      busy: { taskId: 'job-2', label: 'J-2 Bay', code: 'Q1', freeInS: 300 },
+      targets: [{ target: { taskId: 'job-1' }, verb: 'pick-up', label: 'J-1 Ridge', etaS: 240 }],
     })
     const order = armedOrderWith(null, busy)
     const armed = unitCard(situation, situation.units[0]!, sa('r1', { refusal: { targetId: 'depot-b', text: 'Depot B is closed', untilMs: 9 } }), busy, order, 0).armed!
@@ -194,6 +216,8 @@ describe('Unit card', () => {
       { key: JSON.stringify({ siteId: 'depot-b' }), target: { siteId: 'depot-b' }, text: 'Depot B', eta: null, drops: null, refused: 'Depot B is closed for arrivals' },
     ])
     expect(armed.slot).toEqual({ kind: 'refusal', text: 'Depot B is closed' })
+    // Armed by "+ Add stop" the order drops nothing.
+    expect(unitCard(situation, situation.units[0]!, sa('r1', { when: 'after' }), busy, order, 0).armed!.rows[0]!.drops).toBeNull()
     // Options of another unit are never shown.
     expect(unitCard(situation, situation.units[0]!, sa('r1'), optionsFor('k1'), null, 0).armed!.loading).toBe(true)
     expect(unitCard(situation, situation.units[0]!, sa('r1', { when: 'after' }), null, null, 0).armed!.banner).toBe('Task R1… (after current job)')
@@ -226,7 +250,7 @@ describe('Unit card', () => {
 
   test('HF5: the busy slot names the job the prompt pinned, not the latest options; until they name one it says it is reading', () => {
     const job = { taskId: 'job-2', label: 'J-2 Bay', code: 'Q1', freeInS: 300 }
-    const later = optionsFor('r1', { busy: { taskId: 'job-1', label: 'J-1 Ridge', freeInS: 60 } })
+    const later = optionsFor('r1', { busy: { taskId: 'job-1', label: 'J-1 Ridge', code: 'Q0', freeInS: 60 } })
     const asked = unitCard(situation, situation.units[0]!, sa('r1', { prompt: { kind: 'busy', target: { taskId: 'job-1' }, job } }), later, null, 0).armed!
     expect(asked.slot).toEqual({ kind: 'busy', after: `${dispatchWords.after} (free in 5 min)`, now: `${dispatchWords.now} (drops J-2 Bay · Q1)` })
     expect(unitCard(situation, situation.units[0]!, sa('r1', { prompt: { kind: 'busy', target: { taskId: 'job-1' }, job: null } }), later, null, 0).armed!.slot).toEqual({ kind: 'busy-reading' })
@@ -267,8 +291,8 @@ describe('Call card', () => {
     // An alternative gives an order on one tap, so it carries the lexicon's verb.
     expect(card.alternatives).toEqual([{ heading: 'Other: crates', units: [{ unitId: 'r3', text: 'Task R3 · 9 min', order: { units: ['r3'], stops: [{ taskId: 'job-1' }] } }] }])
     expect(card.whyNot).toEqual([{ label: 'R2', reasons: 'busy on J-2 Bay' }])
-    // Deliver-to stands under the command block from pinning, disabled until the carrier is on the call.
-    expect(card.deliverTo).toEqual([{ unitLabel: 'R1', heading: `${dispatchWords.deliverTo} (R1, after Task)`, enabled: false, sites: [{ siteId: 'depot-a', text: 'Depot A · 5 min', order: { units: ['r1'], stops: [{ siteId: 'depot-a' }], when: 'after' } }] }])
+    // Deliver-to stands under the command block from pinning, its sites named but not offered until the carrier is on the call.
+    expect(card.deliverTo).toEqual([{ unitLabel: 'R1', heading: `${dispatchWords.deliverTo} (R1, after Task)`, enabled: false, sites: [{ siteId: 'depot-a', text: 'Depot A · 5 min', selected: false, order: { units: ['r1'], stops: [{ siteId: 'depot-a' }], when: 'after' } }] }])
   })
 
   test('a dropped unit chip leaves the order and the label; dropping all disables the button', () => {
@@ -291,6 +315,9 @@ describe('Call card', () => {
     expect(proposalInvalidation(gone, pinnedOf())).toBe(`R1: ${dispatchWords.notListed.toLowerCase()}`)
     const empty = callCard(situation, situation.calls[0]!, pinnedOf({ answer: answer({ proposal: null, deliverTo: [] }) }), opened, 0)
     expect([empty.proposal.button, empty.proposal.refresh.enabled]).toEqual([{ label: 'Task', enabled: false, reason: dispatchWords.noFreeUnit }, true])
+    // A call whose every need is met is covered, never short of units.
+    const covered = callCard(situation, situation.calls[1]!, pinnedOf({ answer: answer({ taskId: 'job-2', proposal: null, deliverTo: [] }), callId: 'job-2' }), opened, 0)
+    expect(covered.proposal.button).toEqual({ label: 'Task', enabled: false, reason: dispatchWords.covered })
   })
 
   test('only a change since pinning invalidates: a unit returning when it was proposed (free to the engine) still holds; one that turns out of action or gains a stop does not', () => {
@@ -312,10 +339,20 @@ describe('Call card', () => {
   })
 
   test('after Dispatch the carrier\'s Deliver-to chips come alive in place and queue a site stop after its plan', () => {
-    const sent = situationOf({ calls: [{ ...baseSituation.calls[0]!, assigned: [{ unitId: 'r1', label: 'R1', phase: 'en-route', status: { word: 'Moving', tone: 'busy' }, eta: routed(240), by: viewer }] }] })
+    const sent = situationOf({
+      calls: [{ ...baseSituation.calls[0]!, assigned: [{ unitId: 'r1', label: 'R1', phase: 'en-route', status: { word: 'Moving', tone: 'busy' }, eta: routed(240), by: viewer }] }],
+      units: [unit('r1', { predictedDelivery: { siteId: 'depot-a', label: 'Depot A', eta: routed(300) } }), unit('k1')],
+    })
     const card = callCard(sent, sent.calls[0]!, pinnedOf(), opened, 0)
-    expect(card.assigned[0]!.text).toBe('R1 · Moving · 4 min · by you')
-    expect(card.deliverTo).toEqual([{ unitLabel: 'R1', heading: `${dispatchWords.deliverTo} (R1)`, enabled: true, sites: [{ siteId: 'depot-a', text: 'Depot A · 5 min', order: { units: ['r1'], stops: [{ siteId: 'depot-a' }], when: 'after' } }] }])
+    // One actor word: the situation's, on every surface.
+    expect(card.assigned[0]!.text).toBe('R1 · Moving · 4 min · by Desk')
+    expect(card.deliverTo).toEqual([{ unitLabel: 'R1', heading: `${dispatchWords.deliverTo} (R1)`, enabled: true, sites: [{ siteId: 'depot-a', text: 'Depot A · 5 min', selected: true, order: { units: ['r1'], stops: [{ siteId: 'depot-a' }], when: 'after' } }] }])
+  })
+
+  test('D.5: a call another Pack\'s sensor observed says by whom and at what Run time', () => {
+    expect(callCard(situation, situation.calls[0]!, null, opened, 0).observed).toBeNull()
+    const seen = situationOf({ calls: [{ ...baseSituation.calls[0]!, observed: { by: 'D-1', at: '2026-11-16T14:02:41.000Z' } }] })
+    expect(callCard(seen, seen.calls[0]!, null, opened, 0).observed).toBe(`${dispatchWords.observedBy} D-1 at 14:02 UTC`)
   })
 
   test('a call that closed shows who served it and offers nothing', () => {
@@ -368,6 +405,9 @@ describe('Overview', () => {
       ['Q1', 'J-2 Bay', '1:00', 'R2', false, true, ['No free crew can serve']],
     ])
     expect(view.units.groups.map(group => [group.heading, group.rows.map(row => row.label)])).toEqual([['North crews', ['R1', 'R2']], ['Kite', ['K1']]])
+    // In each group the free units come first, so they are named at a glance.
+    const busyFirst = situationOf({ units: [unit('r2', { status: { word: 'Moving', tone: 'busy' } }), unit('r1'), unit('k1', { typeLabel: 'Kite', group: null })] })
+    expect(overview(busyFirst, none, opened, 0).units.groups.map(group => group.rows.map(row => row.label))).toEqual([['R1', 'R2'], ['K1']])
     const r2 = view.units.groups[0]!.rows[1]!
     expect([r2.current, r2.actor, r2.carry, r2.properties]).toEqual(['J-2 Bay · 3 min', 'by Assistant', '0/2', ['Range 40 km']])
     expect(view.units.groups[1]!.rows[0]!.carry).toBeNull()
@@ -392,63 +432,80 @@ describe('Overview', () => {
 })
 
 describe('Armed feedback, prompts and receipts', () => {
-  test('targeting: halos with ETA tags on the valid targets that are objects, the refused target\'s reason first in the refused tone; nothing outside SA', () => {
+  test('targeting: a halo on every valid target that is an object, ETA tags on the nearest, the refused target\'s reason first in the refused tone; not complete until the options arrive; nothing outside SA', () => {
     expect(targetingFor(su('r1'), optionsFor('r1'))).toBeNull()
-    expect(targetingFor(sa('r1'), null)).toEqual({ from: oid('r1'), targets: [] })
-    expect(targetingFor(sa('r1'), optionsFor('r1'))).toEqual({ from: oid('r1'), targets: [{ id: oid('job-1'), tag: '4 min', tone: 'valid' }, { id: oid('depot-a'), tag: '7 min', tone: 'valid' }] })
+    expect(targetingFor(sa('r1'), null)).toEqual({ from: oid('r1'), complete: false, targets: [] })
+    expect(targetingFor(sa('r1'), optionsFor('k1'))).toEqual({ from: oid('r1'), complete: false, targets: [] })
+    expect(targetingFor(sa('r1'), optionsFor('r1'))).toEqual({ from: oid('r1'), complete: true, targets: [{ id: oid('job-1'), tag: '4 min', tone: 'valid' }, { id: oid('depot-a'), tag: '7 min', tone: 'valid' }] })
     const refused = sa('r1', { refusal: { targetId: 'depot-b', text: 'Depot B is closed', untilMs: 1 } })
     expect(targetingFor(refused, optionsFor('r1'))!.targets[0]).toEqual({ id: oid('depot-b'), tag: 'Depot B is closed', tone: 'refused' })
-    // Each targeting passes the surface's own check (at most eight, no target twice or as its own object, every tag worded).
+    // Each targeting passes the surface's own check (at most eight tags, no target twice or as its own object, every tag worded).
     expect(assertMapTargeting('einsatz.dispatch', targetingFor(refused, optionsFor('r1'))!)).toBeDefined()
-    const many = optionsFor('r1', { targets: Array.from({ length: 12 }, (_, index) => ({ target: { taskId: `job-${index}` }, verb: 'serve', label: `J-${index}`, etaS: index * 60 })) })
-    expect(targetingFor(sa('r1'), many)!.targets).toHaveLength(mapTargetingMaxTargets)
   })
 
-  test('the busy prompt: the current job as the options name it, After current job, and Now naming what it drops; the Move prompt in the lexicon\'s word', () => {
-    expect(currentJobOf(optionsFor('r1'))).toBeNull()
-    const busy = optionsFor('r1', { busy: { taskId: 'job-2', label: 'J-2 Bay', freeInS: 300 }, targets: [{ target: { taskId: 'job-1' }, verb: 'serve', label: 'J-1 Ridge', etaS: 1, drops: { taskId: 'job-2', label: 'J-2 Bay', code: 'Q1' } }] })
-    const job = currentJobOf(busy)!
-    expect(job).toEqual({ taskId: 'job-2', label: 'J-2 Bay', code: 'Q1', freeInS: 300 })
+  test('E3: dimmed means not a valid target: every valid target is listed however far, only the nearest are tagged, and a refused one is not listed', () => {
+    const many = optionsFor('r1', { targets: Array.from({ length: 12 }, (_, index) => ({ target: { taskId: `job-${index}` }, verb: 'serve', label: `J-${index}`, etaS: index * 60 })) })
+    const targeting = targetingFor(sa('r1'), many)!
+    expect(targeting.targets.map(target => target.id)).toEqual(Array.from({ length: 12 }, (_, index) => oid(`job-${index}`)))
+    expect(targeting.targets.filter(target => target.tag !== undefined).map(target => target.id)).toEqual(Array.from({ length: mapTargetingMaxTags }, (_, index) => oid(`job-${index}`)))
+    // The ninth nearest valid target is marked, untagged; the refused Depot B is not among the targets, so the map dims it.
+    expect(targeting.targets[mapTargetingMaxTags]).toEqual({ id: oid(`job-${mapTargetingMaxTags}`), tone: 'valid' })
+    expect(targeting.targets.some(target => target.id === oid('depot-b'))).toBe(false)
+    expect(assertMapTargeting('einsatz.dispatch', targeting)).toBe(targeting)
+    // A refusal shown takes one of the tags.
+    const shown = targetingFor(sa('r1', { refusal: { targetId: 'depot-b', text: 'Depot B is closed', untilMs: 1 } }), many)!
+    expect(shown.targets.filter(target => target.tag !== undefined)).toHaveLength(mapTargetingMaxTags)
+    expect(shown.targets).toHaveLength(13)
+  })
+
+  test('the busy prompt: the current job as the options name it, with its priority code, After current job, and Now naming what it drops; the Move prompt in the lexicon\'s word', () => {
+    const busy = optionsFor('r1', { busy: { taskId: 'job-2', label: 'J-2 Bay', code: 'Q1', freeInS: 300 } })
+    const job = busy.busy!
+    expect(jobText(job)).toBe('J-2 Bay · Q1')
     expect(busyChoices(job)).toEqual({ after: `${dispatchWords.after} (free in 5 min)`, now: `${dispatchWords.now} (drops J-2 Bay · Q1)` })
-    expect(busyChoices({ ...job, code: null, freeInS: null })).toEqual({ after: dispatchWords.after, now: `${dispatchWords.now} (drops J-2 Bay)` })
+    expect(busyChoices({ ...job, freeInS: null })).toEqual({ after: dispatchWords.after, now: `${dispatchWords.now} (drops J-2 Bay · Q1)` })
     expect(movePromptText(situation, 'r1')).toBe('Shift R1 here')
   })
 
   test('receipts name the actor, unit, target and what was dropped; Undo for 8 s; newest first, one per command, at most 3', () => {
-    const own = ownReceipt({ commandId: 'c1', unitIds: ['r1'], unitLabel: 'R1', targetLabel: 'J-1 Ridge', dropped: 'J-2 Bay', atMs: 1_000 })
-    expect([own.text, own.undo]).toEqual([`${dispatchWords.you}: R1 → J-1 Ridge (drops J-2 Bay)`, `${dispatchWords.undo} (R1 returns to J-2 Bay)`])
+    const own = ownReceipt({ commandId: 'c1', unitIds: ['r1'], unitLabel: 'R1', targetLabel: 'J-1 Ridge', dropped: 'J-2 Bay · Q1', atMs: 1_000 })
+    expect([receiptText(own), own.undo]).toEqual(['R1 → J-1 Ridge (drops J-2 Bay · Q1)', `${dispatchWords.undo} (R1 returns to J-2 Bay · Q1)`])
     expect([receiptUndoable(own, 1_000 + receiptUndoMs - 1), receiptUndoable(own, 1_000 + receiptUndoMs)]).toEqual([true, false])
     const before = situationOf({ units: [unit('r1'), unit('r2')] })
     expect(receiptsFromSituation(null, situation, 5)).toEqual([])
-    expect(receiptsFromSituation(before, situation, 5)).toEqual([{ commandId: 'cmd-7', unitIds: ['r2'], text: 'Assistant: R2 → J-2 Bay', undo: dispatchWords.undo, atMs: 5, own: false }])
+    const theirs = receiptsFromSituation(before, situation, 5)
+    expect(theirs).toEqual([{ commandId: 'cmd-7', unitIds: ['r2'], actor: 'Assistant', text: 'R2 → J-2 Bay', undo: dispatchWords.undo, atMs: 5, own: false }])
+    expect(receiptText(theirs[0]!)).toBe('Assistant: R2 → J-2 Bay')
     expect(receiptsFromSituation(situation, situation, 5)).toEqual([])
     let list = withReceipts([], [own])
-    list = withReceipts(list, receiptsFromSituation(before, situation, 5))
+    list = withReceipts(list, theirs)
     list = withReceipts(list, [own])
     expect(list.map(receipt => receipt.commandId)).toEqual(['cmd-7', 'c1'])
     list = withReceipts(list, [{ ...own, commandId: 'c2' }, { ...own, commandId: 'c3' }])
     expect(list.map(receipt => receipt.commandId)).toEqual(['c3', 'c2', 'cmd-7'])
     expect(list).toHaveLength(maxReceipts)
+    // One order of two units the situation shows on both is one receipt.
+    expect(withReceipts([], [...theirs, { ...theirs[0]!, unitIds: ['r1'] }]).map(receipt => receipt.commandId)).toEqual(['cmd-7'])
   })
 
-  test('an own receipt takes the place of the situation\'s receipt for the same command, whichever came first, so what it dropped is named', () => {
+  test('one actor word: an own receipt takes the place of the situation\'s for the same command, whichever came first, naming what it dropped and the actor the situation names', () => {
     const generic = receiptsFromSituation(situationOf({ units: [unit('r1'), unit('r2')] }), situation, 5)
-    const own = ownReceipt({ commandId: 'cmd-7', unitIds: ['r2'], unitLabel: 'R2', targetLabel: 'J-2 Bay', dropped: 'J-1 Ridge', atMs: 9 })
+    const own = ownReceipt({ commandId: 'cmd-7', unitIds: ['r2'], unitLabel: 'R2', targetLabel: 'J-2 Bay', dropped: 'J-1 Ridge · Q0', atMs: 9 })
+    expect(own.actor).toBeNull()
     const replaced = withReceipts(withReceipts([], generic), [own])
-    expect(replaced).toEqual([{ ...own, atMs: 5 }])
-    expect(withReceipts(withReceipts([], [own]), generic)).toEqual([own])
+    expect(replaced).toEqual([{ ...own, actor: 'Assistant', atMs: 5 }])
+    const named = withReceipts(withReceipts([], [own]), generic)
+    expect(named).toEqual([{ ...own, actor: 'Assistant' }])
+    expect(receiptText(named[0]!)).toBe('Assistant: R2 → J-2 Bay (drops J-1 Ridge · Q0)')
   })
 
-  test('a re-layout is a change of what stands where: a card swap, a slot filling, a receipt or a row arriving; a clock running on is none', () => {
-    const key = (elapsedS: number, selection: Selection = su('r1'), receipts: ReadonlyArray<ReturnType<typeof ownReceipt>> = [], confirming = false) =>
-      panelLayoutKey(cardFor(situation, selection, { options: null, armedOrder: null, pinned: null, opened, lastSeenCall: null, elapsedS }), overview(situation, selection, opened, elapsedS), receipts, confirming)
-    expect(key(0)).toBe(key(30))
-    expect(key(0, sa('r1'))).not.toBe(key(0))
-    expect(key(0, sa('r1', { prompt: { kind: 'busy', target: { taskId: 'job-1' }, job: null } }))).not.toBe(key(0, sa('r1')))
-    expect(key(0, su('r1'), [ownReceipt({ commandId: 'c1', unitIds: ['r1'], unitLabel: 'R1', targetLabel: 'J-1', dropped: null, atMs: 1 })])).not.toBe(key(0))
-    expect(key(0, { kind: 'call', callId: 'job-1' }, [], true)).not.toBe(key(0, { kind: 'call', callId: 'job-1' }))
-    const more = situationOf({ calls: [...baseSituation.calls, { ...baseSituation.calls[1]!, id: 'job-3', label: 'J-3 Pier' }] })
-    expect(panelLayoutKey(null, overview(more, none, opened, 0), [], false)).not.toBe(panelLayoutKey(null, overview(situation, none, opened, 0), [], false))
+  test('no word says "You": the viewer\'s own orders read in the situation\'s actor word on every surface', () => {
+    expect(Object.values(dispatchWords)).not.toContain('You')
+    const mine = situationOf({ units: [unit('r1', { plan: [{ id: 'leg-1', verb: 'serve', target: { taskId: 'job-1' }, label: 'J-1 Ridge', state: 'active', eta: routed(60), by: { label: 'Operator', isViewer: false } }], lastOrder: { by: { label: 'Operator', isViewer: false }, commandId: 'cmd-9' } })] })
+    const card = unitCard(mine, mine.units[0]!, su('r1'), null, null, 0)
+    expect([card.plan[0]!.by, card.undo.label]).toEqual(['by Operator', `${dispatchWords.undoLast} (by Operator: J-1 Ridge)`])
+    expect(overview(mine, none, opened, 0).units.groups[0]!.rows[0]!.actor).toBe('by Operator')
+    expect(receiptText(receiptsFromSituation(situationOf({ units: [unit('r1')] }), mine, 1)[0]!)).toBe('Operator: R1 → J-1 Ridge')
   })
 })
 

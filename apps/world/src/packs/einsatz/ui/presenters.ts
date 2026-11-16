@@ -6,7 +6,7 @@ import type { Stop, UnitOrderInput } from '../order-schema.ts'
 import type { Eta, RecommendAnswer } from '../recommendation-schema.ts'
 import type { Situation, SituationCall, SituationSite, SituationUnit, StopVerb, UnitOptions, UnitTone } from '../situation/schema.ts'
 import { clockText, contactIcon } from '../situation/text.ts'
-import { mapTargetingMaxTargets, type MapTargeting } from '../../../ui/surface-panel-interaction.ts'
+import { mapTargetingMaxTags, type MapTargeting } from '../../../ui/surface-panel-interaction.ts'
 import { selectedObjectOf, stopObjectId, type CurrentJob, type DispatchObjectKind, type Selection } from './selection.ts'
 
 /**
@@ -54,6 +54,7 @@ export const dispatchWords = {
   confirm: 'Confirm',
   cancel: 'Cancel',
   noFreeUnit: 'No free unit can help',
+  covered: 'Every need is covered',
   noUnitChosen: 'No unit chosen',
   closed: 'Closed',
   notListed: 'Not in the situation any more',
@@ -68,7 +69,7 @@ export const dispatchWords = {
   readingJob: 'Reading the current job…',
   refreshing: 'Reading the suggestion again…',
   suggestionHolds: 'The suggestion still holds',
-  you: 'You',
+  observedBy: 'Observed by',
   mapPoint: 'the map point',
 } as const
 
@@ -104,7 +105,6 @@ export const verbText = (verb: StopVerb, words: Words): string => {
   }
 }
 
-const actorText = (by: { readonly label: string; readonly isViewer: boolean }): string => by.isViewer ? dispatchWords.you : by.label
 const joined = (labels: ReadonlyArray<string>): string => labels.join(', ')
 
 export interface ButtonView {
@@ -281,6 +281,7 @@ export interface UnitCardView {
   readonly status: { readonly word: string; readonly tone: UnitTone; readonly due: string | null }
   /** "Commanded by …" for a unit the viewer cannot command: the card is read-only. */
   readonly readOnly: string | null
+  /** "Dispatch A4…", disabled with the reason while its options list no target an order would take. */
   readonly dispatch: ButtonView
   readonly recall: ButtonView
   /** "Undo last order (by Assistant: C-2 → Depot B)": who gave the order it takes back, and where it sent the unit. */
@@ -290,7 +291,8 @@ export interface UnitCardView {
   readonly plan: ReadonlyArray<PlanStopView>
   readonly removable: boolean
   readonly predicted: string | null
-  readonly deliverTo: ReadonlyArray<{ readonly siteId: string; readonly label: string }>
+  /** The accepting sites a Deliver-to chip sends the unit to; `selected` is where its load goes now. */
+  readonly deliverTo: ReadonlyArray<{ readonly siteId: string; readonly label: string; readonly selected: boolean }>
   /** "+ Add stop" in the situation's stop word, only while the unit has a plan. */
   readonly addStop: ButtonView | null
   readonly facts: ReadonlyArray<string>
@@ -303,18 +305,13 @@ const loadLabels = (unit: SituationUnit): ReadonlyArray<string> => unit.carry?.l
 
 const dueText = (unit: SituationUnit, elapsedS: number): string | null => unit.phaseDueInS === null ? null : clockText(unit.phaseDueInS - elapsedS)
 
-/** The job a busy unit's options name, with its priority code where a target names it. */
-export const currentJobOf = (options: UnitOptions): CurrentJob | null => {
-  const busy = options.busy
-  if (busy === null) return null
-  const code = options.targets.find(target => target.drops?.taskId === busy.taskId)?.drops?.code ?? null
-  return { taskId: busy.taskId, label: busy.label, code, freeInS: busy.freeInS }
-}
+/** A busy unit's current job in words: "C-3 · P3". */
+export const jobText = (job: CurrentJob): string => `${job.label} · ${job.code}`
 
 /** The busy prompt's two options, labelled from the job the prompt named when it opened. */
 export const busyChoices = (job: CurrentJob): { readonly after: string; readonly now: string } => ({
   after: job.freeInS === null ? dispatchWords.after : `${dispatchWords.after} (free in ${minutesText(job.freeInS)})`,
-  now: `${dispatchWords.now} (drops ${job.label}${job.code === null ? '' : ` · ${job.code}`})`,
+  now: `${dispatchWords.now} (drops ${jobText(job)})`,
 })
 
 const armedSlot = (selection: Extract<Selection, { kind: 'armed' }>): ArmedSlot => {
@@ -328,13 +325,15 @@ const armedView = (unit: SituationUnit, words: Words, options: UnitOptions | nul
   const valid = new Map((own?.targets ?? []).map(target => [stopKey(target.target), target]))
   const refused = new Map((own?.refused ?? []).map(entry => [stopKey(entry.target), entry]))
   const rows = order !== null && order.unitId === unit.id ? order.rows : []
+  // Armed by "+ Add stop", the order goes after the current job and drops nothing.
+  const drops = own?.busy == null || selection.when === 'after' ? null : `drops ${jobText(own.busy)}`
   return {
     banner: `${words.send} ${unit.label}…${selection.when === 'after' ? ` (${dispatchWords.after.toLowerCase()})` : ''}`,
     slot: armedSlot(selection),
     rows: rows.map(row => {
       const target = valid.get(row.key)
       if (target !== undefined) {
-        return { key: row.key, target: row.target, text: `${verbText(target.verb, words)} ${target.label}`, eta: minutesText(target.etaS), drops: target.drops === undefined ? null : `drops ${target.drops.label} · ${target.drops.code}`, refused: null }
+        return { key: row.key, target: row.target, text: `${verbText(target.verb, words)} ${target.label}`, eta: minutesText(target.etaS), drops, refused: null }
       }
       return { key: row.key, target: row.target, text: row.label, eta: null, drops: null, refused: refused.get(row.key)?.text ?? dispatchWords.notListed }
     }),
@@ -347,7 +346,21 @@ const lastOrderText = (unit: SituationUnit): string | null => {
   const last = unit.lastOrder
   if (last === null) return null
   const stops = unit.plan.filter(stop => stop.by.isViewer === last.by.isViewer && stop.by.label === last.by.label).map(stop => stop.label)
-  return `by ${last.by.isViewer ? dispatchWords.you.toLowerCase() : last.by.label}: ${stops.length === 0 ? unit.status.word : stops.join(' → ')}`
+  return `by ${last.by.label}: ${stops.length === 0 ? unit.status.word : stops.join(' → ')}`
+}
+
+/** Where a unit's load goes now: the site of its first delivery stop, else its predicted delivery; null when neither. */
+const deliverySiteOf = (unit: SituationUnit): string | null => {
+  const stop = unit.plan.find(entry => entry.verb === 'deliver')
+  return stop !== undefined && 'siteId' in stop.target ? stop.target.siteId : unit.predictedDelivery?.siteId ?? null
+}
+
+/** Why no order can be given to the unit now: its options list no target an order would take, only refused ones; the reason most of them share. Null while some target is valid, or before its options are read. */
+const noTargetReason = (unit: SituationUnit, options: UnitOptions | null): string | null => {
+  if (options === null || options.unitId !== unit.id || options.targets.length > 0 || options.refused.length === 0) return null
+  const counts = new Map<string, number>()
+  for (const entry of options.refused) counts.set(entry.text, (counts.get(entry.text) ?? 0) + 1)
+  return [...counts].reduce((best, entry) => entry[1] > best[1] ? entry : best)[0]
 }
 
 /** A unit's card, armed or not. */
@@ -361,6 +374,7 @@ export const unitCard = (situation: Situation, unit: SituationUnit, selection: S
   const lastCommand = unit.lastOrder?.commandId ?? null
   const lastOrder = lastOrderText(unit)
   const bound = loaded.length > 0 || unit.plan.some(stop => stop.verb === 'pick-up')
+  const delivery = deliverySiteOf(unit)
   const facts = [
     ...(unit.carry === null ? [] : [`carries ${unit.carry.capacity}`]),
     ...unit.properties.map(property => `${property.label} ${property.value}`),
@@ -372,7 +386,7 @@ export const unitCard = (situation: Situation, unit: SituationUnit, selection: S
     title: [unit.label, unit.typeLabel, ...(unit.group === null ? [] : [unit.group.label])].join(' · '),
     status: { word: unit.status.word, tone: unit.status.tone, due: dueText(unit, elapsedS) },
     readOnly,
-    dispatch: button(`${words.send} ${unit.label}…`, readOnly ?? destroyed),
+    dispatch: button(`${words.send} ${unit.label}…`, readOnly ?? destroyed ?? noTargetReason(unit, options)),
     recall: button(recallLabel, readOnly ?? destroyed ?? (loaded.length > 0 ? `Carrying ${joined(loaded)}: deliver first` : null)),
     undo: { ...button(lastOrder === null ? dispatchWords.undoLast : `${dispatchWords.undoLast} (${lastOrder})`, readOnly ?? (lastCommand === null ? dispatchWords.nothingToUndo : null)), commandId: lastCommand },
     planHeading: words.plan,
@@ -387,7 +401,7 @@ export const unitCard = (situation: Situation, unit: SituationUnit, selection: S
     })),
     removable: readOnly === null,
     predicted: unit.predictedDelivery === null ? null : `then ${unit.predictedDelivery.label} (nearest accepting) · ${etaText(unit.predictedDelivery.eta, elapsedS)}`,
-    deliverTo: readOnly !== null || !bound ? [] : situation.sites.filter(site => site.accepting).map(site => ({ siteId: site.id, label: site.label })),
+    deliverTo: readOnly !== null || !bound ? [] : situation.sites.filter(site => site.accepting).map(site => ({ siteId: site.id, label: site.label, selected: site.id === delivery })),
     addStop: unit.plan.length === 0 ? null : button(`+ Add ${words.stop.toLowerCase()}`, readOnly ?? destroyed),
     facts,
     states: unit.states.map(state => state.text),
@@ -480,8 +494,10 @@ export interface DeliverToView {
   readonly unitLabel: string
   /** "Deliver to (R1)", or "Deliver to (R1, after Dispatch)" until the carrier is on the call. */
   readonly heading: string
+  /** False until the carrier is on the call: the sites are named, not offered. */
   readonly enabled: boolean
-  readonly sites: ReadonlyArray<{ readonly siteId: string; readonly text: string; readonly order: UnitOrderInput }>
+  /** Each site's chip; `selected` is where the carrier's load goes now. */
+  readonly sites: ReadonlyArray<{ readonly siteId: string; readonly text: string; readonly selected: boolean; readonly order: UnitOrderInput }>
 }
 
 export interface CallCardView {
@@ -494,6 +510,8 @@ export interface CallCardView {
   readonly isNew: boolean
   readonly waiting: string
   readonly overdue: string | null
+  /** "Observed by D-1 at 14:02 UTC": the latest observation by another Pack's sensor; null before one. */
+  readonly observed: string | null
   readonly needs: ReadonlyArray<{ readonly text: string; readonly met: boolean }>
   readonly proposal: ProposalView
   /** The proposed carriers' Deliver-to chips, directly under the command block: shown from pinning, live once the carrier is on the call. */
@@ -522,7 +540,8 @@ const needText = (need: SituationCall['needs'][number]): { readonly text: string
   return { text: `${need.label}${where} ${have}/${need.count}`, met: have >= need.count }
 }
 
-const proposalView = (situation: Situation, pinned: PinnedProposal | null): ProposalView => {
+/** No proposal: every need is covered, else no free unit can help. */
+const proposalView = (situation: Situation, pinned: PinnedProposal | null, covered: boolean): ProposalView => {
   const { words } = situation
   const proposal = pinned?.answer.proposal ?? null
   const kept = proposal === null || pinned === null ? [] : proposal.units.filter(unit => !pinned.dropped.has(unit.unitId))
@@ -534,7 +553,7 @@ const proposalView = (situation: Situation, pinned: PinnedProposal | null): Prop
     ? dispatchWords.loading
     : pinned.refreshing
       ? dispatchWords.refreshing
-      : proposal === null ? dispatchWords.noFreeUnit : stale ?? (kept.length === 0 ? dispatchWords.noUnitChosen : null)
+      : proposal === null ? (covered ? dispatchWords.covered : dispatchWords.noFreeUnit) : stale ?? (kept.length === 0 ? dispatchWords.noUnitChosen : null)
   const refreshable = pinned !== null && !pinned.refreshing && (proposal === null || stale !== null)
   return {
     button: button(label, reason),
@@ -557,6 +576,7 @@ export const callCard = (situation: Situation, call: SituationCall, pinned: Pinn
   const assignedIds = new Set(call.assigned.map(unit => unit.unitId))
   const frees = call.assigned.map(unit => unit.label)
   const live = answer !== null && !answer.refreshing
+  const needs = call.needs.map(needText)
   return {
     kind: 'call',
     id: call.id,
@@ -567,10 +587,13 @@ export const callCard = (situation: Situation, call: SituationCall, pinned: Pinn
     isNew: isNewCall(call, opened),
     waiting: `${dispatchWords.waiting} ${clockText(waitedS)}`,
     overdue: target === undefined ? null : waitedS < target ? `overdue in ${clockText(target - waitedS)}` : `${dispatchWords.overdue} by ${clockText(waitedS - target)}`,
-    needs: call.needs.map(needText),
-    proposal: proposalView(situation, answer),
+    observed: call.observed === undefined ? null : `${dispatchWords.observedBy} ${call.observed.by} at ${call.observed.at.slice(11, 16)} UTC`,
+    needs,
+    proposal: proposalView(situation, answer, needs.every(need => need.met)),
     deliverTo: answer === null ? [] : answer.answer.deliverTo.map(entry => {
       const enabled = live && assignedIds.has(entry.unitId)
+      const carrier = situation.units.find(unit => unit.id === entry.unitId)
+      const delivery = enabled && carrier !== undefined ? deliverySiteOf(carrier) : null
       return {
         unitLabel: entry.label,
         heading: enabled ? `${dispatchWords.deliverTo} (${entry.label})` : `${dispatchWords.deliverTo} (${entry.label}, after ${words.send})`,
@@ -578,6 +601,7 @@ export const callCard = (situation: Situation, call: SituationCall, pinned: Pinn
         sites: entry.sites.map(site => ({
           siteId: site.siteId,
           text: `${site.label} · ${etaText(site.eta)}`,
+          selected: site.siteId === delivery,
           order: { units: [entry.unitId], stops: [{ siteId: site.siteId }], when: 'after' as const },
         })),
       }
@@ -589,7 +613,7 @@ export const callCard = (situation: Situation, call: SituationCall, pinned: Pinn
     whyNot: answer === null ? [] : answer.answer.whyNot.map(entry => ({ label: entry.label, reasons: entry.reasons.join('; ') })),
     assigned: call.assigned.map(unit => ({
       unitId: unit.unitId,
-      text: [unit.label, unit.status.word, ...(unit.eta === null ? [] : [etaText(unit.eta, elapsedS)!]), `by ${unit.by.isViewer ? dispatchWords.you.toLowerCase() : unit.by.label}`].join(' · '),
+      text: [unit.label, unit.status.word, ...(unit.eta === null ? [] : [etaText(unit.eta, elapsedS)!]), `by ${unit.by.label}`].join(' · '),
     })),
     close: {
       label: frees.length === 0 ? words.close : `${words.close} (frees ${joined(frees)})`,
@@ -787,13 +811,12 @@ const unitRow = (situation: Situation, unit: SituationUnit, selectedId: string |
   }
 }
 
-/** Units grouped under their group's label, else their type's, in the situation's order. */
+/** Units grouped under their group's label, else their type's; in each group the free ones first, so they are named at a glance, then the rest, each in the situation's order. */
 const unitGroups = (situation: Situation, selectedId: string | null, elapsedS: number): OverviewView['units']['groups'] => {
   const groups = new Map<string, UnitRowView[]>()
-  for (const unit of situation.units) {
-    const heading = unit.group?.label ?? unit.typeLabel
-    groups.set(heading, [...(groups.get(heading) ?? []), unitRow(situation, unit, selectedId, elapsedS)])
-  }
+  const freeFirst = [...situation.units.filter(unit => unit.status.tone === 'free'), ...situation.units.filter(unit => unit.status.tone !== 'free')]
+  for (const unit of situation.units) groups.set(unit.group?.label ?? unit.typeLabel, [])
+  for (const unit of freeFirst) groups.get(unit.group?.label ?? unit.typeLabel)!.push(unitRow(situation, unit, selectedId, elapsedS))
   return [...groups].map(([heading, rows]) => ({ heading, rows }))
 }
 
@@ -825,20 +848,29 @@ export const overview = (situation: Situation, selection: Selection, opened: Rea
 // ——— Armed feedback on the map ———
 
 /**
- * What the map draws while a unit is armed: halos with ETA tags on the
- * nearest valid targets (at most `mapTargetingMaxTargets`), and a refused target's
- * reason at that target, in the `refused` tone, while it is shown. Before the options arrive no
- * target carries a tag, but the unit is armed and a click still submits.
+ * What the map draws while a unit is armed: a halo on every valid target
+ * that is an object, with an ETA tag on the nearest ones (all tags together
+ * at most `mapTargetingMaxTags`), and a refused target's reason at that
+ * target, in the `refused` tone, while it is shown. Every other object is
+ * dimmed, so a dimmed object is never one an order would take. Before the
+ * options arrive the targeting is not `complete`: nothing is dimmed and no
+ * valid target is marked, but the unit is armed and a click still submits.
  */
 export const targetingFor = (selection: Selection, options: UnitOptions | null): MapTargeting | null => {
   if (selection.kind !== 'armed') return null
   const refusal = selection.refusal
-  const refused = refusal?.targetId === null || refusal === null ? [] : [{ id: refusal.targetId, tag: refusal.text, tone: 'refused' as const }]
-  const valid = options === null || options.unitId !== selection.unitId ? [] : options.targets.flatMap(target => {
+  const refused = refusal?.targetId === null || refusal === null ? [] : [{ id: objectIdSchema.parse(refusal.targetId), tag: refusal.text, tone: 'refused' as const }]
+  const own = options !== null && options.unitId === selection.unitId ? options : null
+  const valid = (own?.targets ?? []).flatMap(target => {
     const id = stopObjectId(target.target)
-    return id === null || id === refusal?.targetId ? [] : [{ id, tag: minutesText(target.etaS), tone: 'valid' as const }]
+    return id === null || id === refusal?.targetId ? [] : [{ id: objectIdSchema.parse(id), etaS: target.etaS }]
   })
-  return { from: objectIdSchema.parse(selection.unitId), targets: [...refused, ...valid].slice(0, mapTargetingMaxTargets).map(target => ({ id: objectIdSchema.parse(target.id), tag: target.tag, tone: target.tone })) }
+  const tags = mapTargetingMaxTags - refused.length
+  return {
+    from: objectIdSchema.parse(selection.unitId),
+    complete: own !== null,
+    targets: [...refused, ...valid.map((target, index) => index < tags ? { id: target.id, tag: minutesText(target.etaS), tone: 'valid' as const } : { id: target.id, tone: 'valid' as const })],
+  }
 }
 
 /** The Move prompt's one option. */
@@ -853,25 +885,36 @@ export interface Receipt {
   readonly commandId: string
   /** The units the order named; Undo takes it back for each. */
   readonly unitIds: ReadonlyArray<string>
+  /**
+   * Who gave the order, in the situation's words for its actor, the one word
+   * every surface uses; null on this viewer's own receipt until a situation
+   * read names its command.
+   */
+  readonly actor: string | null
+  /** The unit, the target and what was dropped: "A2 → C-1 (drops C-3 · P3)". */
   readonly text: string
-  /** "Undo (A2 returns to C-3)" when the order dropped a task, else "Undo". */
+  /** "Undo (A2 returns to C-3 · P3)" when the order dropped a task, else "Undo". */
   readonly undo: string
   readonly atMs: number
   /** This viewer's own order, from its own result: it names what the order dropped, which the situation cannot. */
   readonly own: boolean
 }
 
-/** A receipt of this viewer's own accepted order, naming what it dropped. */
+/** A receipt's line: "Operator: A2 → C-1 (drops C-3 · P3)". */
+export const receiptText = (receipt: Receipt): string => receipt.actor === null ? receipt.text : `${receipt.actor}: ${receipt.text}`
+
+/** A receipt of this viewer's own accepted order, naming what it dropped; its actor comes from the situation. */
 export const ownReceipt = (options: { readonly commandId: string; readonly unitIds: ReadonlyArray<string>; readonly unitLabel: string; readonly targetLabel: string; readonly dropped: string | null; readonly atMs: number }): Receipt => ({
   commandId: options.commandId,
   unitIds: options.unitIds,
-  text: `${dispatchWords.you}: ${options.unitLabel} → ${options.targetLabel}${options.dropped === null ? '' : ` (drops ${options.dropped})`}`,
+  actor: null,
+  text: `${options.unitLabel} → ${options.targetLabel}${options.dropped === null ? '' : ` (drops ${options.dropped})`}`,
   undo: options.dropped === null ? dispatchWords.undo : `${dispatchWords.undo} (${options.unitLabel} returns to ${options.dropped})`,
   atMs: options.atMs,
   own: true,
 })
 
-/** Receipts of orders the situation shows as new since the previous read: another actor's, or this viewer's from another surface. */
+/** Receipts of orders the situation shows as new since the previous read: another actor's, or this viewer's, whose own receipt then takes its actor. */
 export const receiptsFromSituation = (previous: Situation | null, next: Situation, atMs: number): ReadonlyArray<Receipt> => {
   if (previous === null) return []
   const before = new Map(previous.units.map(unit => [unit.id, unit.lastOrder?.commandId ?? null]))
@@ -879,7 +922,7 @@ export const receiptsFromSituation = (previous: Situation | null, next: Situatio
     const commandId = unit.lastOrder?.commandId ?? null
     if (commandId === null || unit.lastOrder === null || before.get(unit.id) === commandId) return []
     const target = unit.plan[0]?.label ?? unit.status.word
-    return [{ commandId, unitIds: [unit.id], text: `${actorText(unit.lastOrder.by)}: ${unit.label} → ${target}`, undo: dispatchWords.undo, atMs, own: false }]
+    return [{ commandId, unitIds: [unit.id], actor: unit.lastOrder.by.label, text: `${unit.label} → ${target}`, undo: dispatchWords.undo, atMs, own: false }]
   })
 }
 
@@ -887,55 +930,23 @@ export const receiptsFromSituation = (previous: Situation | null, next: Situatio
  * Adds receipts, newest on top; one per command, at most `maxReceipts`. A
  * viewer's own receipt takes the place of the situation's for the same
  * command, whichever arrived first, so what it names is never lost; it
- * keeps that place and Undo window.
+ * keeps that place and Undo window, and the actor the situation names.
  */
 export const withReceipts = (list: ReadonlyArray<Receipt>, added: ReadonlyArray<Receipt>): ReadonlyArray<Receipt> => {
   const ownOf = new Map(added.filter(receipt => receipt.own).map(receipt => [receipt.commandId, receipt]))
+  const actorOf = new Map(added.filter(receipt => !receipt.own).map(receipt => [receipt.commandId, receipt.actor]))
   const kept = list.map(receipt => {
-    const own = receipt.own ? undefined : ownOf.get(receipt.commandId)
-    return own === undefined ? receipt : { ...own, atMs: receipt.atMs }
+    if (receipt.own) return receipt.actor === null && actorOf.has(receipt.commandId) ? { ...receipt, actor: actorOf.get(receipt.commandId)! } : receipt
+    const own = ownOf.get(receipt.commandId)
+    return own === undefined ? receipt : { ...own, actor: receipt.actor, atMs: receipt.atMs }
   })
   const known = new Set(list.map(receipt => receipt.commandId))
-  const fresh = added.filter(receipt => !known.has(receipt.commandId))
+  const fresh = added.filter((receipt, index) => !known.has(receipt.commandId) && added.findIndex(entry => entry.commandId === receipt.commandId) === index)
   return [...fresh.reverse(), ...kept].slice(0, maxReceipts)
 }
 
 /** Whether a receipt still offers Undo. */
 export const receiptUndoable = (receipt: Receipt, nowMs: number): boolean => nowMs - receipt.atMs < receiptUndoMs
-
-// ——— Re-layout ———
-
-const cardLayout = (card: CardView | null): ReadonlyArray<unknown> => {
-  if (card === null) return ['none']
-  switch (card.kind) {
-    case 'unit': return card.armed === null
-      ? ['unit', card.id, card.plan.map(stop => stop.id), card.predicted !== null, card.deliverTo.length, card.addStop !== null, card.states.length]
-      : ['armed', card.id, card.armed.slot.kind, card.armed.loading, card.armed.rows.map(row => row.key), card.plan.map(stop => stop.id)]
-    case 'call': return ['call', card.id, card.proposal.units.length, card.proposal.waiting, card.deliverTo.map(entry => [entry.enabled, entry.sites.length]), card.alternatives.map(entry => entry.units.length), card.whyNot.length > 0, card.assigned.length, card.states.length]
-    case 'closed-call': return ['closed-call', card.id]
-    case 'site': return ['site', card.id, card.inbound.length, card.states.length]
-  }
-}
-
-/**
- * Where the panel's commands stand: which card shows and in which form,
- * what its slots and lists hold, the receipts, and the rows of the lists.
- * A change of it is a re-layout, after which no command acts for the
- * double-click interval (`activationActs`), so a second tap never lands on
- * what moved under it. A clock or an ETA running on, or a word changing in
- * place, moves nothing and is none.
- */
-export const panelLayoutKey = (card: CardView | null, view: OverviewView | null, receipts: ReadonlyArray<Receipt>, confirming: boolean): string => JSON.stringify([
-  cardLayout(card),
-  confirming,
-  receipts.map(receipt => receipt.commandId),
-  view === null ? null : [
-    view.folded,
-    view.calls.rows.map(row => [row.id, row.states.length]),
-    view.units.groups.map(group => group.rows.map(row => [row.id, row.states.length, row.current !== null || row.actor !== null])),
-    view.sites?.rows.map(row => [row.id, row.states.length, row.inbound !== null]) ?? null,
-  ],
-])
 
 // ——— Contacts ———
 

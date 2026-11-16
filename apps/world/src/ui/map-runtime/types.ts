@@ -50,11 +50,15 @@ export interface OperationalPointFeature {
   readonly highlighted: boolean
   readonly hasNewInfo: boolean
   readonly muted: boolean
-  /** A target of the armed order (`MapTargeting`): its halo carries this tag; null for any other object. */
+  /** A target of the armed order (`MapTargeting`): haloed. */
+  readonly targeted: boolean
+  /** A tagged target's tag above its halo; null for any other object. */
   readonly targetTag: string | null
+  /** Which way the tag runs from its target, so it stays on the map near an edge. */
+  readonly targetTagAnchor: TargetTagAnchor
   /** The target a click was just refused for: ringed apart, its tag the refusal. */
   readonly targetRefused: boolean
-  /** Dimmed while an order is armed: neither its object nor one of its targets. */
+  /** Dimmed while an order is armed whose targets are known: neither its object nor one of its targets. */
   readonly dimmed: boolean
   readonly sizePx: number
   readonly rotationDeg: number
@@ -98,10 +102,18 @@ export interface MapTargetingLine {
   readonly pointer: Position3 | null
 }
 
-/** An armed order as the map draws it (`MapTargeting`): the object it is for, and each target's tag and tone by object id. */
+/** How a target's tag lies against its target: centred above it, or running right (`start`) or left (`end`) from it near the map's edge. */
+export type TargetTagAnchor = 'start' | 'middle' | 'end'
+
+/**
+ * An armed order as the map draws it (`MapTargeting`): the object it is
+ * for, each target's tag, tag anchor and tone by object id, and whether the
+ * targets are every valid one, so the others are dimmed.
+ */
 export interface MapTargetingRender {
   readonly fromId: string
-  readonly targets: ReadonlyMap<string, { readonly tag: string; readonly refused: boolean }>
+  readonly targets: ReadonlyMap<string, { readonly tag: string | null; readonly anchor: TargetTagAnchor; readonly refused: boolean }>
+  readonly complete: boolean
 }
 
 export interface OperationalRenderInput {
@@ -110,7 +122,7 @@ export interface OperationalRenderInput {
   readonly highlightedObjectIds: ReadonlyArray<string>
   /** Objects the screen sees but may not order (`targeting.mutedOnMap`): drawn muted. */
   readonly mutedObjectIds?: ReadonlyArray<string>
-  /** The armed order's targets, tagged, and every other object dimmed; none while nothing is armed. */
+  /** The armed order's targets, haloed and some tagged, and once they are complete every other object dimmed; none while nothing is armed. */
   readonly targeting?: MapTargetingRender | null
   readonly hiddenObjectCategoryIds: ReadonlyArray<string>
   readonly placementPoints: ReadonlyArray<GeoJsonPoint>

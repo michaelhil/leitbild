@@ -62,45 +62,52 @@ export const assertMapPrompt = (panelId: string, prompt: MapPrompt): MapPrompt =
   return prompt
 }
 
-/** The most targets one map targeting marks; a panel gives the nearest few. */
-export const mapTargetingMaxTargets = 8
+/** The most tags one map targeting shows; a panel tags the nearest few of its targets. */
+export const mapTargetingMaxTags = 8
 
 /**
  * One target an armed order marks. A valid one (the default) gets a green
- * halo whose tag is the verb or ETA a click there gives, e.g. "4 min". A
- * refused one is the target a click was just refused for: it gets a neutral
- * ring apart from the valid ones, and its tag is the refusal, shown beside
- * the target for as long as the panel keeps it in the targeting (plan B.3:
- * 4 s).
+ * halo; the nearest few also carry a tag, the verb or ETA a click there
+ * gives, e.g. "4 min". A refused one is the target a click was just refused
+ * for: it gets a neutral ring apart from the valid ones, and its tag is the
+ * refusal, shown beside the target for as long as the panel keeps it in the
+ * targeting (plan B.3: 4 s).
  */
 export interface MapTargetingTarget {
   readonly id: ObjectId
-  readonly tag: string
+  /** Worded when given; a refused target always has one, a valid one only among the nearest. */
+  readonly tag?: string
   readonly tone?: 'valid' | 'refused'
 }
 
 /**
  * What a map-target panel shows on the map while it arms an order for one
- * of its objects, `from`: each target gets a halo with its tag
- * (`MapTargetingTarget`), every other object is dimmed, and a line runs from
- * `from` to a mouse pointer (never to a finger, which has none between taps).
- * The map only draws it; clicks route as always (`map-target-routing.ts`),
- * and a tap on a tag is a tap on its target.
+ * of its objects, `from`: each target gets a halo, tagged or not
+ * (`MapTargetingTarget`), and a line runs from `from` to a mouse pointer
+ * (never to a finger, which has none between taps). Once `complete`,
+ * `targets` lists every valid target, and every other object is dimmed: a
+ * dimmed object is never one the order would take. Until then (the panel is
+ * still reading them) nothing is dimmed. The map only draws it; clicks route
+ * as always (`map-target-routing.ts`), a tap on a tag is a tap on its
+ * target, and a tap on a stack of icons offers only its valid targets.
  */
 export interface MapTargeting {
   readonly from: ObjectId
   readonly targets: ReadonlyArray<MapTargetingTarget>
+  readonly complete: boolean
 }
 
-/** A panel's targeting, refused beyond eight targets, with a target twice or as `from`, or with an empty tag. */
+/** A panel's targeting, refused beyond eight tags, with a target twice or as `from`, with an empty tag, or with a refused target untagged. */
 export const assertMapTargeting = (panelId: string, targeting: MapTargeting): MapTargeting => {
   const refuse = (reason: string): never => { throw new Error(`Surface panel ${panelId} showed a map targeting from ${targeting.from} ${reason}`) }
-  if (targeting.targets.length > mapTargetingMaxTargets) refuse(`with ${targeting.targets.length} targets; at most ${mapTargetingMaxTargets} are marked`)
+  const tags = targeting.targets.filter(target => target.tag !== undefined).length
+  if (tags > mapTargetingMaxTags) refuse(`with ${tags} tags; at most ${mapTargetingMaxTags} are shown`)
   const ids = new Set<ObjectId>()
   for (const target of targeting.targets) {
     if (target.id === targeting.from) refuse('that targets its own object')
     if (ids.has(target.id)) refuse(`that marks ${target.id} twice`)
-    if (target.tag.trim().length === 0) refuse(`whose target ${target.id} has no tag`)
+    if (target.tag !== undefined && target.tag.trim().length === 0) refuse(`whose target ${target.id} has an empty tag`)
+    if (target.tone === 'refused' && target.tag === undefined) refuse(`whose refused target ${target.id} has no tag`)
     ids.add(target.id)
   }
   return targeting
