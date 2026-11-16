@@ -6,6 +6,7 @@ import { checkForSolver } from '../solve/lane-k-ports.ts'
 import { bounds } from '../solve/bounds.ts'
 import { formulationOf } from '../solve/compile.ts'
 import { compiled, scheduleOf } from '../solve/preview.ts'
+import { withExtraRules } from '../solve/keys.ts'
 import { makeExplainer, mostLimiting, refusalLines, type ExplainItem } from '../solve/explain.ts'
 import { totalFloat } from '../solve/float.ts'
 import { CERTIFIED_SIZE, generate } from '../solve/generate.ts'
@@ -51,6 +52,12 @@ const explainerOf = (inputs: PlanInputs, option: Option) => {
   return { explainer, index }
 }
 
+/** The method options a set of picks names, by their labels: "Rebuild in place"; undefined without one. */
+const methodWords = (inputs: PlanInputs, picks: ReadonlyArray<{ readonly choice: string; readonly option: string }>): string | undefined => {
+  const labels = picks.map(pick => inputs.methods.find(choice => choice.key === pick.choice)?.options.find(entry => entry.key === pick.option)?.label)
+  return labels.length === 0 || labels.some(label => label === undefined) ? undefined : labels.join(', ')
+}
+
 /** Each solver ask by name: an ask with no answer here is a programming error, never the finish chain. */
 const solverAsks: Readonly<Record<SolverAsk, true>> = { 'why-start': true, finish: true, refusal: true }
 
@@ -84,10 +91,19 @@ export const createRealSolver = (pool: SolverPool): SolverPort => {
         }
         // The span sentence is worded only when lane K proves its figures against the rule it names (V1), and
         // the second (energy) proof only when lane K re-verifies it too. Without them the verified cause stands.
+        // A what-if is worded on the inputs with its own rule, so the rule reads in its words, never its key (B3).
+        const ruled = withExtraRules(inputs, option.variant.also)
         const found = bounds(problem, index, prep).span
-        const span = found === undefined || !verifySpanRefusal(inputs, option.variant, found).proves ? undefined : found
-        const shown = span?.alsoProven === undefined || verifyCertificate(inputs, option.variant, span.alsoProven).proves ? span : (({ alsoProven: _also, ...rest }) => rest)(span)
-        return bounded({ lines: refusalLines(option.status.cause, inputs, shown, option.variant.purchases, option.variant.methods), items: [] })
+        const span = found === undefined || !verifySpanRefusal(ruled, option.variant, found).proves ? undefined : found
+        const shown = span?.alsoProven === undefined || verifyCertificate(ruled, option.variant, span.alsoProven).proves ? span : (({ alsoProven: _also, ...rest }) => rest)(span)
+        const whatIf = option.variant.also !== undefined || option.variant.lead !== undefined || option.status.byMethod !== undefined
+        const method = methodWords(inputs, option.variant.methods)
+        if (!whatIf || method === undefined) return bounded({ lines: refusalLines(option.status.cause, ruled, shown, option.variant.purchases, option.variant.methods), items: [] })
+        // A what-if refused for every method: its own method's proof, named, and one line for each other method's (B3).
+        const [first = '', ...rest] = refusalLines(option.status.cause, ruled, shown, option.variant.purchases, option.variant.methods, `this option (${method})`)
+        const others = (option.status.byMethod ?? []).filter(entry => JSON.stringify(entry.methods) !== JSON.stringify(option.variant.methods)).map(entry =>
+          clip(`For ${methodWords(inputs, entry.methods) ?? 'another method'}: ${refusalLines(entry.cause, ruled, undefined, entry.purchases, entry.methods)[0] ?? ''}`, 240))
+        return bounded({ lines: [clip(`For ${method}: ${first}`, 240), ...others, ...rest].slice(0, 20), items: [] })
       }
       const { explainer, index } = explainerOf(inputs, option)
       const activity = job === undefined ? undefined : index.jobs.indexOf(job)
