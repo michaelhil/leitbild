@@ -276,7 +276,7 @@
     ? decision.stops.length === 1 ? 'Remove stop?' : 'Which stop should be removed?'
     : decision.assigned ? 'Change the plan?' : 'Move here?')
   const decisionText = $derived(decision === undefined ? '' : decision.kind === 'remove'
-    ? `${selectedUnit?.label ?? 'Unit'}: ${decision.stops[0]?.label ?? 'selected stop'}`
+    ? `${selectedUnit?.label ?? 'Unit'}: ${decision.stops.length === 1 ? `Stop ${decision.stops[0]!.index} · ` : ''}${decision.stops[0]?.label ?? 'selected stop'}`
     : `${selectedUnit?.label ?? 'Unit'} → ${stopLabel(decision.target)}${decision.currentLabel === null ? '' : ` · Current: ${decision.currentLabel}`}`)
   const decisionActions = $derived.by(() => {
     if (!decision) return []
@@ -319,7 +319,9 @@
   }
 
   /** A map click while one of the Pack's units is selected: the surface hands every one to the panel and never sends. */
-  const onMapTarget = (_selectedId: ObjectId, target: PackMapTarget): void => {
+  const onMapTarget = (selectedId: ObjectId, target: PackMapTarget): void => {
+    const shown = selection.selection
+    if (shown.kind !== 'unit' || shown.unitId !== selectedId) return
     if (target.kind === 'point') {
       send({ kind: 'click', on: { kind: 'ground', point: target.point }, atMs: Date.now() })
       return
