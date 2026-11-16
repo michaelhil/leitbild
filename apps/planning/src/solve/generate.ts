@@ -46,6 +46,17 @@ export const MAX_SUB_SOLVES = 8
 export const GENERATE_DEADLINE_MS = 20_000
 /** Less time than this left: a sub-solve is not started (a child's spawn, compile and check need it). */
 const MIN_SUB_SOLVE_MS = 500
+/**
+ * A sub-solve's search ends this long, plus as long as the work before the search took, before the sub-solve
+ * must answer. This part is the engine's own stop latency: it checks its budget at least every 50 ms of work
+ * and paces in sleeps of at most 200 ms. The measured part covers the work after the search (dating, float on
+ * the option's own compile, lane K's check and bound re-derivations, the answer's encoding): the same kind of
+ * work as before it (compile, lane K's readiness check, prepare, bounds), on the same problem, machine and CPU
+ * quota, and the smaller of the two (flagship, 15 Nov: on the Mac 100-145 ms before the search and 15-30 ms after;
+ * at background priority, its slow cores, 410-575 ms and 80-140 ms). Measured rather than tuned to one machine,
+ * so it scales where both run several times slower, as under the service's CPU quota.
+ */
+export const SEARCH_STOP_LATENCY_MS = 250
 /** Memory a solve may be estimated to need before it is refused (A7). */
 export const MEMORY_BUDGET_MB = 80
 const DEFAULT_SECONDS = 20
@@ -154,6 +165,11 @@ export interface SubSolveTask {
   readonly seed: number
   /** The Generate's deadline (epoch ms): a solver child still running then is killed. */
   readonly deadlineAt?: number
+  /**
+   * When this sub-solve answers (epoch ms, at or before `deadlineAt`): its share of the Generate's time. Its
+   * search ends early enough for the work after it, so the answer comes in time on a CPU-capped machine too.
+   */
+  readonly answerBy?: number
 }
 export interface SubSolveOutcome {
   readonly option: Option
@@ -166,11 +182,23 @@ export interface SubSolveDeps { readonly engine: Engine; readonly check: CheckPl
 export type SubSolver = (task: SubSolveTask, signal: AbortSignal, stoppedByWho?: () => 'person' | 'host' | undefined) => Promise<SubSolveOutcome>
 
 /**
+ * The search's budget within the time the sub-solve has: its wall time ends `reserveMs` before `by`, and its
+ * CPU shrinks in proportion, so the CPU rate (and the cap) stays as granted. A budget that fits is unchanged.
+ */
+export const searchBudgetBy = (budget: SubSolveTask['budget'], by: number, reserveMs: number, now = Date.now()): SubSolveTask['budget'] => {
+  const wallMs = Math.floor(by - now - reserveMs)
+  if (wallMs >= budget.wallMs) return budget
+  if (wallMs <= 0) return { ...budget, cpuMs: 0, wallMs: 0 }
+  return { ...budget, cpuMs: Math.floor(budget.cpuMs * wallMs / budget.wallMs), wallMs }
+}
+
+/**
  * A sub-solve: compile, bounds (a refusal stored as proof only when lane K proves it), search, dating,
  * float on the option's own purchases, lane K's check and its bound re-derivation. Pure apart from the
- * engine; the solver child runs exactly this.
+ * engine and the clock (its search ends in time to answer by `answerBy`); the solver child runs exactly this.
  */
 export const subSolve = (deps: SubSolveDeps): SubSolver => async (task, signal, stoppedByWho) => {
+  const started = performance.now()
   const { inputs, variant, combo, budget, seed } = task
   const formulation = formulationOf(inputs.settings.grid)
   const base = { key: variant.key, label: variant.label.slice(0, 160), inputsRevision: task.revision }
@@ -179,9 +207,9 @@ export const subSolve = (deps: SubSolveDeps): SubSolver => async (task, signal, 
   const { problem, index } = compiled
   const outcome = (option: Option): SubSolveOutcome => ({ option, rounded: index.rounded, dropped: index.dropped })
   const variantOut = { methods: [...combo], purchases: [...index.allowedPurchases] }
-  const runBasis = (result: Pick<EngineResult, 'stoppedBy' | 'evals' | 'cpuMs'>) => {
+  const runBasis = (result: Pick<EngineResult, 'stoppedBy' | 'evals' | 'cpuMs'>, granted: SubSolveTask['budget'] = budget) => {
     const who = result.stoppedBy === 'cancelled' ? stoppedByWho?.() : undefined
-    return { grid: inputs.settings.grid, engine: deps.engine.name, formulation, seed, budget: { ...budget }, stoppedBy: result.stoppedBy, ...(who === undefined ? {} : { stoppedByWho: who }), evals: result.evals, cpuMs: Math.round(result.cpuMs) }
+    return { grid: inputs.settings.grid, engine: deps.engine.name, formulation, seed, budget: { ...granted }, stoppedBy: result.stoppedBy, ...(who === undefined ? {} : { stoppedByWho: who }), evals: result.evals, cpuMs: Math.round(result.cpuMs) }
   }
   // Readiness blocks before any search: an input finding (a precondition not read from World, say) is
   // "invalid input" with the checker's cause, whatever a schedule would look like.
@@ -194,8 +222,14 @@ export const subSolve = (deps: SubSolveDeps): SubSolver => async (task, signal, 
     return outcome({ ...base, variant: variantOut, status: infeasibleStatus(found.certificate, runBasis({ stoppedBy: 'done', evals: 0, cpuMs: 0 })), rows: [], metrics: [] })
   }
   if (estimateMemoryMb(problem) > MEMORY_BUDGET_MB) throw planningError(413, 'above_certified_size', 'This plan is too large for the certified size', { estimateMb: Math.ceil(estimateMemoryMb(problem)) })
-  const result = await deps.engine.solve(problem, { budget: { ...budget, memoryMb: MEMORY_BUDGET_MB }, seed, signal: signal })
-  const run = runBasis(result)
+  // The search ends in time for the work after it, which takes no longer than the work before it took: the
+  // sub-solve answers by its time with its best checked result, never killed for running past it.
+  const by = Math.min(task.answerBy ?? Infinity, task.deadlineAt ?? Infinity)
+  const searchBudget = searchBudgetBy(budget, by, SEARCH_STOP_LATENCY_MS + (performance.now() - started))
+  // No time left to search: no plan, said as a search stopped by its time.
+  if (searchBudget.wallMs <= 0) return outcome({ ...base, variant: variantOut, status: unresolvedStatus(runBasis({ stoppedBy: 'wall', evals: 0, cpuMs: 0 }, searchBudget)), rows: [], metrics: [] })
+  const result = await deps.engine.solve(problem, { budget: { ...searchBudget, memoryMb: MEMORY_BUDGET_MB }, seed, signal: signal })
+  const run = runBasis(result, searchBudget)
   const candidate = result.candidates[0]
   if (candidate === undefined) return outcome({ ...base, variant: variantOut, status: result.stoppedBy === 'cancelled' ? cancelledStatus(run) : unresolvedStatus(run), rows: [], metrics: [] })
   const late = problem.activities.flatMap((activity, a) => {
@@ -251,17 +285,24 @@ export const generate = async (deps: GenerateDeps, request: GenerateRequest): Pr
   const dropped: Array<CompileIndex['dropped'][number]> = []
 
   const runSubSolve = deps.subSolver ?? subSolve(deps)
+  let begun = 0
   const solveOne = async (variant: Variant, combo: MethodPick[]): Promise<Option> => {
     const evals = request.evals ?? Number.MAX_SAFE_INTEGER
-    const remaining = deadlineAt - Date.now()
+    const left = subSolves - begun++
+    const now = Date.now()
+    const remaining = deadlineAt - now
     // Past the deadline a sub-solve is not run: it says so, as a search stopped by its time ("wall").
     if (remaining < MIN_SUB_SOLVE_MS) {
       const run = { grid: inputs.settings.grid, engine: deps.engine.name, formulation, seed, budget: { evals, cpuMs: 0, wallMs: 0 }, stoppedBy: 'wall' as const, evals: 0, cpuMs: 0 }
       return { key: variant.key, label: variant.label.slice(0, 160), inputsRevision: request.revision, variant: { methods: combo, purchases: [] }, status: unresolvedStatus(run), rows: [], metrics: [] }
     }
-    const wall = Math.min(share.wallMs, remaining * 0.9)
+    // Each sub-solve answers by its equal share of the time left (at least MIN_SUB_SOLVE_MS), its spawn, compile
+    // and check included, so an earlier one's search never takes the time a later one needs for its own; the
+    // last answers by the deadline.
+    const slot = Math.min(remaining, Math.max(MIN_SUB_SOLVE_MS, remaining / left))
+    const wall = Math.min(share.wallMs, slot * 0.9)
     const budget = { evals, cpuMs: Math.round(Math.min(share.cpuMs, wall * SOLVER_CPU_CAP_CORES)), wallMs: Math.round(wall) }
-    const outcome = await runSubSolve({ inputs, revision: request.revision, variant: { key: variant.key, label: variant.label, buy: variant.buy }, combo, budget, seed, deadlineAt }, request.signal, request.stoppedByWho)
+    const outcome = await runSubSolve({ inputs, revision: request.revision, variant: { key: variant.key, label: variant.label, buy: variant.buy }, combo, budget, seed, deadlineAt, answerBy: Math.floor(now + slot) }, request.signal, request.stoppedByWho)
     rounded.push(...outcome.rounded.filter(entry => !rounded.some(known => known.about === entry.about && known.code === entry.code)))
     dropped.push(...outcome.dropped.filter(entry => !dropped.some(known => known.purchase === entry.purchase)))
     return outcome.option
