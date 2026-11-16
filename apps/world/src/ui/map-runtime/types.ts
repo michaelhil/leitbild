@@ -54,6 +54,8 @@ export interface OperationalPointFeature {
   readonly targeted: boolean
   /** A tagged target's tag above its halo; null for any other object. */
   readonly targetTag: string | null
+  /** Which way the tag runs from its target, so it stays on the map near an edge. */
+  readonly targetTagAnchor: TargetTagAnchor
   /** The target a click was just refused for: ringed apart, its tag the refusal. */
   readonly targetRefused: boolean
   /** Dimmed while an order is armed whose targets are known: neither its object nor one of its targets. */
@@ -100,14 +102,17 @@ export interface MapTargetingLine {
   readonly pointer: Position3 | null
 }
 
+/** How a target's tag lies against its target: centred above it, or running right (`start`) or left (`end`) from it near the map's edge. */
+export type TargetTagAnchor = 'start' | 'middle' | 'end'
+
 /**
  * An armed order as the map draws it (`MapTargeting`): the object it is
- * for, each target's tag and tone by object id, and whether the targets are
- * every valid one, so the others are dimmed.
+ * for, each target's tag, tag anchor and tone by object id, and whether the
+ * targets are every valid one, so the others are dimmed.
  */
 export interface MapTargetingRender {
   readonly fromId: string
-  readonly targets: ReadonlyMap<string, { readonly tag: string | null; readonly refused: boolean }>
+  readonly targets: ReadonlyMap<string, { readonly tag: string | null; readonly anchor: TargetTagAnchor; readonly refused: boolean }>
   readonly complete: boolean
 }
 

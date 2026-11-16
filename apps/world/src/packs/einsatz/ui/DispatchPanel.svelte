@@ -470,6 +470,7 @@
   style:height={layout.mode === 'sheet' && open ? `${layout.heightPx}px` : null}
   style:top={layout.mode === 'docked' ? `${panelTopClearancePx}px` : null}
   style:bottom={layout.mode === 'docked' ? `${panelBottomClearancePx}px` : '0px'}
+  style:padding-bottom={layout.mode === 'sheet' && open ? `${panelBottomClearancePx}px` : null}
   style:right={layout.mode === 'docked' ? `${panelEdgeGapPx}px` : '0px'}
   aria-label={dispatchWords.panel}
 >
@@ -560,6 +561,7 @@
     line-height: 16px;
     pointer-events: auto;
   }
+  /* The open sheet keeps its footer above the World status line (the clock chip) drawn over its bottom edge. */
   .dispatch[data-mode='sheet'] { left: 0; border-radius: 10px 10px 0 0; }
   .dispatch[data-mode='sheet'].folded { left: auto; padding: 0; border-radius: 10px 0 0 0; }
   .head { flex: none; display: flex; align-items: center; gap: 8px; }

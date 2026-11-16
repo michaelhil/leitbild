@@ -538,9 +538,11 @@ export const createOperationalDeckLayers = (config: OperationalDeckLayerConfig):
           onHover: onSymbolHover,
         })]
       : []),
-    // Each target's tag above its halo while an order is armed: the verb or ETA a click there gives, or for a refused
-    // target the refusal, wrapped at about 22 characters a line. Like a label, a tag is part of its target: a tap on
-    // it picks the target, never the ground or an icon fanned out beneath it.
+    // Each tagged target's tag above its halo while an order is armed: the verb or ETA a click there gives, or for a
+    // refused target the refusal, wrapped at about 22 characters a line. Centred above its target, it runs right from
+    // the target's left edge, or left from its right edge, where centred it would leave the map (`targetTagAnchor`).
+    // Like a label, a tag is part of its target: a tap on it picks the target, never the ground or an icon fanned out
+    // beneath it.
     ...(layerData.targetTagPoints.length > 0
       ? [new TextLayer<OperationalPointFeature>({
           id: 'leitbild-target-tags',
@@ -555,9 +557,12 @@ export const createOperationalDeckLayers = (config: OperationalDeckLayerConfig):
           getPosition: point => point.position,
           getSize: 13,
           getColor: white(250),
-          getTextAnchor: 'middle',
+          getTextAnchor: point => point.targetTagAnchor,
           getAlignmentBaseline: 'bottom',
-          getPixelOffset: point => [0, -(Math.max(18, statusDiskRadiusPx(point.sizePx)) + 6)],
+          getPixelOffset: point => {
+            const radius = Math.max(18, statusDiskRadiusPx(point.sizePx))
+            return [point.targetTagAnchor === 'start' ? -radius : point.targetTagAnchor === 'end' ? radius : 0, -(radius + 6)]
+          },
           background: true,
           maxWidth: 22,
           wordBreak: 'break-word',
@@ -568,6 +573,7 @@ export const createOperationalDeckLayers = (config: OperationalDeckLayerConfig):
           updateTriggers: {
             getText: snapshot.revisions.points,
             getPosition: snapshot.revisions.points,
+            getTextAnchor: snapshot.revisions.points,
             getPixelOffset: snapshot.revisions.points,
             getBackgroundColor: snapshot.revisions.points,
           },

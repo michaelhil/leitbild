@@ -54,6 +54,7 @@ export const dispatchWords = {
   confirm: 'Confirm',
   cancel: 'Cancel',
   noFreeUnit: 'No free unit can help',
+  covered: 'Every need is covered',
   noUnitChosen: 'No unit chosen',
   closed: 'Closed',
   notListed: 'Not in the situation any more',
@@ -290,7 +291,8 @@ export interface UnitCardView {
   readonly plan: ReadonlyArray<PlanStopView>
   readonly removable: boolean
   readonly predicted: string | null
-  readonly deliverTo: ReadonlyArray<{ readonly siteId: string; readonly label: string }>
+  /** The accepting sites a Deliver-to chip sends the unit to; `selected` is where its load goes now. */
+  readonly deliverTo: ReadonlyArray<{ readonly siteId: string; readonly label: string; readonly selected: boolean }>
   /** "+ Add stop" in the situation's stop word, only while the unit has a plan. */
   readonly addStop: ButtonView | null
   readonly facts: ReadonlyArray<string>
@@ -347,6 +349,12 @@ const lastOrderText = (unit: SituationUnit): string | null => {
   return `by ${last.by.label}: ${stops.length === 0 ? unit.status.word : stops.join(' → ')}`
 }
 
+/** Where a unit's load goes now: the site of its first delivery stop, else its predicted delivery; null when neither. */
+const deliverySiteOf = (unit: SituationUnit): string | null => {
+  const stop = unit.plan.find(entry => entry.verb === 'deliver')
+  return stop !== undefined && 'siteId' in stop.target ? stop.target.siteId : unit.predictedDelivery?.siteId ?? null
+}
+
 /** Why no order can be given to the unit now: its options list no target an order would take, only refused ones; the reason most of them share. Null while some target is valid, or before its options are read. */
 const noTargetReason = (unit: SituationUnit, options: UnitOptions | null): string | null => {
   if (options === null || options.unitId !== unit.id || options.targets.length > 0 || options.refused.length === 0) return null
@@ -366,6 +374,7 @@ export const unitCard = (situation: Situation, unit: SituationUnit, selection: S
   const lastCommand = unit.lastOrder?.commandId ?? null
   const lastOrder = lastOrderText(unit)
   const bound = loaded.length > 0 || unit.plan.some(stop => stop.verb === 'pick-up')
+  const delivery = deliverySiteOf(unit)
   const facts = [
     ...(unit.carry === null ? [] : [`carries ${unit.carry.capacity}`]),
     ...unit.properties.map(property => `${property.label} ${property.value}`),
@@ -392,7 +401,7 @@ export const unitCard = (situation: Situation, unit: SituationUnit, selection: S
     })),
     removable: readOnly === null,
     predicted: unit.predictedDelivery === null ? null : `then ${unit.predictedDelivery.label} (nearest accepting) · ${etaText(unit.predictedDelivery.eta, elapsedS)}`,
-    deliverTo: readOnly !== null || !bound ? [] : situation.sites.filter(site => site.accepting).map(site => ({ siteId: site.id, label: site.label })),
+    deliverTo: readOnly !== null || !bound ? [] : situation.sites.filter(site => site.accepting).map(site => ({ siteId: site.id, label: site.label, selected: site.id === delivery })),
     addStop: unit.plan.length === 0 ? null : button(`+ Add ${words.stop.toLowerCase()}`, readOnly ?? destroyed),
     facts,
     states: unit.states.map(state => state.text),
@@ -485,8 +494,10 @@ export interface DeliverToView {
   readonly unitLabel: string
   /** "Deliver to (R1)", or "Deliver to (R1, after Dispatch)" until the carrier is on the call. */
   readonly heading: string
+  /** False until the carrier is on the call: the sites are named, not offered. */
   readonly enabled: boolean
-  readonly sites: ReadonlyArray<{ readonly siteId: string; readonly text: string; readonly order: UnitOrderInput }>
+  /** Each site's chip; `selected` is where the carrier's load goes now. */
+  readonly sites: ReadonlyArray<{ readonly siteId: string; readonly text: string; readonly selected: boolean; readonly order: UnitOrderInput }>
 }
 
 export interface CallCardView {
@@ -529,7 +540,8 @@ const needText = (need: SituationCall['needs'][number]): { readonly text: string
   return { text: `${need.label}${where} ${have}/${need.count}`, met: have >= need.count }
 }
 
-const proposalView = (situation: Situation, pinned: PinnedProposal | null): ProposalView => {
+/** No proposal: every need is covered, else no free unit can help. */
+const proposalView = (situation: Situation, pinned: PinnedProposal | null, covered: boolean): ProposalView => {
   const { words } = situation
   const proposal = pinned?.answer.proposal ?? null
   const kept = proposal === null || pinned === null ? [] : proposal.units.filter(unit => !pinned.dropped.has(unit.unitId))
@@ -541,7 +553,7 @@ const proposalView = (situation: Situation, pinned: PinnedProposal | null): Prop
     ? dispatchWords.loading
     : pinned.refreshing
       ? dispatchWords.refreshing
-      : proposal === null ? dispatchWords.noFreeUnit : stale ?? (kept.length === 0 ? dispatchWords.noUnitChosen : null)
+      : proposal === null ? (covered ? dispatchWords.covered : dispatchWords.noFreeUnit) : stale ?? (kept.length === 0 ? dispatchWords.noUnitChosen : null)
   const refreshable = pinned !== null && !pinned.refreshing && (proposal === null || stale !== null)
   return {
     button: button(label, reason),
@@ -564,6 +576,7 @@ export const callCard = (situation: Situation, call: SituationCall, pinned: Pinn
   const assignedIds = new Set(call.assigned.map(unit => unit.unitId))
   const frees = call.assigned.map(unit => unit.label)
   const live = answer !== null && !answer.refreshing
+  const needs = call.needs.map(needText)
   return {
     kind: 'call',
     id: call.id,
@@ -575,10 +588,12 @@ export const callCard = (situation: Situation, call: SituationCall, pinned: Pinn
     waiting: `${dispatchWords.waiting} ${clockText(waitedS)}`,
     overdue: target === undefined ? null : waitedS < target ? `overdue in ${clockText(target - waitedS)}` : `${dispatchWords.overdue} by ${clockText(waitedS - target)}`,
     observed: call.observed === undefined ? null : `${dispatchWords.observedBy} ${call.observed.by} at ${call.observed.at.slice(11, 16)} UTC`,
-    needs: call.needs.map(needText),
-    proposal: proposalView(situation, answer),
+    needs,
+    proposal: proposalView(situation, answer, needs.every(need => need.met)),
     deliverTo: answer === null ? [] : answer.answer.deliverTo.map(entry => {
       const enabled = live && assignedIds.has(entry.unitId)
+      const carrier = situation.units.find(unit => unit.id === entry.unitId)
+      const delivery = enabled && carrier !== undefined ? deliverySiteOf(carrier) : null
       return {
         unitLabel: entry.label,
         heading: enabled ? `${dispatchWords.deliverTo} (${entry.label})` : `${dispatchWords.deliverTo} (${entry.label}, after ${words.send})`,
@@ -586,6 +601,7 @@ export const callCard = (situation: Situation, call: SituationCall, pinned: Pinn
         sites: entry.sites.map(site => ({
           siteId: site.siteId,
           text: `${site.label} · ${etaText(site.eta)}`,
+          selected: site.siteId === delivery,
           order: { units: [entry.unitId], stops: [{ siteId: site.siteId }], when: 'after' as const },
         })),
       }
@@ -795,13 +811,12 @@ const unitRow = (situation: Situation, unit: SituationUnit, selectedId: string |
   }
 }
 
-/** Units grouped under their group's label, else their type's, in the situation's order. */
+/** Units grouped under their group's label, else their type's; in each group the free ones first, so they are named at a glance, then the rest, each in the situation's order. */
 const unitGroups = (situation: Situation, selectedId: string | null, elapsedS: number): OverviewView['units']['groups'] => {
   const groups = new Map<string, UnitRowView[]>()
-  for (const unit of situation.units) {
-    const heading = unit.group?.label ?? unit.typeLabel
-    groups.set(heading, [...(groups.get(heading) ?? []), unitRow(situation, unit, selectedId, elapsedS)])
-  }
+  const freeFirst = [...situation.units.filter(unit => unit.status.tone === 'free'), ...situation.units.filter(unit => unit.status.tone !== 'free')]
+  for (const unit of situation.units) groups.set(unit.group?.label ?? unit.typeLabel, [])
+  for (const unit of freeFirst) groups.get(unit.group?.label ?? unit.typeLabel)!.push(unitRow(situation, unit, selectedId, elapsedS))
   return [...groups].map(([heading, rows]) => ({ heading, rows }))
 }
 

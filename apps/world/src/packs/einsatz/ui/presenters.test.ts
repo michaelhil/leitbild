@@ -158,8 +158,8 @@ describe('Unit card', () => {
     expect(card.recall.label).toBe('Home (drops J-2 Bay)')
     // Undo names who gave the order it takes back and where it sent the unit.
     expect(card.undo).toEqual({ label: `${dispatchWords.undoLast} (by Assistant: J-2 Bay)`, enabled: true, reason: null, commandId: 'cmd-7' })
-    // Only accepting sites are offered.
-    expect(card.deliverTo).toEqual([{ siteId: 'depot-a', label: 'Depot A' }])
+    // Only accepting sites are offered; the one its load goes to now (its predicted delivery) is the selected one.
+    expect(card.deliverTo).toEqual([{ siteId: 'depot-a', label: 'Depot A', selected: true }])
     expect(card.addStop).toEqual({ label: '+ Add leg', enabled: true, reason: null })
     expect(deliverToOrder(situation.units[1]!, 'depot-a')).toEqual({ units: ['r2'], stops: [{ siteId: 'depot-a' }], when: 'after' })
     expect(deliverToOrder(situation.units[0]!, 'depot-a')).toEqual({ units: ['r1'], stops: [{ siteId: 'depot-a' }] })
@@ -169,7 +169,16 @@ describe('Unit card', () => {
     const loaded = situationOf({ units: [unit('r1', { carry: { capacity: 2, load: [{ classId: 'crate', code: 'C', label: '1 crate', count: 1 }] } })] })
     const card = unitCard(loaded, loaded.units[0]!, su('r1'), null, null, 0)
     expect(card.recall).toEqual({ label: 'Home', enabled: false, reason: 'Carrying 1 crate: deliver first' })
-    expect(card.deliverTo.map(chip => chip.label)).toEqual(['Depot A'])
+    expect(card.deliverTo.map(chip => [chip.label, chip.selected])).toEqual([['Depot A', false]])
+  })
+
+  test('a Deliver-to chip shows where the load goes: a delivery stop in the plan before the predicted delivery', () => {
+    const chosen = situationOf({ units: [unit('r1', {
+      plan: [{ id: 'leg-1', verb: 'deliver', target: { siteId: 'depot-c' }, label: 'Depot C', state: 'active', eta: routed(60), by: viewer }],
+      predictedDelivery: { siteId: 'depot-a', label: 'Depot A', eta: routed(360) },
+      carry: { capacity: 2, load: [{ classId: 'crate', code: 'C', label: '1 crate', count: 1 }] },
+    })], sites: [...baseSituation.sites, { ...baseSituation.sites[0]!, id: 'depot-c', label: 'Depot C', inbound: [] }] })
+    expect(unitCard(chosen, chosen.units[0]!, su('r1'), null, null, 0).deliverTo.map(chip => [chip.label, chip.selected])).toEqual([['Depot A', false], ['Depot C', true]])
   })
 
   test('a unit whose options list no target an order would take: Dispatch is disabled with the reason most refusals give; with one valid target, or before its options, it is not', () => {
@@ -282,8 +291,8 @@ describe('Call card', () => {
     // An alternative gives an order on one tap, so it carries the lexicon's verb.
     expect(card.alternatives).toEqual([{ heading: 'Other: crates', units: [{ unitId: 'r3', text: 'Task R3 · 9 min', order: { units: ['r3'], stops: [{ taskId: 'job-1' }] } }] }])
     expect(card.whyNot).toEqual([{ label: 'R2', reasons: 'busy on J-2 Bay' }])
-    // Deliver-to stands under the command block from pinning, disabled until the carrier is on the call.
-    expect(card.deliverTo).toEqual([{ unitLabel: 'R1', heading: `${dispatchWords.deliverTo} (R1, after Task)`, enabled: false, sites: [{ siteId: 'depot-a', text: 'Depot A · 5 min', order: { units: ['r1'], stops: [{ siteId: 'depot-a' }], when: 'after' } }] }])
+    // Deliver-to stands under the command block from pinning, its sites named but not offered until the carrier is on the call.
+    expect(card.deliverTo).toEqual([{ unitLabel: 'R1', heading: `${dispatchWords.deliverTo} (R1, after Task)`, enabled: false, sites: [{ siteId: 'depot-a', text: 'Depot A · 5 min', selected: false, order: { units: ['r1'], stops: [{ siteId: 'depot-a' }], when: 'after' } }] }])
   })
 
   test('a dropped unit chip leaves the order and the label; dropping all disables the button', () => {
@@ -306,6 +315,9 @@ describe('Call card', () => {
     expect(proposalInvalidation(gone, pinnedOf())).toBe(`R1: ${dispatchWords.notListed.toLowerCase()}`)
     const empty = callCard(situation, situation.calls[0]!, pinnedOf({ answer: answer({ proposal: null, deliverTo: [] }) }), opened, 0)
     expect([empty.proposal.button, empty.proposal.refresh.enabled]).toEqual([{ label: 'Task', enabled: false, reason: dispatchWords.noFreeUnit }, true])
+    // A call whose every need is met is covered, never short of units.
+    const covered = callCard(situation, situation.calls[1]!, pinnedOf({ answer: answer({ taskId: 'job-2', proposal: null, deliverTo: [] }), callId: 'job-2' }), opened, 0)
+    expect(covered.proposal.button).toEqual({ label: 'Task', enabled: false, reason: dispatchWords.covered })
   })
 
   test('only a change since pinning invalidates: a unit returning when it was proposed (free to the engine) still holds; one that turns out of action or gains a stop does not', () => {
@@ -327,11 +339,14 @@ describe('Call card', () => {
   })
 
   test('after Dispatch the carrier\'s Deliver-to chips come alive in place and queue a site stop after its plan', () => {
-    const sent = situationOf({ calls: [{ ...baseSituation.calls[0]!, assigned: [{ unitId: 'r1', label: 'R1', phase: 'en-route', status: { word: 'Moving', tone: 'busy' }, eta: routed(240), by: viewer }] }] })
+    const sent = situationOf({
+      calls: [{ ...baseSituation.calls[0]!, assigned: [{ unitId: 'r1', label: 'R1', phase: 'en-route', status: { word: 'Moving', tone: 'busy' }, eta: routed(240), by: viewer }] }],
+      units: [unit('r1', { predictedDelivery: { siteId: 'depot-a', label: 'Depot A', eta: routed(300) } }), unit('k1')],
+    })
     const card = callCard(sent, sent.calls[0]!, pinnedOf(), opened, 0)
     // One actor word: the situation's, on every surface.
     expect(card.assigned[0]!.text).toBe('R1 · Moving · 4 min · by Desk')
-    expect(card.deliverTo).toEqual([{ unitLabel: 'R1', heading: `${dispatchWords.deliverTo} (R1)`, enabled: true, sites: [{ siteId: 'depot-a', text: 'Depot A · 5 min', order: { units: ['r1'], stops: [{ siteId: 'depot-a' }], when: 'after' } }] }])
+    expect(card.deliverTo).toEqual([{ unitLabel: 'R1', heading: `${dispatchWords.deliverTo} (R1)`, enabled: true, sites: [{ siteId: 'depot-a', text: 'Depot A · 5 min', selected: true, order: { units: ['r1'], stops: [{ siteId: 'depot-a' }], when: 'after' } }] }])
   })
 
   test('D.5: a call another Pack\'s sensor observed says by whom and at what Run time', () => {
@@ -390,6 +405,9 @@ describe('Overview', () => {
       ['Q1', 'J-2 Bay', '1:00', 'R2', false, true, ['No free crew can serve']],
     ])
     expect(view.units.groups.map(group => [group.heading, group.rows.map(row => row.label)])).toEqual([['North crews', ['R1', 'R2']], ['Kite', ['K1']]])
+    // In each group the free units come first, so they are named at a glance.
+    const busyFirst = situationOf({ units: [unit('r2', { status: { word: 'Moving', tone: 'busy' } }), unit('r1'), unit('k1', { typeLabel: 'Kite', group: null })] })
+    expect(overview(busyFirst, none, opened, 0).units.groups.map(group => group.rows.map(row => row.label))).toEqual([['R1', 'R2'], ['K1']])
     const r2 = view.units.groups[0]!.rows[1]!
     expect([r2.current, r2.actor, r2.carry, r2.properties]).toEqual(['J-2 Bay · 3 min', 'by Assistant', '0/2', ['Range 40 km']])
     expect(view.units.groups[1]!.rows[0]!.carry).toBeNull()

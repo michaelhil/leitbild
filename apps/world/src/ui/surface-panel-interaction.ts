@@ -88,8 +88,8 @@ export interface MapTargetingTarget {
  * `targets` lists every valid target, and every other object is dimmed: a
  * dimmed object is never one the order would take. Until then (the panel is
  * still reading them) nothing is dimmed. The map only draws it; clicks route
- * as always (`map-target-routing.ts`), and a tap on a tag is a tap on its
- * target.
+ * as always (`map-target-routing.ts`), a tap on a tag is a tap on its
+ * target, and a tap on a stack of icons offers only its valid targets.
  */
 export interface MapTargeting {
   readonly from: ObjectId

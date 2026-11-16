@@ -133,6 +133,7 @@ const operationalPointFor = (
   const target = context.targeting?.targets.get(object.id) ?? null
   const targeted = target !== null
   const targetTag = target?.tag ?? null
+  const targetTagAnchor = target?.anchor ?? 'middle'
   const targetRefused = target?.refused === true
   const dimmed = context.targeting !== null && context.targeting.complete && target === null && object.id !== context.targeting.fromId
   const color = dimmed ? colorWithAlpha(hexToRgba(presentation.color), dimmedAlpha) : muted ? colorWithAlpha(hexToRgba(presentation.color), 132) : hexToRgba(presentation.color)
@@ -150,7 +151,7 @@ const operationalPointFor = (
     hasNewInfo ? 'n' : '',
     muted ? 'm' : '',
     dimmed ? 'd' : '',
-    targeted ? `t=${targetRefused ? 'r' : 'v'}=${targetTag ?? ''}` : '',
+    targeted ? `t=${targetRefused ? 'r' : 'v'}=${targetTagAnchor}=${targetTag ?? ''}` : '',
     label ?? '',
     alert === null ? '' : alert.color.join(','),
   ].join(':')
@@ -170,6 +171,7 @@ const operationalPointFor = (
     muted,
     targeted,
     targetTag,
+    targetTagAnchor,
     targetRefused,
     dimmed,
     sizePx,

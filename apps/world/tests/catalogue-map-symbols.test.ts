@@ -174,7 +174,7 @@ describe('operational map icons', () => {
     })
     const plain = store.update(input(null))
     expect(plain.points.map(point => [point.id, point.targetTag, point.dimmed])).toEqual([['a', null, false], ['b', null, false], ['c', null, false], ['d', null, false]])
-    const valid = (tag: string) => ({ tag, refused: false })
+    const valid = (tag: string) => ({ tag, anchor: 'middle' as const, refused: false })
     const armed = store.update(input({ fromId: 'a', complete: true, targets: new Map([['b', valid('4 min')], ['c', valid('Move · 9 min')]]) }))
     expect(armed.revisions.points).toBe(plain.revisions.points + 1)
     expect(armed.points.map(point => [point.id, point.targetTag, point.dimmed, point.color[3]])).toEqual([['a', null, false, 255], ['b', '4 min', false, 255], ['c', 'Move · 9 min', false, 255], ['d', null, true, 72]])
@@ -197,7 +197,7 @@ describe('operational map icons', () => {
       hasNewInfo: () => false, presentationFor: presentationWith({}),
     })
     // b is a tagged valid target, c a valid one past the tagged few, d not a target (refused, or no stop at all).
-    const targets = new Map([['b', { tag: '4 min', refused: false }], ['c', { tag: null, refused: false }]])
+    const targets = new Map([['b', { tag: '4 min', anchor: 'middle' as const, refused: false }], ['c', { tag: null, anchor: 'middle' as const, refused: false }]])
     const armed = store.update(input({ fromId: 'a', complete: true, targets }))
     expect(armed.points.map(point => [point.id, point.targeted, point.targetTag, point.dimmed])).toEqual([['a', false, null, false], ['b', true, '4 min', false], ['c', true, null, false], ['d', false, null, true]])
     const layers = layersOf(armed, emptyCatalogueSymbolAtlas)
@@ -210,6 +210,21 @@ describe('operational map icons', () => {
     expect(reading.points.map(point => point.dimmed)).toEqual([false, false, false, false])
   })
 
+  test('a tag near the map\'s edge runs into the map from its target instead of being centred off it', () => {
+    const store = createMapFeatureStore()
+    const objects = [objectOf('a', 11.3), objectOf('b', 11.4), objectOf('c', 11.5), objectOf('d', 11.6)]
+    const armed = store.update({
+      objects, selectedControllerId: 'a', highlightedObjectIds: [],
+      targeting: { fromId: 'a', complete: true, targets: new Map([['b', { tag: 'Needs fire suppression', anchor: 'start' as const, refused: true }], ['c', { tag: '4 min', anchor: 'end' as const, refused: false }], ['d', { tag: '6 min', anchor: 'middle' as const, refused: false }]]) },
+      hiddenObjectCategoryIds: [], alertPalette: 'day' as const, placementPoints: [], packFeatures: [],
+      hasNewInfo: () => false, presentationFor: presentationWith({}),
+    })
+    const tags = layersOf(armed, emptyCatalogueSymbolAtlas).find(layer => layer.id === 'leitbild-target-tags')?.props as unknown as { readonly getTextAnchor: (point: unknown) => string; readonly getPixelOffset: (point: unknown) => ReadonlyArray<number> }
+    const [b, c, d] = ['b', 'c', 'd'].map(id => armed.points.find(point => point.id === id)!)
+    expect([b, c, d].map(point => tags.getTextAnchor(point))).toEqual(['start', 'end', 'middle'])
+    expect([b, c, d].map(point => Math.sign(tags.getPixelOffset(point)[0]!))).toEqual([-1, 1, 0])
+  })
+
   test('a target a click was just refused for is ringed and tagged apart, with the refusal as its tag, and never dimmed', () => {
     const store = createMapFeatureStore()
     const objects = [objectOf('a', 11.3), objectOf('b', 11.4), objectOf('c', 11.5), objectOf('d', 11.6)]
@@ -217,7 +232,7 @@ describe('operational map icons', () => {
       objects,
       selectedControllerId: 'a',
       highlightedObjectIds: [],
-      targeting: { fromId: 'a', complete: true, targets: new Map([['b', { tag: 'Needs fire suppression', refused: true }], ['c', { tag: '4 min', refused: false }]]) },
+      targeting: { fromId: 'a', complete: true, targets: new Map([['b', { tag: 'Needs fire suppression', anchor: 'middle' as const, refused: true }], ['c', { tag: '4 min', anchor: 'middle' as const, refused: false }]]) },
       hiddenObjectCategoryIds: [], alertPalette: 'day' as const,
       placementPoints: [],
       packFeatures: [],
@@ -245,7 +260,7 @@ describe('operational map icons', () => {
       objects,
       selectedControllerId: 'a',
       highlightedObjectIds: [],
-      targeting: { fromId: 'a', complete: true, targets: new Map([['b', { tag: '4 min', refused: false }], ['c', { tag: '9 min', refused: false }]]) },
+      targeting: { fromId: 'a', complete: true, targets: new Map([['b', { tag: '4 min', anchor: 'middle' as const, refused: false }], ['c', { tag: '9 min', anchor: 'middle' as const, refused: false }]]) },
       hiddenObjectCategoryIds: [], alertPalette: 'day' as const,
       placementPoints: [],
       packFeatures: [],
