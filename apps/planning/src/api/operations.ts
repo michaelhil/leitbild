@@ -753,9 +753,11 @@ export const createPlanningOperations = (ports: PlanningOperationsPorts) => {
       const offset = sliceCursor(input.cursor)
       const frame = { target: { kind: 'resource' as const, resource: planReference(workspaceId, plan.id) }, title: plan.inputs.settings.title, observedAt: now() }
       const budget = resultLimitBytes - byteLength({ ...frame, sections: [{ id: section, title: 'Calendars, crews, tools and purchases', data: null }] })
+      // The paging refuses for itself (a cursor past the end, with its hint; a record larger than a page as
+      // record_too_large); what else does not fit is refused as it is, with no cursor hint.
       let sections: Section[]
       try { sections = buildSection(section, context, offset, budget, option) } catch (error) {
-        if (error instanceof RangeError) throw planningError(400, 'invalid_request', error.message, { expected: { cursor: 'the "more" value of the previous page of the same section' } })
+        if (error instanceof RangeError) throw planningError(400, 'invalid_request', error.message)
         throw error
       }
       for (const entry of sections) {
