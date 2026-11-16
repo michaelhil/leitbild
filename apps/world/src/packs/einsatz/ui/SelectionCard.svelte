@@ -12,6 +12,7 @@
    */
   interface Props {
     readonly card: CardView
+    readonly unitPending: boolean
     /** The last refusal or failure the panel reports, shown in the card's reserved slot. */
     readonly feedback: string | null
     readonly icon: (id: string) => string | undefined
@@ -65,7 +66,7 @@
         <p class="status" data-tone={card.status.tone}><span class="dot" aria-hidden="true">●</span> {card.status.word}{#if card.status.due !== null} · <span class="num">{card.status.due}</span>{/if}</p>
       </div>
       {#if card.readOnly === null}
-        <button type="button" class="icon-action" title={card.recall.reason ?? card.recall.label} aria-label={card.recall.label} disabled={!card.recall.enabled} onclick={() => props.recall(card.id)}>
+        <button type="button" class="icon-action" title={card.recall.reason ?? card.recall.label} aria-label={card.recall.label} disabled={props.unitPending || !card.recall.enabled} onclick={() => props.recall(card.id)}>
           <House size={17} aria-hidden="true" />
         </button>
       {/if}
@@ -82,7 +83,7 @@
         {#each card.plan as stop (stop.id)}
           <li class:active={stop.active} aria-current={stop.active ? 'step' : undefined}>
             {#if card.removable}
-              <button type="button" class="stop-target" title={stop.removeLabel} aria-label={stop.removeLabel} onclick={() => props.chooseStop(stop.id)}>
+              <button type="button" class="stop-target" title={stop.removeLabel} aria-label={stop.removeLabel} disabled={props.unitPending} onclick={() => props.chooseStop(stop.id)}>
                 {@render planStop(stop)}
               </button>
             {:else}
@@ -90,10 +91,10 @@
             {/if}
             {#if stop.canMoveUp || stop.canMoveDown}
               <div class="move-controls">
-                <button type="button" class="icon-action" title="Move earlier" aria-label={`Move stop ${stop.index} earlier: ${stop.text}`} disabled={!stop.canMoveUp} onclick={() => props.moveStop(stop.id, -1)}>
+                <button type="button" class="icon-action" title="Move earlier" aria-label={`Move stop ${stop.index} earlier: ${stop.text}`} disabled={props.unitPending || !stop.canMoveUp} onclick={() => props.moveStop(stop.id, -1)}>
                   <ArrowUp size={16} aria-hidden="true" />
                 </button>
-                <button type="button" class="icon-action" title="Move later" aria-label={`Move stop ${stop.index} later: ${stop.text}`} disabled={!stop.canMoveDown} onclick={() => props.moveStop(stop.id, 1)}>
+                <button type="button" class="icon-action" title="Move later" aria-label={`Move stop ${stop.index} later: ${stop.text}`} disabled={props.unitPending || !stop.canMoveDown} onclick={() => props.moveStop(stop.id, 1)}>
                   <ArrowDown size={16} aria-hidden="true" />
                 </button>
               </div>
@@ -104,13 +105,13 @@
       </ol>
     {/if}
     {#if card.readOnly === null}
-      {#if card.targetNotice !== null}<p class="note" role="status">{card.targetNotice}</p>{/if}
+      {#if props.unitPending || card.targetNotice !== null}<p class="note" role="status">{props.unitPending ? 'Updating plan…' : card.targetNotice}</p>{/if}
       {#if card.targets.length > 0 || card.targetsLoading}
         <details class="unit-disclosure">
           <summary>Targets</summary>
           <ol class="targets">
             {#each card.targets as row (row.key)}
-              <li><button type="button" class="target" disabled={card.targetsLoading} onclick={() => props.targetRow(row.target)}>
+              <li><button type="button" class="target" disabled={props.unitPending || card.targetsLoading} onclick={() => props.targetRow(row.target)}>
                 <span>{row.text}</span>
                 {#if row.eta !== null}<span class="num">{row.eta}</span>{/if}
               </button></li>

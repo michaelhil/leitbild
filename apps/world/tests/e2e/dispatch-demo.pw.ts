@@ -6,7 +6,7 @@ const isUnitCommand = (request: Request, command: string): boolean => request.me
 
 const unitCommand = async (page: Page, command: string, click: () => Promise<void>, accepted = true) => {
   const [response] = await Promise.all([
-    page.waitForResponse(response => isUnitCommand(response.request(), command)),
+    page.waitForResponse(response => isUnitCommand(response.request(), command), { timeout: 30_000 }),
     click(),
   ])
   expect(response.status()).toBe(200)
@@ -41,7 +41,7 @@ const withDispatchDemo = async (page: Page, play: (world: FrameLocator, panel: L
     await expect(panel).toBeVisible({ timeout: 90_000 })
     await play(world, panel)
   } finally {
-    await page.goto('about:blank')
+    if (!page.isClosed()) await page.goto('about:blank')
     const response = await page.request.delete(`/api/workspaces/${encodeURIComponent(workspace.id)}`)
     expect(response.ok()).toBe(true)
   }
@@ -67,6 +67,9 @@ test('selecting a unit allows direct dispatch and editing its assigned stops', a
   const orders: Request[] = []
   page.on('request', request => { if (isUnitCommand(request, 'order')) orders.push(request) })
   await withDispatchDemo(page, async (world, panel) => {
+    // Keep arrivals from changing the plan while this test exercises its edits.
+    await page.getByRole('button', { name: 'Pause simulation', exact: true }).click()
+    await expect(page.getByRole('button', { name: 'Play simulation', exact: true })).toBeVisible()
     await panel.getByRole('region', { name: 'Units' }).getByRole('button', { name: /^A4\b/ }).click()
     const unit = panel.getByRole('article', { name: /^A4\b/ })
     await unit.getByText('Targets', { exact: true }).click()
@@ -75,7 +78,7 @@ test('selecting a unit allows direct dispatch and editing its assigned stops', a
     expect(await unitCommand(page, 'order', () => call.click())).toMatchObject({
       input: { stops: [{ taskId: 'task:tistedal-fall' }] },
     })
-    await expect(unit.getByRole('button', { name: /Remove stop 1:.*C-1 Tistedal fall/ })).toBeVisible()
+    await expect(unit.getByRole('button', { name: /Remove stop 1:.*C-1 Tistedal fall/ })).toBeVisible({ timeout: 15_000 })
 
     const dialog = world.getByRole('dialog', { name: 'Change the plan?' })
     const clinic = unit.getByRole('button', { name: /Halden emergency clinic/ })
@@ -99,13 +102,27 @@ test('selecting a unit allows direct dispatch and editing its assigned stops', a
     await triage.click()
     await unitCommand(page, 'order', () => add.click())
     const earlier = unit.getByRole('button', { name: /Move stop 3 earlier:.*Remmen triage post/ })
-    await unitCommand(page, 'plan.reorder', () => earlier.click(), false)
+    const removeTriage = unit.getByRole('button', { name: /Remove stop 3:.*Remmen triage post/ })
+    const inFlight = Promise.withResolvers<void>()
+    await page.route('**/capabilities/world.einsatz.unit.plan.reorder/invoke', async route => {
+      await inFlight.promise
+      await route.continue()
+    }, { times: 1 })
+    const reorder = unitCommand(page, 'plan.reorder', () => earlier.click(), false)
+    try {
+      await expect(removeTriage).toBeDisabled()
+      await expect(unit.getByText('Updating plan…', { exact: true })).toBeVisible()
+    } finally {
+      inFlight.resolve()
+      await reorder
+    }
     await expect(unit.getByRole('alert')).toContainText('must follow the pickup it delivers')
+    await expect(panel.locator('.selection')).toHaveAttribute('aria-busy', 'false')
 
     // The numbered stop row exercises the same confirmation as clicking a red map destination.
-    const removeTriage = unit.getByRole('button', { name: /Remove stop 3:.*Remmen triage post/ })
     await removeTriage.click()
     const removal = world.getByRole('dialog', { name: 'Remove stop?' })
+    await expect(removal).toBeVisible()
     await unitCommand(page, 'stop.remove', () => removal.getByRole('button', { name: 'Remove stop', exact: true }).click())
     await expect(removeTriage).toBeHidden()
     await expect(unit.getByRole('button', { name: /Remove stop 1:.*C-1 Tistedal fall/ })).toBeVisible()
