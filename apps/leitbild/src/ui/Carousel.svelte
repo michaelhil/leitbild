@@ -29,6 +29,8 @@
     noun?: string
     /** Start stopped: opened by keyboard (`click.detail === 0`) or by deep link. Reduced motion always starts stopped. */
     startStopped?: boolean
+    /** A tap or click on a dot or thumbnail stops rotation until Play (the Demos modal: Start launches the demo picked). */
+    pickStops?: boolean
     initialIndex?: number
     intervalMs?: number
     /** Hold while less than half the carousel is on screen. */
@@ -40,7 +42,7 @@
 
   let {
     items, label, itemTitle, slide, thumb, nav = 'dots', variant = 'hero', noun = 'slide',
-    startStopped = false, initialIndex = 0, intervalMs = CAROUSEL_INTERVAL_MS, observeVisibility = false,
+    startStopped = false, pickStops = false, initialIndex = 0, intervalMs = CAROUSEL_INTERVAL_MS, observeVisibility = false,
     credit, onindexchange,
   }: Props = $props()
 
@@ -48,7 +50,7 @@
   const reducedMotion = typeof matchMedia === 'function' && matchMedia('(prefers-reduced-motion: reduce)').matches
   // Created once: the item count and the start state are read at mount.
   // svelte-ignore state_referenced_locally
-  const controller = createCarousel({ count: items.length, intervalMs, initialIndex, startStopped: startStopped || reducedMotion })
+  const controller = createCarousel({ count: items.length, intervalMs, initialIndex, startStopped: startStopped || reducedMotion, pickStops })
   let view = $state<CarouselSnapshot>(controller.snapshot())
   let root = $state<HTMLElement | null>(null)
   let pickers = $state<HTMLElement | null>(null)
@@ -137,7 +139,7 @@
           <button class="picker" type="button" role="tab" data-index={index} id={`${uid}-tab-${index}`}
             aria-selected={active} aria-controls={`${uid}-slide-${index}`} tabindex={active ? 0 : -1}
             aria-label={pickerLabel(index, items.length, itemTitle(item), noun)}
-            onclick={event => controller.goTo(index, inputOf(event))}
+            onclick={event => controller.pick(index, inputOf(event))}
           >
             {#if thumb}<span class="thumb" aria-hidden="true">{@render thumb(item, index)}<span class="thumb-title">{itemTitle(item)}</span
               >{#if active}{#key view.cycle}<span class="bar"><i></i></span>{/key}{/if}</span>{/if}
