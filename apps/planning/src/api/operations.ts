@@ -97,6 +97,11 @@ export interface SolverPort {
     readonly nearestAllowed?: { readonly job: string; readonly at: string }
     /** Lane K's findings for a locked job at its lock time, against the saved option's rows: words that match the plan on screen. */
     readonly lockFindings?: readonly CheckViolation[]
+    /**
+     * Lane S: the first job the edit leaves with no slot for its crews and tools before the horizon (it and the
+     * jobs waiting on it are not in `rows`); with lane K's crew or tool that has no slot long enough left, and from when.
+     */
+    readonly unplaced?: { readonly job: string; readonly resource?: string; readonly after?: string }
   }>
 }
 
@@ -584,13 +589,21 @@ export const createPlanningOperations = (ports: PlanningOperationsPorts) => {
         const moves = moved.length === 0 && notPart !== undefined
           ? `Not saved yet. ${notPart}, so this preview cannot show what the change does to ${absent.length === 1 ? 'it' : 'them'}: preview it on an option with that job, or generate after saving.`
           : `Not saved yet. On '${shownName}': ${moved.length === 0 ? 'no job moves' : `${moved.length} job${moved.length === 1 ? ' moves' : 's move'}`}; the last finish ${finish(timed.rows) === finish(recommended.rows) ? 'stays' : `moves from ${timeWords(finish(recommended.rows), zone)} to ${timeWords(finish(timed.rows), zone)}`}.${notPart === undefined ? '' : ` ${notPart}.`}`
-        const consequence = wholeWithin(findings.length === 0 ? authorities.map(authority => `${moves}${authority}`)
+        // A job the edit leaves with no slot is what this option would break, in lane K's words (walk V4, T12).
+        const window = outcome.inputs.settings.window
+        const days = window === null ? undefined : (Date.parse(window.end) - Date.parse(window.start)) / 86_400_000
+        const within = days === undefined ? 'within the window\'s length after the window' : `within ${Number.isInteger(days) ? `${days} ${days === 1 ? 'day' : 'days'}` : valueWords(days * 24, 'h')} after the window`
+        const unplaced = timed.unplaced === undefined ? undefined : timed.unplaced.resource !== undefined && timed.unplaced.after !== undefined
+          ? `'${nameOf(outcome.inputs, timed.unplaced.job)}' could not be done: ${nameOf(outcome.inputs, timed.unplaced.resource)} has no slot long enough left after ${timeWords(timed.unplaced.after, zone)}, ${within}`
+          : `'${nameOf(outcome.inputs, timed.unplaced.job)}' could not be done: no slot is left for it ${within}`
+        const consequence = unplaced !== undefined ? wholeWithin(authorities.map(authority => `Not saved yet. '${shownName}' would break: ${unplaced}.${authority}`))
+          : wholeWithin(findings.length === 0 ? authorities.map(authority => `${moves}${authority}`)
           : authorities.flatMap(authority => nearests.flatMap(nearest => ([2, 1, 0] as const).map(shown =>
             `Not saved yet. '${shownName}' would break ${retimingBreaks(findings, outcome.inputs, shown)}; generate new options after saving.${nearest}${authority}`))))
         return writeResult(previewed, changeLines(outcome.changes, outcome.inputs), { preview: {
           saved: false, consequence,
           // Whole, so a rule's words are never cut (walk 3, R3-6); within the 4 KB result, later findings go first.
-          violations: wholeFindings(findings.map(violation => violation.words ?? `${violation.code.replaceAll('_', ' ').replaceAll('-', ' ')}: ${violation.about.map(key => nameOf(outcome.inputs, key)).join(', ')}`)),
+          violations: wholeFindings([...(unplaced === undefined ? [] : [`${unplaced}.`]), ...findings.map(violation => violation.words ?? `${violation.code.replaceAll('_', ' ').replaceAll('-', ' ')}: ${violation.about.map(key => nameOf(outcome.inputs, key)).join(', ')}`)]),
           weakens,
           ...(timed.nearestAllowed === undefined ? {} : { nearestAllowed: timed.nearestAllowed.at }),
           moved: moved.slice(0, 6).map(row => ({ job: row.job, start: row.start, finish: row.finish, because: input.edits.map((_, edit) => edit) })),

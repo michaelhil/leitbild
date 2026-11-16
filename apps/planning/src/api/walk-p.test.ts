@@ -70,6 +70,8 @@ describe('V9: the what-if keep rule, as stored and as Generate describes it', ()
     const ask = (hours: number) => generate({ variants: [{ label: `At most ${hours} h out`, also: [also(hours)] }], keep: true })
     for (const hours of [40, 41, 42, 43, 44, 45]) await ask(hours)
     const full = await ask(45)
+    // A what-if keeps its extra rule on every path, so it is never counted, ranked or recommended as one of the plan's own.
+    expect(full.filter(option => option.label.startsWith('At most') && option.variant.also === undefined).map(option => option.label)).toEqual([])
     // Asked again, the 45 h what-if replaced itself: still 8, the plan's own and six cards.
     expect([full.length, full.filter(option => option.variant.also !== undefined).length, own.every(key => full.some(option => option.key === key))]).toEqual([8, 6, true])
     // A seventh what-if: the plan's own stay; one earlier what-if makes room, and the read shows which.
@@ -154,5 +156,32 @@ describe('V10: every moved job of the comparison is reachable, page by page', ()
     expect(pages).toBeGreaterThan(1)
     expect([...seen].sort()).toEqual([...moved].sort())
     expect(new Set(seen).size).toBe(seen.length)
+  })
+})
+
+describe('V4 and T12: a job the edit leaves with no slot is said as what the option would break, never as stale', () => {
+  test('the preview names the option, the job, the crew or tool and from when, as lane K judges it', async () => {
+    const inner = createSolverDouble()
+    const local = await createHarness({ solver: { ...inner, formulation: () => formulation, preview: async request => ({
+      rows: request.option.rows.filter(row => row.job !== 'CCWHXA-ECT'), violations: [],
+      unplaced: { job: 'CCWHXA-ECT', resource: 'ect-team', after: '2026-11-18T10:30:00.000Z' },
+    }) } })
+    try {
+      const plan = await local.store.create(local.workspaceId, planWith(local.workspaceId, [swap, rebuild]))
+      const clean = trainAInputs.jobs.find(entry => entry.key === 'CCWHXA-CLEAN') ?? trainAInputs.jobs.find(entry => entry.kind === 'work')!
+      const answer = await local.call('planning.plan.edit', { resource: plan.id, input: { edits: [{ edit: 'job', key: clean.key, duration: { value: 12, unit: 'h' } }], preview: true } })
+      expect(answer.status).toBe(200)
+      const name = (key: string) => trainAInputs.jobs.find(entry => entry.key === key)?.title ?? trainAInputs.resources.find(entry => entry.key === key)!.label
+      const words = `'${name('CCWHXA-ECT')}' could not be done: ${name('ect-team')} has no slot long enough left after Wed 11:30, within 5 days after the window`
+      expect(answer.body.result.preview.consequence).toBe(`Not saved yet. 'Swap in refurbished spare' would break: ${words}.`)
+      expect(answer.body.result.preview.violations[0]).toBe(`${words}.`)
+      // Without lane K's crew and instant, the job alone.
+      const bare = await createHarness({ solver: { ...inner, formulation: () => formulation, preview: async request => ({ rows: request.option.rows, violations: [], unplaced: { job: 'CCWHXA-ECT' } }) } })
+      try {
+        const other = await bare.store.create(bare.workspaceId, planWith(bare.workspaceId, [swap, rebuild]))
+        const said = await bare.call('planning.plan.edit', { resource: other.id, input: { edits: [{ edit: 'job', key: clean.key, duration: { value: 12, unit: 'h' } }], preview: true } })
+        expect(said.body.result.preview.consequence).toBe(`Not saved yet. 'Swap in refurbished spare' would break: '${name('CCWHXA-ECT')}' could not be done: no slot is left for it within 5 days after the window.`)
+      } finally { await bare.close() }
+    } finally { await local.close() }
   })
 })
