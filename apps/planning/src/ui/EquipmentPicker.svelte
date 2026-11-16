@@ -126,7 +126,7 @@
       <ul class="item-list">
         {#each results as subject (subject.locator)}
           <li>
-            <strong>{subject.label}</strong>{#if addedAs(context.inputs, subject.locator)} <MarkTag mark={{ shape: '✓', word: 'added' }} tone="good" /> <span class="hint">as {addedAs(context.inputs, subject.locator)}</span>{/if} <small>{subject.kind}</small>
+            <strong>{subject.label}</strong>{#if addedAs(context.inputs, subject.locator)}{' '}<MarkTag mark={{ shape: '✓', word: 'added' }} tone="good" /> <span class="hint">as {addedAs(context.inputs, subject.locator)}</span>{/if} <small>{subject.kind}</small>
             {#each subject.facts.filter(routineFact).slice(0, 4) as fact (fact.id)}<small><MarkTag mark={{ shape: '◉', word: 'World' }} tone="world" /> {factText(fact, context.format)}</small>{/each}
             <span class="actions">
               <button type="button" disabled={busy} onclick={() => add(subject, 'equipment')}>Add as equipment</button>

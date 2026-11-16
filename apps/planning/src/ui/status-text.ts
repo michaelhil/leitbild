@@ -2,7 +2,7 @@
 // exactly the status schema's; everything around them explains what they cover.
 import type { Certificate, GoalWord, PlanInputs, StatusWord } from '../plan/schema.ts'
 import { hoursNumber, hoursText, quantityText, type Mark, type TimeFormat } from './format.ts'
-import { joinWords, type Goal, type Names, type Status } from './model.ts'
+import { joinWords, type Goal, type ItemStatus, type Names, type Status } from './model.ts'
 
 export const statusMark = (word: StatusWord): Mark => ({
   'validated feasible': { shape: '✓', word },
@@ -67,6 +67,17 @@ export const goalShort = (goal: Goal, context: Context): string => {
 export const goalStep = (goal: Goal): string | null =>
   goal.tolerance.value === 0 ? null : `compared in steps of ${quantityText(goal.tolerance.value, goal.tolerance.unit)}`
 
+/**
+ * A goal's full words, as the goals editor and "why recommended" say it: what it aims at, and what its step
+ * means. "Keep the extra cost as small as possible; costs within NOK 25,000 of each other count as equal".
+ */
+export const goalAimText = (goal: Goal, context: Context): string => {
+  const aim = goal.metric === 'finish' ? 'Finish the last job as early as possible' : `Keep the ${goalName(goal, context)} as small as possible`
+  if (goal.tolerance.value === 0) return aim
+  const step = quantityText(goal.tolerance.value, goal.tolerance.unit)
+  return `${aim}; ${goal.metric === 'extra-cost' ? 'costs' : 'values'} within ${step} of each other count as equal`
+}
+
 /** One sentence per goal in priority order, e.g. "1. Time over the 54 h guideline …: 0 h." */
 export const goalOrderText = (goals: readonly Goal[], context: Context): readonly string[] =>
   goals.map((goal, index) => {
@@ -89,7 +100,7 @@ export interface GoalLine {
   readonly name: string
   readonly value: string
   readonly mark: Mark
-  /** How far from best, in words: "could be up to 3.5 h better", or the bound itself for fixed costs. */
+  /** The proven bound, said as itself: "no plan can cost less than NOK 340,000"; empty when none is informative. */
   readonly distance: string
 }
 
@@ -102,7 +113,7 @@ const viaWords = {
 } as const
 
 /** The proof behind "proven infeasible", in planner words. */
-export const certificateText = (cause: Certificate, context: Context): string => {
+export const certificateText = (cause: Certificate, context: Context, span?: { readonly rule: string }): string => {
   const { names, format } = context
   switch (cause.kind) {
     case 'chain': {
@@ -122,7 +133,8 @@ export const certificateText = (cause: Certificate, context: Context): string =>
       return cause.steps.length === 0
         ? 'The times cannot line up inside the window.'
         // What holds a job is said only where it is more than a link to the job before it.
-        : `The times cannot line up along this chain: ${cause.steps.map(step => step.via === 'link' ? names.job(step.job) : `${names.job(step.job)} (held by ${viaWords[step.via]})`).join(', then ')}.`
+        // A span step names its rule in the rule's own words where the stored span says which (re-walk N2).
+        : `The times cannot line up along this chain: ${cause.steps.map(step => step.via === 'link' ? names.job(step.job) : `${names.job(step.job)} (held by ${step.via === 'span-limit' && span !== undefined ? `“${names.rule(span.rule)}”` : viaWords[step.via]})`).join(', then ')}.`
   }
 }
 
@@ -201,21 +213,46 @@ export interface StatusView {
   readonly run: string | null
 }
 
-/** One line on how the search ended: it ran to the end, or it stopped early and why. Said once, apart from the goals. */
-const runText = (status: Extract<Status, { run: unknown }>): string => {
-  const { run } = status
-  if (run.stoppedBy === 'done') return 'The search ran to the end.'
+/**
+ * How a search stopped before it finished, as the words after "The search stopped early": ", when its time was
+ * up", ": it reached the memory it may use", …; null when it ran to the end. One source for the option's own
+ * line, the banner and the attention card, so they never disagree (walk V7, V8).
+ */
+export const stopWords = (run: Extract<Status, { run: unknown }>['run']): string | null => {
+  if (run.stoppedBy === 'done') return null
+  if (run.stoppedBy === 'memory') return ': it reached the memory it may use'
   const why = {
-    evals: 'when its time was up', cpu: 'when its time was up', wall: 'when its time was up', memory: 'at the memory limit',
+    evals: 'when its time was up', cpu: 'when its time was up', wall: 'when its time was up',
     ended: 'when the solver process ended', cancelled: run.stoppedByWho === 'host' ? 'when the Host stopped it' : 'because you cancelled it',
   }[run.stoppedBy]
-  return `The search stopped early, ${why}.`
+  return `, ${why}`
+}
+/** One line on how the search ended: it ran to the end, or it stopped early and why. Said once, apart from the goals. */
+const runText = (status: Extract<Status | ItemStatus, { run: unknown }>): string => {
+  const stop = stopWords(status.run)
+  return stop === null ? 'The search ran to the end.' : `The search stopped early${stop}.`
 }
 
-/** "0 h, proven optimal", "11 h, best found; could be up to 3.5 h better" or "NOK 472,650, best found; no plan can cost less than NOK 340,000". */
+/**
+ * A goal's proven bound said as itself, never as doubt about the plan (walk V11): "no plan can cost less than
+ * NOK 340,000", "no plan has fewer than 28.5 equipment-hours out of service", "no plan has less than 2 h over the
+ * 54 h guideline".
+ */
+export const boundWords = (goal: Goal, bound: number, unit: string): string => {
+  const amount = valueText(bound, unit)
+  switch (goal.metric) {
+    case 'extra-cost': return `no plan can cost less than ${amount}`
+    case 'span-over': return goal.threshold === undefined ? `no plan has an outage shorter than ${amount}` : `no plan has less than ${amount} over the ${quantityText(goal.threshold.value, goal.threshold.unit)} guideline`
+    case 'unavailable-hours': return unit === 'h' ? `no plan has fewer than ${hoursNumber(bound)} equipment-hours out of service` : `no plan has less than ${amount} of equipment out of service`
+    case 'finish': return `no plan finishes its last job earlier than ${amount} after the window opens`
+    case 'lateness': return `no plan has less than ${amount} of lateness`
+  }
+}
+
+/** "0 h, proven optimal", or "NOK 472,650, best found; no plan can cost less than NOK 340,000". */
 export const goalResult = (goal: GoalLine): string => `${goal.value}, ${goal.mark.word}${goal.distance === '' ? '' : `; ${goal.distance}`}`
 
-export const statusView = (status: Status, context: Context): StatusView => {
+export const statusView = (status: Status | ItemStatus, context: Context): StatusView => {
   const mark = statusMark(status.word)
   switch (status.word) {
     case 'validated feasible': {
@@ -226,10 +263,8 @@ export const statusView = (status: Status, context: Context): StatusView => {
         // A bound that says nothing (the trivial zero bound: the gap is the whole value) gives no gap line.
         const informative = line.bound !== undefined && line.bound.certificate?.kind !== 'zero' && line.bound.value > 0
         const gap = line.word === 'proven optimal' || line.bound === undefined || !informative ? 0 : line.value - line.bound.value
-        // A bound made of costs every plan pays is said as that fact, not as doubt about this plan.
-        const distance = gap <= 0 || line.bound === undefined ? ''
-          : line.bound.certificate?.kind === 'fixed-costs' ? `no plan can cost less than ${valueText(line.bound.value, line.unit)}`
-          : `could be up to ${valueText(gap, line.unit)} better`
+        // The bound itself, for every goal (walk V11): "no plan has fewer than 28.5 equipment-hours out of service".
+        const distance = gap <= 0 || line.bound === undefined || goal === undefined ? '' : boundWords(goal, line.bound.value, line.unit)
         return { name, value, mark: goalMark(line.word), distance }
       })
       return {
@@ -239,7 +274,11 @@ export const statusView = (status: Status, context: Context): StatusView => {
       }
     }
     case 'proven infeasible':
-      return { mark, word: status.word, goals: [], run: runText(status), sentence: 'No plan can keep every hard rule. The proof:', details: [certificateText(status.cause, context)] }
+      // A span refusal proven in the solver child says its least outage against its rule, in the rule's words (N2).
+      return { mark, word: status.word, goals: [], run: runText(status), sentence: 'No plan can keep every hard rule. The proof:', details: [
+        ...status.span === undefined ? [] : [`Out at least ${hoursText(status.span.leastHours)}, against the ${hoursText(status.span.limitHours)} of “${context.names.rule(status.span.rule)}”.`],
+        certificateText(status.cause, context, status.span),
+      ] }
     case 'invalid input':
       return { mark, word: status.word, goals: [], run: null, sentence: 'The plan cannot be generated until these are fixed:', details: status.problems.map(problem => problemText(problem, context.names)) }
     case 'unsupported feature':

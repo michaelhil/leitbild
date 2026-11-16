@@ -6,6 +6,7 @@ import { CHECKER_VERSION } from '../check/check.ts'
 import { expandCalendar, isOnGrid } from '../time/calendar.ts'
 import { convertUnit, gridSlotMs, isTimeUnit, timeUnitMs, type TimeUnit } from '../time/units.ts'
 import { zoneDataFingerprint, zoneOffGridOffset } from '../time/zone.ts'
+import { purchaseStanding } from './keys.ts'
 import type { NormalizedProblem } from './problem.ts'
 import { SOLVER_VERSIONS } from './search.ts'
 
@@ -74,14 +75,6 @@ export type Compiled = { readonly ok: true; readonly problem: NormalizedProblem;
 export const formulationOf = (grid: PlanInputs['settings']['grid']): string =>
   `planning solver: compile ${SOLVER_VERSIONS.compile}, bounds ${SOLVER_VERSIONS.bounds}, engine ${SOLVER_VERSIONS.engine}; ${CHECKER_VERSION}; grid ${grid}; ${zoneDataFingerprint()}`
 
-/** Every combination of method options, each a full pick list; `fixed` narrows the choices. */
-export const methodCombinations = (inputs: PlanInputs, fixed: readonly MethodPick[] = []): MethodPick[][] =>
-  inputs.methods.reduce<MethodPick[][]>((combos, choice) => {
-    const pinned = fixed.find(pick => pick.choice === choice.key)
-    const options = pinned === undefined ? choice.options.map(option => option.key) : [pinned.option]
-    return combos.flatMap(combo => options.map(option => [...combo, { choice: choice.key, option }]))
-  }, [[]])
-
 const fail = (word: CompileFailure['word'], problems: Problem[]): CompileFailure => ({ ok: false, word, problems: problems.slice(0, 16) })
 const runKey = (mask: Uint8Array): string => {
   const parts: number[] = []
@@ -147,15 +140,9 @@ export const compile = (inputs: PlanInputs, sub: SubSolve): Compiled => {
   const allowedPurchases = inputs.purchases.filter(purchase => {
     const resource = inputs.resources[resourceByKey.get(purchase.resource) ?? -1]
     if (resource === undefined) { invalid.push({ about: [purchase.key, purchase.resource], code: 'unknown_key' }); return false }
-    if (purchase.ordered === undefined && purchase.orderBy !== undefined && dataDate !== undefined && dataDate > Date.parse(purchase.orderBy)) {
-      dropped.push({ purchase: purchase.key, code: 'order_deadline_passed' }); return false
-    }
-    const addsCrewHours = resource.kind === 'crew' && purchase.replaces.length === 0
-    if (sub.buy === 'no-extra-crew-hours' && addsCrewHours) { dropped.push({ purchase: purchase.key, code: 'adds_crew_hours' }); return false }
-    if (purchase.ordered !== undefined) return true
-    const permitted = sub.buy === 'allowed' ? purchase.allowed : sub.buy === 'none' ? false : sub.buy === 'no-extra-crew-hours' ? true : sub.buy.includes(purchase.key)
-    if (!permitted) dropped.push({ purchase: purchase.key, code: 'not_in_variant' })
-    return permitted
+    const standing = purchaseStanding(purchase, resource, sub.buy, dataDate)
+    if (!standing.ok) dropped.push({ purchase: purchase.key, code: standing.code })
+    return standing.ok
   })
   if (Array.isArray(sub.buy)) for (const key of sub.buy) if (!inputs.purchases.some(purchase => purchase.key === key)) invalid.push({ about: [key], code: 'unknown_key' })
 

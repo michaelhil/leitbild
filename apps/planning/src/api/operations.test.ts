@@ -1,9 +1,16 @@
 import { afterAll, describe, expect, test } from 'bun:test'
 import type { PlanningSubject } from '@leitbild/contracts'
-import { planInputsSchema } from '../plan/schema.ts'
+import { planInputsSchema, planSchema } from '../plan/schema.ts'
+import { rungsOf } from '../plan/buys.ts'
+import { buysPointer } from '../plan/summary.ts'
+import { buysHonesty } from '../../tests/harness/buys-honesty.ts'
+import { recommendedFactsSchema, sectionDataSchemas, versusFactsSchema } from './contract.ts'
+import { versus } from '../plan/versus.ts'
+import { whyRecommended } from '../plan/why.ts'
+import { formulation, ladderFor, planWith, rebuild, refusedWith, swap, trainAInputs, variantOf } from './fixtures/choose.ts'
 import { bundledPlanDefinitions } from '../definitions/index.ts'
 import { worldSubjects } from '../plan/readiness.ts'
-import { subjectsFor } from './fixtures/doubles.ts'
+import { createSolverDouble, doubleVariantKey, subjectsFor } from './fixtures/doubles.ts'
 import { createHarness } from './fixtures/harness.ts'
 
 const supplyRun = planInputsSchema.parse(await Bun.file(new URL('../plan/fixtures/supply-run.case2.json', import.meta.url)).json())
@@ -334,7 +341,7 @@ describe('a plan-scoped edit never reads World; preview names what the re-timing
       // A valid change saves even so: the preview says what this option would break and asks for new options (walk 2, R2-4).
       // The rule by what it says, never by its key (walk 3, R3-6, R2-4-01).
       const group = rule.kind === 'span-limit' ? trainA.groups.find(entry => entry.key === rule.group)!.label : ''
-      expect(preview.body.result.preview.consequence).toBe(`Not saved yet. This option would break the ${limit} limit on ${group}; generate new options after saving.`)
+      expect(preview.body.result.preview.consequence).toBe(`With its current order, 'Rebuild in place' would break: the ${limit} limit on ${group}. Generate again to look for a new order.`)
       expect(preview.body.result.preview.consequence).not.toContain(rule.key)
       expect(preview.body.result.preview.violations).toEqual([rule.words])
       const saved = await local.call('planning.plan.edit', { resource: created.id, expectedRevision: 1, input: { edits: [{ edit: 'job', key: job.key, duration: { value: job.duration.value! + 6 } }] } })
@@ -389,7 +396,7 @@ describe('a lock is measured against the saved plan (walk 2, R2-5)', () => {
       expect(preview.status).toBe(200)
       expect(preview.body.result.preview.violations).toEqual([saved])
       expect(preview.body.result.preview.nearestAllowed).toBe('2026-11-17T15:00:00Z')
-      expect(preview.body.result.preview.consequence).toBe(`Not saved yet. This option would break the link '${pull.title}' before '${install.title}'; generate new options after saving. The nearest allowed start for ${install.title} is Tue 16:00.`)
+      expect(preview.body.result.preview.consequence).toBe(`With its current order, 'Rebuild in place' would break: the link '${pull.title}' before '${install.title}'. The nearest allowed start for ${install.title} is Tue 16:00. Generate again to look for a new order.`)
     } finally { await local.close() }
   })
 
@@ -417,10 +424,10 @@ describe('a lock is measured against the saved plan (walk 2, R2-5)', () => {
       const preview = (await local.call('planning.plan.edit', { resource: created.id, input: { edits: [{ edit: 'job', key: seal.key, lock: '2026-11-17T07:00:00Z' }], preview: true } })).body.result.preview
       const text: string = preview.consequence
       // The long form (two breaks named, the job named in the nearest start) is over 300 characters here.
-      const long = `Not saved yet. This option would break the capacity of '${crew.label}', the link '${title(links[0]!.from)}' before '${title(links[0]!.to)}' and 2 more; generate new options after saving. The nearest allowed start for ${seal.title} is Tue 13:00.`
+      const long = `With its current order, 'Rebuild in place' would break: the capacity of '${crew.label}', the link '${title(links[0]!.from)}' before '${title(links[0]!.to)}' and 2 more. The nearest allowed start for ${seal.title} is Tue 13:00. Generate again to look for a new order.`
       expect(long.length).toBeGreaterThan(300)
       expect([text.length <= 300, text.includes('…'), text.endsWith('.')]).toEqual([true, false, true])
-      expect(text).toBe(`Not saved yet. This option would break the capacity of '${crew.label}' and 3 more; generate new options after saving. The nearest allowed start for ${seal.title} is Tue 13:00.`)
+      expect(text).toBe(`With its current order, 'Rebuild in place' would break: the capacity of '${crew.label}' and 3 more. The nearest allowed start for ${seal.title} is Tue 13:00. Generate again to look for a new order.`)
       // What the shorter form leaves out is in the result's own fields.
       expect([preview.violations.length, preview.nearestAllowed]).toEqual([4, '2026-11-17T12:00:00Z'])
     } finally { await local.close() }
@@ -485,6 +492,160 @@ describe('an option solved above the certified size says so beside its status (s
       const again = await local.call('planning.plan.generate', { resource: created.id, input: {}, expectedRevision: 1 })
       for (const option of again.body.result.options) expect(option.warnings.some((warning: { kind: string }) => warning.kind === 'above-certified-size')).toBe(false)
       expect(again.body.result.text).not.toContain('certified size')
+    } finally { await local.close() }
+  })
+})
+
+describe('increment 2: keep, the previous set, why recommended, versus and what overtime buys (lane P)', () => {
+  test('the previous set: moved there when Generate runs on a newer revision, never replaced on the same one, and typed', async () => {
+    const created = await harness.create('train-a-work-week')
+    const read = () => harness.store.read(harness.workspaceId, created.id)
+    const generate = (input: object, expectedRevision: number) => harness.call('planning.plan.generate', { resource: created.id, input, expectedRevision })
+    expect((await generate({}, 1)).status).toBe(200)
+    expect((await read()).previousOptions).toBeUndefined()
+    // Another look on the same revision replaces the options and leaves no previous set.
+    expect((await generate({ variants: [{ label: 'Second look' }] }, 1)).status).toBe(200)
+    const second = (await read()).options!
+    expect((await read()).previousOptions).toBeUndefined()
+    expect((await harness.call('planning.plan.edit', { resource: created.id, input: { edits: [{ edit: 'plan', title: 'Train A, week 47' }] }, expectedRevision: 1 })).status).toBe(200)
+    // The first Generate on revision 2 keeps the revision 1 set, exactly as stored.
+    expect((await generate({}, 2)).status).toBe(200)
+    expect((await read()).previousOptions).toEqual(second)
+    // Generate again on revision 2, with or without keep: the previous set is not replaced.
+    expect((await generate({ variants: [{ label: 'Days only', buy: 'no-extra-crew-hours' }], keep: true }, 2)).status).toBe(200)
+    expect((await generate({}, 2)).status).toBe(200)
+    const after = await read()
+    expect(after.previousOptions).toEqual(second)
+    // Typed: an untyped previous set is refused by the plan schema, so the store never writes one.
+    expect(planSchema.safeParse({ ...after, previousOptions: { junk: true } }).success).toBe(false)
+    expect(planSchema.safeParse({ ...after, previousOptions: { ...second, options: [{ key: 'x' }] } }).success).toBe(false)
+  })
+
+  test('keep reaches the solver and its whole set is stored; a set with an option of another revision is refused, nothing stored', async () => {
+    const inner = createSolverDouble()
+    const seen: unknown[] = []
+    let revision: number | undefined
+    const local = await createHarness({ solver: { ...inner, generate: async request => {
+      seen.push(request.keep)
+      const set = await inner.generate(request)
+      return revision === undefined ? set : { ...set, options: set.options.map(option => ({ ...option, inputsRevision: revision! })) }
+    } } })
+    try {
+      const created = await local.create('train-a-work-week')
+      const generate = (input: object) => local.call('planning.plan.generate', { resource: created.id, input, expectedRevision: 1 })
+      expect((await generate({})).status).toBe(200)
+      const rung = { buy: ['crane-fri'] }
+      const kept = await generate({ variants: [rung], keep: true })
+      expect([kept.status, seen]).toEqual([200, [undefined, true]])
+      const stored = (await local.store.read(local.workspaceId, created.id)).options!.options.map(option => option.key.replace(/\.[0-9a-f]{8}$/, ''))
+      expect(stored).toEqual(['O1', 'O2', doubleVariantKey(rung)])
+      revision = 7
+      const refused = await generate({})
+      expect([refused.status, refused.body.error.code, refused.body.error.message]).toEqual([500, 'invalid_planning_result', 'Generate returned an option of another plan revision'])
+      expect((await local.store.read(local.workspaceId, created.id)).options!.options).toHaveLength(3)
+    } finally { await local.close() }
+  })
+
+  test('explain recommended and versus come from stored, fresh options; the solver is never asked', async () => {
+    const calls: Array<{ readonly kind: string }> = []
+    const local = await createHarness({ solver: { ...createSolverDouble({ calls }), formulation: () => formulation } })
+    try {
+      const explain = (id: string, input: object) => local.call('planning.plan.explain', { resource: id, input })
+      const plan = await local.store.create(local.workspaceId, planWith(local.workspaceId, [swap, rebuild]))
+      const why = await explain(plan.id, { ask: 'recommended' })
+      expect([why.status, why.body.result.lines[1], why.bytes <= 4_096]).toEqual([200, `Next in rank: '${rebuild.label}'.`, true])
+      expect((await explain(plan.id, { ask: 'recommended', option: rebuild.key })).body.result.lines[1]).toBe(`Against '${rebuild.label}':`)
+      const none = await explain(plan.id, { ask: 'versus', versus: { previous: swap.key } })
+      expect([none.status, none.body.error.code]).toEqual([409, 'no_previous_options'])
+      expect((await explain(plan.id, { ask: 'versus' })).body.error.code).toBe('invalid_request')
+      // With the set of revision 2 kept as the previous one.
+      const previous = { at: plan.options!.at, by: plan.options!.by, options: [variantOf(swap, { revision: 2 })] }
+      const compared = await local.store.create(local.workspaceId, planWith(local.workspaceId, [swap, rebuild], 3, { previousOptions: previous }))
+      const versus = await explain(compared.id, { ask: 'versus', option: rebuild.key, versus: { previous: swap.key } })
+      expect([versus.status, versus.body.result.lines[0], versus.bytes <= 4_096]).toEqual([200, `'${rebuild.label}' against '${swap.label}' of the previous options (revision 2; now revision 3).`, true])
+      expect((await explain(compared.id, { ask: 'versus', versus: { previous: 'nowhere' } })).body.error.code).toBe('unknown_reference')
+      // Options of an older revision are out of date: nothing is said from them.
+      const stale = await local.store.create(local.workspaceId, planWith(local.workspaceId, [variantOf(swap, { revision: 2 }), variantOf(rebuild, { revision: 2 })]))
+      expect((await explain(stale.id, { ask: 'recommended' })).body.error.code).toBe('option_stale')
+      const refusedOnly = await local.store.create(local.workspaceId, planWith(local.workspaceId, [refusedWith(swap, rungsOf(plan.inputs)[0]!.buy)]))
+      expect((await explain(refusedOnly.id, { ask: 'recommended' })).body.result.lines).toEqual(['No option is recommended: no ranked option is validated feasible.'])
+      expect(calls.filter(call => call.kind === 'explain')).toEqual([])
+    } finally { await local.close() }
+  })
+
+  test('read buys: one ladder per method, each rung naming its fresh option by lane S\'s per-method key; lane K finds every word honest', async () => {
+    const local = await createHarness({ solver: { ...createSolverDouble(), formulation: () => formulation } })
+    try {
+      // Rebuild's ladder, its top rung of an older revision (still to solve); Swap's ladder not solved at all.
+      const [low, middle, top] = ladderFor(rebuild)
+      const options = [low!, middle!, variantOf(top!, { revision: 2 })]
+      const plan = await local.store.create(local.workspaceId, planWith(local.workspaceId, options))
+      const answer = await local.call('planning.plan.read', { resource: plan.id, input: { section: 'buys' } })
+      expect([answer.status, answer.bytes <= 4_096, answer.body.result.sections[0].description]).toEqual([200, true, buysPointer])
+      const { items } = sectionDataSchemas.buys.parse(answer.body.result.sections[0].data)
+      const method = (item: (typeof items)[number]) => ('rung' in item ? item.rung.methods : item.row.methods).map(pick => pick.option).join('+')
+      expect(items.flatMap(item => 'rung' in item ? [[method(item), item.rung.rung, item.rung.option ?? null]] : [])).toEqual([['rebuild', 0, low!.key], ['rebuild', 1, middle!.key], ['rebuild', 2, null], ['swap', 0, null], ['swap', 1, null], ['swap', 2, null]])
+      expect(items.flatMap(item => 'row' in item ? [[method(item), item.row.word]] : [])).toEqual([['rebuild', 'makes it possible']])
+      expect(buysHonesty(plan, items.filter(item => method(item) === 'rebuild'), formulation)).toEqual([])
+      // A plan with no options lists the rungs to solve and no row.
+      const empty = await local.create('train-a-work-week')
+      const listed = sectionDataSchemas.buys.parse((await local.call('planning.plan.read', { resource: empty.id, input: { section: 'buys' } })).body.result.sections[0].data)
+      expect(listed.items).toEqual(['rebuild', 'swap'].flatMap(option => rungsOf(plan.inputs).map(rung => ({ rung: { rung: rung.rung, methods: [{ choice: 'SWA-method', option }], buy: [...rung.buy], bought: [] } }))))
+    } finally { await local.close() }
+  })
+})
+
+describe('increment 2: the structured facts, dominance and the previous section (decision "Lane P batch 2", 3)', () => {
+  test('explain recommended and versus carry the facts their lines come from, one per answer, within 4 KB', async () => {
+    const local = await createHarness({ solver: { ...createSolverDouble(), formulation: () => formulation } })
+    try {
+      const previous = { at: planWith(local.workspaceId, [swap]).options!.at, by: { kind: 'human' as const }, options: [variantOf(swap, { revision: 2 })] }
+      const plan = await local.store.create(local.workspaceId, planWith(local.workspaceId, [swap, rebuild], 3, { previousOptions: previous }))
+      const why = await local.call('planning.plan.explain', { resource: plan.id, input: { ask: 'recommended' } })
+      expect([why.status, why.bytes <= 4_096, why.body.result.versus]).toEqual([200, true, undefined])
+      expect(recommendedFactsSchema.parse(why.body.result.recommended)).toEqual(whyRecommended(plan.inputs, swap, [rebuild]).facts)
+      expect(why.body.result.recommended).toMatchObject({ option: swap.key, against: rebuild.key, deciding: 0 })
+      const compared = await local.call('planning.plan.explain', { resource: plan.id, input: { ask: 'versus', option: rebuild.key, versus: { previous: swap.key } } })
+      expect([compared.status, compared.bytes <= 4_096, compared.body.result.recommended]).toEqual([200, true, undefined])
+      const facts = versusFactsSchema.parse(compared.body.result.versus)
+      const expected = versus({ inputs: plan.inputs, option: rebuild, previous: previous.options[0]!, plan }).facts
+      // Within 4 KB the last moved jobs may go, counted in movedMore; nothing else is cut.
+      expect({ ...facts, moved: [], movedMore: 0 }).toEqual({ ...expected, moved: [], movedMore: 0 })
+      expect(facts.moved.length + facts.movedMore).toBe(expected.moved.length + expected.movedMore)
+      expect(facts.moved).toEqual(expected.moved.slice(0, facts.moved.length))
+    } finally { await local.close() }
+  })
+
+  test('options and previous name the option that dominates a dominated one; lead what-ifs never; the previous set is never fresh', async () => {
+    const local = await createHarness({ solver: { ...createSolverDouble(), formulation: () => formulation } })
+    try {
+      // "Rebuild, later" is Rebuild with one more hour out of service: Rebuild is no worse on any goal and better on that one.
+      const later = variantOf(rebuild, { key: 'rebuild-later', label: 'Rebuild, later', metrics: rebuild.metrics.map(metric => metric.id === 'goal:2' ? { ...metric, value: metric.value + 1 } : metric) })
+      const lead = variantOf(rebuild, { key: 'cheapest', label: 'Cheapest that keeps every rule' })
+      const card = { ...lead, variant: { ...lead.variant, lead: { goal: 1 } }, status: { ...(lead.status as Extract<typeof lead.status, { word: 'validated feasible' }>), goals: (lead.status as Extract<typeof lead.status, { word: 'validated feasible' }>).goals.map(goal => ({ word: 'best found under budget' as const, goal: goal.goal, value: goal.value + 1, unit: goal.unit })), lead: { goal: 1 } } }
+      const options = [swap, rebuild, later, card]
+      const previous = { at: planWith(local.workspaceId, [swap]).options!.at, by: { kind: 'human' as const }, options: options.slice(0, 3).map(option => variantOf(option, { revision: 2 })) }
+      const plan = await local.store.create(local.workspaceId, planWith(local.workspaceId, options, 3, { previousOptions: previous }))
+      // Every page of the section, followed by its cursor.
+      const page = async (section: 'options' | 'previous') => {
+        const pages = []
+        let cursor: string | undefined
+        do {
+          const data = sectionDataSchemas[section].parse((await local.call('planning.plan.read', { resource: plan.id, input: { section, ...(cursor === undefined ? {} : { cursor }) } })).body.result.sections[0].data)
+          pages.push(data)
+          cursor = data.more
+        } while (cursor !== undefined)
+        return { ...pages[0]!, items: pages.flatMap(data => data.items) }
+      }
+      const current = await page('options')
+      expect(current.items.map(item => [item.key, item.dominated?.by ?? null, item.fresh])).toEqual([[swap.key, null, true], [rebuild.key, null, true], ['rebuild-later', rebuild.key, true], ['cheapest', null, true]])
+      const before = await page('previous')
+      expect(before.items.map(item => [item.key, item.dominated?.by ?? null, item.fresh])).toEqual([[swap.key, null, false], [rebuild.key, null, false], ['rebuild-later', rebuild.key, false]])
+      // Out of date (fresh false), its stored statuses as they were, proofs too: never relabelled (walk V2).
+      expect(before.items.map(item => item.status) as unknown[]).toEqual(previous.options.map(option => option.status))
+      expect(before.at).toBe(previous.at)
+      const none = await local.create('train-a-work-week')
+      expect(sectionDataSchemas.previous.parse((await local.call('planning.plan.read', { resource: none.id, input: { section: 'previous' } })).body.result.sections[0].data)).toEqual({ items: [], at: null, recommended: null })
     } finally { await local.close() }
   })
 })

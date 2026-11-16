@@ -670,15 +670,61 @@ export type Decoder = ReturnType<typeof makeDecoder>
  * link, a crew or tool a job before it now holds longer, or a keep-in-service rule. A span limit or maximum
  * lag the edit breaks is not met by moving other jobs back: it stays broken, for the check to report. A
  * start of -1 is a job the option does not have: it goes after the others, as early as it fits.
+ * A job left with no slot in its saved mode takes the mode of the same crews and tools with the most working
+ * time, and the whole schedule is repaired again. That is sound only because it buys nothing new: every mode
+ * of a problem is made of the time its compile allows, and the preview and the re-timing compile an option
+ * with the purchases it already uses, so the job only works into time the option already buys. It buys no
+ * new purchase, but may use more of one (more overtime hours or nights), which can cost more: lane K figures
+ * that extra use and its cost on each judgement (`extra`, adversary M1), stored beside the verdict. A job that
+ * still has no slot is left past the horizon (`lost`); the caller says so, never as a stale option.
+ * `crews` (per activity, the resource indexes its planned row used): a job on a handover between crews, moved
+ * later, can fall wholly into one crew's time and so change its crews; it then waits for the next start where
+ * it uses exactly its planned crews and tools again (a re-timing keeps them), and the schedule is repaired again.
  */
-export const repair = (prep: Prepared, schedule: Schedule): { decoded: Decoded; evaluation: Evaluation } => {
+export const repair = (prep: Prepared, schedule: Schedule, crews?: ReadonlyArray<ReadonlySet<number> | undefined>): { decoded: Decoded; evaluation: Evaluation; lost: readonly number[] } => {
   const decoder = makeDecoder(prep)
   const rank = (a: number) => (schedule.start[a]! < 0 ? Infinity : schedule.start[a]!)
   const position = new Int32Array(prep.n)
   prep.topo.forEach((a, i) => { position[a] = i })
-  const list = [...prep.topo].sort((x, y) => rank(x) - rank(y) || position[x]! - position[y]!)
-  const decoded = decoder.decode(precedenceOrder(prep, list), schedule.mode, Int32Array.from(schedule.start, start => Math.max(0, start)))
-  return { decoded, evaluation: decoder.evaluate(decoded) }
+  const list = precedenceOrder(prep, [...prep.topo].sort((x, y) => rank(x) - rank(y) || position[x]! - position[y]!))
+  const floors = Int32Array.from(schedule.start, start => Math.max(0, start))
+  const lostIn = (decoded: Decoded): number[] => Array.from(decoded.finish).flatMap((finish, a) => (finish < 0 || finish >= prep.H || decoded.start[a]! >= prep.H ? [a] : []))
+  let decoded = decoder.decode(list, schedule.mode, floors)
+  const first = lostIn(decoded)
+  if (first.length > 0) {
+    const crews = (mode: { readonly demands: ReadonlyArray<{ readonly resource: number }> }) => mode.demands.map(demand => demand.resource).sort((x, y) => x - y).join(',')
+    const modes = Int32Array.from(schedule.mode, (m, a) => {
+      if (!first.includes(a)) return m
+      const all = prep.problem.activities[a]!.modes
+      return all.reduce((best, mode, k) => (crews(mode) === crews(all[m]!) && prep.cal[mode.calendar]!.list.length > prep.cal[all[best]!.calendar]!.list.length ? k : best), m)
+    })
+    if (modes.some((m, a) => m !== schedule.mode[a])) decoded = decoder.decode(list, modes, floors)
+  }
+  if (crews !== undefined) {
+    const usedAt = (a: number, m: number, t: number): string => {
+      const slots = workedSlots(prep, a, m, t)
+      const used = prep.problem.activities[a]!.modes[m]!.demands.flatMap(demand => (slots.some(x => applies(prep, demand.when, x)) ? [demand.resource] : []))
+      return [...new Set(used)].sort((x, y) => x - y).join(',')
+    }
+    const want = (a: number) => [...crews[a]!].sort((x, y) => x - y).join(',')
+    for (let round = 0; round < prep.n; round++) {
+      let moved = false
+      for (let a = 0; a < prep.n; a++) {
+        if (crews[a] === undefined || lostIn(decoded).includes(a)) continue
+        const m = decoded.mode[a]!
+        if (usedAt(a, m, decoded.start[a]!) === want(a)) continue
+        // The next start, later than now, where this mode uses exactly the planned crews and tools.
+        const starts = prep.next[a]![m]!
+        for (let t = starts[Math.min(prep.H + 1, decoded.start[a]! + 1)]!; t < prep.H; t = starts[Math.min(prep.H + 1, t + 1)]!) {
+          const finish = finishOf(prep, a, m, t)
+          if (finish >= 0 && finish < prep.H && usedAt(a, m, t) === want(a)) { floors[a] = t; moved = true; break }
+        }
+      }
+      if (!moved) break
+      decoded = decoder.decode(list, Int32Array.from(decoded.mode), floors)
+    }
+  }
+  return { decoded, evaluation: decoder.evaluate(decoded), lost: lostIn(decoded) }
 }
 
 /**

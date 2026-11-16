@@ -9,8 +9,10 @@
 
   // The latest options, each with its status rendered from structure, its warnings beside the status,
   // and a baseline only for an option that is validated feasible on the current inputs.
-  let { options, recommended, context, refusals = {}, selected = null, busy = false, onSelect, onBaseline, onPick }: {
+  let { options, whatIfs = 0, recommended, context, refusals = {}, selected = null, busy = false, onSelect, onBaseline, onPick }: {
     options: readonly OptionView[]
+    /** How many what-ifs are kept apart from these options, on their own cards. */
+    whatIfs?: number
     recommended: string | null
     context: Context
     /** Each refused option's refusal in the Module's words; shown as a list under its status. */
@@ -25,12 +27,17 @@
   let baselineFor = $state<string | null>(null)
   let name = $state('')
   let note = $state('')
-  const views = $derived(options.map(option => ({ option, view: statusView(option.status, context) })))
+  // A dominated option is folded under the list, and opens; the option shown on the timeline always shows.
+  let unfolded = $state(false)
+  const dominatedBy = (option: OptionView): string | null => option.dominated === undefined ? null : options.find(item => item.key === option.dominated?.by)?.label ?? 'another option'
+  const folded = $derived(options.filter(option => dominatedBy(option) !== null && option.key !== selected))
+  const views = $derived(options.filter(option => unfolded || !folded.includes(option)).map(option => ({ option, view: statusView(option.status, context) })))
 </script>
 
 <section class="options" aria-labelledby="options-title">
   <h2 id="options-title">Options</h2>
   <p class="hint">Goals in order: {goalOrderShort(context.inputs.goals, context).join(' · ')}. Their full wording is in Rules and goals.</p>
+  {#if whatIfs > 0}<p class="hint">{whatIfs === 1 ? 'One what-if is' : `${whatIfs} what-ifs are`} kept apart from these options, on {whatIfs === 1 ? 'its own card' : 'their own cards'} under “What-ifs” on the Schedule view.</p>{/if}
   {#if options.length === 0}
     <p class="hint">No options yet. Generate makes them.</p>
   {/if}
@@ -39,6 +46,7 @@
       <li class:selected={option.key === selected}>
         <div class="option-head">
           <strong>{option.label}</strong>
+          {#if dominatedBy(option)}<small class="dominated-by">Dominated by “{dominatedBy(option)}”</small>{/if}
           {#if option.key === recommended}<MarkTag mark={{ shape: '★', word: 'Recommended' }} tone="good" />{/if}
           <button type="button" disabled={busy || option.key === selected} onclick={() => onSelect(option.key)}>{option.key === selected ? 'Shown on the timeline' : 'Show on the timeline'}</button>
           {#if option.fresh && option.status.word === 'validated feasible'}
@@ -58,4 +66,7 @@
       </li>
     {/each}
   </ol>
+  {#if folded.length > 0}
+    <p class="dominated-line"><button type="button" class="link" aria-expanded={unfolded} onclick={() => { unfolded = !unfolded }}>{unfolded ? `Fold the dominated ${folded.length === 1 ? 'option' : 'options'}` : `Show ${folded.length} dominated ${folded.length === 1 ? 'option' : 'options'}`}</button><span class="hint"> Dominated: another option is no worse on every goal and better on one.</span></p>
+  {/if}
 </section>

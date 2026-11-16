@@ -160,10 +160,29 @@ export const linkSchema = z.object({
   method: z.object({ choice: keySchema, option: keySchema }).strict().optional(),
   words: wordsSchema.optional(),
 }).strict()
+/**
+ * What a method option leaves unpriced, shown beside every option that uses it: "Weeks without a ready SW
+ * spare: 10 weeks". A value comes with its unit. `agreement` names who must agree, listed with the baseline
+ * and never signed in the tool.
+ */
+export const caveatSchema = z.object({
+  label: labelSchema,
+  value: z.number().finite().optional(), unit: z.string().min(1).max(16).optional(),
+  words: wordsSchema,
+  agreement: labelSchema.optional(),
+}).strict().refine(caveat => (caveat.value === undefined) === (caveat.unit === undefined), { message: 'A caveat value comes with its unit', path: ['unit'] })
+export type Caveat = z.infer<typeof caveatSchema>
 export const methodChoiceSchema = z.object({
   key: keySchema, label: labelSchema,
-  options: z.array(z.object({ key: keySchema, label: labelSchema, fixedCost: amountSchema, words: wordsSchema.optional() }).strict()).min(2).max(4),
+  options: z.array(z.object({ key: keySchema, label: labelSchema, fixedCost: amountSchema, words: wordsSchema.optional(), caveats: z.array(caveatSchema).min(1).max(4).optional() }).strict()).min(2).max(4),
 }).strict()
+export const spanLimitRuleSchema = z.object({
+  kind: z.literal('span-limit'), key: keySchema, group: keySchema, limit: z.object({ value: z.number().positive(), unit: timeUnitSchema }).strict(),
+  singleEntry: z.boolean(), words: wordsSchema, source: sourceSchema,
+}).strict()
+// A hard deadline, e.g. a surveillance due: no plan that finishes the job after finishBy is feasible.
+// The same word as the soft job.target.finishBy, which only feeds the lateness goal.
+export const dueRuleSchema = z.object({ kind: z.literal('due'), key: keySchema, job: keySchema, finishBy: instantSchema, words: wordsSchema, source: sourceSchema }).strict()
 // The window is settings.window; "one at a time" is a count-1 resource. Neither is a rule.
 export const ruleSchema = z.discriminatedUnion('kind', [
   z.object({ kind: z.literal('protected'), key: keySchema, equipment: z.array(keySchema).min(1).max(64), words: wordsSchema, source: sourceSchema }).strict(),
@@ -176,14 +195,14 @@ export const ruleSchema = z.discriminatedUnion('kind', [
     if (new Set(names).size !== names.length) context.addIssue({ code: 'custom', path: ['members'], message: 'Each member is named once' })
     if (rule.atLeast > rule.members.length) context.addIssue({ code: 'custom', path: ['atLeast'], message: `At least ${rule.atLeast} of ${rule.members.length} members cannot be kept in service` })
   }),
-  z.object({
-    kind: z.literal('span-limit'), key: keySchema, group: keySchema, limit: z.object({ value: z.number().positive(), unit: timeUnitSchema }).strict(),
-    singleEntry: z.boolean(), words: wordsSchema, source: sourceSchema,
-  }).strict(),
-  // A hard deadline, e.g. a surveillance due: no plan that finishes the job after finishBy is feasible.
-  // The same word as the soft job.target.finishBy, which only feeds the lateness goal.
-  z.object({ kind: z.literal('due'), key: keySchema, job: keySchema, finishBy: instantSchema, words: wordsSchema, source: sourceSchema }).strict(),
+  spanLimitRuleSchema,
+  dueRuleSchema,
 ])
+/**
+ * A what-if's one extra hard rule (option.variant.also): a shorter outage limit, or a due time. It is added
+ * to the plan's rules for that what-if only; the plan's own rules are never replaced.
+ */
+export const alsoRuleSchema = z.discriminatedUnion('kind', [spanLimitRuleSchema, dueRuleSchema])
 export const goalMetricSchema = z.enum(['span-over', 'finish', 'extra-cost', 'unavailable-hours', 'lateness'])
 export type GoalMetric = z.infer<typeof goalMetricSchema>
 /** extra-cost is counted in a currency; every other goal is time, in h, min or s. */
@@ -241,6 +260,11 @@ export type PlanInputs = z.infer<typeof planInputsSchema>
 
 // ───────────── results kept in the plan ─────────────
 const before = (earlier: string, later: string): boolean => Date.parse(earlier) < Date.parse(later)
+const energyCertificateSchema = z.object({ kind: z.literal('energy'), resources: z.array(keySchema).min(1).max(8), jobs: z.array(keySchema).max(128), requiredHours: z.number().finite(), availableHours: z.number().finite().nonnegative(), from: instantSchema, to: instantSchema, span: keySchema.optional() }).strict()
+  .superRefine((cause, context) => {
+    if (!(cause.requiredHours > cause.availableHours)) context.addIssue({ code: 'custom', path: ['requiredHours'], message: 'An energy certificate needs more required than available hours' })
+    if (!before(cause.from, cause.to)) context.addIssue({ code: 'custom', path: ['to'], message: 'An energy certificate interval ends after it starts' })
+  })
 /** A certificate proves infeasibility: the work it names exceeds the capacity it names, over a real interval. */
 export const certificateSchema = z.discriminatedUnion('kind', [
   z.object({ kind: z.literal('chain'), jobs: z.array(keySchema).min(1).max(64), workHours: z.number().finite(), calendars: z.array(keySchema), availableHours: z.number().finite().nonnegative(), from: instantSchema, by: instantSchema }).strict()
@@ -248,16 +272,33 @@ export const certificateSchema = z.discriminatedUnion('kind', [
       if (!(cause.workHours > cause.availableHours)) context.addIssue({ code: 'custom', path: ['workHours'], message: 'A chain certificate needs more work than available hours' })
       if (!before(cause.from, cause.by)) context.addIssue({ code: 'custom', path: ['by'], message: 'A chain certificate interval ends after it starts' })
     }),
-  z.object({ kind: z.literal('energy'), resources: z.array(keySchema).min(1).max(8), jobs: z.array(keySchema).max(128), requiredHours: z.number().finite(), availableHours: z.number().finite().nonnegative(), from: instantSchema, to: instantSchema, span: keySchema.optional() }).strict()
-    .superRefine((cause, context) => {
-      if (!(cause.requiredHours > cause.availableHours)) context.addIssue({ code: 'custom', path: ['requiredHours'], message: 'An energy certificate needs more required than available hours' })
-      if (!before(cause.from, cause.to)) context.addIssue({ code: 'custom', path: ['to'], message: 'An energy certificate interval ends after it starts' })
-    }),
+  energyCertificateSchema,
   z.object({ kind: z.literal('availability'), rule: keySchema, items: z.array(keySchema).max(32), from: instantSchema, to: instantSchema }).strict()
     .refine(cause => before(cause.from, cause.to), { message: 'An availability certificate interval ends after it starts', path: ['to'] }),
   z.object({ kind: z.literal('temporal'), steps: z.array(z.object({ job: keySchema, via: z.enum(['link', 'bracket', 'support-order', 'span-limit', 'window', 'due', 'release', 'lock']) }).strict()).max(32) }).strict(),
 ])
 export type Certificate = z.infer<typeof certificateSchema>
+
+const spanStepSchema = z.object({ job: keySchema, start: instantSchema, finish: instantSchema }).strict()
+/**
+ * A refusal by an outage limit, as proven in the solver child (N2, N4): the rule, the least span the other
+ * rules allow (lane K's figure) against its limit, the first tag-out and last test that give it, and what
+ * sets the last test (each job at its earliest, as the refusal shows it). `later`: from the best later first
+ * tag-out, the span and what changes (stored when it agrees with lane K's least span over every opening).
+ * `alsoProven`: a second, energy proof (stored when lane K re-verifies it). Stored only when lane K proves
+ * the span, so the words read from storage and an out-of-date option keeps them as they were.
+ */
+export const spanRecordSchema = z.object({
+  rule: keySchema, leastHours: z.number().finite().nonnegative(), limitHours: z.number().finite().positive(),
+  firstOut: instantSchema, lastBack: instantSchema, path: z.array(spanStepSchema).max(9),
+  later: z.object({ firstOut: instantSchema, hours: z.number().finite().nonnegative(), path: z.array(spanStepSchema).max(6) }).strict().optional(),
+  alsoProven: energyCertificateSchema.optional(),
+}).strict().superRefine((span, context) => {
+  if (!(span.leastHours > span.limitHours)) context.addIssue({ code: 'custom', path: ['leastHours'], message: 'A span refusal states a least span above the limit' })
+  if (!before(span.firstOut, span.lastBack)) context.addIssue({ code: 'custom', path: ['lastBack'], message: 'A span refusal\'s last test comes after its first tag-out' })
+  if (span.later !== undefined && span.later.hours < span.leastHours) context.addIssue({ code: 'custom', path: ['later', 'hours'], message: 'A later first tag-out gives no shorter span than the least' })
+})
+export type SpanRecord = z.infer<typeof spanRecordSchema>
 
 const boundSourceSchema = z.enum(['logic+calendars', 'crew-energy', 'availability-rule', 'fixed-costs'])
 /**
@@ -290,13 +331,34 @@ const runBasisSchema = z.object({
 /** The plan's status words. Results and the Assistant use these and no others. */
 export const statusWordSchema = z.enum(['validated feasible', 'proven infeasible', 'invalid input', 'unsupported feature', 'cancelled', 'unresolved'])
 export type StatusWord = z.infer<typeof statusWordSchema>
-/** proven optimal: the value equals its bound at the goal's resolution and every earlier goal is proven. */
+/**
+ * proven optimal: the value equals its bound at the goal's resolution, and every earlier goal is proven; in a
+ * what-if with a leading goal, only the lead may be proven (goalProofBreaks).
+ */
 export const goalWordSchema = z.enum(['proven optimal', 'best found under budget'])
 export type GoalWord = z.infer<typeof goalWordSchema>
 
-/** Goal positions whose "proven optimal" follows a goal that is not proven. */
-export const goalOrderBreaks = (words: readonly GoalWord[]): readonly number[] =>
-  words.flatMap((word, index) => word === 'proven optimal' && words.slice(0, index).some(earlier => earlier !== 'proven optimal') ? [index] : [])
+/**
+ * What a what-if solves first (option.variant.lead). Its options keep the plan's goal ids and order.
+ * goal: one of the plan's own goals, by id ("cheapest that keeps every rule" is the extra-cost goal).
+ * group: "finish this group first": that function group's outage as short as possible (the span-over kind,
+ * scoped to the group, threshold 0), ahead of the plan's goals. No new solver mode: one more goal at the head.
+ */
+export const leadSchema = z.union([
+  z.object({ goal: z.number().int().min(0).max(5) }).strict(),
+  z.object({ group: keySchema }).strict(),
+])
+export type Lead = z.infer<typeof leadSchema>
+
+/**
+ * Goal positions whose "proven optimal" a status may not carry. Without a lead: one after a goal that is not
+ * proven (goal order). With a lead, the lead is solved first and this rule replaces the order rule: only the
+ * leading plan goal may be proven, and with a group lead no plan goal (adversary part 2 check, fix C).
+ */
+export const goalProofBreaks = (words: readonly GoalWord[], lead?: { readonly goal: number } | { readonly group: string }): readonly number[] => {
+  if (lead === undefined) return words.flatMap((word, index) => word === 'proven optimal' && words.slice(0, index).some(earlier => earlier !== 'proven optimal') ? [index] : [])
+  return words.flatMap((word, index) => word === 'proven optimal' && !('goal' in lead && lead.goal === index) ? [index] : [])
+}
 
 /**
  * The step at which a goal value is meaningful: the grid for time units, 1 for a currency. Bounds from a
@@ -307,36 +369,69 @@ export const goalResolution = (unit: string, grid: z.infer<typeof gridSchema>): 
   return currencySchema.safeParse(unit).success ? 1 : undefined
 }
 
+const provenBoundSchema = z.object({ value: z.number().finite(), source: boundSourceSchema, certificate: boundCertificateSchema }).strict()
+const foundBoundSchema = z.object({ value: z.number().finite(), source: boundSourceSchema, certificate: boundCertificateSchema.optional() }).strict()
 const goalStatusSchema = z.discriminatedUnion('word', [
-  z.object({ word: z.literal(goalWordSchema.enum['proven optimal']), goal: z.number().int().nonnegative(), value: z.number().finite(), unit: z.string(),
-    bound: z.object({ value: z.number().finite(), source: boundSourceSchema, certificate: boundCertificateSchema }).strict() }).strict(),
-  z.object({ word: z.literal(goalWordSchema.enum['best found under budget']), goal: z.number().int().nonnegative(), value: z.number().finite(), unit: z.string(),
-    bound: z.object({ value: z.number().finite(), source: boundSourceSchema, certificate: boundCertificateSchema.optional() }).strict().optional() }).strict(),
+  z.object({ word: z.literal(goalWordSchema.enum['proven optimal']), goal: z.number().int().nonnegative(), value: z.number().finite(), unit: z.string(), bound: provenBoundSchema }).strict(),
+  z.object({ word: z.literal(goalWordSchema.enum['best found under budget']), goal: z.number().int().nonnegative(), value: z.number().finite(), unit: z.string(), bound: foundBoundSchema.optional() }).strict(),
 ])
+/**
+ * The goal line of a group lead ("finish this group first"): the same union as a plan goal, with the group in
+ * place of the goal id (adversary part 2 check, fix A). "proven optimal" names its bound and certificate and
+ * equals the bound. The value is the checker's own `span:<group>` figure (check/metrics.ts), in h, min or s.
+ */
+const groupLeadLineSchema = z.discriminatedUnion('word', [
+  z.object({ word: z.literal(goalWordSchema.enum['proven optimal']), group: keySchema, value: z.number().finite(), unit: z.string(), bound: provenBoundSchema }).strict(),
+  z.object({ word: z.literal(goalWordSchema.enum['best found under budget']), group: keySchema, value: z.number().finite(), unit: z.string(), bound: foundBoundSchema.optional() }).strict(),
+])
+/** A status's lead: a plan goal, whose word stays in goals[goal], or a group's own goal line. */
+export const leadStatusSchema = z.union([z.object({ goal: z.number().int().nonnegative() }).strict(), groupLeadLineSchema])
+export type LeadStatus = z.infer<typeof leadStatusSchema>
 const problemSchema = z.object({ about: z.array(keySchema).max(4), code: z.string().max(64) }).strict()   // prose is generated from code + keys
+
+type GoalLine = z.infer<typeof goalStatusSchema> | z.infer<typeof groupLeadLineSchema>
+/** A goal line's value against its bound, at the goal's resolution: one issue at most, with its path inside the line. */
+const goalLineIssue = (line: GoalLine, grid: z.infer<typeof gridSchema>): { readonly path: string; readonly message: string } | undefined => {
+  const resolution = goalResolution(line.unit, grid)
+  if (resolution === undefined) return { path: 'unit', message: `No resolution for the goal unit ${line.unit}` }
+  if (line.word === 'proven optimal' && !(Math.abs(line.value - line.bound.value) < resolution / 2)) return { path: 'bound', message: 'Proven optimal means the value equals its bound' }
+  if (line.word === 'best found under budget' && line.bound !== undefined && !(line.bound.value - line.value < resolution / 2)) return { path: 'bound', message: 'A lower bound cannot exceed the value' }
+  return undefined
+}
 
 /** A discriminated union that cannot hold a contradiction. Planner prose is generated from it, never stored. */
 export const statusSchema = z.discriminatedUnion('word', [
-  z.object({ word: z.literal(statusWordSchema.enum['validated feasible']), goals: z.array(goalStatusSchema).max(6), run: runBasisSchema }).strict()
+  // goals[] keep the plan's ids in the plan's order, with or without a lead. `lead` is a what-if's: what it solved first.
+  z.object({ word: z.literal(statusWordSchema.enum['validated feasible']), goals: z.array(goalStatusSchema).max(6), run: runBasisSchema, lead: leadStatusSchema.optional() }).strict()
     .superRefine((status, context) => {
-      const breaks = new Set(goalOrderBreaks(status.goals.map(goal => goal.word)))
+      const lead = status.lead
+      const breaks = new Set(goalProofBreaks(status.goals.map(goal => goal.word), lead))
       status.goals.forEach((goal, index) => {
         if (goal.goal !== index) context.addIssue({ code: 'custom', path: ['goals', index, 'goal'], message: 'Goals are listed in order' })
-        if (breaks.has(index)) context.addIssue({ code: 'custom', path: ['goals', index, 'word'], message: 'A later goal is proven only when every earlier goal is' })
-        const resolution = goalResolution(goal.unit, status.run.grid)
-        if (resolution === undefined) {
-          context.addIssue({ code: 'custom', path: ['goals', index, 'unit'], message: `No resolution for the goal unit ${goal.unit}` })
-          return
-        }
-        if (goal.word === 'proven optimal' && !(Math.abs(goal.value - goal.bound.value) < resolution / 2)) {
-          context.addIssue({ code: 'custom', path: ['goals', index, 'bound'], message: 'Proven optimal means the value equals its bound' })
-        }
-        if (goal.word === 'best found under budget' && goal.bound !== undefined && !(goal.bound.value - goal.value < resolution / 2)) {
-          context.addIssue({ code: 'custom', path: ['goals', index, 'bound'], message: 'A lower bound cannot exceed the value' })
-        }
+        if (breaks.has(index)) context.addIssue({ code: 'custom', path: ['goals', index, 'word'], message: lead === undefined ? 'A later goal is proven only when every earlier goal is' : 'With a leading goal, only that goal may be proven' })
+        const issue = goalLineIssue(goal, status.run.grid)
+        if (issue !== undefined) context.addIssue({ code: 'custom', path: ['goals', index, issue.path], message: issue.message })
       })
+      if (lead === undefined) return
+      if ('goal' in lead) {
+        if (lead.goal >= status.goals.length) context.addIssue({ code: 'custom', path: ['lead', 'goal'], message: 'The leading goal is one of the plan\'s goals' })
+        return
+      }
+      const unit = goalUnitIssue('span-over', lead.unit)
+      if (unit !== undefined) context.addIssue({ code: 'custom', path: ['lead', 'unit'], message: unit })
+      const issue = goalLineIssue(lead, status.run.grid)
+      if (issue !== undefined && unit === undefined) context.addIssue({ code: 'custom', path: ['lead', issue.path], message: issue.message })
     }),
-  z.object({ word: z.literal(statusWordSchema.enum['proven infeasible']), cause: certificateSchema, run: runBasisSchema }).strict(),
+  // byMethod: a what-if over two or more method combinations, refused for each, with each combination's own
+  // cause as lane K verified it; `cause` is then the entry of the option's own methods (optionLeadRefinement).
+  // span: a refusal by an outage limit, proven in the child (spanRecordSchema), beside its temporal cause.
+  z.object({
+    word: z.literal(statusWordSchema.enum['proven infeasible']), cause: certificateSchema, span: spanRecordSchema.optional(), run: runBasisSchema,
+    byMethod: z.array(z.object({ methods: z.array(z.object({ choice: keySchema, option: keySchema }).strict()), purchases: z.array(keySchema), cause: certificateSchema, span: spanRecordSchema.optional() }).strict()).min(2).max(8).optional(),
+  }).strict().superRefine((status, context) => {
+    const spans = [{ cause: status.cause, span: status.span, path: ['span'] }, ...(status.byMethod ?? []).map((entry, k) => ({ cause: entry.cause, span: entry.span, path: ['byMethod', k, 'span'] }))]
+    for (const { cause, span, path } of spans) if (span !== undefined && cause.kind !== 'temporal') context.addIssue({ code: 'custom', path, message: 'A span refusal stands beside a temporal cause' })
+  }),
   z.object({ word: z.literal(statusWordSchema.enum['invalid input']), problems: z.array(problemSchema).min(1).max(16) }).strict(),
   z.object({ word: z.literal(statusWordSchema.enum['unsupported feature']), problems: z.array(problemSchema).min(1).max(16) }).strict(),   // an unmodelled rule only
   z.object({ word: z.literal(statusWordSchema.enum.cancelled), run: runBasisSchema }).strict(),   // nothing found before the stop
@@ -358,17 +453,103 @@ export const datedRowSchema = z.object({
     ]),
   }).strict(),
 }).strict()
-export const optionSchema = z.object({
+/**
+ * An option's schedule re-timed at pessimistic durations (the same order and crews, nothing earlier), then
+ * checked: it holds; or the first rule it breaks, the job that breaks it and by how much; or, when the window
+ * is the first thing broken, the job that runs past it and `window.by`, the instant the re-timed work would
+ * end ("would run past the window end"). The window is no rule, so it has its own form. Or a job could not be
+ * placed at all: `unplaced` names it, the crew or tool with no time left, and `after`, the instant from which
+ * none of that resource's time remains ("<job> could not be done: <crew> has no time left after <instant>").
+ */
+/**
+ * What a re-timing uses of the option's purchases beyond what the planned rows use (M1), lane K's figures from
+ * the checker's own 'bought:' and extra-cost measures on both schedules: per purchase, person-h or periods, and
+ * the extra cost in the plan currency. Present when every job was placed.
+ */
+const retimedExtraSchema = z.object({
+  cost: z.number().finite(),
+  bought: z.array(z.object({ purchase: keySchema, value: z.number().finite(), unit: z.string().min(1).max(16) }).strict()).max(64),
+}).strict()
+const retimedSchema = z.union([
+  // It holds; `spans`: each span limit's longest span on the re-timing and its margin, lane K's figures (V12),
+  // one per span-limit rule, the plan's (at most 200) and the what-if's.
+  z.object({ holds: z.literal(true), spans: z.array(z.object({ rule: keySchema, hours: z.number().finite().nonnegative(), margin: z.number().finite() }).strict()).max(201).optional() , extra: retimedExtraSchema.optional() }).strict(),
+  z.object({ holds: z.literal(false), rule: keySchema, job: keySchema, by: z.object({ value: z.number().positive(), unit: timeUnitSchema }).strict() , extra: retimedExtraSchema.optional() }).strict(),
+  z.object({ holds: z.literal(false), window: z.object({ by: instantSchema }).strict(), job: keySchema , extra: retimedExtraSchema.optional() }).strict(),
+  z.object({ holds: z.literal(false), unplaced: z.object({ job: keySchema, resource: keySchema, after: instantSchema }).strict() , extra: retimedExtraSchema.optional() }).strict(),
+  // A locked job the re-timing pushes past its fixed start (B2): `lock.job` keeps its fixed start, `lock.after`
+  // finishes `by` later than that allows ("<job> could not keep its fixed start <time>: <after> would finish N h later").
+  z.object({ holds: z.literal(false), lock: z.object({ job: keySchema, after: keySchema }).strict(), by: z.object({ value: z.number().positive(), unit: timeUnitSchema }).strict() , extra: retimedExtraSchema.optional() }).strict(),
+])
+/** allPessimistic: every ranged job at its high estimate together; single: each ranged job alone at its high estimate. */
+export const robustSchema = z.object({ allPessimistic: retimedSchema, single: z.array(z.object({ job: keySchema, outcome: retimedSchema }).strict()).max(12) }).strict()
+export type Robust = z.infer<typeof robustSchema>
+/**
+ * The re-timings were not worked out, said so, never left out silently, and never a part of the record:
+ * `time`, the sub-solve's time ran out before they could all be made; `unplaced`, re-timing could not place
+ * `job`, and lane K could not name one crew or tool that has no time left for it; `refused`, lane K refused to
+ * judge a re-timing, for `reason`.
+ */
+export const robustNotWorkedOutSchema = z.union([
+  z.object({ notWorkedOut: z.literal('time') }).strict(),
+  z.object({ notWorkedOut: z.literal('unplaced'), job: keySchema }).strict(),
+  // lane K refused to judge a re-timing (a link into a locked job broken, say): its reason, in its words.
+  z.object({ notWorkedOut: z.literal('refused'), reason: wordsSchema }).strict(),
+])
+/** option.robust: the record, or why there is none. */
+export type RobustField = Robust | z.infer<typeof robustNotWorkedOutSchema>
+export const metricSchema = z.object({ id: z.string(), value: z.number(), unit: z.string() }).strict()
+const optionObjectSchema = z.object({
   key: keySchema, label: labelSchema,
-  variant: z.object({ methods: z.array(z.object({ choice: keySchema, option: keySchema }).strict()), purchases: z.array(keySchema) }).strict(),
+  variant: z.object({
+    methods: z.array(z.object({ choice: keySchema, option: keySchema }).strict()), purchases: z.array(keySchema),
+    // A what-if's extra hard rule and what it solves first; both are part of the option's key.
+    also: z.array(alsoRuleSchema).min(1).max(1).optional(), lead: leadSchema.optional(),
+  }).strict(),
   status: statusSchema,
   rows: z.array(datedRowSchema).max(2_000),
-  metrics: z.array(z.object({ id: z.string(), value: z.number(), unit: z.string() }).strict()).max(32),
+  // The checker's measures and the goal values. 'bought:<purchase key>' (person-hours or periods used) is one
+  // per purchase, so the bound is the earlier 32 plus the 64 purchases a plan may hold.
+  metrics: z.array(metricSchema).max(96),
   inputsRevision: z.number().int().positive(),      // with run.formulation: proofs reused only on an exact match
   // Solved above the certified size (more jobs in its solve than `certifiedSize.maxJobs`): it keeps every
   // hard rule, but may not be near the best. Shown beside its status as a caution.
   sizeCaution: z.literal(true).optional(),
+  robust: z.union([robustSchema, robustNotWorkedOutSchema]).optional(),
 }).strict()
+type OptionShape = Pick<z.infer<typeof optionObjectSchema>, 'variant' | 'status'>
+/** A what-if's lead and its status's lead name the same thing, and only a what-if with a lead records one. */
+export const optionLeadIssue = (option: OptionShape): string | undefined => {
+  if (option.status.word !== 'validated feasible') return undefined
+  const asked = option.variant.lead, solved = option.status.lead
+  if (asked === undefined && solved === undefined) return undefined
+  if (asked === undefined || solved === undefined) return 'A what-if with a leading goal records it in its status, and only then'
+  const same = 'goal' in asked ? 'goal' in solved && solved.goal === asked.goal : 'group' in solved && solved.group === asked.group
+  return same ? undefined : 'The status names another leading goal than the what-if'
+}
+/**
+ * A refusal over several method combinations names each once, and its `cause` is the entry of the option's
+ * own methods.
+ */
+export const optionByMethodIssue = (option: OptionShape): string | undefined => {
+  if (option.status.word !== 'proven infeasible' || option.status.byMethod === undefined) return undefined
+  const picks = (methods: ReadonlyArray<{ readonly choice: string; readonly option: string }>) => JSON.stringify([...methods].sort((x, y) => (x.choice < y.choice ? -1 : x.choice > y.choice ? 1 : 0)))
+  const names = option.status.byMethod.map(entry => picks(entry.methods))
+  if (new Set(names).size !== names.length) return 'Each method combination of a refusal is named once'
+  const own = option.status.byMethod.find(entry => picks(entry.methods) === picks(option.variant.methods))
+  if (own === undefined) return 'A refusal over several methods names the option\'s own methods'
+  return JSON.stringify([own.cause, own.span]) === JSON.stringify([option.status.cause, option.status.span]) ? undefined : 'The cause is the one of the option\'s own methods'
+}
+/** The option-level rules (its lead, a refusal's causes by method); every schema of an option applies them. */
+export const optionLeadRefinement = (option: OptionShape, context: z.core.$RefinementCtx): void => {
+  const issue = optionLeadIssue(option)
+  if (issue !== undefined) context.addIssue({ code: 'custom', path: ['status', 'lead'], message: issue })
+  const byMethod = optionByMethodIssue(option)
+  if (byMethod !== undefined) context.addIssue({ code: 'custom', path: ['status', 'cause'], message: byMethod })
+}
+export const optionSchema = optionObjectSchema.superRefine(optionLeadRefinement)
+/** An option without its rows, for the options read section, which extends it and applies optionLeadRefinement. */
+export const optionWithoutRowsShape = optionObjectSchema.omit({ rows: true })
 export const optionSetSchema = z.object({ at: instantSchema, by: actorSchema, options: z.array(optionSchema).max(8), recommended: keySchema.optional() }).strict()
 /** The edit kinds of plan/edit-schema.ts (a test keeps the two lists equal). */
 export const editKindSchema = z.enum(['plan', 'equipment', 'calendar', 'resource', 'purchase', 'method', 'job', 'link', 'rule', 'goals', 'remove'])
@@ -383,7 +564,8 @@ export const planSchema = z.object({
   id: z.uuid(), workspaceId: workspaceIdSchema, revision: z.number().int().positive(),
   createdAt: instantSchema, updatedAt: instantSchema,
   inputs: planInputsSchema,
-  options: optionSetSchema.nullable(),               // the latest set only
+  options: optionSetSchema.nullable(),               // the latest set
+  previousOptions: optionSetSchema.optional(),       // the set before the latest input change, for "what differs"
   baselines: z.array(z.object({ key: keySchema, name: labelSchema, note: wordsSchema.optional(), at: instantSchema, by: actorSchema, option: optionSchema, inputs: planInputsSchema }).strict()).max(32),
   changes: z.array(changeSchema).max(500), droppedChanges: z.number().int().nonnegative(),
   // Brackets Planning drafted that nobody has changed or baselined since. Only bracket drafting adds a key;

@@ -465,3 +465,141 @@ describe('waivers, for counterfactual harnesses only', () => {
     expect(codes(checkPlan(inputs, noVariant, rows, { orders: [['X-TEST', 'X-TAG']] }))).toEqual(['tag-before-test'])
   })
 })
+
+describe("a what-if's extra rule (variant.also)", () => {
+  // Item P in group G: tag 06:00Z-07:00Z, test 09:00Z-10:00Z on the operators, so G is out 06:00Z-10:00Z = 4 h.
+  // The plan's own limit L is 6 h, which the schedule keeps.
+  const limit = (key: string, hours: number) => ({ kind: 'span-limit' as const, key, group: 'G', limit: { value: hours, unit: 'h' as const }, singleEntry: true, words: `Group G back within ${hours} h`, source: planner })
+  const inputs = (rules: PlanInputs['rules'] = [limit('L', 6)]) => plan({ equipment: [item('P', [], 'G')], groups: [{ key: 'G', label: 'Group G' }], jobs: [tag('P-TAG', ['P']), testJob('P-TEST', ['P'])], rules })
+  const rows = [opsRow('P-TAG', '2026-11-16T06:00:00Z'), opsRow('P-TEST', '2026-11-16T09:00:00Z')]
+  const whatIf = (also: NonNullable<CheckVariant['also']>): CheckVariant => ({ methods: [], purchases: [], also })
+  test('the plan alone keeps its 6 h limit', () => {
+    expect(checkPlan(inputs(), noVariant, rows).violations).toEqual([])
+  })
+  test('"at most 3 h out": the 4 h outage breaks the extra rule, named by its own key', () => {
+    const result = checkPlan(inputs(), whatIf([limit('W', 3)]), rows)
+    expect(result.feasible).toBe(false)
+    expect(result.violations.map(violation => [violation.code, ...violation.about])).toEqual([['span-limit', 'W', 'G']])
+    expect(result.violations[0]?.words).toContain('the limit is 3 h')
+  })
+  test('a looser extra rule never relaxes the plan rule: 8 h asked, the plan\'s 3 h still holds', () => {
+    const result = checkPlan(inputs([limit('L', 3)]), whatIf([limit('W', 8)]), rows)
+    expect(result.violations.map(violation => [violation.code, ...violation.about])).toEqual([['span-limit', 'L', 'G']])
+  })
+  test('"back by": a due time on the test, 09:30Z, is 0.5 h before it finishes at 10:00Z', () => {
+    const due = { kind: 'due' as const, key: 'D', job: 'P-TEST', finishBy: '2026-11-16T09:30:00Z', words: 'P back by 10:30', source: planner }
+    const result = checkPlan(inputs(), whatIf([due]), rows)
+    expect(result.violations.map(violation => [violation.code, ...violation.about])).toEqual([['due', 'D', 'P-TEST']])
+    expect(result.violations[0]?.words).toContain('0.5 h after it is due')
+  })
+  test('a stored what-if is re-checked with its extra rule: breaking it, the option is not usable', () => {
+    const run = { grid: '30min' as const, engine: 'double', formulation: 'f-1', seed: 1, budget: { evals: 1, cpuMs: 1, wallMs: 1 }, stoppedBy: 'done' as const, evals: 1, cpuMs: 1 }
+    const stored = planSchema.parse({
+      id: '00000000-0000-4000-8000-000000000004', workspaceId: '00000000-0000-4000-8000-0000000000aa', revision: 1, createdAt: '2026-11-11T00:00:00Z', updatedAt: '2026-11-11T00:00:00Z',
+      inputs: inputs(),
+      options: { at: '2026-11-11T00:00:00Z', by: { kind: 'agent' }, options: [{ key: 'w', label: 'At most 3 h out', variant: whatIf([limit('W', 3)]), status: { word: 'validated feasible', goals: [{ word: 'best found under budget', goal: 0, value: 4, unit: 'h' }], run }, rows: rows.map(entry => ({ ...entry, float: { workingHours: 0, limitedBy: { kind: 'window-end' as const } } })), metrics: [], inputsRevision: 1 }] },
+      baselines: [], changes: [], droppedChanges: 0,
+    })
+    expect(recheckOption(stored, stored.options!.options[0]!, 'f-1')).toMatchObject({ usable: false, reasons: ['violations'] })
+  })
+  test('a refusal on the extra rule is re-verified with it: a due no schedule meets', () => {
+    // The tag-out (1 h) is linked before the test (1 h), so the test finishes no earlier than 08:00Z; due 07:30Z.
+    const linked = { ...inputs(), links: [{ from: 'P-TAG', to: 'P-TEST', type: 'FS' as const, lag: { value: 0, unit: 'h' as const } }] }
+    const due = { kind: 'due' as const, key: 'D', job: 'P-TEST', finishBy: '2026-11-16T07:30:00Z', words: 'P back by 08:30', source: planner }
+    const cause = { kind: 'temporal' as const, steps: [{ job: 'P-TAG', via: 'window' as const }, { job: 'P-TEST', via: 'link' as const }, { job: 'P-TEST', via: 'due' as const }] }
+    expect(verifyCertificate(linked, whatIf([due]), cause).proves).toBe(true)
+    expect(verifyCertificate(linked, noVariant, cause).proves).toBe(false)   // without the extra rule nothing contradicts
+  })
+})
+
+describe("bought crew time: the checker's own 'bought:<purchase>' count", () => {
+  // Fitters (one crew of 3) work Mon-Fri 07:00-15:00 local (06:00Z-14:00Z); overtime adds 15:00-17:00 local
+  // (14:00Z-16:00Z) at NOK 100 per person-hour. The night crew works only on bought nights.
+  const nights = [{ start: '2026-11-16T18:00:00Z', end: '2026-11-17T06:00:00Z' }, { start: '2026-11-17T18:00:00Z', end: '2026-11-18T06:00:00Z' }]
+  const inputs = plan({
+    calendars: [...plan({}).calendars, { key: 'late', label: 'Overtime to 17:00', weekly: [{ days: ['mon', 'tue', 'wed', 'thu', 'fri'], from: '15:00', to: '17:00' }], periods: [], except: [], source: planner }],
+    resources: [
+      { key: 'ops', label: 'Operators', kind: 'crew', count: 2, calendar: 'always', attributes: [], source: planner },
+      { key: 'fitter', label: 'Fitters', kind: 'crew', count: 1, crewSize: 3, calendar: 'day', attributes: [], source: planner },
+      { key: 'night-crew', label: 'Night crew', kind: 'crew', count: 1, crewSize: 3, calendar: 'none', attributes: [], source: planner },
+    ],
+    purchases: [
+      { key: 'ot', label: 'Fitter overtime', resource: 'fitter', adds: { calendar: 'late' }, replaces: [], price: { perPersonHour: 100 }, allowed: true },
+      { key: 'nights', label: 'Night crew nights', resource: 'night-crew', adds: { periods: nights }, replaces: [], price: { perPeriodUsed: 1_000, once: 500 }, allowed: true },
+      { key: 'spare', label: 'Spare overtime', resource: 'ops', adds: { calendar: 'late' }, replaces: [], price: { perPersonHour: 50 }, allowed: true },
+    ],
+    jobs: [
+      { ...work('W', 'X', 4), isolation: 'none', equipment: [] },
+      { key: 'N', title: 'Night job', kind: 'work', equipment: [], isolation: 'none', duration: hours(2), durationWith: [], needs: [{ anyOf: ['night-crew'], amount: 1, handover: false }], continuous: false, checks: [], tags: [] },
+    ],
+    goals: [{ metric: 'extra-cost', tolerance: { value: 0, unit: 'NOK' } }],
+  })
+  // W: 4 h from Mon 12:00Z, 2 h of day shift to 14:00Z and 2 h of overtime to 16:00Z. N: the first night, 18:00Z-20:00Z.
+  const rows = [
+    row('W', '2026-11-16T12:00:00Z', '2026-11-16T16:00:00Z', [{ resource: 'fitter', from: '2026-11-16T12:00:00Z', to: '2026-11-16T14:00:00Z' }, { resource: 'fitter', from: '2026-11-16T14:00:00Z', to: '2026-11-16T16:00:00Z', purchase: 'ot' }]),
+    row('N', '2026-11-16T18:00:00Z', '2026-11-16T20:00:00Z', [{ resource: 'night-crew', from: '2026-11-16T18:00:00Z', to: '2026-11-16T20:00:00Z', purchase: 'nights' }]),
+  ]
+  const result = checkPlan(inputs, { methods: [], purchases: ['ot', 'nights', 'spare'] }, rows)
+  test('the schedule keeps every rule', () => {
+    expect(result.violations).toEqual([])
+    expect(result.goals).toEqual([{ metric: 'extra-cost', value: 6 * 100 + 1_000 + 500, unit: 'NOK' }])
+  })
+  test('per person-hour: 2 h of overtime by a crew of 3 is 6 person-h; per period: 1 of the 2 nights', () => {
+    expect(result.metrics.filter(metric => metric.id.startsWith('bought:'))).toEqual([
+      { id: 'bought:ot', value: 6, unit: 'person-h' },
+      { id: 'bought:nights', value: 1, unit: 'periods' },
+    ])
+  })
+  test('a purchase the schedule does not use has no bought figure', () => {
+    expect(result.metrics.some(metric => metric.id === 'bought:spare')).toBe(false)
+  })
+})
+
+describe('V2: after an input change a stored word is an out-of-date fact, never relabelled', () => {
+  const run = { grid: '30min' as const, engine: 'double', formulation: 'f-1', seed: 1, budget: { evals: 1, cpuMs: 1, wallMs: 1 }, stoppedBy: 'done' as const, evals: 1, cpuMs: 1 }
+  const inputs = plan({ equipment: [item('X')], jobs: [tag('X-TAG', ['X']), testJob('X-TEST', ['X'])] })
+  // A chain the plan does not have (the test does not follow the tag-out): the certificate fails on any inputs.
+  const wrongChain = { kind: 'chain' as const, jobs: ['X-TEST', 'X-TAG'], workHours: 30, calendars: [], availableHours: 1, from: '2026-11-16T06:00:00Z', by: '2026-11-16T07:00:00Z' }
+  const refusedAt = (revision: number, inputsRevision: number) => planSchema.parse({
+    id: '00000000-0000-4000-8000-000000000007', workspaceId: '00000000-0000-4000-8000-0000000000aa', revision, createdAt: '2026-11-11T00:00:00Z', updatedAt: '2026-11-11T00:00:00Z', inputs,
+    options: { at: '2026-11-11T00:00:00Z', by: { kind: 'agent' }, options: [{ key: 'r', label: 'Refused', variant: noVariant, status: { word: 'proven infeasible', cause: wrongChain, run }, rows: [], metrics: [], inputsRevision }] },
+    baselines: [], changes: [], droppedChanges: 0,
+  })
+  test('on the inputs it was made for, a certificate that fails is refuted: shown as unresolved', () => {
+    const plan = refusedAt(3, 3)
+    expect(recheckOption(plan, plan.options!.options[0]!, 'f-1')).toMatchObject({ standing: 'refuted', shownAs: 'unresolved', usable: false })
+  })
+  test('after an input change the same refusal keeps its word as an out-of-date fact, not "unresolved"', () => {
+    const plan = refusedAt(4, 3)
+    const result = recheckOption(plan, plan.options!.options[0]!, 'f-1')
+    expect(result).toMatchObject({ standing: 'out-of-date', usable: false, baselineAllowed: false, reasons: ['inputs-changed'] })
+    expect(result.shownAs).toBeUndefined()
+    expect(result.certificate).toBeUndefined()   // not re-verified on inputs it was not made for
+  })
+  test('a proven-optimal goal on an out-of-date option stays a stored fact: not re-derived, never usable', () => {
+    const chain = { ...inputs, jobs: [{ ...tag('A', ['X']), kind: 'work' as const, equipment: [] }] }
+    const proven = planSchema.parse({
+      id: '00000000-0000-4000-8000-000000000008', workspaceId: '00000000-0000-4000-8000-0000000000aa', revision: 4, createdAt: '2026-11-11T00:00:00Z', updatedAt: '2026-11-11T00:00:00Z', inputs: chain,
+      options: { at: '2026-11-11T00:00:00Z', by: { kind: 'agent' }, options: [{ key: 'o', label: 'Option', variant: noVariant, status: { word: 'validated feasible', run, goals: [{ word: 'proven optimal', goal: 0, value: 5, unit: 'h', bound: { value: 5, source: 'logic+calendars', certificate: { kind: 'zero' } } }] }, rows: [{ ...opsRow('A', '2026-11-16T06:00:00Z'), float: { workingHours: 0, limitedBy: { kind: 'window-end' as const } } }], metrics: [], inputsRevision: 3 }] },
+      baselines: [], changes: [], droppedChanges: 0,
+    })
+    expect(recheckOption(proven, proven.options!.options[0]!, 'f-1')).toMatchObject({ standing: 'out-of-date', usable: false, baselineAllowed: false, bestFoundGoals: [], optimality: [] })
+  })
+  test('the walk\'s case: the flagship\'s days-only refusal after the 30 h rebuild estimate is out of date, still "proven infeasible"', async () => {
+    const { generate } = await import('../solve/generate.ts')
+    const { searchEngine } = await import('../solve/search.ts')
+    const { laneKCheck, laneKVerify, laneKVerifyBound } = await import('../solve/fixtures/lane-k.ts')
+    const { trainAInputs } = await import('../solve/fixtures/train-a-case.ts')
+    const { formulationOf } = await import('../solve/compile.ts')
+    const flagship = trainAInputs({ read: true })
+    const set = (await generate({ engine: searchEngine(), check: laneKCheck, verify: laneKVerify, verifyBound: laneKVerifyBound }, { inputs: flagship, revision: 1, previous: null, input: { variants: [{ label: 'Days only', buy: 'no-extra-crew-hours' }] }, by: { kind: 'service', name: 'test' }, signal: new AbortController().signal, seed: 1, evals: 300 })).optionSet
+    const refused = set.options[0]!
+    expect(refused.status.word).toBe('proven infeasible')
+    // the walk's edit: the rebuild estimated at 30 h (revision 2)
+    const edited = { ...flagship, jobs: flagship.jobs.map(job => job.key === 'SWA-REBUILD' ? { ...job, duration: { ...job.duration, value: 30 } } : job) }
+    const stored = planSchema.parse({ id: '00000000-0000-4000-8000-000000000009', workspaceId: '00000000-0000-4000-8000-0000000000aa', revision: 2, createdAt: '2026-11-11T00:00:00Z', updatedAt: '2026-11-11T00:00:00Z', inputs: edited, options: set, baselines: [], changes: [], droppedChanges: 0 })
+    const result = recheckOption(stored, stored.options!.options[0]!, formulationOf(flagship.settings.grid))
+    expect(result).toMatchObject({ standing: 'out-of-date', usable: false, baselineAllowed: false, reasons: ['inputs-changed'] })
+    expect(result.shownAs).toBeUndefined()
+  }, 60_000)
+})

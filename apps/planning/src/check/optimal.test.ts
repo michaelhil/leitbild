@@ -130,3 +130,66 @@ describe("lane S's walk-4 plan, solved by the real search", () => {
     expect(option.status.word === 'validated feasible' ? option.status.goals[0]?.word : undefined).toBe('proven optimal')
   }, 60_000)
 })
+
+describe("a what-if's lead: only the lead may be proven, on its own bound (fix B)", () => {
+  // Item X in group G: tag 1 h, inside work 1 h, test 1 h, all on the one operator, chained by the brackets:
+  // G is out at least 3 h and nothing finishes before 3 h. Goals: 0 finish, 1 G's span over 1 h.
+  const goals: PlanInputs['goals'] = [{ metric: 'finish', tolerance: { value: 0, unit: 'h' } }, { metric: 'span-over', scope: { groups: ['G'] }, threshold: { value: 1, unit: 'h' }, tolerance: { value: 0, unit: 'h' } }]
+  const leadPlan = plan({
+    equipment: [{ key: 'X', label: 'X', group: 'G', supportedBy: [] }], groups: [{ key: 'G', label: 'Group G' }],
+    jobs: [job('T', 'tag-out', ['X']), job('W', 'work', ['X']), job('R', 'test', ['X'])], goals,
+  })
+  const proven = (goal: number, value: number, unit = 'h') => ({ word: 'proven optimal' as const, goal, value, unit, bound: { value, source: 'logic+calendars' as const, certificate: { kind: 'zero' as const } } })
+  const found = (goal: number, value: number, unit = 'h') => ({ word: 'best found under budget' as const, goal, value, unit })
+  const groupLine = (word: 'proven optimal' | 'best found under budget', value: number, unit = 'h') => word === 'proven optimal'
+    ? { word, group: 'G', value, unit, bound: { value, source: 'logic+calendars' as const, certificate: { kind: 'least-span' as const, spans: [{ group: 'G', hours: unit === 'min' ? value / 60 : value }] } } }
+    : { word, group: 'G', value, unit }
+
+  test('lead {goal: 1}: its span, 2 h over the threshold, is proven on its own bound; a claim on goal 0 is not', () => {
+    // goal 0 at 3 h would reach its bound (3 h), but under a lead on goal 1 only goal 1 may be proven
+    const status = { word: 'validated feasible' as const, run, goals: [proven(0, 3), proven(1, 2)], lead: { goal: 1 } }
+    expect(verifyOptimality(leadPlan, none, status)).toEqual([{ goal: 0, claimed: 3, bound: 3, proves: false }, { goal: 1, claimed: 2, bound: 2, proves: true }])
+  })
+  test('lead {goal: 1}: goal 0 best found does not break the lead\'s proof (the order rule is replaced)', () => {
+    const status = { word: 'validated feasible' as const, run, goals: [found(0, 4), proven(1, 2)], lead: { goal: 1 } }
+    expect(verifyOptimality(leadPlan, none, status)).toEqual([{ goal: 1, claimed: 2, bound: 2, proves: true }])
+  })
+  test('lead {group: G}: the group line is checked on the least span of G, 3 h, threshold 0', () => {
+    const status = (line: ReturnType<typeof groupLine>) => ({ word: 'validated feasible' as const, run, goals: [found(0, 3), found(1, 2)], lead: line })
+    expect(verifyOptimality(leadPlan, none, status(groupLine('proven optimal', 3)))).toEqual([{ group: 'G', claimed: 3, bound: 3, proves: true }])
+    expect(verifyOptimality(leadPlan, none, status(groupLine('proven optimal', 4)))).toEqual([{ group: 'G', claimed: 4, bound: 3, proves: false }])
+    expect(verifyOptimality(leadPlan, none, status(groupLine('proven optimal', 180, 'min')))).toEqual([{ group: 'G', claimed: 180, bound: 180, proves: true }])
+    expect(verifyOptimality(leadPlan, none, status(groupLine('best found under budget', 3)))).toEqual([])
+  })
+  test('lead {group: G}: no plan goal may be proven, even one that reaches its bound', () => {
+    const status = { word: 'validated feasible' as const, run, goals: [proven(0, 3), found(1, 2)], lead: groupLine('proven optimal', 3) }
+    expect(verifyOptimality(leadPlan, none, status)).toEqual([{ goal: 0, claimed: 3, bound: 3, proves: false }, { group: 'G', claimed: 3, bound: 3, proves: true }])
+  })
+  test("verifyBound takes the group lead as its goal: G's least span, 3 h (180 min)", () => {
+    expect(verifyBound(leadPlan, none, { group: 'G', unit: 'h' }, { value: 3 })).toMatchObject({ proves: true, checkerBound: 3 })
+    expect(verifyBound(leadPlan, none, { group: 'G', unit: 'min' }, { value: 180 })).toMatchObject({ proves: true, checkerBound: 180 })
+    expect(verifyBound(leadPlan, none, { group: 'G', unit: 'h' }, { value: 3.5 })).toMatchObject({ proves: false, checkerBound: 3 })
+    expect(verifyBound(leadPlan, none, { group: 'NONE', unit: 'h' }, { value: 0 })).toMatchObject({ proves: false })
+  })
+  describe('recheck: the group lead\'s value is the checker\'s own span:G figure', () => {
+    // T 06:00Z-07:00Z, W 07:00Z-08:00Z, R 08:00Z-09:00Z: G is out 06:00Z-09:00Z, span:G = 3 h; finish 3 h.
+    const rows = [['T', 6], ['W', 7], ['R', 8]].map(([key, hour]) => {
+      const start = `2026-11-16T${String(hour).padStart(2, '0')}:00:00Z`, finish = `2026-11-16T${String(Number(hour) + 1).padStart(2, '0')}:00:00Z`
+      return { job: String(key), start, finish, uses: [{ resource: 'ops', from: start, to: finish }], float: { workingHours: 0, limitedBy: { kind: 'window-end' as const } } }
+    })
+    const stored = (line: ReturnType<typeof groupLine>) => planSchema.parse({
+      id: '00000000-0000-4000-8000-000000000005', workspaceId: '00000000-0000-4000-8000-0000000000aa', revision: 1, createdAt: '2026-11-11T00:00:00Z', updatedAt: '2026-11-11T00:00:00Z', inputs: leadPlan,
+      options: { at: '2026-11-11T00:00:00Z', by: { kind: 'agent' }, options: [{ key: 'g', label: 'G first', variant: { ...none, lead: { group: 'G' } }, status: { word: 'validated feasible', run, goals: [found(0, 3), found(1, 2)], lead: line }, rows, metrics: [], inputsRevision: 1 }] },
+      baselines: [], changes: [], droppedChanges: 0,
+    })
+    test('proven at 3 h, its own span: usable, the lead confirmed', () => {
+      const plan = stored(groupLine('proven optimal', 3))
+      expect(recheckOption(plan, plan.options!.options[0]!, 'f')).toMatchObject({ usable: true, reasons: [], bestFoundGoals: [], bestFoundLead: false })
+    })
+    test('a lead value below the span the rows give (2.5 h of 3 h) is not the checker\'s figure: not usable', () => {
+      // the bound (3 h) "reaches" 2.5 h, so only the figure check catches it
+      const plan = stored(groupLine('proven optimal', 2.5))
+      expect(recheckOption(plan, plan.options!.options[0]!, 'f')).toMatchObject({ usable: false, reasons: ['lead-figure'], bestFoundLead: true })
+    })
+  })
+})

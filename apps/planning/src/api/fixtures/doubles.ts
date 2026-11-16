@@ -8,12 +8,15 @@ import {
 import { planningError } from '../../errors.ts'
 import { combineWorldFacts, type Plan, type PlanInputs } from '../../plan/schema.ts'
 import { durationMs } from '../../time/units.ts'
-import type { CheckViolation, SolverPort, WorldFactsPort } from '../operations.ts'
+import type { CheckViolation, GenerateVariant, SolverPort, WorldFactsPort } from '../operations.ts'
 
 type Option = NonNullable<Plan['options']>['options'][number]
 
 export const testCertifiedSize = { decided: true, family: 'test plans', maxJobs: 100, evidence: 'test double', limitJobs: 100 }
 const formulation = (grid: string) => `double 1; grid ${grid}`
+/** The double's key for a given what-if: a function of its methods, purchases, extra rule and lead, as lane S keys them. */
+export const doubleVariantKey = (variant: GenerateVariant): string =>
+  `v-${createHash('sha256').update(JSON.stringify([variant.methods ?? [], variant.buy ?? 'allowed', variant.also ?? null, variant.lead ?? null])).digest('hex').slice(0, 12)}`
 
 /** A job's duration in ms on the double's elapsed clock, or undefined while a World value is unread. */
 const durationOf = (inputs: PlanInputs, job: PlanInputs['jobs'][number]): number | undefined => {
@@ -34,10 +37,11 @@ export const createSolverDouble = (options: { readonly calls?: Array<{ readonly 
     const inputs = request.inputs
     const methodChoices = inputs.methods[0]?.options.map(option => [{ choice: inputs.methods[0]!.key, option: option.key }]) ?? [[]]
     const variants = request.variants?.map(variant => variant.methods ?? []) ?? methodChoices
+    const keys = request.variants?.map(doubleVariantKey)
     const unread = inputs.jobs.filter(job => durationOf(inputs, job) === undefined)
     const run = { grid: inputs.settings.grid, engine: 'double', formulation: formulation(inputs.settings.grid), seed: 1, budget: { evals: 1, cpuMs: 1, wallMs: 1 }, stoppedBy: 'done' as const, evals: 1, cpuMs: 1 }
     const built: Option[] = variants.map((methods, index) => {
-      const key = `O${index + 1}`
+      const key = keys?.[index] ?? `O${index + 1}`
       const label = methods.length === 0 ? 'As planned' : methods.map(method => inputs.methods.find(entry => entry.key === method.choice)?.options.find(option => option.key === method.option)?.label ?? method.option).join(', ')
       if (unread.length > 0 || inputs.settings.window === null) {
         return { key, label, variant: { methods, purchases: [] }, status: { word: 'invalid input' as const, problems: unread.length > 0 ? unread.slice(0, 16).map(job => ({ about: [job.key], code: 'world_value_unread' })) : [{ about: [], code: 'window_missing' }] }, rows: [], metrics: [], inputsRevision: request.inputsRevision }
@@ -62,8 +66,11 @@ export const createSolverDouble = (options: { readonly calls?: Array<{ readonly 
         inputsRevision: request.inputsRevision,
       }
     })
-    const feasible = built.find(option => option.status.word === 'validated feasible')
-    return { at: request.at, by: request.by, options: built, ...(feasible === undefined ? {} : { recommended: feasible.key }) }
+    // keep: the stored options on this revision stay, each replaced by a new one of its key.
+    const kept = request.keep === undefined ? [] : (request.stored?.options ?? []).filter(option => option.inputsRevision === request.inputsRevision && !built.some(entry => entry.key === option.key))
+    const set = [...kept, ...built].slice(0, 8)
+    const feasible = set.find(option => option.status.word === 'validated feasible')
+    return { at: request.at, by: request.by, options: set, ...(feasible === undefined ? {} : { recommended: feasible.key }) }
   },
   explain: async request => {
     options.calls?.push({ kind: 'explain' })
@@ -73,6 +80,11 @@ export const createSolverDouble = (options: { readonly calls?: Array<{ readonly 
       lines: [`${row.job} starts when the job before it ends.`],
       items: [{ job: row.job, start: row.start, finish: row.finish, floatHours: row.float.workingHours, because: [{ kind: 'link', about: [{ kind: 'job', key: row.job }] }], joint: false }],
     }
+  },
+  finishCause: async request => {
+    options.calls?.push({ kind: 'finish-cause' })
+    const row = request.option.rows.at(-1)
+    return row === undefined ? undefined : { kind: 'link', about: [{ kind: 'job', key: row.job }] }
   },
   preview: async request => {
     options.calls?.push({ kind: 'preview' })

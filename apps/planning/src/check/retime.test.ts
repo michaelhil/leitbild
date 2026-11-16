@@ -1,0 +1,255 @@
+import { describe, expect, test } from 'bun:test'
+import { planInputsSchema, type PlanInputs } from '../plan/schema.ts'
+import type { CheckRow, CheckVariant } from './check.ts'
+import { atHigh, judgeRetiming, rangedJobs } from './retime.ts'
+
+// The pessimistic card's check (design §4.2): a re-timed schedule (same order and crews, nothing earlier) is
+// judged at the high estimates by the checker, and the first rule it breaks, its job and by how much are
+// the checker's own. Window Mon 16 Nov 2026 06:00Z to Wed 18 Nov 06:00Z; one operator and one helper
+// around the clock. Every instant below is worked out beside it.
+type Job = PlanInputs['jobs'][number]
+const planner = { by: 'planner' as const }
+const hours = (value: number, range?: { low: number; high: number }) => ({ value, unit: 'h' as const, calendar: 'working' as const, ...(range === undefined ? {} : { range }), origin: planner })
+const onOps = (anyOf = ['ops']) => [{ anyOf, amount: 1, handover: false }]
+const jobs: Job[] = [
+  { key: 'T', title: 'Tag out X', kind: 'tag-out', equipment: ['X'], isolation: 'none', duration: hours(1), durationWith: [], needs: onOps(), continuous: true, checks: [], tags: [] },
+  { key: 'W', title: 'Work inside X', kind: 'work', equipment: ['X'], isolation: 'inside', duration: hours(2, { low: 1, high: 4 }), durationWith: [], needs: onOps(['ops', 'helper']), continuous: true, checks: [], tags: [] },
+  { key: 'R', title: 'Test X', kind: 'test', equipment: ['X'], isolation: 'none', duration: hours(1), durationWith: [], needs: onOps(), continuous: true, checks: [], tags: [] },
+]
+const limit = (key: string, value: number) => ({ kind: 'span-limit' as const, key, group: 'G', limit: { value, unit: 'h' as const }, singleEntry: true, words: `X back within ${value} h`, source: planner })
+const due = (key: string, finishBy: string) => ({ kind: 'due' as const, key, job: 'R', finishBy, words: 'X back by then', source: planner })
+const plan = (rules: PlanInputs['rules']): PlanInputs => planInputsSchema.parse({
+  settings: { title: 'Re-timing', timeZone: 'Europe/Oslo', window: { start: '2026-11-16T06:00:00Z', end: '2026-11-18T06:00:00Z' }, dataDate: null, grid: '30min', currency: 'NOK', run: null },
+  equipment: [{ key: 'X', label: 'Item X', group: 'G', supportedBy: [] }], groups: [{ key: 'G', label: 'Group G' }],
+  calendars: [{ key: 'always', label: 'Always', weekly: [{ days: ['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun'], from: '00:00', to: '00:00' }], periods: [], except: [], source: planner }],
+  resources: ['ops', 'helper'].map(key => ({ key, label: key, kind: 'crew', count: 1, calendar: 'always', attributes: [], source: planner })),
+  purchases: [], methods: [], jobs, links: [], rules,
+  goals: [{ metric: 'span-over', scope: { groups: ['G'] }, tolerance: { value: 0, unit: 'h' } }], world: { refreshedAt: null, facts: [] },
+})
+const none: CheckVariant = { methods: [], purchases: [] }
+const at = (hour: number): string => new Date(Date.UTC(2026, 10, 16, 0, 0) + hour * 3_600_000).toISOString().replace('.000Z', 'Z')
+const rowOf = (job: string, from: number, to: number, resource = 'ops'): CheckRow => ({ job, start: at(from), finish: at(to), uses: [{ resource, from: at(from), to: at(to) }] })
+// Planned at the most likely 2 h: T 06:00Z-07:00Z, W 07:00Z-09:00Z, R 09:00Z-10:00Z (G out 4 h).
+const planned = [rowOf('T', 6, 7), rowOf('W', 7, 9), rowOf('R', 9, 10)]
+// W at its high 4 h, nothing earlier: W 07:00Z-11:00Z, R 11:00Z-12:00Z (G out 06:00Z-12:00Z, 6 h).
+const retimed = [rowOf('T', 6, 7), rowOf('W', 7, 11), rowOf('R', 11, 12)]
+
+describe('the ranged jobs and their high estimates', () => {
+  test('only W has a range', () => {
+    expect(rangedJobs(plan([]), none)).toEqual(['W'])
+  })
+  test('at high, W takes 4 h and nothing else changes', () => {
+    const high = atHigh(plan([]), ['W'])
+    expect(high.jobs.map(job => [job.key, job.duration.value])).toEqual([['T', 1], ['W', 4], ['R', 1]])
+  })
+})
+
+describe('the outcome is the checker\'s', () => {
+  test('a 5 h limit: G out 6 h breaks it at the test, by 1 h', () => {
+    expect(judgeRetiming(plan([limit('L', 5)]), none, planned, retimed, ['W'])).toMatchObject({ ok: true, outcome: { holds: false, rule: 'L', job: 'R', by: { value: 1, unit: 'h' } } })
+  })
+  test('a 7 h limit holds', () => {
+    expect(judgeRetiming(plan([limit('L', 7)]), none, planned, retimed, ['W'])).toMatchObject({ ok: true, outcome: { holds: true } })
+  })
+  test('a re-timing that holds gives each span against its limit: G out 6 h of 7 h, 1 h margin (V12)', () => {
+    expect(judgeRetiming(plan([limit('L', 7)]), none, planned, retimed, ['W'])).toEqual({ ok: true, outcome: { holds: true }, spans: [{ rule: 'L', hours: 6, margin: 1 }], extra: { cost: 0, bought: [] } })
+  })
+  test('a due time at 11:30Z: the test finishes at 12:00Z, 0.5 h late', () => {
+    expect(judgeRetiming(plan([limit('L', 7), due('D', at(11.5))]), none, planned, retimed, ['W'])).toMatchObject({ ok: true, outcome: { holds: false, rule: 'D', job: 'R', by: { value: 0.5, unit: 'h' } } })
+  })
+  test('the first rule broken is the first in time: the 5 h limit runs out at 11:00Z, before the 11:30Z due', () => {
+    expect(judgeRetiming(plan([due('D', at(11.5)), limit('L', 5)]), none, planned, retimed, ['W'])).toMatchObject({ ok: true, outcome: { holds: false, rule: 'L', job: 'R', by: { value: 1, unit: 'h' } } })
+  })
+  test("a what-if's extra rule is judged too: at most 4.5 h out, broken by 1.5 h", () => {
+    const whatIf: CheckVariant = { ...none, also: [limit('A', 4.5)] }
+    expect(judgeRetiming(plan([limit('L', 7)]), whatIf, planned, retimed, ['W'])).toMatchObject({ ok: true, outcome: { holds: false, rule: 'A', job: 'R', by: { value: 1.5, unit: 'h' } } })
+  })
+})
+
+describe('what is not a re-timing is refused, never judged', () => {
+  test('a job earlier than planned', () => {
+    // planned half an hour later throughout; the "re-timing" brings T back to 06:00Z
+    const later = [rowOf('T', 6.5, 7.5), rowOf('W', 7.5, 9.5), rowOf('R', 9.5, 10.5)]
+    const result = judgeRetiming(plan([limit('L', 7)]), none, later, retimed, ['W'])
+    expect(result.ok).toBe(false)
+    expect(result.ok ? [] : result.problems.join(' ')).toContain("'Tag out X'")
+  })
+  test('another crew', () => {
+    const helped = retimed.map(entry => entry.job === 'W' ? rowOf('W', 7, 11, 'helper') : entry)
+    const result = judgeRetiming(plan([limit('L', 7)]), none, planned, helped, ['W'])
+    expect(result.ok).toBe(false)
+    expect(result.ok ? [] : result.problems.join(' ')).toContain("'Work inside X'")
+  })
+  test('a job missing from the re-timing', () => {
+    expect(judgeRetiming(plan([limit('L', 7)]), none, planned, retimed.filter(entry => entry.job !== 'R'), ['W']).ok).toBe(false)
+  })
+  test('rows not lengthened to the high estimate do not match its durations', () => {
+    expect(judgeRetiming(plan([limit('L', 7)]), none, planned, planned, ['W']).ok).toBe(false)
+  })
+  test('a job without a range has no high estimate', () => {
+    expect(judgeRetiming(plan([limit('L', 7)]), none, planned, planned, ['T']).ok).toBe(false)
+  })
+})
+
+describe('a re-timing that runs past the window is judged as the window', () => {
+  // W at a high estimate of 50 h: W Mon 07:00Z to Wed 09:00Z, R Wed 09:00Z-10:00Z, past the window end Wed
+  // 06:00Z. The work is judged on the plan's calendars continued past the window (the operator and helper
+  // work around the clock); the first job past the end is W, and the work would end at R's finish, Wed 10:00Z.
+  const long = (rules: PlanInputs['rules']): PlanInputs => {
+    const base = plan(rules)
+    return { ...base, jobs: base.jobs.map(job => job.key === 'W' ? { ...job, duration: { ...job.duration, range: { low: 1, high: 50 } } } : job) }
+  }
+  const past = [rowOf('T', 6, 7), rowOf('W', 7, 57), rowOf('R', 57, 58)]
+  test('no rule breaks first: the window, at W, the work ending Wed 10:00Z', () => {
+    expect(judgeRetiming(long([limit('L', 60)]), none, planned, past, ['W'])).toEqual({ ok: true, outcome: { holds: false, window: { by: at(58) }, job: 'W' }, extra: { cost: 0, bought: [] } })
+  })
+  test('a rule that breaks before the window end comes first: G out 52 h runs past 7 h at Mon 13:00Z', () => {
+    expect(judgeRetiming(long([limit('L', 7)]), none, planned, past, ['W'])).toMatchObject({ ok: true, outcome: { holds: false, rule: 'L', job: 'R', by: { value: 45, unit: 'h' } } })
+  })
+  test('rows past the window that do not match the high estimate are still refused', () => {
+    expect(judgeRetiming(long([]), none, planned, [rowOf('T', 6, 7), rowOf('W', 7, 56), rowOf('R', 57, 58)], ['W']).ok).toBe(false)
+  })
+  test('a protection rule broken is still refused, never judged', () => {
+    const shielded = { kind: 'protected' as const, key: 'P', equipment: ['X'], words: 'X is never worked', source: planner }
+    expect(judgeRetiming(plan([shielded]), none, planned, retimed, ['W']).ok).toBe(false)
+  })
+})
+
+describe('a job the re-timing cannot place is judged as unplaced', () => {
+  // The test R now needs a booth booked Mon 09:00Z-11:00Z only. With W at its high 4 h (07:00Z-11:00Z), R
+  // is ready at 11:00Z, when the booth has nothing left: a 1 h test fits no later than 10:00Z, so none of the
+  // booth's time remains from 10:30Z. The re-timing has rows for T and W only.
+  const booth = (rules: PlanInputs['rules']): PlanInputs => {
+    const base = plan(rules)
+    return {
+      ...base,
+      calendars: [...base.calendars, { key: 'booked', label: 'Booth booking', weekly: [], periods: [{ start: at(9), end: at(11) }], except: [], source: planner }],
+      resources: [...base.resources, { key: 'booth', label: 'Test booth', kind: 'crew', count: 1, calendar: 'booked', attributes: [], source: planner }],
+      jobs: base.jobs.map(job => job.key === 'R' ? { ...job, needs: onOps(['booth']) } : job),
+    }
+  }
+  const bookedPlan = [rowOf('T', 6, 7), rowOf('W', 7, 9), rowOf('R', 9, 10, 'booth')]
+  const placed = [rowOf('T', 6, 7), rowOf('W', 7, 11)]
+  test('R could not be done: the booth has no time left from Mon 10:30Z', () => {
+    expect(judgeRetiming(booth([]), none, bookedPlan, placed, ['W'])).toEqual({ ok: true, outcome: { holds: false, unplaced: { job: 'R', resource: 'booth', after: new Date(at(10.5)).toISOString() } } })
+  })
+  test('a rule that breaks earlier comes first: W due at 09:30Z finishes at 11:00Z', () => {
+    expect(judgeRetiming(booth([{ ...due('D', at(9.5)), job: 'W' }]), none, bookedPlan, placed, ['W']))
+      .toMatchObject({ ok: true, outcome: { holds: false, rule: 'D', job: 'W', by: { value: 1.5, unit: 'h' } } })
+  })
+  test('a missing job whose crew still has time is refused: the operator works around the clock', () => {
+    expect(judgeRetiming(plan([]), none, planned, retimed.filter(entry => entry.job !== 'R'), ['W']).ok).toBe(false)
+  })
+})
+
+describe("Train A: tube cleaning at its high estimate leaves the eddy-current test unplaced", async () => {
+  // The flagship's Swap option, solved by lane S's search (seed 1, 600 evaluations), re-timed by lane S's
+  // repair path with CCWHXA-CLEAN at 12 h. The eddy-current team is booked Wed 18 Nov 06:00Z-18:00Z only
+  // (calendar 'ect'), and CCWHXA-ECT is 8 h without a break: it fits no later than 10:00Z, so none of the
+  // team's time remains from 10:30Z. The cleaning, on the contractor's nights, ends after that.
+  const { generate } = await import('../solve/generate.ts')
+  const { searchEngine } = await import('../solve/search.ts')
+  const { laneKCheck, laneKVerify, laneKVerifyBound } = await import('../solve/fixtures/lane-k.ts')
+  const { trainAInputs } = await import('../solve/fixtures/train-a-case.ts')
+  const flagship = trainAInputs({ read: true })
+  const option = (await generate({ engine: searchEngine(), check: laneKCheck, verify: laneKVerify, verifyBound: laneKVerifyBound }, { inputs: flagship, revision: 1, previous: null, input: { variants: [{ label: 'Swap', methods: [{ choice: 'SWA-method', option: 'swap' }] }] }, by: { kind: 'service', name: 'test' }, signal: new AbortController().signal, seed: 1, evals: 600 })).optionSet.options[0]!
+  const { placedRows: placedBy } = await import('../../tests/harness/sensitivity-table.ts')
+  const { atHigh: highFor } = await import('../solve/retime.ts')
+  // lane S's repair, keeping the rows of the jobs it places (tests/harness/sensitivity-table.ts placedRows)
+  const placedRows = placedBy(flagship, highFor(flagship, new Set(['CCWHXA-CLEAN'])), option)
+  test('the repair loses the test and what follows it', () => {
+    expect(option.status.word).toBe('validated feasible')
+    expect(placedRows.some(row => row.job === 'CCWHXA-ECT')).toBe(false)
+    expect(placedRows.some(row => row.job === 'CCWHXA-CLEAN')).toBe(true)
+  })
+  test('lane K judges it: the eddy-current team has no time left from Wed 10:30Z', () => {
+    expect(judgeRetiming(flagship, option.variant, option.rows, placedRows, ['CCWHXA-CLEAN'])).toEqual({ ok: true, outcome: { holds: false, unplaced: { job: 'CCWHXA-ECT', resource: 'ect-team', after: '2026-11-18T10:30:00.000Z' } } })
+  })
+})
+
+describe('the continued calendars are bounded: the window\'s length again past the window end (F3)', () => {
+  // A 30 s grid, window Mon 16 Nov 06:00Z to Tue 17 Nov 06:00Z (one day), so the search runs to Wed 18 Nov
+  // 06:00Z. The test R needs the inspection team, booked Mon 08:00Z-10:00Z and then only Fridays 09:00-17:00
+  // local (Fri 20 Nov 08:00Z on), past that bound. With W at its high 4 h, R is ready at 11:00Z; within the
+  // bound a 1 h test fits no later than 09:00Z, so none of the team's time fits from 09:00:30Z.
+  const fine = (): PlanInputs => planInputsSchema.parse({
+    settings: { title: 'Fine grid', timeZone: 'Europe/Oslo', window: { start: at(6), end: at(30) }, dataDate: null, grid: '30s', currency: 'NOK', run: null },
+    equipment: [{ key: 'X', label: 'Item X', group: 'G', supportedBy: [] }], groups: [{ key: 'G', label: 'Group G' }],
+    calendars: [
+      { key: 'always', label: 'Always', weekly: [{ days: ['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun'], from: '00:00', to: '00:00' }], periods: [], except: [], source: planner },
+      { key: 'fridays', label: 'Team on Fridays', weekly: [{ days: ['fri'], from: '09:00', to: '17:00' }], periods: [{ start: at(8), end: at(10) }], except: [], source: planner },
+    ],
+    resources: [
+      { key: 'ops', label: 'ops', kind: 'crew', count: 1, calendar: 'always', attributes: [], source: planner },
+      { key: 'helper', label: 'helper', kind: 'crew', count: 1, calendar: 'always', attributes: [], source: planner },
+      { key: 'team', label: 'Inspection team', kind: 'crew', count: 1, calendar: 'fridays', attributes: [], source: planner },
+    ],
+    purchases: [], methods: [], links: [], rules: [],
+    jobs: jobs.map(job => job.key === 'R' ? { ...job, needs: onOps(['team']) } : job),
+    goals: [{ metric: 'span-over', scope: { groups: ['G'] }, tolerance: { value: 0, unit: 'h' } }], world: { refreshedAt: null, facts: [] },
+  })
+  const plannedFine = [rowOf('T', 6, 7), rowOf('W', 7, 9), rowOf('R', 9, 10, 'team')]
+  test('nothing fits within the bound: R unplaced, the team has no slot long enough from 09:00:30Z', () => {
+    const started = performance.now()
+    const judged = judgeRetiming(fine(), none, plannedFine, [rowOf('T', 6, 7), rowOf('W', 7, 11)], ['W'])
+    const ms = performance.now() - started
+    expect(judged).toEqual({ ok: true, outcome: { holds: false, unplaced: { job: 'R', resource: 'team', after: '2026-11-16T09:00:30.000Z' } } })
+    console.log(`30 s grid re-timing judged in ${ms.toFixed(1)} ms`)
+  })
+})
+
+describe('a locked job a re-timing pushes past its fixed start is judged as the lock (B2)', () => {
+  // A (2 h, high 4 h) on the operator, then B (1 h) on the helper, finish-to-start, B locked at 09:00Z.
+  // At A's high 4 h, A runs 07:00Z-11:00Z while B keeps its fixed start: B could not keep it, A finishes 2 h later.
+  const plain = (key: string, hours: number, resource: string, range?: { low: number; high: number }): Job => ({ key, title: `Job ${key}`, kind: 'work', equipment: [], isolation: 'none', duration: { value: hours, unit: 'h', calendar: 'working', ...(range === undefined ? {} : { range }), origin: planner }, durationWith: [], needs: onOps([resource]), continuous: true, checks: [], tags: [] })
+  const locked = (): PlanInputs => ({ ...plan([]), jobs: [plain('A', 2, 'ops', { low: 1, high: 4 }), { ...plain('B', 1, 'helper'), lock: { start: at(9) } }], links: [{ from: 'A', to: 'B', type: 'FS', lag: { value: 0, unit: 'h' } }] })
+  const lockPlanned = [rowOf('A', 7, 9), rowOf('B', 9, 10, 'helper')]
+  test('B could not keep its fixed start: A would finish 2 h later', () => {
+    expect(judgeRetiming(locked(), none, lockPlanned, [rowOf('A', 7, 11), rowOf('B', 9, 10, 'helper')], ['A'])).toMatchObject({ ok: true, outcome: { holds: false, lock: { job: 'B', after: 'A' }, by: { value: 2, unit: 'h' } } })
+  })
+  test('a locked job moved off its fixed start is no re-timing: refused', () => {
+    expect(judgeRetiming(locked(), none, lockPlanned, [rowOf('A', 7, 11), rowOf('B', 11, 12, 'helper')], ['A']).ok).toBe(false)
+  })
+})
+
+describe("a re-timing's extra use of what the option already buys, and its cost (M1)", () => {
+  // The fitter (one crew of 3) works 07:00-15:00 local (06:00Z-14:00Z); overtime to 17:00 local (14:00Z-16:00Z)
+  // at NOK 100 per person-hour. W, 3 h from 12:00Z, uses 1 h of overtime (3 person-h, NOK 300); at its high 4 h
+  // it uses 2 h (6 person-h, NOK 600): 3 more person-hours, +NOK 300.
+  const bought = (): PlanInputs => {
+    const base = plan([])
+    return {
+      ...base,
+      calendars: [...base.calendars, { key: 'day', label: 'Day shift', weekly: [{ days: ['mon', 'tue', 'wed', 'thu', 'fri'], from: '07:00', to: '15:00' }], periods: [], except: [], source: planner }, { key: 'late', label: 'Overtime', weekly: [{ days: ['mon', 'tue', 'wed', 'thu', 'fri'], from: '15:00', to: '17:00' }], periods: [], except: [], source: planner }],
+      resources: [...base.resources, { key: 'fitter', label: 'Fitters', kind: 'crew', count: 1, crewSize: 3, calendar: 'day', attributes: [], source: planner }],
+      purchases: [{ key: 'ot', label: 'Fitter overtime', resource: 'fitter', adds: { calendar: 'late' }, replaces: [], price: { perPersonHour: 100 }, allowed: true }],
+      jobs: [{ key: 'F', title: 'Fit', kind: 'work', equipment: [], isolation: 'none', duration: hours(3, { low: 2, high: 4 }), durationWith: [], needs: onOps(['fitter']), continuous: false, checks: [], tags: [] }],
+      goals: [{ metric: 'extra-cost', tolerance: { value: 0, unit: 'NOK' } }],
+    }
+  }
+  const fit = (to: number) => ({ job: 'F', start: at(12), finish: at(to), uses: [{ resource: 'fitter', from: at(12), to: at(14) }, { resource: 'fitter', from: at(14), to: at(to), purchase: 'ot' }] })
+  const variant: CheckVariant = { methods: [], purchases: ['ot'] }
+  test('the re-timing holds, using 3 more overtime person-hours, +NOK 300', () => {
+    expect(judgeRetiming(bought(), variant, [fit(15)], [fit(16)], ['F'])).toMatchObject({ ok: true, outcome: { holds: true }, extra: { cost: 300, bought: [{ purchase: 'ot', value: 3, unit: 'person-h' }] } })
+  })
+})
+
+describe('Train A: the eddy-current test locked at Wed 08:00Z (the adversary\'s B2 repro, through a real Generate)', async () => {
+  const { generate } = await import('../solve/generate.ts')
+  const { searchEngine } = await import('../solve/search.ts')
+  const { laneKCheck, laneKVerify, laneKVerifyBound } = await import('../solve/fixtures/lane-k.ts')
+  const { trainAInputs } = await import('../solve/fixtures/train-a-case.ts')
+  const { atHigh: highFor, retimedRows } = await import('../solve/retime.ts')
+  const base = trainAInputs({ read: true })
+  const flagship: PlanInputs = { ...base, jobs: base.jobs.map(job => job.key === 'CCWHXA-ECT' ? { ...job, lock: { start: '2026-11-18T08:00:00Z' } } : job) }
+  const option = (await generate({ engine: searchEngine(), check: laneKCheck, verify: laneKVerify, verifyBound: laneKVerifyBound }, { inputs: flagship, revision: 1, previous: null, input: { variants: [{ label: 'Swap', methods: [{ choice: 'SWA-method', option: 'swap' }] }] }, by: { kind: 'service', name: 'test' }, signal: new AbortController().signal, seed: 1, evals: 600 })).optionSet.options[0]!
+  test('with the cleaning at its high estimate the test could not keep its fixed start: the cleaning finishes later, by the checker\'s hours', () => {
+    expect(option.status.word).toBe('validated feasible')
+    const found = retimedRows(flagship, highFor(flagship, new Set(['CCWHXA-CLEAN'])), option)
+    if (found === undefined || !('rows' in found)) throw new Error('the repair gave no rows')
+    const cleaning = found.rows.find(row => row.job === 'CCWHXA-CLEAN')!
+    const late = (Date.parse(cleaning.finish) - Date.parse('2026-11-18T08:00:00Z')) / 3_600_000
+    expect(late).toBeGreaterThan(0)
+    expect(judgeRetiming(flagship, option.variant, option.rows, found.rows, ['CCWHXA-CLEAN'])).toMatchObject({ ok: true, outcome: { holds: false, lock: { job: 'CCWHXA-ECT', after: 'CCWHXA-CLEAN' }, by: { value: late, unit: 'h' } } })
+  })
+})

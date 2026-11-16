@@ -65,6 +65,9 @@
     small { display: block; color: var(--ink-3); font-size: 11px; font-weight: 400; }
     .hint { color: var(--ink-3); font-size: 12px; }
     .error { padding: 10px 12px; border-radius: 6px; border: 1px solid #e5c3b9; background: var(--refusal-bg); color: var(--refusal); }
+    .error-words { margin: 0; }
+    .error-detail { margin-top: 6px; font-size: 11px; color: var(--ink-2); }
+    .error-detail pre { white-space: pre-wrap; overflow-wrap: anywhere; max-height: 200px; overflow: auto; margin: 4px 0 0; }
     .notice { padding: 8px 12px; border-left: 3px solid var(--accent); background: var(--accent-2); font-size: 13px; }
     .loading { margin: 24px; color: var(--ink-3); }
     .outcome.refused { border-left-color: var(--refusal); }
@@ -86,6 +89,8 @@
     .mark-good { color: var(--good); background: var(--good-bg); }
     .mark-warning { color: var(--warning); background: var(--warning-bg); }
     .mark-refusal { color: var(--refusal); background: var(--refusal-bg); border-width: 2px; }
+    /* A long mark (a what-if's "best found with … first") wraps inside its card, never past it (walk V5). */
+    .what-if-card .mark, .goals .mark { white-space: normal; max-width: 100%; overflow-wrap: anywhere; }
 
     .library { max-width: 1060px; margin: 24px auto; padding: 0 16px; }
     .eyebrow { color: var(--ink-3); text-transform: uppercase; letter-spacing: .09em; font-size: 10px; font-weight: 700; }
@@ -123,7 +128,8 @@
     .col-panel { grid-area: panel; }
     /* Each column is one track that may shrink to its box; long text wraps instead of widening it. */
     .col-attention, .col-main, .col-panel, .desktop-only { min-width: 0; display: grid; grid-template-columns: minmax(0, 1fr); gap: 12px; align-content: start; }
-    .attention, .glance, .work-list, .options, .rules, .crews, .picker, .authoring, .job-panel, .preview, .shift-list, .shown-option, .timeline, .options-glance, .finish-panel {
+    .attention, .glance, .work-list, .options, .rules, .crews, .picker, .authoring, .job-panel, .preview, .shift-list, .shown-option, .timeline, .options-glance, .finish-panel,
+    .ladder, .what-if-panel, .why-panel, .compare-panel {
       background: var(--card); border: 1px solid var(--line); border-radius: 8px; padding: 14px; min-width: 0; overflow-wrap: anywhere;
     }
     .cards { list-style: none; padding: 0; margin: 0; display: grid; gap: 10px; }
@@ -167,6 +173,65 @@
     .options-glance .cause { color: var(--refusal); }
     .legend { margin: 6px 0 0; padding: 0 8px; font-size: 11px; color: var(--ink-3); }
     .legend-word { font-weight: 600; }
+    /* The questions about the options, one quiet row under the table; each opens beside the timeline. */
+    .choose { display: flex; flex-wrap: wrap; gap: 4px 6px; margin: 6px 0 0; padding: 0 8px; }
+    .choose button.current { background: var(--accent-2); border-color: var(--accent); }
+    .shown-what-if { margin: 6px 0 0; padding: 0 8px; font-size: 12px; }
+    .not-yet { padding: 8px 10px; border-left: 3px solid var(--line); background: var(--line-2); font-size: 13px; color: var(--ink-2); }
+    /* What overtime buys: numbered rungs, and between two rungs the Module's word for the step up. */
+    .rungs { list-style: none; padding: 0; margin: 0 0 10px; }
+    .rung { display: grid; grid-template-columns: 26px minmax(0, 1fr); gap: 8px; padding: 8px 0; border-top: 1px solid var(--line-2); }
+    .rung.selected { box-shadow: inset 3px 0 var(--accent); padding-left: 4px; }
+    .rung-number { display: inline-grid; place-items: center; width: 24px; height: 24px; border-radius: 50%; border: 1px solid var(--accent); color: var(--accent); font-weight: 600; font-size: 12px; }
+    .rung-body p { margin: 0 0 4px; }
+    .rung-name { font-weight: 600; }
+    .rung-outcome { font-size: 13px; }
+    .rung-use { font-size: 12px; color: var(--ink-2); }
+    .ladder-step { margin: 0 0 0 12px; padding: 4px 0 4px 22px; border-left: 2px solid var(--accent); font-size: 13px; }
+    .ladder-word { font-weight: 600; color: var(--accent-strong); }
+    .ladder-difference { color: var(--ink-2); }
+    .ladder-finish { display: block; color: var(--ink-2); font-size: 12px; }
+    .finer { margin-top: 8px; }
+    .ladder-method { font-weight: 600; margin: 0 0 6px; }
+    .ladder-legend { padding: 0; }
+    /* What-ifs: a card per answer, apart from the plan's options. */
+    .what-if-cards { display: grid; gap: 10px; }
+    .what-if-card { border: 1px dashed var(--estimate); border-radius: 6px; padding: 10px; background: var(--card); min-width: 0; }
+    .what-if-card.selected { box-shadow: inset 3px 0 var(--accent); }
+    .what-if-head { margin: 0 0 4px; display: flex; flex-wrap: wrap; gap: 6px; align-items: baseline; }
+    .what-if-apart { font-size: 12px; color: var(--estimate); margin-bottom: 6px; }
+    .what-if-outage { font-size: 13px; margin: 4px 0; }
+    .what-if-against { font-size: 13px; margin: 4px 0; color: var(--ink-2); }
+    .why-policy { font-size: 13px; list-style: none; padding: 0; margin: 0 0 8px; }
+    .why-policy li { margin-bottom: 2px; }
+    .why-decided { font-size: 13px; margin-bottom: 4px; }
+    .why-trade { font-size: 13px; padding: 6px 8px; background: var(--accent-2); border-radius: 6px; }
+    /* Goals side by side in the right column: the names wrap, the values stay whole. */
+    .why-goals, .compare-goals { width: 100%; border-collapse: collapse; font-size: 12px; margin: 6px 0 8px; table-layout: fixed; }
+    .why-goals th, .why-goals td, .compare-goals th, .compare-goals td { padding: 4px 4px; text-align: left; vertical-align: top; border-top: 1px solid var(--line-2); font-weight: 400; overflow-wrap: anywhere; }
+    .why-goals thead th, .compare-goals thead th { border-top: 0; font-weight: 600; color: var(--ink-3); font-size: 11px; }
+    .why-goals .number, .compare-goals .number { text-align: right; }
+    .why-goals tr.deciding th, .why-goals tr.deciding td, .compare-goals tr.changed td { font-weight: 600; }
+    .previous-set { list-style: none; padding: 0; margin: 0 0 8px; font-size: 13px; }
+    .previous-set li { padding: 3px 0; }
+    .compare-line { font-size: 13px; margin: 4px 0; }
+    .compare-outages { list-style: none; padding: 0; margin: 6px 0; font-size: 12px; }
+    .compare-outages li { padding: 4px 0; border-top: 1px solid var(--line-2); display: grid; gap: 2px; }
+    .compare-outages li.changed .outage-figures { font-weight: 600; }
+    /* A dominated option is folded under the table; its name says which option dominates it. */
+    .dominated-by { display: block; margin-top: 2px; }
+    .dominated-line { margin: 6px 0 0; padding: 0 8px; font-size: 12px; }
+    .why-lines { padding-left: 18px; font-size: 13px; margin: 0 0 8px; }
+    .unpriced p { margin: 0 0 2px; }
+    .unpriced { margin-bottom: 8px; }
+    .unpriced-others { padding-left: 18px; font-size: 12px; color: var(--ink-2); }
+    /* The goals editor: one row per goal, its words, Up and Down, then its threshold and step. */
+    .goal-rows { list-style: none; padding: 0; margin: 0 0 8px; }
+    .goal-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 4px 8px; padding: 8px 0; border-top: 1px solid var(--line-2); }
+    .goal-row .goal-text { display: grid; gap: 2px; min-width: 0; }
+    .goal-row .goal-move { display: flex; gap: 4px; align-items: start; }
+    .goal-row .goal-fields { grid-column: 1 / -1; }
+    .goal-row .goal-fields label { margin-bottom: 0; }
     .status-line { display: flex; flex-wrap: wrap; gap: 6px; align-items: baseline; }
     .goals { padding-left: 18px; font-size: 13px; }
     .goals .distance { color: var(--ink-3); }

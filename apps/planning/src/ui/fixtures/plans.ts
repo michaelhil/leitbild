@@ -1,6 +1,7 @@
 // Test-only plans for the screen's presenters (this folder does not ship). Inputs are lane A's
 // fixtures. Every schedule number below is a hand calculation from those fixtures, written out here;
 // nothing is typed in as a result. These rows are presenter input, not solver output.
+import { itemStatusSchema, type ItemStatus } from '../../api/contract.ts'
 import { planInputsSchema, statusSchema, type PlanInputs, type Status, type WorldFactCopy } from '../../plan/schema.ts'
 import { timeUnitMs } from '../../time/units.ts'
 import type { DatedRow, OptionView, PlanModel } from '../model.ts'
@@ -13,6 +14,9 @@ const trainAJson = await fixture('train-a.fragment.json')
 const supplyRunJson = await fixture('supply-run.case2.json')
 
 export const trainAInputs = (): PlanInputs => planInputsSchema.parse(trainAJson)
+const trainACaseJson = await fixture('train-a.case.json')
+/** The whole frozen Train A case as lane A converts it: 34 jobs, and each SW A method's caveat. */
+export const trainACaseInputs = (): PlanInputs => planInputsSchema.parse(trainACaseJson)
 export const supplyRunInputs = (): PlanInputs => planInputsSchema.parse(supplyRunJson)
 
 export const modelOf = (inputs: PlanInputs, extra: Partial<PlanModel> = {}): PlanModel => ({
@@ -27,8 +31,15 @@ export const runBasis = (grid: PlanInputs['settings']['grid']) => ({
 
 export const status = (value: unknown): Status => statusSchema.parse(value)
 
-export const optionOf = (key: string, label: string, optionStatus: Status, extra: Partial<OptionView> = {}): OptionView => ({
-  key, label, variant: { methods: [], purchases: [] }, status: optionStatus, metrics: [], inputsRevision: 3, fresh: true, warnings: [], ...extra,
+/**
+ * A status as the options section pages it (api/contract.ts itemStatusSchema): the stored record unchanged,
+ * checked to be in item form. A refusal with a span record or causes by method is not: it is read through the
+ * Module, which reduces it (rewalk-n2.render.test.ts).
+ */
+export const itemOf = (value: Status | ItemStatus): ItemStatus => itemStatusSchema.parse(value)
+
+export const optionOf = (key: string, label: string, optionStatus: Status | ItemStatus, extra: Partial<OptionView> = {}): OptionView => ({
+  key, label, variant: { methods: [], purchases: [] }, status: itemOf(optionStatus), metrics: [], inputsRevision: 3, fresh: true, warnings: [], ...extra,
 })
 
 const durationOf = (inputs: PlanInputs, key: string): number => {
