@@ -22,7 +22,7 @@ import { estimateMemoryMb, SOLVER_CPU_CAP_CORES } from './pool.ts'
 import type { Engine, EngineResult, NormalizedProblem, Schedule } from './problem.ts'
 import { compareOptions, goalExcess, goalKey, goalKeys, type Rankable, type RankFacts, type RawMetric } from './rank.ts'
 import { retimingCount, robustOf, type JudgeRetimed } from './retime.ts'
-import { cancelledStatus, feasibleStatus, infeasibleStatus, inputProblems, onPlanGoals, refusedStatus, unresolvedStatus, type CheckPlan, type CheckReport, type VerifyCertificate, verifiedGoals, type VerifyBound } from './status.ts'
+import { cancelledStatus, feasibleStatus, infeasibleStatus, inputProblems, onPlanGoals, provenSpan, refusedStatus, unresolvedStatus, type CheckPlan, type CheckReport, type VerifyCertificate, verifiedGoals, type VerifyBound, type VerifySpan } from './status.ts'
 
 type OptionSet = z.infer<typeof optionSetSchema>
 type Option = OptionSet['options'][number]
@@ -82,6 +82,8 @@ export interface GenerateDeps {
   readonly subSolver?: SubSolver
   /** Lane K's judgement of a re-timed schedule, for the in-process sub-solver (the child has its own). */
   readonly judgeRetimed?: JudgeRetimed
+  /** Lane K's proof of a span refusal, for the in-process sub-solver (the child has its own). */
+  readonly verifySpan?: VerifySpan
   readonly certifiedSize?: CertifiedSize
   readonly now?: () => string
 }
@@ -267,7 +269,7 @@ export interface SubSolveOutcome {
  * What a sub-solve runs on: the search engine, lane K's checker and its re-verifications, and lane K's
  * judgement of a re-timed schedule. Without `judgeRetimed` no option carries `robust` (not computed).
  */
-export interface SubSolveDeps { readonly engine: Engine; readonly check: CheckPlan; readonly verify: VerifyCertificate; readonly verifyBound: VerifyBound; readonly judgeRetimed?: JudgeRetimed }
+export interface SubSolveDeps { readonly engine: Engine; readonly check: CheckPlan; readonly verify: VerifyCertificate; readonly verifyBound: VerifyBound; readonly judgeRetimed?: JudgeRetimed; readonly verifySpan?: VerifySpan }
 /** Runs sub-solves: in this process (`subSolve`), or in a solver child process (pool.ts `subSolver`). */
 export type SubSolver = (task: SubSolveTask, signal: AbortSignal, stoppedByWho?: () => 'person' | 'host' | undefined) => Promise<SubSolveOutcome>
 
@@ -319,8 +321,11 @@ export const subSolve = (deps: SubSolveDeps): SubSolver => async (task, signal, 
   const prep = prepare(problem)
   const found = bounds(problem, index, prep)
   // A refusal is stored as proof only when lane K re-verifies it with nothing left unverified.
+  // A refusal by an outage limit keeps its figures and chains beside the cause only when lane K proves the
+  // span here too (N2, N4): the refusal's words read from storage, never from a checker on a read.
   if (found.certificate !== undefined && deps.verify(inputs, variantOut, found.certificate).proves) {
-    return outcome({ ...base, variant: stored(variantOut.purchases), status: infeasibleStatus(found.certificate, runBasis({ stoppedBy: 'done', evals: 0, cpuMs: 0 })), rows: [], metrics: [] })
+    const span = found.span === undefined || deps.verifySpan === undefined ? undefined : provenSpan(inputs, variantOut, found.span, { verifySpan: deps.verifySpan, verify: deps.verify })
+    return outcome({ ...base, variant: stored(variantOut.purchases), status: infeasibleStatus(found.certificate, runBasis({ stoppedBy: 'done', evals: 0, cpuMs: 0 }), span), rows: [], metrics: [] })
   }
   if (estimateMemoryMb(problem) > MEMORY_BUDGET_MB) throw planningError(413, 'above_certified_size', 'This plan is too large for the certified size', { estimateMb: Math.ceil(estimateMemoryMb(problem)) })
   // The plan comes first, the pessimistic record second. The search ends in time for the work the plan needs
@@ -533,7 +538,7 @@ export const generate = async (deps: GenerateDeps, request: GenerateRequest): Pr
       // Every method combination refused (V1): each one's cause stored beside the others. Each was stored as
       // proof only after lane K verified it in its own sub-solve, on that combination's variant with the
       // what-if's rule; the service runs no checker (adversary M3).
-      const byMethod = ordered.flatMap(option => (option.status.word === 'proven infeasible' ? [{ methods: option.variant.methods.map(pick => ({ ...pick })), purchases: [...option.variant.purchases], cause: option.status.cause }] : []))
+      const byMethod = ordered.flatMap(option => (option.status.word === 'proven infeasible' ? [{ methods: option.variant.methods.map(pick => ({ ...pick })), purchases: [...option.variant.purchases], cause: option.status.cause, ...(option.status.span === undefined ? {} : { span: option.status.span }) }] : []))
       return { ...first, status: { ...first.status, byMethod } }
     }
     const input = ordered.find(option => option.status.word === 'invalid input') ?? ordered.find(option => option.status.word === 'unsupported feature')
