@@ -103,8 +103,9 @@ describe('the robust record', () => {
       const found = retimedRows(trimmed, atHigh(trimmed, new Set(high)), option)!
       const judgement = 'rows' in found ? judgeRetiming(trimmed, option.variant, option.rows, found.rows, high) : undefined
       if (judgement?.ok !== true) throw new Error('lane K judges each re-timing')
-      // Stored as lane K gives it: a holding re-timing with lane K's spans against their limits (V12).
-      return judgement.outcome.holds && judgement.spans !== undefined ? { ...judgement.outcome, spans: [...judgement.spans] } : judgement.outcome
+      // Stored as lane K gives it: a holding re-timing with its spans against their limits (V12), and the extra
+      // use of the option's purchases with its cost (M1).
+      return { ...judgement.outcome, ...(judgement.outcome.holds && judgement.spans !== undefined ? { spans: [...judgement.spans] } : {}), ...(judgement.extra === undefined ? {} : { extra: { cost: judgement.extra.cost, bought: [...judgement.extra.bought] } }) }
     }
     expect(robust.allPessimistic).toEqual(own(jobs))
     expect(robust.single).toEqual(jobs.map(job => ({ job, outcome: own([job]) })))
@@ -177,7 +178,7 @@ describe('V12: a re-timing that holds keeps lane K\'s spans against their limits
       const judgement = judgeRetiming(flagship, longer.variant, longer.rows, found.rows, [entry.job])
       if (!judgement.ok || judgement.spans === undefined) throw new Error('lane K gives the spans of a re-timing that holds')
       expect(judgement.spans.length).toBeGreaterThan(0)
-      expect(entry.outcome).toEqual({ holds: true, spans: [...judgement.spans] })
+      expect(entry.outcome).toEqual({ holds: true, spans: [...judgement.spans], ...(judgement.extra === undefined ? {} : { extra: { cost: judgement.extra.cost, bought: [...judgement.extra.bought] } }) })
     }
   }, 60_000)
 })
@@ -222,4 +223,22 @@ describe('B2: lane K\'s refusal is said, never left out', () => {
   test('any refusal of lane K\'s that is not an unplaced job is stored with its reason', () => {
     expect(robustOf(trimmed, option, () => ({ ok: false, problems: ['The re-timing breaks a link into a locked job.'] }))).toEqual({ notWorkedOut: 'refused', reason: 'The re-timing breaks a link into a locked job.' })
   })
+})
+
+describe('M1: the extra use of the option\'s purchases, and its cost, beside each verdict', () => {
+  test('each outcome keeps lane K\'s extra figures as given (checked run: Rebuild, evals 600)', async () => {
+    const rebuild = (await generate(deps, { inputs: flagship, revision: 1, previous: null, input: { variants: [{ label: 'Rebuild', methods: [{ choice: 'SWA-method', option: 'rebuild' }] }] }, by, signal: new AbortController().signal, seed: 1, evals: 600 })).optionSet.options[0]!
+    const robust = record(robustOf(flagship, rebuild, laneKJudgeRetimed))
+    const jobs = rangedJobs(flagship, rebuild.rows)
+    const entries = [{ high: jobs, outcome: robust.allPessimistic }, ...robust.single.map(entry => ({ high: [entry.job], outcome: entry.outcome }))]
+    let figured = 0
+    for (const { high, outcome } of entries) {
+      const found = retimedRows(flagship, atHigh(flagship, new Set(high)), rebuild)!
+      const judgement = judgeRetiming(flagship, rebuild.variant, rebuild.rows, found.rows, high)
+      if (!judgement.ok) throw new Error('lane K judges each re-timing of this option')
+      expect('extra' in outcome ? outcome.extra : undefined).toEqual(judgement.extra === undefined ? undefined : { cost: judgement.extra.cost, bought: [...judgement.extra.bought] })
+      if (judgement.extra !== undefined && (judgement.extra.cost !== 0 || judgement.extra.bought.length > 0)) figured++
+    }
+    expect(figured).toBeGreaterThan(0)
+  }, 60_000)
 })

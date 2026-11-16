@@ -22,7 +22,10 @@ interface Planned { readonly variant: CheckedVariant; readonly rows: readonly Ro
  * refuses what is no re-timing (a job missing, earlier, or on other crews) and findings it does not judge.
  */
 export type JudgeRetimed = (plan: { readonly inputs: PlanInputs; readonly variant: CheckedVariant; readonly planned: readonly Row[]; readonly retimed: readonly UndatedFloat[]; readonly high: readonly string[] }) =>
-  | { readonly ok: true; readonly outcome: Retimed; readonly spans?: ReadonlyArray<{ readonly rule: string; readonly hours: number; readonly margin: number }> }
+  | {
+    readonly ok: true; readonly outcome: Retimed; readonly spans?: ReadonlyArray<{ readonly rule: string; readonly hours: number; readonly margin: number }>
+    readonly extra?: { readonly cost: number; readonly bought: ReadonlyArray<{ readonly purchase: string; readonly value: number; readonly unit: string }> }
+  }
   | { readonly ok: false; readonly problems: readonly string[] }
 
 /** robust.single holds at most this many jobs (plan/schema.ts). */
@@ -111,8 +114,11 @@ export const robustOf = (inputs: PlanInputs, option: Planned, judge: JudgeRetime
     if (judged?.ok === false && retimed?.unplaced !== undefined) unplaced ??= retimed.unplaced
     else if (judged?.ok === false) refused ??= judged.problems.join(' ').slice(0, 600)
     if (judged?.ok !== true) return undefined
-    // A re-timing that holds keeps lane K's spans against their limits, as given (V12).
-    return judged.outcome.holds && judged.spans !== undefined ? { ...judged.outcome, spans: judged.spans.map(span => ({ ...span })) } : judged.outcome
+    // Lane K's figures, as given: a re-timing that holds keeps its spans against their limits (V12), and any
+    // re-timing with every job placed keeps the extra use of the option's purchases and its cost (M1).
+    const spans = judged.outcome.holds && judged.spans !== undefined ? { spans: judged.spans.map(span => ({ ...span })) } : {}
+    const extra = judged.extra === undefined ? {} : { extra: { cost: judged.extra.cost, bought: judged.extra.bought.map(entry => ({ ...entry })) } }
+    return { ...judged.outcome, ...spans, ...extra }
   }
   let unplaced: string | undefined
   let refused: string | undefined

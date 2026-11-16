@@ -674,8 +674,8 @@ export type Decoder = ReturnType<typeof makeDecoder>
  * time, and the whole schedule is repaired again. That is sound only because it buys nothing new: every mode
  * of a problem is made of the time its compile allows, and the preview and the re-timing compile an option
  * with the purchases it already uses, so the job only works into time the option already buys. It buys no
- * new purchase, but may use more of one (more overtime hours or nights), which can cost more: the card says so
- * (adversary M1); the extra use and its cost are not yet figured beside the verdict (a known gap). A job that
+ * new purchase, but may use more of one (more overtime hours or nights), which can cost more: lane K figures
+ * that extra use and its cost on each judgement (`extra`, adversary M1), stored beside the verdict. A job that
  * still has no slot is left past the horizon (`lost`); the caller says so, never as a stale option.
  */
 export const repair = (prep: Prepared, schedule: Schedule): { decoded: Decoded; evaluation: Evaluation; lost: readonly number[] } => {

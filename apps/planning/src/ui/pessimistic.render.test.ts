@@ -46,7 +46,7 @@ describe('the pessimistic card', () => {
     const model = withRobust({ allPessimistic: { holds: true }, single: [{ job: 'SWA-PUMP-OUT', outcome: { holds: true } }] })
     const card = pessimisticCard(model.options!.items[0]!, contextOf(model))!
     expect(card.title).toBe('At every high estimate, Option 1 still keeps every hard rule and fits the window.')
-    expect(card.text).toBe('Re-timed in the same order with the same crews, nothing earlier, and checked. Re-timed jobs may use more of the overtime and nights the option already buys, which can cost more. A plan made again at those estimates may do better.')
+    expect(card.text).toBe('Re-timed in the same order with the same crews, nothing earlier, and checked. Re-timed jobs may use any working time the option already buys. A plan made again at those estimates may do better.')
   })
 
   test('a broken rule is named with its job and by how much; a job alone that breaks one is listed', () => {

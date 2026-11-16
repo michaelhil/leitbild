@@ -435,16 +435,25 @@ export const datedRowSchema = z.object({
  * placed at all: `unplaced` names it, the crew or tool with no time left, and `after`, the instant from which
  * none of that resource's time remains ("<job> could not be done: <crew> has no time left after <instant>").
  */
+/**
+ * What a re-timing uses of the option's purchases beyond what the planned rows use (M1), lane K's figures from
+ * the checker's own 'bought:' and extra-cost measures on both schedules: per purchase, person-h or periods, and
+ * the extra cost in the plan currency. Present when every job was placed.
+ */
+const retimedExtraSchema = z.object({
+  cost: z.number().finite(),
+  bought: z.array(z.object({ purchase: keySchema, value: z.number().finite(), unit: z.string().min(1).max(16) }).strict()).max(64),
+}).strict()
 const retimedSchema = z.union([
   // It holds; `spans`: each span limit's longest span on the re-timing and its margin, lane K's figures (V12),
   // one per span-limit rule, the plan's (at most 200) and the what-if's.
-  z.object({ holds: z.literal(true), spans: z.array(z.object({ rule: keySchema, hours: z.number().finite().nonnegative(), margin: z.number().finite() }).strict()).max(201).optional() }).strict(),
-  z.object({ holds: z.literal(false), rule: keySchema, job: keySchema, by: z.object({ value: z.number().positive(), unit: timeUnitSchema }).strict() }).strict(),
-  z.object({ holds: z.literal(false), window: z.object({ by: instantSchema }).strict(), job: keySchema }).strict(),
-  z.object({ holds: z.literal(false), unplaced: z.object({ job: keySchema, resource: keySchema, after: instantSchema }).strict() }).strict(),
+  z.object({ holds: z.literal(true), spans: z.array(z.object({ rule: keySchema, hours: z.number().finite().nonnegative(), margin: z.number().finite() }).strict()).max(201).optional() , extra: retimedExtraSchema.optional() }).strict(),
+  z.object({ holds: z.literal(false), rule: keySchema, job: keySchema, by: z.object({ value: z.number().positive(), unit: timeUnitSchema }).strict() , extra: retimedExtraSchema.optional() }).strict(),
+  z.object({ holds: z.literal(false), window: z.object({ by: instantSchema }).strict(), job: keySchema , extra: retimedExtraSchema.optional() }).strict(),
+  z.object({ holds: z.literal(false), unplaced: z.object({ job: keySchema, resource: keySchema, after: instantSchema }).strict() , extra: retimedExtraSchema.optional() }).strict(),
   // A locked job the re-timing pushes past its fixed start (B2): `lock.job` keeps its fixed start, `lock.after`
   // finishes `by` later than that allows ("<job> could not keep its fixed start <time>: <after> would finish N h later").
-  z.object({ holds: z.literal(false), lock: z.object({ job: keySchema, after: keySchema }).strict(), by: z.object({ value: z.number().positive(), unit: timeUnitSchema }).strict() }).strict(),
+  z.object({ holds: z.literal(false), lock: z.object({ job: keySchema, after: keySchema }).strict(), by: z.object({ value: z.number().positive(), unit: timeUnitSchema }).strict() , extra: retimedExtraSchema.optional() }).strict(),
 ])
 /** allPessimistic: every ranged job at its high estimate together; single: each ranged job alone at its high estimate. */
 export const robustSchema = z.object({ allPessimistic: retimedSchema, single: z.array(z.object({ job: keySchema, outcome: retimedSchema }).strict()).max(12) }).strict()
