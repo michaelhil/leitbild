@@ -14,7 +14,7 @@ import { afterNearestBusy, bothToOne, configOf, lonLatOf, metresBetween, playDem
 import { openRun, type OpenRun } from './fixtures/run-harness.ts'
 import { einsatzPack } from './pack.ts'
 import type { RecommendAnswer } from './recommendation-schema.ts'
-import type { Situation } from './situation/schema.ts'
+import type { Situation, UnitOptions } from './situation/schema.ts'
 import { einsatzPackView } from './ui-pack.ts'
 import { dispatchMapCover, panelBottomClearancePx, panelLayoutFor, panelTopClearancePx } from './ui/dispatch-layout.ts'
 import { einsatzRecordsKey } from './ui/presenters.ts'
@@ -575,6 +575,34 @@ describe('B.11 click counts at the Dispatch panel', () => {
       expect(sent(screen)).toEqual([
         [ids.order, { units: [busyId], stops: [{ taskId: second }], when: 'after' }, 'ok'],
       ])
+    })
+  })
+
+  test('a transporting unit queues its next call in three clicks and keeps its delivery', async () => {
+    await scene(async ({ run, screen, callId, answer }) => {
+      const unitId = answer.proposal!.units[0]!.unitId
+      expect((await run.invoke(ids.order, answer.proposal!.order)).ok).toBe(true)
+      await run.run.setClock({ paused: false })
+      for (let i = 0; i < 400 && run.unit(unitId).phase !== 'transporting'; i++) {
+        run.forward(5_000)
+        await run.settle()
+      }
+      expect(run.unit(unitId).phase).toBe('transporting')
+      await run.run.setClock({ paused: true })
+      const delivery = run.unit(unitId).orders[0]!.target
+      const start = run.task(callId)
+      const position = lonLatOf(run.object(callId)!)
+      expect((await run.invoke(ids.taskCreate, { template: start.template, label: 'C-9 Next pickup', at: { type: 'Point', coordinates: [position[0] + 0.003, position[1]] }, loads: { ...start.loads, ...run.unit(unitId).load } })).ok).toBe(true)
+      await screen.sync()
+      const next = screen.situation().calls.find(call => call.label === 'C-9 Next pickup')!.id
+      const options = await run.query<UnitOptions>('world.einsatz.unit.options', { unitId })
+      expect(options.targets.find(target => 'taskId' in target.target && target.target.taskId === next)).toMatchObject({ afterOnly: true })
+      await screen.mapTap(unitId)
+      await screen.press({ kind: 'arm' })
+      await screen.mapTap(next)
+      expect(screen.actions()).toBe(3)
+      expect(sent(screen)).toEqual([[ids.order, { units: [unitId], stops: [{ taskId: next }], when: 'after' }, 'ok']])
+      expect(run.unit(unitId).orders.map(stop => stop.target)).toEqual([delivery, { taskId: next }])
     })
   })
 

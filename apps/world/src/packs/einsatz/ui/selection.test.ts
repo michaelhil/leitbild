@@ -243,8 +243,10 @@ describe('Arming and the armed unit\'s submits', () => {
   })
   test('a unit its options read names busy asks After or Now at once on a target tap or a target row, sending nothing; Now drops the job read', () => {
     const job = { taskId: 't-9', label: 'C-9', code: 'P3', freeInS: 300 }
-    const busy: Selection = { ...sa, job }
-    const tapped = step(busy, click(call))
+    const options = { unitId: unitA.id, busy: job, targets: [], refused: [] }
+    const armed = reduceSelection(start(su), { kind: 'arm', unitId: unitA.id, when: null }, options)
+    const busy = { ...sa, job }
+    const tapped = reduceSelection(armed.state, click(call), options)
     expect(tapped).toEqual({ state: { selection: { ...busy, prompt: { kind: 'busy', target: { taskId: call.id }, job } }, lastClick: expect.anything() }, effects: [] })
     expect(step(busy, { kind: 'target-row', target: { siteId: site.id } }).state.selection).toEqual({ ...busy, prompt: { kind: 'busy', target: { siteId: site.id }, job } })
     expect(reduceSelection(tapped.state, { kind: 'prompt', choice: 'now' }).effects).toEqual([{ kind: 'submit', unitId: unitA.id, target: { taskId: call.id }, when: 'now', drops: job }])

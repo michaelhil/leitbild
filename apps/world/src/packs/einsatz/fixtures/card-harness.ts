@@ -287,12 +287,13 @@ export const openCardScreen = async (run: OpenRun, options: { readonly actor?: A
   }
 
   async function send(event: SelectionEvent): Promise<void> {
-    const stepped = reduceSelection(selection, event)
+    const stepped = reduceSelection(selection, event, unitOptions)
     const before = selection.selection
     selection = stepped.state
     const after = stepped.state.selection
     // The armed list's order holds while the same unit stays armed.
-    if (!(after.kind === 'armed' && before.kind === 'armed' && before.unitId === after.unitId)) armedOrder = null
+    if (after.kind !== 'armed') armedOrder = null
+    else if (before.kind !== 'armed' || before.unitId !== after.unitId) armedOrder = unitOptions?.unitId === after.unitId ? armedOrderWith(null, unitOptions) : null
     for (const effect of stepped.effects) await perform(effect)
   }
 
@@ -458,7 +459,7 @@ export const openCardScreen = async (run: OpenRun, options: { readonly actor?: A
     if (armed.prompt.kind === 'move') return { labels: [movePromptText(situation, armed.unitId)], choices: ['move'] }
     if (armed.prompt.job === null) return null
     const choices = busyChoices(armed.prompt.job)
-    return { labels: [choices.after, choices.now], choices: ['after', 'now'] }
+    return armed.prompt.afterOnly ? { labels: [choices.after], choices: ['after'] } : { labels: [choices.after, choices.now], choices: ['after', 'now'] }
   }
 
   await sync()

@@ -1,5 +1,6 @@
 import type { GeoJsonPoint } from '../../../core/model/index.ts'
 import type { OrderWhen, Stop } from '../order-schema.ts'
+import type { UnitOptions } from '../situation/schema.ts'
 
 /**
  * What a click does in the Dispatch panel: the plan's selection table (B.3)
@@ -49,14 +50,7 @@ export interface ClickedObject {
 export type Clicked = ClickedObject | { readonly kind: 'ground'; readonly point: GeoJsonPoint }
 
 /** A busy unit's current job, as its options name it (`busy`): the task an order with `when: 'now'` drops. */
-export interface CurrentJob {
-  readonly taskId: string
-  readonly label: string
-  /** Its priority code. */
-  readonly code: string
-  /** Estimated seconds until the job is done; null when unknown. */
-  readonly freeInS: number | null
-}
+export type CurrentJob = NonNullable<UnitOptions['busy']>
 
 /** A prompt the map shows for the armed unit, offset from the point it names. */
 export type ArmedPrompt =
@@ -72,7 +66,7 @@ export type ArmedPrompt =
    * names, so the server's `drops_mismatch` catches a job that changed
    * meanwhile. Null until the options name it; "Now" is not offered before.
    */
-  | { readonly kind: 'busy'; readonly target: Stop; readonly job: CurrentJob | null }
+  | { readonly kind: 'busy'; readonly target: Stop; readonly job: CurrentJob | null; readonly afterOnly?: boolean }
 
 /** A refusal shown beside its target (and in the card) until `untilMs`. */
 export interface ShownRefusal {
@@ -212,12 +206,19 @@ const unchanged = (state: SelectionState): SelectionStep => ({ state, effects: [
  * server decides. The prompt shown goes: this tap answers what it asked. A
  * refusal shown stays until the result replaces it or it expires.
  */
-const submit = (state: SelectionState, armed: Extract<Selection, { kind: 'armed' }>, target: Stop): SelectionStep => {
-  if (armed.when === null && armed.job != null) return { state: { ...state, selection: { ...armed, prompt: { kind: 'busy', target, job: armed.job } } }, effects: [] }
-  return { state: { ...state, selection: { ...armed, prompt: null } }, effects: [{ kind: 'submit', unitId: armed.unitId, target, when: armed.when, drops: null }] }
+const submit = (state: SelectionState, armed: Extract<Selection, { kind: 'armed' }>, target: Stop, options: UnitOptions | null): SelectionStep => {
+  const targetId = stopObjectId(target)
+  const afterOnly = targetId !== null && options?.unitId === armed.unitId
+    && options.targets.some(entry => entry.afterOnly && stopObjectId(entry.target) === targetId)
+  if (armed.when === null && armed.job != null) {
+    const prompt = { kind: 'busy' as const, target, job: armed.job, ...(afterOnly ? { afterOnly: true } : {}) }
+    return { state: { ...state, selection: { ...armed, prompt } }, effects: [] }
+  }
+  const when = afterOnly ? 'after' : armed.when
+  return { state: { ...state, selection: { ...armed, prompt: null } }, effects: [{ kind: 'submit', unitId: armed.unitId, target, when, drops: null }] }
 }
 
-const clickIn = (state: SelectionState, on: Clicked): SelectionStep => {
+const clickIn = (state: SelectionState, on: Clicked, options: UnitOptions | null): SelectionStep => {
   const selection = state.selection
   if (on.kind === 'ground') {
     if (selection.kind === 'armed') return { state: { ...state, selection: { ...selection, prompt: { kind: 'move', point: on.point } } }, effects: [] }
@@ -231,36 +232,39 @@ const clickIn = (state: SelectionState, on: Clicked): SelectionStep => {
   if (selection.kind === 'armed') {
     const target = stopFor(on)
     if (target === null) throw new Error(`A ${on.kind} is no stop: ${on.id}`)
-    return submit(state, selection, target)
+    return submit(state, selection, target, options)
   }
   // A call, site or track opens its card (a track is marked), never sends; the same one again is a no-op.
   return transition(state, cardOf(on))
 }
 
 /** One step of the selection table. */
-export const reduceSelection = (state: SelectionState, event: SelectionEvent): SelectionStep => {
+export const reduceSelection = (state: SelectionState, event: SelectionEvent, options: UnitOptions | null = null): SelectionStep => {
   const selection = state.selection
   switch (event.kind) {
     case 'click': {
       const key = clickKey(event.on)
       const last = state.lastClick
       if (last !== null && last.key === key && event.atMs - last.atMs < doubleClickMs) return unchanged(state)
-      return clickIn({ ...state, lastClick: { key, atMs: event.atMs } }, event.on)
+      return clickIn({ ...state, lastClick: { key, atMs: event.atMs } }, event.on, options)
     }
     case 'target-row':
       if (selection.kind !== 'armed') throw new Error('A target row was tapped while no unit is armed')
-      return submit(state, selection, event.target)
-    case 'arm':
-      return transition(state, { kind: 'armed', unitId: event.unitId, when: event.when, prompt: null, refusal: null })
+      return submit(state, selection, event.target, options)
+    case 'arm': {
+      const job = options?.unitId === event.unitId ? options.busy : null
+      return transition(state, { kind: 'armed', unitId: event.unitId, when: event.when, prompt: null, refusal: null, ...(job === null ? {} : { job }) })
+    }
     case 'prompt': {
       if (selection.kind !== 'armed' || selection.prompt === null) throw new Error(`The ${event.choice} prompt was confirmed with no prompt shown`)
       const prompt = selection.prompt
       if (prompt.kind === 'move') {
         if (event.choice !== 'move') throw new Error(`The move prompt offers no ${event.choice}`)
-        return submit(state, selection, { point: prompt.point })
+        return submit(state, selection, { point: prompt.point }, options)
       }
       if (event.choice === 'move') throw new Error('The busy prompt offers no move')
       if (event.choice === 'now' && prompt.job === null) throw new Error('The busy prompt\'s Now was confirmed before the unit\'s current job was known')
+      if (event.choice === 'now' && prompt.afterOnly) return unchanged(state)
       const drops = event.choice === 'now' ? prompt.job : null
       return { state: { ...state, selection: { ...selection, prompt: null } }, effects: [{ kind: 'submit', unitId: selection.unitId, target: prompt.target, when: event.choice, drops }] }
     }

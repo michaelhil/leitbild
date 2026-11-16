@@ -263,7 +263,7 @@ export type ArmedSlot =
   | { readonly kind: 'empty' }
   | { readonly kind: 'refusal'; readonly text: string }
   | { readonly kind: 'busy-reading' }
-  | { readonly kind: 'busy'; readonly after: string; readonly now: string }
+  | { readonly kind: 'busy'; readonly after: string; readonly now: string | null }
 
 export interface ArmedView {
   readonly banner: string
@@ -316,7 +316,7 @@ export const busyChoices = (job: CurrentJob): { readonly after: string; readonly
 
 const armedSlot = (selection: Extract<Selection, { kind: 'armed' }>): ArmedSlot => {
   const prompt = selection.prompt
-  if (prompt?.kind === 'busy') return prompt.job === null ? { kind: 'busy-reading' } : { kind: 'busy', ...busyChoices(prompt.job) }
+  if (prompt?.kind === 'busy') return prompt.job === null ? { kind: 'busy-reading' } : { kind: 'busy', ...busyChoices(prompt.job), ...(prompt.afterOnly ? { now: null } : {}) }
   return selection.refusal === null ? { kind: 'empty' } : { kind: 'refusal', text: selection.refusal.text }
 }
 
@@ -333,7 +333,7 @@ const armedView = (unit: SituationUnit, words: Words, options: UnitOptions | nul
     rows: rows.map(row => {
       const target = valid.get(row.key)
       if (target !== undefined) {
-        return { key: row.key, target: row.target, text: `${verbText(target.verb, words)} ${target.label}`, eta: minutesText(target.etaS), drops, refused: null }
+        return { key: row.key, target: row.target, text: `${verbText(target.verb, words)} ${target.label}`, eta: target.afterOnly ? (own?.busy == null ? 'After delivery' : dispatchWords.after) : minutesText(target.etaS), drops: target.afterOnly ? null : drops, refused: null }
       }
       return { key: row.key, target: row.target, text: row.label, eta: null, drops: null, refused: refused.get(row.key)?.text ?? dispatchWords.notListed }
     }),
@@ -353,14 +353,6 @@ const lastOrderText = (unit: SituationUnit): string | null => {
 const deliverySiteOf = (unit: SituationUnit): string | null => {
   const stop = unit.plan.find(entry => entry.verb === 'deliver')
   return stop !== undefined && 'siteId' in stop.target ? stop.target.siteId : unit.predictedDelivery?.siteId ?? null
-}
-
-/** Why no order can be given to the unit now: its options list no target an order would take, only refused ones; the reason most of them share. Null while some target is valid, or before its options are read. */
-const noTargetReason = (unit: SituationUnit, options: UnitOptions | null): string | null => {
-  if (options === null || options.unitId !== unit.id || options.targets.length > 0 || options.refused.length === 0) return null
-  const counts = new Map<string, number>()
-  for (const entry of options.refused) counts.set(entry.text, (counts.get(entry.text) ?? 0) + 1)
-  return [...counts].reduce((best, entry) => entry[1] > best[1] ? entry : best)[0]
 }
 
 /** A unit's card, armed or not. */
@@ -386,7 +378,7 @@ export const unitCard = (situation: Situation, unit: SituationUnit, selection: S
     title: [unit.label, unit.typeLabel, ...(unit.group === null ? [] : [unit.group.label])].join(' · '),
     status: { word: unit.status.word, tone: unit.status.tone, due: dueText(unit, elapsedS) },
     readOnly,
-    dispatch: button(`${words.send} ${unit.label}…`, readOnly ?? destroyed ?? noTargetReason(unit, options)),
+    dispatch: button(`${words.send} ${unit.label}…`, readOnly ?? destroyed ?? (options?.unitId === unit.id ? options.moveRefusal ?? null : null)),
     recall: button(recallLabel, readOnly ?? destroyed ?? (loaded.length > 0 ? `Carrying ${joined(loaded)}: deliver first` : null)),
     undo: { ...button(lastOrder === null ? dispatchWords.undoLast : `${dispatchWords.undoLast} (${lastOrder})`, readOnly ?? (lastCommand === null ? dispatchWords.nothingToUndo : null)), commandId: lastCommand },
     planHeading: words.plan,
@@ -863,13 +855,13 @@ export const targetingFor = (selection: Selection, options: UnitOptions | null):
   const own = options !== null && options.unitId === selection.unitId ? options : null
   const valid = (own?.targets ?? []).flatMap(target => {
     const id = stopObjectId(target.target)
-    return id === null || id === refusal?.targetId ? [] : [{ id: objectIdSchema.parse(id), etaS: target.etaS }]
+    return id === null || id === refusal?.targetId ? [] : [{ id: objectIdSchema.parse(id), tag: target.afterOnly ? (own?.busy == null ? 'After delivery' : dispatchWords.after) : minutesText(target.etaS) }]
   })
   const tags = mapTargetingMaxTags - refused.length
   return {
     from: objectIdSchema.parse(selection.unitId),
     complete: own !== null,
-    targets: [...refused, ...valid.map((target, index) => index < tags ? { id: target.id, tag: minutesText(target.etaS), tone: 'valid' as const } : { id: target.id, tone: 'valid' as const })],
+    targets: [...refused, ...valid.map((target, index) => index < tags ? { id: target.id, tag: target.tag, tone: 'valid' as const } : { id: target.id, tone: 'valid' as const })],
   }
 }
 

@@ -226,11 +226,13 @@ export const unitOptionsSchema = z.object({
     code: text.describe('That task\'s priority code.'),
     freeInS: seconds.nullable().describe('Estimated seconds until its current job is done; null when it cannot be estimated.'),
   }).strict().nullable().describe('Set when the unit is busy: an order then needs when ("after" or "now" with drops = taskId).'),
+  moveRefusal: text.optional().describe('When no target is available, why an order to move on open ground is also refused.'),
   targets: z.array(z.object({
     target: stopSchema.describe('The stop, in world.einsatz.unit.order form.'),
     verb: z.enum(stopVerbs).describe('What the unit would do there.'),
     label: text.describe('The target\'s label.'),
-    etaS: seconds.describe('Seconds to arrive, turnout included; routed for road units, straight-line for direct ones.'),
+    afterOnly: z.boolean().describe('True when this stop requires when: after. It cannot replace the current job or delivery.'),
+    etaS: seconds.describe('Travel estimate from the current position, including turnout; excludes time on earlier stops.'),
   }).strict()).describe('Valid targets, nearest first; for a busy unit, those an order "after" its current job or "now" would take.'),
   refused: z.array(z.object({
     target: stopSchema.describe('The stop, in world.einsatz.unit.order form.'),

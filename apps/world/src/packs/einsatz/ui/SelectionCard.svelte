@@ -81,7 +81,7 @@
         {#if armedSlot.kind === 'busy'}
           <div class="row-buttons">
             <button type="button" onclick={() => props.promptChoice('after')}>{armedSlot.after}</button>
-            <button type="button" class="warning" onclick={() => props.promptChoice('now')}>{armedSlot.now}</button>
+            {#if armedSlot.now !== null}<button type="button" class="warning" onclick={() => props.promptChoice('now')}>{armedSlot.now}</button>{/if}
           </div>
         {:else if armedSlot.kind === 'busy-reading'}
           <p class="note">{dispatchWords.readingJob}</p>
@@ -96,6 +96,7 @@
     {#if card.readOnly !== null}<p class="note">{card.readOnly}</p>{/if}
     {#if card.armed === null}
       <button type="button" class="primary" disabled={!card.dispatch.enabled} onclick={() => props.arm(card.id, null)}>{card.dispatch.label}</button>
+      {#if card.dispatch.reason !== null}<p class="reason">{card.dispatch.reason}</p>{/if}
       <div class="stacked">
         <button type="button" disabled={!card.recall.enabled} onclick={() => props.recall(card.id)}>{card.recall.label}</button>
         <p class="reason">{card.recall.reason ?? ''}</p>

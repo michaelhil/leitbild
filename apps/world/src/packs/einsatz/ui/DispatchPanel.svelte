@@ -210,12 +210,12 @@
   // ——— The selection table ———
 
   const send = (event: SelectionEvent): void => {
-    const stepped = reduceSelection(selection, event)
+    const stepped = reduceSelection(selection, event, options)
     const before = selection.selection
     selection = stepped.state
     const after = stepped.state.selection
     if (after.kind !== 'armed') armedOrder = null
-    else if (before.kind !== 'armed' || before.unitId !== after.unitId) armedOrder = null
+    else if (before.kind !== 'armed' || before.unitId !== after.unitId) armedOrder = options?.unitId === after.unitId ? armedOrderWith(null, options) : null
     for (const effect of stepped.effects) perform(effect)
   }
 
@@ -441,7 +441,7 @@
             point,
             options: [
               { label: choices.after, onConfirm: () => send({ kind: 'prompt', choice: 'after' }) },
-              { label: choices.now, tone: 'warning', onConfirm: () => send({ kind: 'prompt', choice: 'now' }) },
+              ...(shown.prompt.afterOnly ? [] : [{ label: choices.now, tone: 'warning' as const, onConfirm: () => send({ kind: 'prompt', choice: 'now' }) }]),
             ],
             onDismiss: promptDismissed,
           }

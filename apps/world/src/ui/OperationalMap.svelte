@@ -42,7 +42,7 @@
   import type { MapCover } from './surface-panel-contract.ts'
   import { createMapPromptController } from './map/map-prompt.ts'
   import { createMapStackChooser } from './map/map-stack-chooser.ts'
-  import { objectsUnder, stackPick } from './map/map-stack.ts'
+  import { needsSingleTargetChoice, objectsUnder, stackPick } from './map/map-stack.ts'
   import { disksPickFor, hoverCardsFor, pickingRadiusFor } from './map/map-pointer.ts'
   import { operationalIconPx } from './map-runtime/symbol-kit.ts'
   import { createReferenceLayerController } from './map-runtime/reference-layer-controller.ts'
@@ -275,7 +275,7 @@
     const anchors = new Map<string, TargetTagAnchor>()
     for (const target of targeting.targets) {
       if (target.tag === undefined) continue
-      const at = drawn.get(target.id) ?? objects.find(object => object.id === target.id)?.spatial.position?.point.coordinates
+      const at = drawn.get(target.id)
       if (at === undefined) continue
       const x = current.map.project([at[0]!, at[1]!]).x
       const half = tagWidthPx(target.tag) / 2
@@ -423,10 +423,7 @@
       const under = stackUnderPointer()
       // While an order is armed a stack offers its valid targets only; with none, the tap is on the object it landed on, and the panel's server decides.
       const stack = under.length > 1 ? stackChoices(under) : under
-      if (stack.length === 1 && under.length > 1) {
-        onObjectSeen(stack[0]!)
-        return onObjectSelected(stack[0]!)
-      }
+      if (needsSingleTargetChoice(object, under, stack)) return showStackChooser(stack)
       if (stack.length > 1) {
         const picked = stackPick(stack, controllerHighlighted, isController)
         if (picked === null) return showStackChooser(stack)

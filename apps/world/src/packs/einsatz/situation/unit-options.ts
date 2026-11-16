@@ -18,7 +18,7 @@ import type { UnitOptions } from './schema.ts'
 import { stopVerb } from './situation.ts'
 
 /**
- * `world.einsatz.unit.options`: where one unit may be ordered now, nearest
+ * `world.einsatz.unit.options`: where one unit may be ordered, nearest
  * first, and where not and why. Every candidate is judged by the engine's
  * own order validation on the current state, so a target listed as valid is
  * one `world.einsatz.unit.order` accepts, unless the Run moves on meanwhile.
@@ -54,19 +54,17 @@ export const readUnitOptions = async (input: {
     ...[...state.units.values()].filter(other => other.id !== unit.id && !isDestroyed(other) && unitTypeOf(state.catalog, other).components.mobility === undefined && inPicture(state.catalog, viewer, other)).map(site => ({ siteId: site.id })),
     ...(type.components.effector === undefined ? [] : [...state.combat.tracks.values()].filter(track => track.side === unit.side && track.tier === 'identified').map(track => ({ trackId: track.id }))),
   ]
+  const verdict = (target: StepTarget, when: 'now' | 'after' | undefined) => planIntent(state, {
+    kind: 'order', units: [unit.id], stops: [target],
+    ...(when === undefined ? {} : { when }),
+    ...(when === 'now' && busyTask !== undefined ? { drops: busyTask.id } : {}),
+  }, input.actor)
   const judged = candidates.map(target => {
-    const verdict = (when: 'now' | 'after' | undefined) => planIntent(state, {
-      kind: 'order', units: [unit.id], stops: [target],
-      ...(when === undefined ? {} : { when }),
-      ...(when === 'now' && busyTask !== undefined ? { drops: busyTask.id } : {}),
-    }, input.actor)
-    if (busyTask === undefined) {
-      const plan = verdict(undefined)
-      return { target, refusal: plan.ok ? undefined : plan.reason }
-    }
-    const now = verdict('now')
-    const after = verdict('after')
-    return { target, refusal: now.ok ? undefined : after.ok ? undefined : after.reason }
+    const now = verdict(target, busyTask === undefined ? undefined : 'now')
+    if (now.ok) return { target, afterOnly: false, refusal: undefined }
+    if (busyTask === undefined && !hasLoad(unit)) return { target, afterOnly: false, refusal: now.reason }
+    const after = verdict(target, 'after')
+    return { target, afterOnly: after.ok, refusal: after.ok ? undefined : busyTask === undefined ? now.reason : after.reason }
   })
   const accepted = judged.filter(entry => entry.refusal === undefined)
   const from = type.components.mobility === undefined ? undefined : motionOf(state, unit.id).point
@@ -87,9 +85,13 @@ export const readUnitOptions = async (input: {
       target: entry.target,
       verb: stopVerb(state, unit, stepKindFor(entry.target, hasLoad(unit)), entry.target),
       label: targetLabel(state, entry.target),
+      afterOnly: entry.afterOnly,
       etaS: eta === undefined ? 0 : eta.seconds,
     })
   }
   targets.sort((a, b) => a.etaS - b.etaS || a.label.localeCompare(b.label, 'en', { numeric: true }))
-  return { unitId: unit.id, busy, targets, refused }
+  // Named targets do not cover open ground. Check that order separately
+  // before reporting that Dispatch has nowhere to send the unit.
+  const point = from === undefined || targets.length > 0 ? undefined : verdict({ point: from }, busyTask === undefined ? undefined : 'now')
+  return { unitId: unit.id, busy, targets, refused, ...(point?.ok === false ? { moveRefusal: messageOf(point.reason) } : {}) }
 }
