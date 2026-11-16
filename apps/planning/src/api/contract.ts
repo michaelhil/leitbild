@@ -333,9 +333,11 @@ export const buysRowSchema = z.object({
 /** A span refusal as an item gives it: the rule, the least span lane K proved and the limit, in h. */
 export const spanSummarySchema = z.object({ rule: keySchema, leastHours: z.number().finite().nonnegative(), limitHours: z.number().finite().positive() }).strict()
 const [feasibleStatusSchema, refusalStatusSchema, invalidStatusSchema, unsupportedStatusSchema, cancelledStatusSchema, unresolvedStatusSchema] = statusSchema.options
+/** The longest line of a method combination in a compact refusal (coordinator: 150 characters). */
+export const compactLineLength = 150
 /**
  * A refusal as the options and previous sections page it (coordinator, shape E): the option's own method's
- * cause as stored and its span as a summary; per method combination one `line` of at most 200 characters, the
+ * cause as stored and its span as a summary; per method combination one `line` of at most 150 characters, the
  * figures first and then the method's name, the option's own first and the rest in the plan's combination
  * order. Each combination's picks, purchases, cause and full proof (the path, the later start, the energy
  * proof) stay in storage, worded only by explain refusal.
@@ -343,7 +345,7 @@ const [feasibleStatusSchema, refusalStatusSchema, invalidStatusSchema, unsupport
 export const compactRefusalSchema = z.object({
   ...refusalStatusSchema.shape,
   span: spanSummarySchema.optional(),
-  byMethod: z.array(z.object({ line: z.string().min(1).max(200) }).strict()).min(2).max(8).optional(),
+  byMethod: z.array(z.object({ line: z.string().min(1).max(compactLineLength) }).strict()).min(2).max(8).optional(),
 }).strict()
 /** An item's status: the stored status, with a refusal in its compact form. */
 export const itemStatusSchema = z.discriminatedUnion('word', [feasibleStatusSchema, compactRefusalSchema, invalidStatusSchema, unsupportedStatusSchema, cancelledStatusSchema, unresolvedStatusSchema])
