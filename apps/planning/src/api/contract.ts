@@ -5,7 +5,7 @@ import { workspaceResourceReferenceSchema } from '@leitbild/contracts'
 import { editSchema, sourceInputSchema } from '../plan/edit-schema.ts'
 import {
   calendarSchema, certifiedSizeSchema, changeSchema, datedRowSchema, dueRuleSchema, equipmentSchema, goalProofBreaks, goalWordSchema, gridSchema, groupSchema, instantSchema, jobSchema,
-  caveatSchema, keySchema, labelSchema, leadSchema, linkSchema, methodChoiceSchema, metricSchema, optionLeadRefinement, optionWithoutRowsShape, planInputsSchema, purchaseSchema, resourceSchema, ruleSchema,
+  caveatSchema, keySchema, labelSchema, leadSchema, linkSchema, methodChoiceSchema, metricSchema, optionLeadIssue, optionLeadRefinement, optionWithoutRowsShape, statusSchema, planInputsSchema, purchaseSchema, resourceSchema, ruleSchema,
   spanLimitRuleSchema, statusWordSchema, timeUnitSchema, wordsSchema, worldFactCopySchema,
 } from '../plan/schema.ts'
 
@@ -330,14 +330,47 @@ export const buysRowSchema = z.object({
   if (row.word === 'not found better' && from === 'proven' && to === 'proven' && row.outage === 0) issue('word', 'Two proven rungs with equal outages read "proven: no gain"')
 })
 
+/** A span refusal as an item gives it: the rule, the least span lane K proved and the limit, in h. */
+export const spanSummarySchema = z.object({ rule: keySchema, leastHours: z.number().finite().nonnegative(), limitHours: z.number().finite().positive() }).strict()
+const [feasibleStatusSchema, refusalStatusSchema, invalidStatusSchema, unsupportedStatusSchema, cancelledStatusSchema, unresolvedStatusSchema] = statusSchema.options
+/**
+ * A refusal as the options and previous sections page it (coordinator, after the re-walk sizes): the option's
+ * own method's cause as stored; its span as a summary; and per method its picks, purchases, span summary and
+ * `line`, that method's one sentence (at most 200 characters) from its stored cause or span. The full proof
+ * (the path, the later start, the energy proof) is worded only by explain refusal, from storage.
+ */
+export const compactRefusalSchema = z.object({
+  ...refusalStatusSchema.shape,
+  span: spanSummarySchema.optional(),
+  byMethod: z.array(z.object({
+    methods: z.array(z.object({ choice: keySchema, option: keySchema }).strict()), purchases: z.array(keySchema), span: spanSummarySchema.optional(), line: z.string().min(1).max(200),
+  }).strict()).min(2).max(8).optional(),
+}).strict()
+/** An item's status: the stored status, with a refusal in its compact form. */
+export const itemStatusSchema = z.discriminatedUnion('word', [feasibleStatusSchema, compactRefusalSchema, invalidStatusSchema, unsupportedStatusSchema, cancelledStatusSchema, unresolvedStatusSchema])
+export type ItemStatus = z.infer<typeof itemStatusSchema>
+/** The item rules: a what-if's lead as optionLeadIssue; a refusal by method names each once, its own included, with the own entry's span. */
+const itemRefinement = (item: { readonly variant: z.infer<typeof optionWithoutRowsShape>['variant']; readonly status: ItemStatus }, context: z.core.$RefinementCtx): void => {
+  if (item.status.word === 'validated feasible') {
+    const issue = optionLeadIssue({ variant: item.variant, status: item.status })
+    if (issue !== undefined) context.addIssue({ code: 'custom', path: ['status', 'lead'], message: issue })
+  }
+  if (item.status.word !== 'proven infeasible' || item.status.byMethod === undefined) return
+  const picks = (methods: ReadonlyArray<{ readonly choice: string; readonly option: string }>) => JSON.stringify([...methods].sort((x, y) => (x.choice < y.choice ? -1 : x.choice > y.choice ? 1 : 0)))
+  const names = item.status.byMethod.map(entry => picks(entry.methods))
+  if (new Set(names).size !== names.length) context.addIssue({ code: 'custom', path: ['status', 'byMethod'], message: 'Each method combination of a refusal is named once' })
+  const own = item.status.byMethod.find(entry => picks(entry.methods) === picks(item.variant.methods))
+  if (own === undefined || JSON.stringify(own.span) !== JSON.stringify(item.status.span)) context.addIssue({ code: 'custom', path: ['status', 'byMethod'], message: 'A refusal over several methods names the option\'s own methods, with its span' })
+}
+
 /**
  * An option as the options and previous sections page it: no rows; `fresh` (it re-checks on the current
  * revision and formulation), its warnings, and `dominated` when another option of the same set is no worse on
  * every goal and better on one (lead what-ifs are never dominated nor dominate). No option dominates itself.
  */
 export const optionItemSchema = optionWithoutRowsShape.extend({
-  fresh: z.boolean(), warnings: z.array(optionWarningSchema).max(4), dominated: z.object({ by: keySchema }).strict().optional(),
-}).strict().superRefine(optionLeadRefinement)
+  status: itemStatusSchema, fresh: z.boolean(), warnings: z.array(optionWarningSchema).max(4), dominated: z.object({ by: keySchema }).strict().optional(),
+}).strict().superRefine(itemRefinement)
   .refine(item => item.dominated?.by !== item.key, { message: 'An option is not dominated by itself', path: ['dominated', 'by'] })
   .refine(item => item.dominated === undefined || item.variant.lead === undefined, { message: 'A what-if with a leading goal is never dominated', path: ['dominated'] })
 const optionsPage = paged(optionItemSchema).extend({ at: instantSchema.nullable(), recommended: keySchema.nullable() }).strict()
