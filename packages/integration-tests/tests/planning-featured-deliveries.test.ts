@@ -1,5 +1,5 @@
 import { afterAll, expect, test } from 'bun:test'
-import { definitionIdSchema, featuredDefinitionCatalogSchema, moduleCapabilityInvocationResultSchema, moduleIdSchema } from '@leitbild/contracts'
+import { definitionIdSchema, featuredDefinitionCatalogSchema, moduleCapabilityInvocationResultSchema, moduleIdSchema, resourceIdSchema } from '@leitbild/contracts'
 import { createPlanningClient } from '../../../apps/planning/src/ui/api.ts'
 import { createWorkspaceApi } from '../../../apps/leitbild/src/ui/launch-workspace.ts'
 import { createPlanningStack } from './planning-stack.ts'
@@ -44,7 +44,7 @@ test('the public delivery demo runs in World and solves both orders from its lin
 
   const client = createPlanningClient(workspaceId, transport)
   const catalog = await client.catalog()
-  const worldRun = catalog.resources.find(item => item.ref.id === runId)
+  const worldRun = catalog.resources.find(item => item.ref.type === 'world.simulation-run' && item.ref.id === runId)
   expect(worldRun?.sourceDefinition?.id).toBe(scenario)
   expect(worldRun?.summary.find(item => item.key === 'status')?.value).toBe('Running')
   expect(catalog.resources.filter(item => item.ref.type === 'planning.plan')).toHaveLength(0)
@@ -55,7 +55,7 @@ test('the public delivery demo runs in World and solves both orders from its lin
   const plans = (await client.catalog()).resources.filter(item => item.ref.type === 'planning.plan')
   expect(plans).toHaveLength(1)
   const planId = first.result.plan.id
-  expect(plans[0]?.ref.id).toBe(planId)
+  expect(plans[0]?.ref.id).toBe(resourceIdSchema.parse(planId))
   const ready = await stack.store.read(workspaceId, planId)
   expect(ready.inputs.settings.run?.id).toBe(runId)
   expect(ready.inputs.world.facts.find(fact => fact.locator === truck && fact.id.endsWith('/service-seconds'))?.value).toBe(600)
