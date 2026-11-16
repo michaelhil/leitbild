@@ -153,8 +153,9 @@ const refusalByMethod = (option: OptionView, context: Context): readonly string[
   if (option.status.word !== 'proven infeasible') return []
   const withAlso = { ...context.inputs, rules: [...context.inputs.rules, ...option.variant.also ?? []] }
   const asked: Context = { ...context, inputs: withAlso, names: createNames(withAlso) }
-  const entries = option.status.byMethod ?? [{ methods: option.variant.methods, cause: option.status.cause }]
-  return entries.map(entry => `${methodsLabel(entry.methods, context.inputs)}: ${certificateText(entry.cause, asked)}`)
+  const entries = option.status.byMethod ?? [{ methods: option.variant.methods, cause: option.status.cause, span: option.status.span }]
+  // Each method's least outage against the limit asked, from the span proven in the child (re-walk N2); else its cause.
+  return entries.map(entry => `${methodsLabel(entry.methods, context.inputs)}: ${entry.span === undefined ? certificateText(entry.cause, asked) : `out at least ${hoursText(entry.span.leastHours)}, against the ${hoursText(entry.span.limitHours)} asked.`}`)
 }
 
 export const whatIfCard = (option: OptionView, model: PlanModel, context: Context): WhatIfCardView => {
@@ -207,7 +208,8 @@ export const whatIfCard = (option: OptionView, model: PlanModel, context: Contex
       ...asked === null ? [] : [`this what-if's limit ${asked}`],
       ...ownLimit === null ? [] : [`the plan's rule ${ownLimit}`],
     ].join(' · '),
-    unpriced: unpricedOf(option, inputs, model.rows[option.key]),
+    // A refused what-if has no plan, so nothing of it is left unpriced (re-walk N2).
+    unpriced: option.status.word === 'proven infeasible' ? [] : unpricedOf(option, inputs, model.rows[option.key]),
     warnings: otherWarnings(option), caution: sizeCautionOf(option), stale: !option.fresh,
     against: againstRecommended(option, model, context),
   }

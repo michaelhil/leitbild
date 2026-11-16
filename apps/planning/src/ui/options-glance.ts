@@ -73,7 +73,8 @@ export const optionsGlance = (model: PlanModel, context: Context): OptionsGlance
       key: option.key, label: option.label, recommended: option.key === model.options?.recommended, mark: view.mark,
       tone: view.word === 'validated feasible' ? 'good' as const : view.word === 'proven infeasible' ? 'refusal' as const : view.word === 'unresolved' ? 'unknown' as const : 'warning' as const,
       stale: !option.fresh, caution: sizeCautionOf(option), warnings: otherWarnings(option),
-      unpriced: unpricedOf(option, context.inputs, model.rows[option.key]).map(unpricedLine),
+      // A refused option has no plan, so nothing of it is left unpriced (re-walk N2).
+      unpriced: option.status.word === 'proven infeasible' ? [] : unpricedOf(option, context.inputs, model.rows[option.key]).map(unpricedLine),
       dominatedBy: option.dominated === undefined ? null : model.options?.items.find(item => item.key === option.dominated?.by)?.label ?? 'another option',
     }
     if (option.status.word !== 'validated feasible') {

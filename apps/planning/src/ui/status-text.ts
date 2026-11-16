@@ -113,7 +113,7 @@ const viaWords = {
 } as const
 
 /** The proof behind "proven infeasible", in planner words. */
-export const certificateText = (cause: Certificate, context: Context): string => {
+export const certificateText = (cause: Certificate, context: Context, span?: { readonly rule: string }): string => {
   const { names, format } = context
   switch (cause.kind) {
     case 'chain': {
@@ -133,7 +133,8 @@ export const certificateText = (cause: Certificate, context: Context): string =>
       return cause.steps.length === 0
         ? 'The times cannot line up inside the window.'
         // What holds a job is said only where it is more than a link to the job before it.
-        : `The times cannot line up along this chain: ${cause.steps.map(step => step.via === 'link' ? names.job(step.job) : `${names.job(step.job)} (held by ${viaWords[step.via]})`).join(', then ')}.`
+        // A span step names its rule in the rule's own words where the stored span says which (re-walk N2).
+        : `The times cannot line up along this chain: ${cause.steps.map(step => step.via === 'link' ? names.job(step.job) : `${names.job(step.job)} (held by ${step.via === 'span-limit' && span !== undefined ? `“${names.rule(span.rule)}”` : viaWords[step.via]})`).join(', then ')}.`
   }
 }
 
@@ -273,7 +274,11 @@ export const statusView = (status: Status, context: Context): StatusView => {
       }
     }
     case 'proven infeasible':
-      return { mark, word: status.word, goals: [], run: runText(status), sentence: 'No plan can keep every hard rule. The proof:', details: [certificateText(status.cause, context)] }
+      // A span refusal proven in the solver child says its least outage against its rule, in the rule's words (N2).
+      return { mark, word: status.word, goals: [], run: runText(status), sentence: 'No plan can keep every hard rule. The proof:', details: [
+        ...status.span === undefined ? [] : [`Out at least ${hoursText(status.span.leastHours)}, against the ${hoursText(status.span.limitHours)} of “${context.names.rule(status.span.rule)}”.`],
+        certificateText(status.cause, context, status.span),
+      ] }
     case 'invalid input':
       return { mark, word: status.word, goals: [], run: null, sentence: 'The plan cannot be generated until these are fixed:', details: status.problems.map(problem => problemText(problem, context.names)) }
     case 'unsupported feature':
