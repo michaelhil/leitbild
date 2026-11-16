@@ -103,11 +103,11 @@ test('selecting a unit allows direct dispatch and editing its assigned stops', a
     await expect(unit.getByRole('alert')).toContainText('must follow the pickup it delivers')
 
     // The numbered stop row exercises the same confirmation as clicking a red map destination.
-    const removeClinic = unit.getByRole('button', { name: /Remove stop 2:.*Halden emergency clinic/ })
-    await removeClinic.click()
+    const removeTriage = unit.getByRole('button', { name: /Remove stop 3:.*Remmen triage post/ })
+    await removeTriage.click()
     const removal = world.getByRole('dialog', { name: 'Remove stop?' })
     await unitCommand(page, 'stop.remove', () => removal.getByRole('button', { name: 'Remove stop', exact: true }).click())
-    await expect(removeClinic).toBeHidden()
+    await expect(removeTriage).toBeHidden()
     await expect(unit.getByRole('button', { name: /Remove stop 1:.*C-1 Tistedal fall/ })).toBeVisible()
     expect(orders).toHaveLength(3)
   })
