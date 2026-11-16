@@ -471,6 +471,7 @@
         {#if card !== null}
           <SelectionCard
             {card}
+            {unitPending}
             {feedback}
             {icon}
             confirming={confirming !== null && confirming === card.id}
