@@ -45,6 +45,18 @@ export const SOLVER_CPU_CAP_CORES = 0.8 * 0.5
 export const CHILD_RSS_LIMIT_MB = 140
 
 /**
+ * The JavaScriptCore options a solver child runs with. Lane K's checker (check/check.ts checkPlan, bytecode
+ * cost 36 742; the largest function the search optimises costs 6 666) runs a dozen times in a sub-solve since
+ * the pessimistic re-timings (each judged by a full check), so the DFG JIT optimises it: a compile of 170 KB of
+ * code that takes 40-60 ms on a JIT thread and 15-30 MB of the child's RSS after the search, where the memory
+ * guard does not sample (measured 16 Nov: the whole of increment 2's 25-40 MB rise over increment 1, whose
+ * checker never ran often enough to be optimised). The DFG gets the size limit the FTL already has (JSC's
+ * maximumFTLCandidateBytecodeCost, 20 000): the checker stays in the baseline JIT, as in increment 1, and the
+ * search, far below the limit, compiles as before (the same evaluations on the same seed).
+ */
+export const CHILD_JSC_OPTIONS: Readonly<Record<string, string>> = { BUN_JSC_maximumOptimizationCandidateBytecodeCost: '20000' }
+
+/**
  * Every child is killed at a wall deadline, so a hung child never holds the only solver slot (adversary,
  * child boundary): a solve or sub-solve at its budget's wall time plus this margin (compile, bounds and lane
  * K's check run outside the engine budget, and take well under a second at the certified size); a preview
@@ -167,7 +179,7 @@ export const createSolverPool = (options: PoolOptions = {}): SolverPool => {
         'refuse' in answer ? finish(() => reject(answer.refuse)) : finish(() => resolve(answer.value), answer.record)
       const send = (request: ChildRequest): void => { if (!done) child.send(request) }
       const child = Bun.spawn([process.execPath, ...(smol ? ['--smol'] : []), childEntry], {
-        stdin: 'ignore', stdout: 'inherit', stderr: 'inherit', serialization: 'json',
+        stdin: 'ignore', stdout: 'inherit', stderr: 'inherit', serialization: 'json', env: { ...process.env, ...CHILD_JSC_OPTIONS },
         ipc: (message: ChildResponse) => {
           if (message.id !== id) return
           if (message.type === 'error') { finish(() => reject(new Error(`The solver failed: ${message.message}`))); return }
