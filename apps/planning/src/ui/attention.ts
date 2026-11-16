@@ -2,6 +2,7 @@
 // The link card comes first until a Run is linked; the Module's own attention items follow; then the
 // one-sentence answer about the recommended option.
 import { simulationNow } from './edit-forms.ts'
+import { preconditions, usedWorldRefs } from '../plan/readiness.ts'
 import { sizeBand, sizeRefusalWords } from '../plan/summary.ts'
 import type { Robust } from '../plan/schema.ts'
 import { hoursText, moneyText, quantityText, sourceMark, type Mark } from './format.ts'
@@ -167,6 +168,13 @@ export const lowerRungRefusal = (option: OptionView, inputs: PlanModel['inputs']
   return crewHourPurchases(inputs).some(purchase => purchase.allowed && purchase.ordered === undefined && !lapsed(purchase) && !option.variant.purchases.includes(purchase.key))
 }
 
+/** Gate the setup step only while a solver input still needs its first read. */
+export const needsFirstWorldRead = (inputs: PlanModel['inputs']): boolean =>
+  inputs.world.refreshedAt === null && (
+    preconditions(inputs).some(item => item.state === 'unread')
+    || usedWorldRefs(inputs).some(({ ref }) => !inputs.world.facts.some(fact => fact.locator === ref.locator && fact.id === ref.fact))
+  )
+
 export const attentionCards = (model: PlanModel, context: Context, wallNowMs: number = Date.now()): readonly Card[] => {
   const { inputs } = model
   const cards: Card[] = []
@@ -256,7 +264,7 @@ export const attentionCards = (model: PlanModel, context: Context, wallNowMs: nu
     })
     const pessimistic = pessimisticCard(recommended, context)
     if (pessimistic !== null) cards.push(pessimistic)
-  } else if (inputs.jobs.length > 0 && model.options === null) {
+  } else if (inputs.jobs.length > 0 && model.options === null && !needsFirstWorldRead(inputs)) {
     cards.push({ mark: { shape: '▶', word: 'Generate' }, title: 'No plan has been generated yet.', text: 'Generate makes dated options from the jobs, crews and rules, and says how good each one is.', steps: [], actions: ['generate'] })
   }
   return cards

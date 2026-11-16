@@ -3,7 +3,7 @@
   import type { PlanningSubject } from '@leitbild/contracts'
   import type { Edit } from '../plan/edit-schema.ts'
   import { isNotBuilt, isRequestError, refusalText, type GenerateInput, type PlanningClient } from './api.ts'
-  import { attentionCards, type CardAction } from './attention.ts'
+  import { attentionCards, needsFirstWorldRead, type CardAction } from './attention.ts'
   import AttentionColumn from './AttentionColumn.svelte'
   import ComparePanel from './ComparePanel.svelte'
   import CrewForm from './CrewForm.svelte'
@@ -390,15 +390,19 @@
       }
     })()
   }
-  const generate = (input: GenerateInput): void => solve(async (current, signal) => {
-    const shown = await actions.generate(current, input, signal, selectedOption)
-    show(shown)
-    error = shown.error
-    errorCause = shown.cause
-    onChanged()
-    const cleared = whatIfsClearedNotice(whatIfOptions(current), whatIfOptions(shown.model))
-    if (cleared !== null) notice = cleared
-  })
+  const needsWorld = $derived(model !== null && needsFirstWorldRead(model.inputs))
+  const generate = (input: GenerateInput): void => {
+    if (needsWorld) { view = 'equipment'; return }
+    solve(async (current, signal) => {
+      const shown = await actions.generate(current, input, signal, selectedOption)
+      show(shown)
+      error = shown.error
+      errorCause = shown.cause
+      onChanged()
+      const cleared = whatIfsClearedNotice(whatIfOptions(current), whatIfOptions(shown.model))
+      if (cleared !== null) notice = cleared
+    })
+  }
   /** Works out the rungs of "what overtime buys" still to solve, lowest first. */
   const solveLadder = (): void => {
     const missing = context === null ? [] : (ladder?.toSolve ?? []).map(rung => ({ name: rung.name, request: rungRequest(rung, context) }))
@@ -535,7 +539,7 @@
 {#if model !== null && context !== null}
   <div class="plan-screen">
     <p class="back"><button type="button" class="link" onclick={onOpenLibrary}>← All plans</button></p>
-    <PlanHeader {context} title={model.title} {size} generating={generating !== null} {busy} onGenerate={generate} onCancel={() => generating?.abort()} />
+    <PlanHeader {context} title={model.title} {size} generating={generating !== null} {busy} {needsWorld} onGenerate={generate} onCancel={() => generating?.abort()} />
     {#if error}<ErrorNotice text={error} cause={errorCause} />{/if}
     {#if notice}<p class="notice" aria-live="polite">{notice}</p>{/if}
     {#if banner}
