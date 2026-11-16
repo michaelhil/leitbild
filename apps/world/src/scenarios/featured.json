@@ -66,16 +66,16 @@
     ],
     "previews": [
       {
-        "alt": "Halden’s paused ambulance desk with the waiting call, eligible units and a dispatch guide.",
+        "alt": "Halden, paused: ambulance A2 open in the Dispatch panel above the calls ranked by priority, and two waiting calls on the map.",
         "width": 1600,
         "height": 1000,
         "sources": [
           {
-            "file": "halden-emergency-960.ae87f6da.webp",
+            "file": "halden-emergency-960.9990aa8a.webp",
             "width": 960
           },
           {
-            "file": "halden-emergency-1600.1092df44.webp",
+            "file": "halden-emergency-1600.338cbeb1.webp",
             "width": 1600
           }
         ]
