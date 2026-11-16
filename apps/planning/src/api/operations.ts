@@ -32,7 +32,7 @@ import {
 } from '../plan/summary.ts'
 import type { Grid } from '../time/units.ts'
 import {
-  explainResultSchema, generateResultSchema, resultLimitBytes, sectionDataSchemas, writeResultSchema, type ItemStatus,
+  compactLineLength, explainResultSchema, generateResultSchema, resultLimitBytes, sectionDataSchemas, writeResultSchema, type ItemStatus,
   type baselineInputSchema, type createInputSchema, type editInputSchema, type explainInputSchema, type generateInputSchema, type readInputSchema, type StatusOut,
 } from './contract.ts'
 
@@ -274,7 +274,7 @@ export const createPlanningOperations = (ports: PlanningOperationsPorts) => {
    * A status as the options and previous sections page it (coordinator, shape E): a refusal keeps its own
    * method's cause and its span as a summary; each method combination is one `line`, built here from its stored
    * span or cause with no checker: the figures first, then the method's name (its picks among the choices the
-   * combinations differ in), so a clip at 200 characters never cuts the figures. The option's own comes first,
+   * combinations differ in), so a clip at 150 characters never cuts the figures. The option's own comes first,
    * the rest in the plan's combination order. Picks, purchases, path, later start and energy proof stay in
    * storage, for explain refusal.
    */
@@ -292,7 +292,7 @@ export const createPlanningOperations = (ports: PlanningOperationsPorts) => {
     const name = (entry: Entry) => methodWords(inputs, entry.methods.filter(pick => combinations.some(other => !picks(other, pick)))) ?? 'another method'
     const line = (entry: Entry): string => clip(entry.span !== undefined
       ? `Out at least ${valueWords(entry.span.leastHours, 'h')}, against the ${valueWords(entry.span.limitHours, 'h')} ${asked.has(entry.span.rule) ? 'asked' : 'limit'}: ${name(entry)}.`
-      : `${(refusalLines(entry.cause, ruled, undefined, entry.purchases, entry.methods)[0] ?? 'Not possible with what this method may use.').replace(/\.$/, '')}: ${name(entry)}.`, 200)
+      : `${(refusalLines(entry.cause, ruled, undefined, entry.purchases, entry.methods)[0] ?? 'Not possible with what this method may use.').replace(/\.$/, '')}: ${name(entry)}.`, compactLineLength)
     // The plan's combination order (methodCombinations): by each choice's option, the plan's first choice first.
     const place = (entry: Entry) => inputs.methods.map(choice => {
       const at = choice.options.findIndex(entryOption => entryOption.key === entry.methods.find(pick => pick.choice === choice.key)?.option)
