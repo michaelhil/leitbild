@@ -53,6 +53,13 @@ export const retimingCount = (inputs: PlanInputs, jobs: readonly string[]): numb
   return ranged === 0 ? 0 : 1 + ranged
 }
 
+/** Per activity of a compile, the resource indexes its planned row used (undefined for a job with no row). */
+export const plannedCrews = (index: { readonly jobs: ReadonlyArray<string | null>; readonly resources: readonly string[] }, rows: readonly Row[]): Array<ReadonlySet<number> | undefined> =>
+  index.jobs.map(job => {
+    const row = job === null ? undefined : rows.find(entry => entry.job === job)
+    return row === undefined ? undefined : new Set(row.uses.map(use => index.resources.indexOf(use.resource)))
+  })
+
 /** The inputs with the named jobs at their high estimate. */
 export const atHigh = (inputs: PlanInputs, jobs: ReadonlySet<string>): PlanInputs => ({
   ...inputs,
@@ -79,8 +86,9 @@ export const retimedRows = (planned: PlanInputs, pessimistic: PlanInputs, option
     && before.problem.activities.every((activity, a) => activity.id === after.problem.activities[a]!.id && activity.modes.length === after.problem.activities[a]!.modes.length)
   if (!same) return undefined
   const prep = prepare(after.problem)
-  // The shared repair: a job with no slot in its own mode takes the same crews' widest mode (decode.ts repair).
-  const { decoded, lost: unplacedActivities } = repair(prep, saved.schedule)
+  // The shared repair: a job with no slot in its own mode takes the same crews' widest mode, and every job keeps
+  // exactly the crews and tools its planned row used (decode.ts repair).
+  const { decoded, lost: unplacedActivities } = repair(prep, saved.schedule, plannedCrews(after.index, option.rows))
   const placed = (a: number): boolean => !unplacedActivities.includes(a)
   const lost = after.index.jobs.flatMap((job, a) => (job !== null && !placed(a) ? [a] : []))
   const root = lost.filter(a => prep.preds[a]!.every(link => placed(link.from))).sort((x, y) => decoded.start[x]! - decoded.start[y]! || x - y)[0]

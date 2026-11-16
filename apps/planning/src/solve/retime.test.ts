@@ -242,3 +242,14 @@ describe('M1: the extra use of the option\'s purchases, and its cost, beside eac
     expect(figured).toBeGreaterThan(0)
   }, 60_000)
 })
+
+describe('a re-timing keeps each job\'s crews and tools, a job on a handover between crews included', () => {
+  test('the locked repro with the pump pull high (lane K\'s case): the cleaning keeps both crews, and lane K judges it', async () => {
+    const locked: PlanInputs = { ...flagship, jobs: flagship.jobs.map(job => (job.key === 'CCWHXA-ECT' ? { ...job, lock: { start: '2026-11-18T08:00:00Z' } } : job)) }
+    const swapLocked = (await generate(deps, { inputs: locked, revision: 1, previous: null, input: { variants: [{ label: 'Swap', methods: swap }] }, by, signal: new AbortController().signal, seed: 1, evals: 600 })).optionSet.options[0]!
+    const found = retimedRows(locked, atHigh(locked, new Set(['SWA-PUMP-OUT'])), swapLocked)!
+    // Every row keeps exactly the crews and tools its planned row used (lane K's rule for a re-timing).
+    expect(crewsOf(found.rows)).toEqual(crewsOf(swapLocked.rows.filter(row => found.rows.some(entry => entry.job === row.job))))
+    expect(judgeRetiming(locked, swapLocked.variant, swapLocked.rows, found.rows, ['SWA-PUMP-OUT']).ok).toBe(true)
+  }, 60_000)
+})
