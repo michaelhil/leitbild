@@ -24,7 +24,6 @@ import { commandIdSchema, geoJsonPointSchema, idSchema, type GeoJsonPoint } from
 export const stepKinds = ['serve', 'deliver', 'move', 'engage'] as const
 export type StepKind = typeof stepKinds[number]
 export const stepStates = ['active', 'queued'] as const
-export type StepState = typeof stepStates[number]
 
 /** The most steps an actor's order leaves a unit holding; a step beyond it is refused `chain_full`. */
 export const maxSteps = 20

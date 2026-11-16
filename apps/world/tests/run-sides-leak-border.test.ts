@@ -73,7 +73,7 @@ const oracleRun = (source: ScenarioDefinition, minutes: number, redOrders: boole
   const item = (id: string) => definition.packs[0]!.items.find(entry => entry.id === originalId(id))!
 
   const oracle = createWireOracle(declaration)
-  const { registry, createScreen, join, einsatzIds, einsatzType, sideCommands, takeInventory, forbiddenFor, expectNoLeak, barrier, eventsReceived, command, recommendAs, boardText, screens } = oracle
+  const { registry, createScreen, join, einsatzIds, einsatzType, sideCommands, takeInventory, forbiddenFor, expectNoLeak, barrier, eventsReceived, command, recommendAs, surfaceText, screens } = oracle
 
   let red: Screen
   let blue: Screen
@@ -169,7 +169,7 @@ const oracleRun = (source: ScenarioDefinition, minutes: number, redOrders: boole
         sent += await dispatchAs(blue)
         if (redOrders) redSent += await dispatchAs(red)
         await barrier(red, blue, controller)
-        const built = minute % 5 === 0 ? { red: [await boardText(red)], blue: [await boardText(blue)] } : { red: [], blue: [] }
+        const built = minute % 5 === 0 ? { red: [await surfaceText(red)], blue: [await surfaceText(blue)] } : { red: [], blue: [] }
         await expectNoLeak(red, redSide, since.get(red), built.red)
         await expectNoLeak(blue, blueSide, since.get(blue), built.blue)
       }

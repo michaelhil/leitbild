@@ -22,7 +22,6 @@ export const trackLexiconKeys = ['tracks', 'contact', 'identified', 'engageable'
 export const lexiconKeys = [...surfaceLexiconKeys, ...trackLexiconKeys, ...unitLexiconKeys] as const
 
 export type UnitLexiconKey = typeof unitLexiconKeys[number]
-export type SurfaceLexiconKey = typeof surfaceLexiconKeys[number]
 export type LexiconKey = typeof lexiconKeys[number]
 
 /** Neutral wording used until a configuration words it otherwise; all domain words come from configuration. */

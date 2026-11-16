@@ -44,7 +44,7 @@ const oracle = createWireOracle(declaration)
 const {
   registry, liveRun, asScreen, createScreen, readRun, join, objectIds, einsatzIds, attributions, storeText, einsatzType,
   attempt, sideCommands, takeInventory, forbiddenFor, holds, expectNoLeak, barrier, eventsReceived, command, refusalOf, recommendAs,
-  shownOn, boardText, recommended, screens,
+  surfaceText, recommended, screens,
 } = oracle
 
 let red: Screen
@@ -253,7 +253,6 @@ describe('the wire oracle on a sided fixture Run', () => {
         if (outcome.kind !== 'command' || !outcome.result.ok) throw new Error(`${screen.name} could not chain ${carrier}: ${JSON.stringify(outcome)}`)
       }
     }
-    const before = { red: shownOn(red), blue: shownOn(blue) }
     // Red orders its far shooter to hold fire: a side's order, which only Red and truth views hear of.
     const held = await command(red, einsatzCommandIds.setRoe, { unitId: farGun, roe: 'hold' })
     if (held.kind !== 'command' || !held.result.ok) throw new Error(`Red could not order its shooter: ${JSON.stringify(held)}`)
@@ -270,7 +269,7 @@ describe('the wire oracle on a sided fixture Run', () => {
     expect(red.stores?.objects.find(object => object.id === farGun)?.packData).toMatchObject({ roe: 'hold', lastAction: { by: 'Red lead and Crew red' } })
     expect(einsatzIds(blue)).not.toContain(farGun)
     // Each side's dispatch surface shows the step-loss work to Blue alone, and Red's shooter, with Red's order, to Red alone.
-    const boards = { red: await boardText(red, before.red), blue: await boardText(blue, before.blue) }
+    const boards = { red: await surfaceText(red), blue: await surfaceText(blue) }
     expect(lossTasks(blue).every(id => boards.blue.includes(id))).toBe(true)
     const shooterOf = (board: string) => (JSON.parse(board) as { readonly situation: { readonly units: ReadonlyArray<{ readonly id: string; readonly lastOrder: { readonly by: { readonly label: string } } | null }> } }).situation.units.find(unit => unit.id === farGun)
     expect(shooterOf(boards.red)?.lastOrder?.by.label).toBe('Red lead and Crew red')

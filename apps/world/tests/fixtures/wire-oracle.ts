@@ -59,12 +59,6 @@ export interface Screen {
   readonly errors: Array<string>
 }
 
-/** What a screen held at one moment: its objects and the Run time. */
-export interface Shown {
-  readonly objects: ReadonlyArray<OperationalObject>
-  readonly currentTime: NonNullable<RunScopedStores['clock']>['currentTime']
-}
-
 /** The Workspace, server and Run a harness opened. */
 interface Opened {
   readonly workspaces: WorldWorkspaceRuntimeRegistry
@@ -302,22 +296,13 @@ export const createWireOracle = (declaration: RunRoles) => {
   const recommendAs = async (screen: Screen, taskId: string): Promise<Recommendation> =>
     await asScreen(screen, async () => await querySimulationRunCapability<Recommendation>(opened().runId, einsatzQueryIds.recommend, { taskId }))
 
-  const shownOn = (screen: Screen): Shown => {
-    const stores = screen.stores
-    const currentTime = stores?.clock?.currentTime
-    if (stores === null || currentTime === undefined) throw new Error(`${screen.name} holds no Run to show on a Board`)
-    return { objects: stores.objects, currentTime }
-  }
-
   /**
    * What the Einsatz dispatch surface would hold on a screen: the situation
    * the screen reads, and the recommendation for each of its calls, answered
-   * as that screen, as text to search. `earlier` is what the screen held
-   * before; the surface keeps no history, so it adds nothing.
+   * as that screen, as text to search.
    */
-  const boardText = async (screen: Screen, earlier?: Shown): Promise<string> => {
-    void earlier
-    shownOn(screen)
+  const surfaceText = async (screen: Screen): Promise<string> => {
+    if (screen.stores?.clock?.currentTime === undefined) throw new Error(`${screen.name} holds no Run`)
     const situation = await asScreen(screen, async () => await querySimulationRunCapability<Situation>(opened().runId, einsatzQueryIds.situation, {}))
     const answers: unknown[] = []
     for (const call of situation.calls) {
@@ -397,8 +382,7 @@ export const createWireOracle = (declaration: RunRoles) => {
     command,
     refusalOf,
     recommendAs,
-    shownOn,
-    boardText,
+    surfaceText,
     recommended,
   }
 }
