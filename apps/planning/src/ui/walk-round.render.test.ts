@@ -4,7 +4,7 @@ import { describe, expect, test } from 'bun:test'
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import type { Component } from 'svelte'
-import { versusFactsSchema } from '../api/contract.ts'
+import { compactLineLength, versusFactsSchema } from '../api/contract.ts'
 import { createPlanningClient } from './api.ts'
 import { attentionCards, pessimisticCard } from './attention.ts'
 import { floatText } from './explain-text.ts'
@@ -200,7 +200,7 @@ describe('V1: a refused what-if says each method\'s cause, against its own limit
     const rebuildCause = { kind: 'energy' as const, resources: ['mech-station'], jobs: ['SWA-TAG'], requiredHours: 49, availableHours: 48, from: inputs.settings.window!.start, to: inputs.settings.window!.end, span: also.key }
     // The compact item (shape E) as the options section pages it: each line is the Module's first sentence for
     // its cause, worded with the what-if's rule, then the method's name (as api/operations.ts itemStatus words it).
-    const line = (cause: Parameters<typeof refusalLines>[0], option: string) => clip(`${refusalLines(cause, withExtraRules(inputs, [also]), undefined, allowed, picks(option))[0]!.replace(/\.$/, '')}: ${label(option)}.`, 200)
+    const line = (cause: Parameters<typeof refusalLines>[0], option: string) => clip(`${refusalLines(cause, withExtraRules(inputs, [also]), undefined, allowed, picks(option))[0]!.replace(/\.$/, '')}: ${label(option)}.`, compactLineLength)
     const lines = [line(swapCause, 'swap'), line(rebuildCause, 'rebuild')]
     const refused = itemOf({ word: 'proven infeasible', run: runBasis(grid), cause: swapCause, byMethod: lines.map(text => ({ line: text })) })
     const option = optionOf('w40', 'At most 40 h out', refused, { variant: { methods: picks('swap'), purchases: allowed, also: [also] } })
