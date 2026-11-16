@@ -30,8 +30,13 @@ export type Retimed = Robust['allPessimistic']
  * The card names a job that holds with no margin from these, never from figures of its own.
  */
 export interface SpanMargin { readonly rule: string; readonly hours: number; readonly margin: number }
+/**
+ * What a re-timing uses of the option's purchases beyond what the plan uses, per purchase (person-hours or
+ * periods), and the extra cost of it in the plan currency (M1): the checker's own figures on both schedules.
+ */
+export interface ExtraUse { readonly cost: number; readonly bought: ReadonlyArray<{ readonly purchase: string; readonly value: number; readonly unit: string }> }
 export type RetimeJudgement =
-  | { readonly ok: true; readonly outcome: Retimed; readonly spans?: readonly SpanMargin[] }
+  | { readonly ok: true; readonly outcome: Retimed; readonly spans?: readonly SpanMargin[]; readonly extra?: ExtraUse }
   | { readonly ok: false; readonly problems: readonly string[] }
 
 type Job = PlanInputs['jobs'][number]
@@ -276,10 +281,22 @@ export const judgeRetiming = (inputs: PlanInputs, variant: CheckVariant, planned
   const follows = (violation: { readonly code: string; readonly about: readonly string[] }) =>
     (violation.code === 'not-scheduled' && missing.has(violation.about[0]!)) || (violation.code === 'never-returned' && returnedBy(violation.about[0]!))
   const ruled = check.violations.filter(violation => (violation.code === 'span-limit' || violation.code === 'due') && rules.some(rule => rule.key === violation.about[0]))
-  const other = check.violations.filter(violation => !ruled.includes(violation) && !follows(violation))
+  // B2: a finish-to-start link into a locked job that the re-timing keeps at its fixed start, broken because
+  // the job before it now finishes later. That is the lock missed, a result; any other link finding is not.
+  const rowOf = new Map(retimed.map(row => [row.job, row]))
+  const lockMissed = (violation: { readonly code: string; readonly about: readonly string[] }) => {
+    if (violation.code !== 'link') return undefined
+    const [from, to] = violation.about as [string, string]
+    const fixed = inputs.jobs.find(job => job.key === to)?.lock, after = rowOf.get(from), held = rowOf.get(to)
+    const link = inputs.links.find(entry => entry.from === from && entry.to === to && entry.type === 'FS')
+    if (fixed === undefined || after === undefined || held === undefined || link === undefined || Date.parse(held.start) !== Date.parse(fixed.start)) return undefined
+    const late = Date.parse(after.finish) + link.lag.value * unitMs[link.lag.unit] - Date.parse(fixed.start)
+    return late > 0 ? { job: to, after: from, at: Date.parse(fixed.start), hours: late / hourMs } : undefined
+  }
+  const locks = check.violations.flatMap(violation => { const missed = lockMissed(violation); return missed === undefined ? [] : [{ violation, missed }] })
+  const other = check.violations.filter(violation => !ruled.includes(violation) && !follows(violation) && !locks.some(entry => entry.violation === violation))
   if (other.length > 0) return { ok: false, problems: other.map(violation => violation.words) }
 
-  const rowOf = new Map(retimed.map(row => [row.job, row]))
   const supportersOf = (item: string, seen: ReadonlySet<string> = new Set()): string[] => (inputs.equipment.find(entry => entry.key === item)?.supportedBy ?? [])
     .filter(key => !seen.has(key)).flatMap(key => [key, ...supportersOf(key, new Set([...seen, item, key]))])
   const breaks: Array<{ readonly at: number; readonly order: number; readonly outcome: Extract<Retimed, { holds: false }> }> = []
@@ -310,11 +327,21 @@ export const judgeRetiming = (inputs: PlanInputs, variant: CheckVariant, planned
   if (pastWindow) {
     const firstPast = inputs.jobs.flatMap(job => { const row = rowOf.get(job.key); return row !== undefined && Date.parse(row.finish) > windowEnd ? [row] : [] })
       .reduce((earliest, row) => Date.parse(row.start) < Date.parse(earliest.start) ? row : earliest)
-    breaks.push({ at: windowEnd, order: rules.length, outcome: { holds: false, window: { by: last!.finish }, job: firstPast.job } })
+    breaks.push({ at: windowEnd, order: rules.length + 1, outcome: { holds: false, window: { by: last!.finish }, job: firstPast.job } })
   }
-  if (unplaced !== undefined && unplaced.ok) breaks.push({ at: unplaced.at, order: rules.length + 1, outcome: { holds: false, unplaced: unplaced.unplaced } })
+  for (const { missed } of locks) breaks.push({ at: missed.at, order: rules.length, outcome: { holds: false, lock: { job: missed.job, after: missed.after }, by: { value: missed.hours, unit: 'h' } } })
+  if (unplaced !== undefined && unplaced.ok) breaks.push({ at: unplaced.at, order: rules.length + 2, outcome: { holds: false, unplaced: unplaced.unplaced } })
+  // M1: what the re-timing uses of the option's purchases beyond the plan, and what that costs, the checker's
+  // own 'bought:' and extra-cost figures on both; only when every job is placed (otherwise it is partial).
+  const extra = missing.size > 0 ? undefined : (() => {
+    const before = checkPlan(inputs, variant, planned).metrics
+    const valueOf = (metrics: typeof before, id: string) => metrics.find(metric => metric.id === id)?.value ?? 0
+    const more = check.metrics.filter(metric => metric.id.startsWith('bought:') && metric.value - valueOf(before, metric.id) > 1e-9)
+      .map(metric => ({ purchase: metric.id.slice('bought:'.length), value: metric.value - valueOf(before, metric.id), unit: metric.unit }))
+    return { cost: Math.round((valueOf(check.metrics, 'extra-cost') - valueOf(before, 'extra-cost')) * 100) / 100, bought: more }
+  })()
   const first = [...breaks].sort((left, right) => left.at - right.at || left.order - right.order)[0]
-  if (first !== undefined) return { ok: true, outcome: first.outcome }
+  if (first !== undefined) return { ok: true, outcome: first.outcome, ...(extra === undefined ? {} : { extra }) }
   // It holds: each span limit's longest span on these rows, as the checker counts it, against its limit (V12).
   const spans = rules.flatMap((rule): SpanMargin[] => {
     if (rule.kind !== 'span-limit') return []
@@ -324,5 +351,5 @@ export const judgeRetiming = (inputs: PlanInputs, variant: CheckVariant, planned
     const hours = Math.max(...spansOf.map(span => span.to - span.from)) / hourMs
     return [{ rule: rule.key, hours, margin: rule.limit.value * unitMs[rule.limit.unit] / hourMs - hours }]
   })
-  return { ok: true, outcome: { holds: true }, spans }
+  return { ok: true, outcome: { holds: true }, spans, ...(extra === undefined ? {} : { extra }) }
 }

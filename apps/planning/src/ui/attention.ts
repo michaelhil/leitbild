@@ -84,6 +84,11 @@ export const pessimisticCard = (option: OptionView, context: Context): Card | nu
     // Lane K's words (fix round F3): the job, the crew or tool with no slot long enough left, from when, and
     // how far past the window the checker looked: the window's own length.
     if ('unplaced' in outcome) return `${names.job(outcome.unplaced.job)} could not be done: ${names.resource(outcome.unplaced.resource)} has no slot long enough left after ${format.when(outcome.unplaced.after)}, within ${windowLength(context)} after the window`
+    // Lane K's lock form (B2): the locked job, its fixed start from the plan, and the job before it, later by.
+    if ('lock' in outcome) {
+      const fixed = context.inputs.jobs.find(job => job.key === outcome.lock.job)?.lock
+      return `${names.job(outcome.lock.job)} could not keep its fixed start${fixed === undefined ? '' : ` ${format.when(fixed.start)}`}: ${names.job(outcome.lock.after)} would finish ${quantityText(outcome.by.value, outcome.by.unit)} later`
+    }
     return `${names.job(outcome.job)} breaks “${names.rule(outcome.rule)}” by ${quantityText(outcome.by.value, outcome.by.unit)}`
   }
   const together = breaks(robust.allPessimistic)

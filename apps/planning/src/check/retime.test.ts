@@ -52,7 +52,7 @@ describe('the outcome is the checker\'s', () => {
     expect(judgeRetiming(plan([limit('L', 7)]), none, planned, retimed, ['W'])).toMatchObject({ ok: true, outcome: { holds: true } })
   })
   test('a re-timing that holds gives each span against its limit: G out 6 h of 7 h, 1 h margin (V12)', () => {
-    expect(judgeRetiming(plan([limit('L', 7)]), none, planned, retimed, ['W'])).toEqual({ ok: true, outcome: { holds: true }, spans: [{ rule: 'L', hours: 6, margin: 1 }] })
+    expect(judgeRetiming(plan([limit('L', 7)]), none, planned, retimed, ['W'])).toEqual({ ok: true, outcome: { holds: true }, spans: [{ rule: 'L', hours: 6, margin: 1 }], extra: { cost: 0, bought: [] } })
   })
   test('a due time at 11:30Z: the test finishes at 12:00Z, 0.5 h late', () => {
     expect(judgeRetiming(plan([limit('L', 7), due('D', at(11.5))]), none, planned, retimed, ['W'])).toMatchObject({ ok: true, outcome: { holds: false, rule: 'D', job: 'R', by: { value: 0.5, unit: 'h' } } })
@@ -101,7 +101,7 @@ describe('a re-timing that runs past the window is judged as the window', () => 
   }
   const past = [rowOf('T', 6, 7), rowOf('W', 7, 57), rowOf('R', 57, 58)]
   test('no rule breaks first: the window, at W, the work ending Wed 10:00Z', () => {
-    expect(judgeRetiming(long([limit('L', 60)]), none, planned, past, ['W'])).toEqual({ ok: true, outcome: { holds: false, window: { by: at(58) }, job: 'W' } })
+    expect(judgeRetiming(long([limit('L', 60)]), none, planned, past, ['W'])).toEqual({ ok: true, outcome: { holds: false, window: { by: at(58) }, job: 'W' }, extra: { cost: 0, bought: [] } })
   })
   test('a rule that breaks before the window end comes first: G out 52 h runs past 7 h at Mon 13:00Z', () => {
     expect(judgeRetiming(long([limit('L', 7)]), none, planned, past, ['W'])).toMatchObject({ ok: true, outcome: { holds: false, rule: 'L', job: 'R', by: { value: 45, unit: 'h' } } })
@@ -195,5 +195,61 @@ describe('the continued calendars are bounded: the window\'s length again past t
     const ms = performance.now() - started
     expect(judged).toEqual({ ok: true, outcome: { holds: false, unplaced: { job: 'R', resource: 'team', after: '2026-11-16T09:00:30.000Z' } } })
     console.log(`30 s grid re-timing judged in ${ms.toFixed(1)} ms`)
+  })
+})
+
+describe('a locked job a re-timing pushes past its fixed start is judged as the lock (B2)', () => {
+  // A (2 h, high 4 h) on the operator, then B (1 h) on the helper, finish-to-start, B locked at 09:00Z.
+  // At A's high 4 h, A runs 07:00Z-11:00Z while B keeps its fixed start: B could not keep it, A finishes 2 h later.
+  const plain = (key: string, hours: number, resource: string, range?: { low: number; high: number }): Job => ({ key, title: `Job ${key}`, kind: 'work', equipment: [], isolation: 'none', duration: { value: hours, unit: 'h', calendar: 'working', ...(range === undefined ? {} : { range }), origin: planner }, durationWith: [], needs: onOps([resource]), continuous: true, checks: [], tags: [] })
+  const locked = (): PlanInputs => ({ ...plan([]), jobs: [plain('A', 2, 'ops', { low: 1, high: 4 }), { ...plain('B', 1, 'helper'), lock: { start: at(9) } }], links: [{ from: 'A', to: 'B', type: 'FS', lag: { value: 0, unit: 'h' } }] })
+  const lockPlanned = [rowOf('A', 7, 9), rowOf('B', 9, 10, 'helper')]
+  test('B could not keep its fixed start: A would finish 2 h later', () => {
+    expect(judgeRetiming(locked(), none, lockPlanned, [rowOf('A', 7, 11), rowOf('B', 9, 10, 'helper')], ['A'])).toMatchObject({ ok: true, outcome: { holds: false, lock: { job: 'B', after: 'A' }, by: { value: 2, unit: 'h' } } })
+  })
+  test('a locked job moved off its fixed start is no re-timing: refused', () => {
+    expect(judgeRetiming(locked(), none, lockPlanned, [rowOf('A', 7, 11), rowOf('B', 11, 12, 'helper')], ['A']).ok).toBe(false)
+  })
+})
+
+describe("a re-timing's extra use of what the option already buys, and its cost (M1)", () => {
+  // The fitter (one crew of 3) works 07:00-15:00 local (06:00Z-14:00Z); overtime to 17:00 local (14:00Z-16:00Z)
+  // at NOK 100 per person-hour. W, 3 h from 12:00Z, uses 1 h of overtime (3 person-h, NOK 300); at its high 4 h
+  // it uses 2 h (6 person-h, NOK 600): 3 more person-hours, +NOK 300.
+  const bought = (): PlanInputs => {
+    const base = plan([])
+    return {
+      ...base,
+      calendars: [...base.calendars, { key: 'day', label: 'Day shift', weekly: [{ days: ['mon', 'tue', 'wed', 'thu', 'fri'], from: '07:00', to: '15:00' }], periods: [], except: [], source: planner }, { key: 'late', label: 'Overtime', weekly: [{ days: ['mon', 'tue', 'wed', 'thu', 'fri'], from: '15:00', to: '17:00' }], periods: [], except: [], source: planner }],
+      resources: [...base.resources, { key: 'fitter', label: 'Fitters', kind: 'crew', count: 1, crewSize: 3, calendar: 'day', attributes: [], source: planner }],
+      purchases: [{ key: 'ot', label: 'Fitter overtime', resource: 'fitter', adds: { calendar: 'late' }, replaces: [], price: { perPersonHour: 100 }, allowed: true }],
+      jobs: [{ key: 'F', title: 'Fit', kind: 'work', equipment: [], isolation: 'none', duration: hours(3, { low: 2, high: 4 }), durationWith: [], needs: onOps(['fitter']), continuous: false, checks: [], tags: [] }],
+      goals: [{ metric: 'extra-cost', tolerance: { value: 0, unit: 'NOK' } }],
+    }
+  }
+  const fit = (to: number) => ({ job: 'F', start: at(12), finish: at(to), uses: [{ resource: 'fitter', from: at(12), to: at(14) }, { resource: 'fitter', from: at(14), to: at(to), purchase: 'ot' }] })
+  const variant: CheckVariant = { methods: [], purchases: ['ot'] }
+  test('the re-timing holds, using 3 more overtime person-hours, +NOK 300', () => {
+    expect(judgeRetiming(bought(), variant, [fit(15)], [fit(16)], ['F'])).toMatchObject({ ok: true, outcome: { holds: true }, extra: { cost: 300, bought: [{ purchase: 'ot', value: 3, unit: 'person-h' }] } })
+  })
+})
+
+describe('Train A: the eddy-current test locked at Wed 08:00Z (the adversary\'s B2 repro, through a real Generate)', async () => {
+  const { generate } = await import('../solve/generate.ts')
+  const { searchEngine } = await import('../solve/search.ts')
+  const { laneKCheck, laneKVerify, laneKVerifyBound } = await import('../solve/fixtures/lane-k.ts')
+  const { trainAInputs } = await import('../solve/fixtures/train-a-case.ts')
+  const { atHigh: highFor, retimedRows } = await import('../solve/retime.ts')
+  const base = trainAInputs({ read: true })
+  const flagship: PlanInputs = { ...base, jobs: base.jobs.map(job => job.key === 'CCWHXA-ECT' ? { ...job, lock: { start: '2026-11-18T08:00:00Z' } } : job) }
+  const option = (await generate({ engine: searchEngine(), check: laneKCheck, verify: laneKVerify, verifyBound: laneKVerifyBound }, { inputs: flagship, revision: 1, previous: null, input: { variants: [{ label: 'Swap', methods: [{ choice: 'SWA-method', option: 'swap' }] }] }, by: { kind: 'service', name: 'test' }, signal: new AbortController().signal, seed: 1, evals: 600 })).optionSet.options[0]!
+  test('with the cleaning at its high estimate the test could not keep its fixed start: the cleaning finishes later, by the checker\'s hours', () => {
+    expect(option.status.word).toBe('validated feasible')
+    const found = retimedRows(flagship, highFor(flagship, new Set(['CCWHXA-CLEAN'])), option)
+    if (found === undefined || !('rows' in found)) throw new Error('the repair gave no rows')
+    const cleaning = found.rows.find(row => row.job === 'CCWHXA-CLEAN')!
+    const late = (Date.parse(cleaning.finish) - Date.parse('2026-11-18T08:00:00Z')) / 3_600_000
+    expect(late).toBeGreaterThan(0)
+    expect(judgeRetiming(flagship, option.variant, option.rows, found.rows, ['CCWHXA-CLEAN'])).toMatchObject({ ok: true, outcome: { holds: false, lock: { job: 'CCWHXA-ECT', after: 'CCWHXA-CLEAN' }, by: { value: late, unit: 'h' } } })
   })
 })
