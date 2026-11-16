@@ -670,15 +670,32 @@ export type Decoder = ReturnType<typeof makeDecoder>
  * link, a crew or tool a job before it now holds longer, or a keep-in-service rule. A span limit or maximum
  * lag the edit breaks is not met by moving other jobs back: it stays broken, for the check to report. A
  * start of -1 is a job the option does not have: it goes after the others, as early as it fits.
+ * A job left with no slot in its saved mode takes the mode of the same crews and tools with the most working
+ * time, and the whole schedule is repaired again. That is sound only because it buys nothing new: every mode
+ * of a problem is made of the time its compile allows, and the preview and the re-timing compile an option
+ * with the purchases it already uses, so the job only works into time the option already buys. A job that
+ * still has no slot is left past the horizon (`lost`); the caller says so, never as a stale option.
  */
-export const repair = (prep: Prepared, schedule: Schedule): { decoded: Decoded; evaluation: Evaluation } => {
+export const repair = (prep: Prepared, schedule: Schedule): { decoded: Decoded; evaluation: Evaluation; lost: readonly number[] } => {
   const decoder = makeDecoder(prep)
   const rank = (a: number) => (schedule.start[a]! < 0 ? Infinity : schedule.start[a]!)
   const position = new Int32Array(prep.n)
   prep.topo.forEach((a, i) => { position[a] = i })
-  const list = [...prep.topo].sort((x, y) => rank(x) - rank(y) || position[x]! - position[y]!)
-  const decoded = decoder.decode(precedenceOrder(prep, list), schedule.mode, Int32Array.from(schedule.start, start => Math.max(0, start)))
-  return { decoded, evaluation: decoder.evaluate(decoded) }
+  const list = precedenceOrder(prep, [...prep.topo].sort((x, y) => rank(x) - rank(y) || position[x]! - position[y]!))
+  const floors = Int32Array.from(schedule.start, start => Math.max(0, start))
+  const lostIn = (decoded: Decoded): number[] => Array.from(decoded.finish).flatMap((finish, a) => (finish < 0 || finish >= prep.H || decoded.start[a]! >= prep.H ? [a] : []))
+  let decoded = decoder.decode(list, schedule.mode, floors)
+  const first = lostIn(decoded)
+  if (first.length > 0) {
+    const crews = (mode: { readonly demands: ReadonlyArray<{ readonly resource: number }> }) => mode.demands.map(demand => demand.resource).sort((x, y) => x - y).join(',')
+    const modes = Int32Array.from(schedule.mode, (m, a) => {
+      if (!first.includes(a)) return m
+      const all = prep.problem.activities[a]!.modes
+      return all.reduce((best, mode, k) => (crews(mode) === crews(all[m]!) && prep.cal[mode.calendar]!.list.length > prep.cal[all[best]!.calendar]!.list.length ? k : best), m)
+    })
+    if (modes.some((m, a) => m !== schedule.mode[a])) decoded = decoder.decode(list, modes, floors)
+  }
+  return { decoded, evaluation: decoder.evaluate(decoded), lost: lostIn(decoded) }
 }
 
 /**

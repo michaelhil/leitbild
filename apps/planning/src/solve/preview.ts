@@ -2,6 +2,7 @@
 // inputs, judged by lane K's checker, and a lock judged against the saved plan. Pure: the solver child runs it
 // (pool.ts), so the service keeps none of its memory; the service validates what comes back (wire.ts).
 import { checkPlan, type CheckRow } from '../check/check.ts'
+import { judgeRetiming } from '../check/retime.ts'
 import { planningError } from '../errors.ts'
 import type { Plan, PlanInputs } from '../plan/schema.ts'
 import { nameOf } from '../plan/summary.ts'
@@ -19,6 +20,13 @@ export interface PreviewResult {
   readonly violations: readonly PreviewViolation[]
   readonly nearestAllowed?: { readonly job: string; readonly at: string }
   readonly lockFindings?: readonly PreviewViolation[]
+  /**
+   * A job the edit leaves with no slot for its crews and tools before the horizon, even in their widest mode: a
+   * finding of the preview, never a stale option. `resource` and `after` are lane K's (the crew or tool with no
+   * slot long enough left, and from when), present when lane K can name one. The rows leave out that job and
+   * every job that waits on it, and their "not scheduled" findings.
+   */
+  readonly unplaced?: { readonly job: string; readonly resource?: string; readonly after?: string }
 }
 
 /** The option's schedule back on the compiled grid (date.ts `undate`); `edited` for a preview. */
@@ -68,26 +76,34 @@ const lockAgainstSaved = (inputs: PlanInputs, option: Option, index: CompileInde
   return { job: job.key, findings, ...(nearest < 0 ? {} : { nearest: new Date(index.origin + nearest * index.slotMs).toISOString() }) }
 }
 
-/** The preview of `option` on the (edited) `inputs`. Refusals (the option no longer fits) are planning errors. */
+/**
+ * The preview of `option` on the (edited) `inputs`. A planning error only for a stale option (its rows no
+ * longer read back on the plan, or it no longer compiles); a job the edit leaves without a slot is a finding.
+ */
 export const previewOption = (inputs: PlanInputs, option: Option): PreviewResult => {
   // Repair from the option's own dated schedule: with no edit it comes back exactly; after an edit only
-  // the jobs it forces, and what they push, move.
+  // the jobs it forces, and what they push, move (decode.ts repair, the re-timing's own).
   const { index, prep } = compiled(inputs, option)
   const saved = scheduleOf(prep, index, option, true)
-  const { decoded } = repair(prep, saved)
-  const lost = decoded.finish.findIndex((finish, a) => index.jobs[a] !== null && finish >= prep.H)
-  if (lost >= 0) throw planningError(409, 'option_stale', `After this edit ${nameOf(inputs, index.jobs[lost]!)} has no time left in the plan's horizon; generate again`, { about: [index.jobs[lost]!] })
+  const { decoded, lost } = repair(prep, saved)
+  const placed = (a: number): boolean => !lost.includes(a)
   const schedule = { start: decoded.start, mode: decoded.mode }
   // A preview may show an edit that breaks a limit in every schedule (a test lengthened past the span
   // limit), with no repair penalty: float is measured as for an overrun, which is the same on a schedule
   // that keeps every limit; the check names the break.
-  const rows = withFloat(dateSchedule(prep, index, schedule), totalFloat(prep, index, schedule, true), index)
+  const rows = withFloat(dateSchedule(prep, index, schedule, placed), totalFloat(prep, index, schedule, true), index)
+  const missing = new Set(lost.flatMap(a => (index.jobs[a] === null || index.jobs[a] === undefined ? [] : [index.jobs[a]!])))
   const check = checkPlan(inputs, option.variant, rows)
   const lock = lockAgainstSaved(inputs, option, index, prep, saved)
-  const result = {
+  // The first job left without a slot whose own predecessors are placed, named with lane K's crew and time.
+  const root = lost.filter(a => index.jobs[a] !== null && prep.preds[a]!.every(link => placed(link.from))).sort((x, y) => decoded.start[x]! - decoded.start[y]! || x - y)[0]
+  const judged = root === undefined ? undefined : judgeRetiming(inputs, option.variant, option.rows, rows, [])
+  const named = judged?.ok === true && 'unplaced' in judged.outcome ? judged.outcome.unplaced : undefined
+  const unplaced = root === undefined ? undefined : named ?? { job: index.jobs[root]! }
+  return {
     rows,
-    violations: check.violations.map(violation => ({ code: violation.code, about: violation.about, words: violation.words })),
+    violations: check.violations.filter(violation => !(violation.code === 'not-scheduled' && violation.about.some(key => missing.has(key)))).map(violation => ({ code: violation.code, about: violation.about, words: violation.words })),
     ...(lock === undefined ? {} : { lockFindings: lock.findings, ...(lock.nearest === undefined ? {} : { nearestAllowed: { job: lock.job, at: lock.nearest } }) }),
+    ...(unplaced === undefined ? {} : { unplaced }),
   }
-  return result
 }
