@@ -44,7 +44,7 @@
       {
         "id": "compare-orders",
         "title": "Try both orders in Planning",
-        "instruction": "Choose Open planning demo, then Generate. Select each delivery order to see how it moves the jobs on the timeline. The truck stays on the World map while you work on the schedule.",
+        "instruction": "Choose Open planning demo, then Generate schedules. Select each delivery order to see when deliveries finish and which are on time. The truck stays on the World map while you work on the schedule.",
         "completion": { "kind": "acknowledge" }
       }
     ]

@@ -107,9 +107,10 @@ describe('World featured Scenarios', () => {
     for (const featured of builtinFeaturedScenarioDefinitions.definitions) expect(bundledIds.has(featured.definition.id)).toBe(true)
   })
 
-  test('features the three curated demos in order, each titled by its bundled Scenario', () => {
+  test('features the curated demos in order, each titled by its bundled Scenario', () => {
     expect(builtinFeaturedScenarioDefinitions.definitions.map(featured => featured.definition.id)).toEqual([
       'halden-offsite-power-restoration',
+      'halden-delivery-planning',
       'nordland-corridor-security',
       'halden-emergency',
     ] as never)
@@ -118,6 +119,8 @@ describe('World featured Scenarios', () => {
       expect(featured.definition).toEqual({ moduleId: 'world', type: 'world.scenario', id: scenario.id } as never)
       expect(featured.title).toBe(scenario.title)
     }
+    const planningDemo = builtinFeaturedScenarioDefinitions.definitions.find(({ definition }) => definition.id === 'halden-delivery-planning')!
+    expect(planningDemo.requiresModules?.map(String)).toEqual(['planning'])
   })
 
   test('keeps each demo\'s copy short, plain and free of banned phrases', () => {

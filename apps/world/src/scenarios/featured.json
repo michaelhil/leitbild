@@ -28,6 +28,36 @@
     ]
   },
   {
+    "scenarioId": "halden-delivery-planning",
+    "summary": "Start on the Halden map and compare two delivery schedules for one truck.",
+    "about": "Find the delivery truck and both stops. Open Planning, generate both orders and see how each affects the schedule. This shows how Leitbild uses a running simulation to inform a plan.",
+    "tags": [
+      "Planning",
+      "Map + schedule",
+      "Desktop"
+    ],
+    "requiresModules": [
+      "planning"
+    ],
+    "previews": [
+      {
+        "alt": "A delivery truck and two stops on the Halden map, with the guide’s Open planning demo button.",
+        "width": 1600,
+        "height": 1000,
+        "sources": [
+          {
+            "file": "halden-delivery-planning-960.0fc5bf10.webp",
+            "width": 960
+          },
+          {
+            "file": "halden-delivery-planning-1600.138c6e66.webp",
+            "width": 1600
+          }
+        ]
+      }
+    ]
+  },
+  {
     "scenarioId": "nordland-corridor-security",
     "summary": "Inspect a weakness in northern Norway’s grid, change one independent copy and compare both futures with a paced guide.",
     "about": "Inspect the northern grid with the guide and pause the clock to prepare the comparison. Create an independent copy, make the preventive change in one simulation, then advance both to the same time and compare their actual state. Choose Explore to investigate freely. It shows Leitbild supporting guided what-if comparisons while preserving the original.",

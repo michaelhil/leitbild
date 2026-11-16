@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { moduleFeaturedDefinitionCollectionSchema, type ModuleFeaturedDefinitionCollection } from '@leitbild/contracts'
+import { moduleFeaturedDefinitionCollectionSchema, moduleIdSchema, type ModuleFeaturedDefinitionCollection } from '@leitbild/contracts'
 import { definitionRevisionIdFor } from '@leitbild/module-runtime'
 import { z } from 'zod'
 import { scenarioDefinitionSchema, type ScenarioDefinition } from '../core/scenarios/definition.ts'
@@ -22,6 +22,7 @@ const featuredScenarioSourceSchema = z.array(z.object({
   summary: z.string(),
   about: z.string(),
   tags: z.array(z.string()),
+  requiresModules: z.array(moduleIdSchema).optional(),
   previews: z.array(z.object({
     alt: z.string(),
     width: z.number(),
@@ -72,6 +73,7 @@ export const featuredScenarioDefinitionsFor = (config: {
       summary: entry.summary,
       about: entry.about,
       tags: entry.tags,
+      ...(entry.requiresModules === undefined ? {} : { requiresModules: entry.requiresModules }),
       previews: entry.previews.map(preview => ({
         ...preview,
         sources: preview.sources.map(source => ({ path: `${scenarioPreviewPath}${source.file}`, width: source.width })),
