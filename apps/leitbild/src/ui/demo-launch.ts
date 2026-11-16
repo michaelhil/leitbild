@@ -30,7 +30,7 @@ import { cardCapability } from './card-actions.ts'
 import { CAPACITY_TEXT, plainError } from './error-text.ts'
 import { workspaceUrl } from './launch-destination.ts'
 import {
-  isWorkspaceNotReady, readHostJson, resolveLaunchWorkspace, workspaceLabel,
+  isWorkspaceNotReady, moduleReadiness, moduleTitle, readHostJson, resolveLaunchWorkspace, workspaceLabel, workspaceNotReady,
   type LaunchWorkspaceStep, type RequiredModule, type WorkspaceApi,
 } from './launch-workspace.ts'
 import { demoKey } from './modal-url.ts'
@@ -96,7 +96,7 @@ export type DemoLaunchStep =
   | { readonly kind: 'checking' }
   | LaunchWorkspaceStep
   /** The chosen Workspace lost the demo or scenario; a new one is created next. */
-  | { readonly kind: 'moving'; readonly from: Workspace }
+  | { readonly kind: 'moving'; readonly from: Workspace; readonly missingModule?: string }
   | { readonly kind: 'starting'; readonly workspace: Workspace; readonly original: boolean }
   | { readonly kind: 'opening'; readonly workspace: Workspace; readonly destination: string }
 
@@ -194,8 +194,10 @@ const startFeaturedInWorkspace = async (
   return { workspace, created: context.created, runId: run.id, destination, original, notice: context.notice }
 }
 
-const movedText = (from: Pick<Workspace, 'id' | 'name'>, noun: LaunchNoun): string =>
-  `${workspaceLabel(from)} no longer has this ${noun}, so it starts in a new Workspace.`
+const movedText = (from: Pick<Workspace, 'id' | 'name'>, noun: LaunchNoun, missingModule?: string): string =>
+  missingModule === undefined
+    ? `${workspaceLabel(from)} no longer has this ${noun}, so it starts in a new Workspace.`
+    : `${workspaceLabel(from)} has no ${moduleTitle(missingModule)}. Starting this ${noun} in a new Workspace.`
 
 /** Steps 0–7. Throws `DemoLaunchError`. */
 export const launchDemo = async (request: DemoLaunchRequest, ports: DemoLaunchPorts): Promise<DemoLaunchResult> => {
@@ -234,14 +236,26 @@ export const launchDemo = async (request: DemoLaunchRequest, ports: DemoLaunchPo
     }
 
     let target = await resolve(request.forceNewWorkspace === true)
+    let notice = target.notice
+    const missing = demo?.requiresModules?.find(id => moduleReadiness(target.workspace, id) === 'missing')
+    if (!target.created && missing !== undefined) {
+      notice = movedText(target.workspace, noun, missing)
+      ports.onstep?.({ kind: 'moving', from: target.workspace, missingModule: missing })
+      target = await resolve(true)
+    }
+    const requireModules = (): void => {
+      const unavailable = demo?.requiresModules?.find(id => moduleReadiness(target.workspace, id) !== 'ready')
+      if (unavailable !== undefined) throw workspaceNotReady(target.workspace, unavailable, target.created)
+    }
+    requireModules()
     let workspaceCatalogue = await readWorkspaceCatalogue(target.workspace, moduleId, ports)
     guard()
-    let notice = target.notice
     if (!target.created && !workspaceCatalogue.definitions.some(definition => sameDefinition(definition, featured))) {
       // Deleted in the chosen Workspace: start it in a new one and say so.
       notice = movedText(target.workspace, noun)
       ports.onstep?.({ kind: 'moving', from: target.workspace })
       target = await resolve(true)
+      requireModules()
       workspaceCatalogue = await readWorkspaceCatalogue(target.workspace, moduleId, ports)
       guard()
     }
@@ -274,7 +288,11 @@ export const launchFailureView = (
     case 'webgl': return { text: WEBGL_MISSING_TEXT, actions: [] }
     case 'busy': return { text: `A ${noun} is already starting.`, actions: [] }
     case 'not-featured': return { text: noun === 'demo' ? NOT_FEATURED_TEXT : NOT_LISTED_TEXT, actions: [] }
-    case 'workspace-not-ready': return { text: error.cause instanceof Error ? error.cause.message : 'World is not ready.', actions: ['retry-module', ...open] }
+    case 'workspace-not-ready': {
+      const moduleId = isWorkspaceNotReady(error.cause) ? error.cause.moduleId : 'world'
+      const retry = error.workspace?.modules.some(module => module.moduleId === moduleId && module.status === 'provision_failed')
+      return { text: error.cause instanceof Error ? error.cause.message : 'World is not ready.', actions: retry ? ['retry-module', ...open] : open }
+    }
     case 'not-available': return { text: notAvailableText(noun), actions: open }
     case 'cannot-start': return { text: name ? `This ${noun} cannot be started in ${name} right now.` : `This ${noun} cannot be started right now.`, actions: ['try-again', ...open] }
     case 'outcome-unknown': return { text: name ? `The ${noun} may have started. Open ${name} to check.` : `The ${noun} may have started.`, actions: open }
@@ -303,7 +321,7 @@ export const launchStatusText = (step: DemoLaunchStep, title: string, noun: Laun
     case 'using-workspace': return `Using ${workspaceLabel(step.workspace)}.`
     case 'creating-workspace': return 'Creating a Workspace…'
     case 'created-workspace': return `Created ${workspaceLabel(step.workspace)}.`
-    case 'moving': return movedText(step.from, noun)
+    case 'moving': return movedText(step.from, noun, step.missingModule)
     case 'starting': return step.original ? `Starting the original ${noun}…` : 'Starting the simulation…'
     case 'opening': return 'Opening the simulation…'
   }
