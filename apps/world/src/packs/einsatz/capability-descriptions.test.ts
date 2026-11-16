@@ -23,8 +23,8 @@ const fields = (schema: JsonSchema, path: string): Array<readonly [string, boole
 ]
 
 describe('Einsatz Capability descriptions', () => {
-  test('sixteen Capabilities: five queries, eleven commands, none of the cut ids', () => {
-    expect(einsatzCapabilities).toHaveLength(16)
+  test('seventeen Capabilities: five queries, twelve commands, none of the cut ids', () => {
+    expect(einsatzCapabilities).toHaveLength(17)
     expect(einsatzCapabilities.filter(capability => capability.kind === 'query')).toHaveLength(5)
     const ids = einsatzCapabilities.map(capability => capability.id)
     for (const cut of ['send', 'queue', 'step.remove', 'resume', 'clear', 'hold']) expect(ids).not.toContain(`world.einsatz.unit.${cut}`)

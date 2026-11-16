@@ -275,7 +275,7 @@ describe('halden-border Definitions as demos', () => {
       for (const preset of source.rolePresets ?? []) expect(how).toContain(`"${preset.label}"`)
       expect(how).toContain('role chip')
       expect(how).toMatch(/\bTap\b/)
-      expect(how).toContain('+ Add stop')
+      expect(how).toContain('Add to plan')
       expect(how).toContain(configOf(source).lexicon.send!)
       expect(source.objectives.length).toBeGreaterThanOrEqual(3)
     }

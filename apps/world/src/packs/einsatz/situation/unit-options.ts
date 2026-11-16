@@ -22,9 +22,9 @@ import { stopVerb } from './situation.ts'
  * first, and where not and why. Every candidate is judged by the engine's
  * own order validation on the current state, so a target listed as valid is
  * one `world.einsatz.unit.order` accepts, unless the Run moves on meanwhile.
- * A busy unit names its current job once (`busy`, with the task's priority
- * code), and its target is valid when an order "after" that job or "now",
- * dropping it, would be accepted. ETAs are routed for road units in one router request, as an
+ * Each target has independent verdicts for starting now or adding to the
+ * queue. A busy unit names its current job once, with its priority code.
+ * ETAs are routed for road units in one router request, as an
  * order would route them; a target the router cannot reach is refused with
  * that refusal. Points on open ground are not listed: any may be named.
  */
@@ -47,7 +47,8 @@ export const readUnitOptions = async (input: {
   const type = unitTypeOf(state.catalog, unit)
   const busyTask = isBusy(unit) ? taskIn(state, unit.taskId!) : undefined
   const busy = busyTask === undefined ? null : { taskId: busyTask.id, label: busyTask.label, code: priorityOf(state.catalog, busyTask.priority).code, freeInS: freeInS(state, unit) ?? null }
-  if (type.components.mobility === undefined && type.components.effector === undefined) return { unitId: unit.id, busy, targets: [], refused: [] }
+  const plan = unit.orders.map(({ id, state }) => ({ id, state }))
+  if (type.components.mobility === undefined && type.components.effector === undefined) return { unitId: unit.id, plan, busy, targets: [], refused: [] }
 
   const candidates: StepTarget[] = [
     ...[...state.tasks.values()].filter(task => task.closedAtMs === undefined && inPicture(state.catalog, viewer, task)).map(task => ({ taskId: task.id })),
@@ -55,16 +56,19 @@ export const readUnitOptions = async (input: {
     ...(type.components.effector === undefined ? [] : [...state.combat.tracks.values()].filter(track => track.side === unit.side && track.tier === 'identified').map(track => ({ trackId: track.id }))),
   ]
   const verdict = (target: StepTarget, when: 'now' | 'after' | undefined) => planIntent(state, {
-    kind: 'order', units: [unit.id], stops: [target],
+    kind: 'order', units: [unit.id], stops: [target], expectedPlan: plan,
     ...(when === undefined ? {} : { when }),
     ...(when === 'now' && busyTask !== undefined ? { drops: busyTask.id } : {}),
   }, input.actor)
+  const replaceWhen = plan.length === 0 ? undefined : 'now'
   const judged = candidates.map(target => {
-    const now = verdict(target, busyTask === undefined ? undefined : 'now')
-    if (now.ok) return { target, afterOnly: false, refusal: undefined }
-    if (busyTask === undefined && !hasLoad(unit)) return { target, afterOnly: false, refusal: now.reason }
-    const after = verdict(target, 'after')
-    return { target, afterOnly: after.ok, refusal: after.ok ? undefined : busyTask === undefined ? now.reason : after.reason }
+    // With no plan, an order to add starts immediately and has the same verdict.
+    const replace = verdict(target, replaceWhen)
+    const add = plan.length === 0 ? replace : verdict(target, 'after')
+    return {
+      target, replace, add,
+      refusal: replace.ok || add.ok ? undefined : plan.length === 0 ? replace.reason : add.reason,
+    }
   })
   const accepted = judged.filter(entry => entry.refusal === undefined)
   const from = type.components.mobility === undefined ? undefined : motionOf(state, unit.id).point
@@ -85,13 +89,17 @@ export const readUnitOptions = async (input: {
       target: entry.target,
       verb: stopVerb(state, unit, stepKindFor(entry.target, hasLoad(unit)), entry.target),
       label: targetLabel(state, entry.target),
-      afterOnly: entry.afterOnly,
+      afterOnly: !entry.replace.ok,
+      canReplace: entry.replace.ok,
+      canAdd: entry.add.ok,
+      ...(!entry.replace.ok ? { replaceRefusal: messageOf(entry.replace.reason) } : {}),
+      ...(!entry.add.ok ? { addRefusal: messageOf(entry.add.reason) } : {}),
       etaS: eta === undefined ? 0 : eta.seconds,
     })
   }
   targets.sort((a, b) => a.etaS - b.etaS || a.label.localeCompare(b.label, 'en', { numeric: true }))
   // Named targets do not cover open ground. Check that order separately
   // before reporting that Dispatch has nowhere to send the unit.
-  const point = from === undefined || targets.length > 0 ? undefined : verdict({ point: from }, busyTask === undefined ? undefined : 'now')
-  return { unitId: unit.id, busy, targets, refused, ...(point?.ok === false ? { moveRefusal: messageOf(point.reason) } : {}) }
+  const point = from === undefined || targets.length > 0 ? undefined : verdict({ point: from }, replaceWhen)
+  return { unitId: unit.id, plan, busy, targets, refused, ...(point?.ok === false ? { moveRefusal: messageOf(point.reason) } : {}) }
 }

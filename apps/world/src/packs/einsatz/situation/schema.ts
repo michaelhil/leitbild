@@ -2,7 +2,7 @@ import { z } from 'zod'
 import { commandIdSchema, idSchema } from '../../../core/model/index.ts'
 import { configIdSchema } from '../config-schema.ts'
 import { unitPhases } from '../lexicon.ts'
-import { stopSchema } from '../order-schema.ts'
+import { planExpectationSchema, stopSchema } from '../order-schema.ts'
 import { etaSchema, priorityRefSchema } from '../recommendation-schema.ts'
 import { einsatzRefusalCodeSchema } from '../refusal.ts'
 import { stepStates } from '../steps.ts'
@@ -220,6 +220,7 @@ export type UnitOptionsInput = z.output<typeof unitOptionsInputSchema>
 /** The `world.einsatz.unit.options` answer: where the unit may be ordered now, and where not and why. */
 export const unitOptionsSchema = z.object({
   unitId: idSchema.describe('The unit the answer is for.'),
+  plan: planExpectationSchema,
   busy: z.object({
     taskId: idSchema.describe('The task the unit works for now; an order with when "now" drops it.'),
     label: text.describe('That task\'s label.'),
@@ -232,6 +233,10 @@ export const unitOptionsSchema = z.object({
     verb: z.enum(stopVerbs).describe('What the unit would do there.'),
     label: text.describe('The target\'s label.'),
     afterOnly: z.boolean().describe('True when this stop requires when: after. It cannot replace the current job or delivery.'),
+    canReplace: z.boolean().describe('Whether this target can start now or replace the active stop.'),
+    canAdd: z.boolean().describe('Whether this target can join the end of the plan.'),
+    replaceRefusal: text.optional().describe('Why this target cannot replace the active stop.'),
+    addRefusal: text.optional().describe('Why this target cannot join the end of the plan.'),
     etaS: seconds.describe('Travel estimate from the current position, including turnout; excludes time on earlier stops.'),
   }).strict()).describe('Valid targets, nearest first; for a busy unit, those an order "after" its current job or "now" would take.'),
   refused: z.array(z.object({

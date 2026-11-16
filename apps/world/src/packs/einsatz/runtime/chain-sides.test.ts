@@ -90,6 +90,7 @@ describe('Einsatz job chains in a sided role Run', () => {
       const orders: ReadonlyArray<readonly [string, unknown]> = [
         [ids.order, { units: ['nc'], stops: [{ point: point(-2_600) }], when: 'after' }],
         [ids.stopRemove, { unitId: 'nc', stopId: 'step-2' }],
+        [ids.planReorder, { unitId: 'nc', expectedPlan: [{ id: 'step-1', state: 'active' }, { id: 'step-2', state: 'queued' }], stopIds: ['step-2'] }],
         [ids.recall, { unitId: 'nc' }],
       ]
       for (const [capabilityId, input] of orders) {

@@ -257,7 +257,7 @@
   const targetingRender = $derived<MapTargetingRender | null>(targeting === null ? null : {
     fromId: targeting.from,
     complete: targeting.complete,
-    targets: new Map(targeting.targets.map(target => [target.id as string, { tag: target.tag ?? null, anchor: tagAnchors.get(target.id) ?? 'middle', refused: target.tone === 'refused' }])),
+    targets: new Map(targeting.targets.map(target => [target.id as string, { tag: target.tag ?? null, anchor: tagAnchors.get(target.id) ?? 'middle', tone: target.tone ?? 'valid' }])),
   })
   /** About how wide a tag is drawn: 13 px text wrapped at 22 em, with its padding. */
   const tagWidthPx = (tag: string): number => Math.min(tag.length * 7.5, 22 * 13) + 12
@@ -287,11 +287,11 @@
     const next = tagAnchorsNow()
     if (next.size !== tagAnchors.size || [...next].some(([id, anchor]) => tagAnchors.get(id) !== anchor)) tagAnchors = next
   }
-  /** The objects of a tapped stack a chooser offers: while an order is armed whose targets are known, only its valid targets. */
+  /** The stack chooser offers the valid and assigned targets when targeting is complete. */
   const stackChoices = (stack: ReadonlyArray<OperationalObject>): ReadonlyArray<OperationalObject> => {
     if (targeting === null || !targeting.complete) return stack
-    const valid = new Set(targeting.targets.filter(target => target.tone !== 'refused').map(target => target.id as string))
-    return stack.filter(object => valid.has(object.id))
+    const pickable = new Set(targeting.targets.filter(target => target.tone !== 'refused').map(target => target.id as string))
+    return stack.filter(object => pickable.has(object.id))
   }
   /** Whether a line follows the pointer: a panel's armed order while the pointer is a mouse. */
   const pointerLineWanted = (pointerType: string | null): boolean => targeting !== null && hoverCardsFor(pointerType)

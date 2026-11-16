@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'bun:test'
 import { packMapFeatureSchema } from '../../core/packs/protocol.ts'
 import type { IsoTimestamp } from '../../core/model/index.ts'
-import { plannedPathFeatures, plannedPaths } from './chain-path.ts'
+import { plannedPathFeatures, plannedPaths, waypointItemId } from './chain-path.ts'
 import type { Intent } from './engine/intents.ts'
 import type { EngineState } from './engine/model.ts'
 import { engineObjects } from './engine/objects.ts'
@@ -61,11 +61,32 @@ describe('Einsatz job chain paths', () => {
     expect(plannedPathFeatures(objectsOf(state), 'units')).toHaveLength(2)
     // Queued segments are dashed and thinner than a route; the selected unit's are a little stronger, above every other path.
     const line = (selectedObjectId?: string) => presentation.mapFeatures!({ objects, ...(selectedObjectId === undefined ? {} : { selectedObjectId }) })
+      .filter(feature => feature.geometry.type === 'LineString')
       .map(feature => [feature.lineWidth, feature.lineOpacity, feature.lineDashed, feature.sortKey])
     expect(line()).toEqual([[1.5, 0.45, true, 22], [1.5, 0.45, true, 22]])
     expect(line('c1')).toEqual([[2.5, 0.9, true, 23], [2.5, 0.9, true, 23]])
     expect(line('far')).toEqual(line())
     // Every planned segment parses as a Pack map feature, the dash included.
     for (const feature of presentation.mapFeatures!({ objects, selectedObjectId: 'c1' })) expect(packMapFeatureSchema.safeParse(feature).success).toBe(true)
+  })
+
+  test('coordinate stops of the selected unit have red pins that select their exact plan entry', async () => {
+    const state = await runAll(emptyState(), [
+      newUnit('c1', types.roadCarrier, at(0)),
+      newUnit('c2', types.roadCarrier, at(-0.02)),
+      send(['c1'], { point: at(0.01) }),
+      send(['c2'], { point: at(-0.01) }),
+      queue('c1', { point: at(0.02) }),
+    ])
+    const objects = objectsOf(state)
+    const points = (selectedObjectId?: string) => einsatzPackView.presentation.mapFeatures!({
+      objects, ...(selectedObjectId === undefined ? {} : { selectedObjectId }),
+    }).filter(feature => feature.geometry.type === 'Point')
+    expect(points()).toEqual([])
+    expect(points('c1').map(feature => packMapFeatureSchema.parse(feature))).toMatchObject([
+      { geometry: at(0.01), color: '#be203c', selection: { panelId: 'einsatz.dispatch', itemId: waypointItemId('c1', 'step-1') } },
+      { geometry: at(0.02), color: '#be203c', selection: { panelId: 'einsatz.dispatch', itemId: waypointItemId('c1', 'step-2') } },
+    ])
+    expect(points('c2').map(feature => feature.selection?.itemId)).toEqual([waypointItemId('c2', 'step-1')])
   })
 })

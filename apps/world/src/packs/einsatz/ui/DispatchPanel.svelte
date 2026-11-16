@@ -3,85 +3,55 @@
   import { objectIdSchema, type ObjectId } from '../../../core/model/index.ts'
   import type { PackMapTarget } from '../../../core/packs/protocol.ts'
   import { loadMapSymbols } from '../../../ui/map-runtime/map-symbols.ts'
-  import type { MapPrompt, SurfacePanelProps } from '../../../ui/surface-panel-interaction.ts'
+  import type { SurfacePanelProps } from '../../../ui/surface-panel-interaction.ts'
   import { runOnMount } from '../../../ui/svelte-lifecycle.svelte.ts'
+  import { waypointItemId } from '../chain-path.ts'
   import { neutralLexicon } from '../lexicon.ts'
   import type { Stop, UnitOrderInput } from '../order-schema.ts'
   import type { Situation, SituationCall, UnitOptions } from '../situation/schema.ts'
   import { dispatchMapCover, panelBottomClearancePx, panelEdgeGapPx, panelLayoutFor, panelTopClearancePx, sheetOpen, shownClearOfPanel } from './dispatch-layout.ts'
   import { createIconCache, runEinsatzClient, situationIconIds, type CommandOutcome } from './einsatz-client.ts'
   import {
-    armedOrderWith,
-    busyChoices,
     cardFor,
     contactRows,
-    deliverToOrder,
     dispatchKindOf,
     dispatchWords,
     edgeTabText,
     einsatzRecordsKey,
     emptySelectionText,
     jobText,
-    movePromptText,
     overview,
     ownReceipt,
     pinProposal,
     receiptsFromSituation,
     receiptText,
-    receiptUndoable,
     targetingFor,
     withReceipts,
-    type ArmedOrder,
     type PinnedProposal,
     type Receipt,
   } from './presenters.ts'
   import {
     activationActs,
+    canTarget,
     initialSelection,
+    moveQueuedStop,
+    planExpectation,
     reduceSelection,
     selectedObjectOf,
     selectionChangeEvent,
-    stopObjectId,
+    stopKey,
     type ClickedObject,
-    type CurrentJob,
     type DispatchObjectKind,
     type SelectionEffect,
     type SelectionEvent,
     type SelectionState,
   } from './selection.ts'
+  import DispatchDecision from './DispatchDecision.svelte'
   import ContactsSection from './ContactsSection.svelte'
   import OverviewLists from './OverviewLists.svelte'
   import SelectionCard from './SelectionCard.svelte'
 
-  /**
-   * The Einsatz Dispatch panel: the Pack's one surface panel and its only
-   * list. A thin view over the pure modules: the selection table
-   * (`selection.ts`) decides what each click does, the presenters what is
-   * shown, the client what is read and sent, the layout where it lies.
-   *
-   * It holds the Run's situation, read on open and whenever an Einsatz
-   * record the screen sees changes (`einsatzRecordsKey`: Einsatz announces
-   * no Pack data revision); the shown unit's options, read when its card
-   * opens, again on arming, and on every such change while its card shows,
-   * with the armed list's order fixed at arming; and the
-   * call card's proposal, pinned when the card opens and read again only on
-   * Refresh, which keeps the old answer greyed until the new one arrives. It
-   * never holds the configuration.
-   *
-   * Every map click on an Einsatz object reaches it: the surface shares the
-   * selection (`selectedObjectId`) or, with one of its units selected,
-   * hands it the click (`onMapTarget`). Both become one `click` of the
-   * selection table, as a row tap does; open ground with a call or a site
-   * shown clears the shared selection, which the table reads as S0. While a
-   * unit is armed it hands the map the targeting (halos with ETA tags, a
-   * refused target's reason) and the Move or busy prompt, and forgets a
-   * prompt the operator dismissed (`onDismiss`). Esc goes one level back,
-   * as the banner's and the card's × do.
-   *
-   * No card, row or footer command acts within the double-click interval of
-   * the last one that acted (`activationActs`), so a double-click never
-   * reaches what took the first click's place; every other click acts.
-   */
+  // Map clicks, the unit grid, and keyboard-accessible target rows share the same selection rules.
   const props: SurfacePanelProps = $props()
 
   const client = $derived(runEinsatzClient(props.simulationRunId))
@@ -92,7 +62,7 @@
   let problem = $state<string | null>(null)
   let selection = $state.raw<SelectionState>(initialSelection)
   let options = $state.raw<UnitOptions | null>(null)
-  let armedOrder = $state.raw<ArmedOrder | null>(null)
+  let unitPending = $state(false)
   let pinned = $state.raw<PinnedProposal | null>(null)
   let opened = $state.raw<ReadonlySet<string>>(new Set())
   let lastSeenCall = $state.raw<SituationCall | null>(null)
@@ -118,25 +88,25 @@
   }
   const messageOf = (error: unknown): string => error instanceof Error ? error.message : String(error)
 
-  const layout = $derived(panelLayoutFor(surfaceWidth, surfaceHeight))
+  const selectedUnit = $derived.by(() => {
+    const selected = selection.selection
+    return selected.kind === 'unit' ? situation?.units.find(unit => unit.id === selected.unitId) : undefined
+  })
+  const decision = $derived(selection.selection.kind === 'unit' ? selection.selection.decision : undefined)
+  const layout = $derived(panelLayoutFor(surfaceWidth, surfaceHeight, selection.selection.kind === 'unit'))
   const open = $derived(layout.mode === 'docked' || sheetOpen(sheetOpenedByOperator, selectedObjectOf(selection.selection) !== null))
   const elapsedS = $derived.by(() => {
     void clock
     const now = props.currentTime()
     return readAtRunMs === null || now === undefined ? 0 : Math.max(0, (Date.parse(now) - readAtRunMs) / 1_000)
   })
-  const card = $derived(situation === null ? null : cardFor(situation, selection.selection, { options, armedOrder, pinned, opened, lastSeenCall, elapsedS }))
+  const card = $derived(situation === null ? null : cardFor(situation, selection.selection, { options, pinned, opened, lastSeenCall, elapsedS }))
   const lists = $derived(situation === null ? null : overview(situation, selection.selection, opened, elapsedS))
   const contacts = $derived.by(() => {
     if (lists === null || !lists.contacts) return []
     void clock
     const now = props.currentTime()
     return contactRows(props.objects, now === undefined ? null : Date.parse(now), selectedObjectOf(selection.selection))
-  })
-  /** Wall time, on the panel's clock, for the receipts' Undo window. */
-  const nowMs = $derived.by(() => {
-    void clock
-    return Date.now()
   })
   const missingArtwork = $derived.by(() => {
     void iconRevision
@@ -180,12 +150,8 @@
     const read = ++optionsRead
     try {
       const answer = await client.unitOptions(unitId)
-      if (disposed || read !== optionsRead) return
-      options = answer
-      const armed = selection.selection
-      if (armed.kind !== 'armed' || armed.unitId !== answer.unitId) return
-      armedOrder = armedOrderWith(armedOrder, answer)
-      send({ kind: 'current-job', unitId: answer.unitId, job: answer.busy })
+      const selected = selection.selection
+      if (!disposed && read === optionsRead && selected.kind === 'unit' && selected.unitId === unitId) options = answer
     } catch (error) {
       if (!disposed && read === optionsRead) feedback = messageOf(error)
     }
@@ -210,12 +176,10 @@
   // ——— The selection table ———
 
   const send = (event: SelectionEvent): void => {
-    const stepped = reduceSelection(selection, event, options)
-    const before = selection.selection
+    if (unitPending && (event.kind === 'target-row' || event.kind === 'stop' || event.kind === 'decide' ||
+      (event.kind === 'click' && event.on.kind !== 'unit' && selectedUnit !== undefined))) return
+    const stepped = reduceSelection(selection, event, options, selectedUnit)
     selection = stepped.state
-    const after = stepped.state.selection
-    if (after.kind !== 'armed') armedOrder = null
-    else if (before.kind !== 'armed' || before.unitId !== after.unitId) armedOrder = options?.unitId === after.unitId ? armedOrderWith(null, options) : null
     for (const effect of stepped.effects) perform(effect)
   }
 
@@ -224,6 +188,7 @@
       case 'select':
         feedback = null
         confirming = null
+        options = null
         props.onSelectObject(effect.objectId === null ? null : objectIdSchema.parse(effect.objectId))
         return
       case 'options':
@@ -233,18 +198,25 @@
         opened = new Set([...opened, effect.callId])
         void pin(effect.callId)
         return
-      case 'submit':
-        void submit(effect.unitId, effect.target, effect.when, effect.drops)
+      case 'submit': {
+        const unitId = effect.input.units[0]!
+        void editUnit(unitId, async () => await client.order(effect.input), {
+          unitIds: [unitId], target: stopLabel(effect.input.stops[0]!), dropped: effect.job === null ? null : jobText(effect.job),
+        })
         return
-      case 'late-refusal':
-        feedback = `${unitLabel(effect.unitId)} → ${stopLabel(effect.target)}: ${effect.text}`
+      }
+      case 'remove':
+        void editUnit(effect.unitId, async () => await client.removeStop(effect.unitId, effect.stopId, effect.expectedPlan))
+        return
+      case 'feedback':
+        feedback = effect.text
         return
     }
   }
 
   const unitLabel = (unitId: string): string => situation?.units.find(unit => unit.id === unitId)?.label ?? unitId
   const stopLabel = (stop: Stop): string => {
-    const listed = options?.targets.find(target => JSON.stringify(target.target) === JSON.stringify(stop))?.label
+    const listed = options?.targets.find(target => stopKey(target.target) === stopKey(stop))?.label
     if (listed !== undefined) return listed
     if ('taskId' in stop) return situation?.calls.find(call => call.id === stop.taskId)?.label ?? stop.taskId
     if ('siteId' in stop) return situation?.sites.find(site => site.id === stop.siteId)?.label ?? stop.siteId
@@ -260,20 +232,8 @@
     }
   }
 
-  /** The armed unit's order for one stop: `now` drops exactly the job the busy prompt named. */
-  const submit = async (unitId: string, target: Stop, when: UnitOrderInput['when'] | null, drops: CurrentJob | null): Promise<void> => {
-    const input: UnitOrderInput = { units: [unitId], stops: [target], ...(when === null ? {} : { when }), ...(drops === null ? {} : { drops: drops.taskId }) }
-    const outcome = await outcomeOf(async () => await client.order(input))
-    if (disposed) return
-    send({ kind: 'result', unitId, target, outcome: outcome.ok ? { ok: true } : { ok: false, code: outcome.code, text: outcome.text }, atMs: Date.now() })
-    if (outcome.ok) {
-      const dropped = drops === null ? null : jobText(drops)
-      receipts = withReceipts(receipts, [ownReceipt({ commandId: outcome.commandId, unitIds: [unitId], unitLabel: unitLabel(unitId), targetLabel: stopLabel(target), dropped, atMs: Date.now() })])
-    }
-  }
-
   /** A card's command: a refusal shows in the card's slot; an accepted order leaves a receipt. */
-  const command = async (run: () => Promise<CommandOutcome>, receipt: { readonly unitIds: ReadonlyArray<string>; readonly target: string } | null): Promise<void> => {
+  const command = async (run: () => Promise<CommandOutcome>, receipt: { readonly unitIds: ReadonlyArray<string>; readonly target: string; readonly dropped?: string | null } | null): Promise<void> => {
     feedback = null
     const outcome = await outcomeOf(run)
     if (disposed) return
@@ -282,7 +242,7 @@
       return
     }
     if (receipt !== null) {
-      receipts = withReceipts(receipts, [ownReceipt({ commandId: outcome.commandId, unitIds: receipt.unitIds, unitLabel: receipt.unitIds.map(unitLabel).join(', '), targetLabel: receipt.target, dropped: null, atMs: Date.now() })])
+      receipts = withReceipts(receipts, [ownReceipt({ commandId: outcome.commandId, unitIds: receipt.unitIds, unitLabel: receipt.unitIds.map(unitLabel).join(', '), targetLabel: receipt.target, dropped: receipt.dropped ?? null, atMs: Date.now() })])
     }
   }
 
@@ -290,9 +250,52 @@
     void command(async () => await client.order(input), { unitIds: input.units, target: input.stops.map(stopLabel).join(' → ') })
   }
 
-  const undoReceipt = (receipt: Receipt): void => {
-    for (const unitId of receipt.unitIds) void command(async () => await client.undo(unitId, receipt.commandId), null)
+  const editUnit = async (unitId: string, run: () => Promise<CommandOutcome>, receipt: Parameters<typeof command>[1] = null): Promise<void> => {
+    if (unitPending) return
+    unitPending = true
+    try {
+      await command(run, receipt)
+      if (!disposed) {
+        await readSituation()
+        const shown = selection.selection
+        if (shown.kind === 'unit' && shown.unitId === unitId) await readOptions(unitId)
+      }
+    } finally { unitPending = false }
   }
+
+  const moveStop = (stopId: string, direction: -1 | 1): void => {
+    const unit = selectedUnit
+    if (!unit || !canTarget(unit)) return
+    const expectedPlan = planExpectation(unit.plan)
+    const stopIds = moveQueuedStop(expectedPlan, stopId, direction)
+    if (stopIds === null) return
+    void editUnit(unit.id, async () => await client.reorder(unit.id, expectedPlan, stopIds))
+  }
+
+  const decisionTitle = $derived(decision === undefined ? '' : decision.kind === 'remove'
+    ? decision.stops.length === 1 ? 'Remove stop?' : 'Which stop should be removed?'
+    : decision.assigned ? 'Change the plan?' : 'Move here?')
+  const decisionText = $derived(decision === undefined ? '' : decision.kind === 'remove'
+    ? `${selectedUnit?.label ?? 'Unit'}: ${decision.stops.length === 1 ? `Stop ${decision.stops[0]!.index} · ` : ''}${decision.stops[0]?.label ?? 'selected stop'}`
+    : `${selectedUnit?.label ?? 'Unit'} → ${stopLabel(decision.target)}${decision.currentLabel === null ? '' : ` · Current: ${decision.currentLabel}`}`)
+  const decisionActions = $derived.by(() => {
+    if (!decision) return []
+    if (decision.kind === 'remove') return decision.stops.map(stop => ({
+      label: decision.stops.length === 1 ? 'Remove stop' : `Remove stop ${stop.index}`,
+      danger: true, run: () => send({ kind: 'decide', choice: { remove: stop.id } }),
+    }))
+    const replace = {
+      label: decision.assigned ? 'Replace current target' : 'Move here',
+      run: () => send({ kind: 'decide', choice: 'replace' }),
+      disabled: !decision.replace,
+      ...(!decision.replace ? { reason: decision.replaceReason ?? 'The current stop cannot be replaced.' } : {}),
+    }
+    return decision.assigned ? [replace, {
+      label: 'Add to plan', run: () => send({ kind: 'decide', choice: 'add' }),
+      disabled: !decision.add,
+      ...(!decision.add ? { reason: decision.addReason ?? 'This stop cannot be added to the plan.' } : {}),
+    }] : [replace]
+  })
 
   const toggleChip = (unitId: string): void => {
     const current = pinned
@@ -303,16 +306,10 @@
     pinned = { ...current, dropped }
   }
 
-  /** The map point of a stop: its own point, or the position of the object it names. */
-  const pointOf = (stop: Stop) => {
-    if ('point' in stop) return stop.point
-    const id = stopObjectId(stop)
-    return props.objects.find(object => object.id === id)?.spatial.position?.point
-  }
-
   /** A row tap: that object's card, and a pan only when the map shows it under the panel or not at all. */
   const openRow = (object: ClickedObject): void => {
     send({ kind: 'click', on: object, atMs: Date.now() })
+    if (object.kind !== 'unit' && selectedUnit !== undefined) return
     const view = props.mapView
     const point = props.objects.find(entry => entry.id === object.id)?.spatial.position?.point
     if (view === null || point === undefined || surfaceWidth <= 0 || surfaceHeight <= 0) return
@@ -322,7 +319,9 @@
   }
 
   /** A map click while one of the Pack's units is selected: the surface hands every one to the panel and never sends. */
-  const onMapTarget = (_selectedId: ObjectId, target: PackMapTarget): void => {
+  const onMapTarget = (selectedId: ObjectId, target: PackMapTarget): void => {
+    const shown = selection.selection
+    if (shown.kind !== 'unit' || shown.unitId !== selectedId) return
     if (target.kind === 'point') {
       send({ kind: 'click', on: { kind: 'ground', point: target.point }, atMs: Date.now() })
       return
@@ -335,7 +334,7 @@
 
   const fold = (): void => {
     sheetOpenedByOperator = false
-    while (selectedObjectOf(selection.selection) !== null) send({ kind: 'back' })
+    send({ kind: 'back' })
   }
 
   const editable = (target: EventTarget | null): boolean =>
@@ -357,11 +356,10 @@
     panelObserver.observe(element)
     const ticker = window.setInterval(() => {
       clock += 1
-      send({ kind: 'tick', atMs: Date.now() })
     }, 1_000)
     // Esc is a desktop accelerator for the banner's and the card's ×; it never takes a key typed into a field.
     const onKeydown = (event: KeyboardEvent): void => {
-      if (event.key !== 'Escape' || event.defaultPrevented || !props.keysActive || editable(event.target)) return
+      if (event.key !== 'Escape' || event.defaultPrevented || decision !== undefined || !props.keysActive || editable(event.target)) return
       if (selectedObjectOf(selection.selection) === null) return
       event.preventDefault()
       send({ kind: 'back' })
@@ -375,7 +373,6 @@
       surfaceObserver.disconnect()
       panelObserver.disconnect()
       release()
-      props.onMapPrompt(null)
       props.onMapTargeting(null)
     }
   })
@@ -387,7 +384,7 @@
     untrack(() => {
       void readSituation()
       const shown = selection.selection
-      if (shown.kind === 'unit' || shown.kind === 'armed') void readOptions(shown.unitId)
+      if (shown.kind === 'unit') void readOptions(shown.unitId)
     })
   })
 
@@ -409,49 +406,27 @@
     if (row !== undefined) untrack(() => { lastSeenCall = row })
   })
 
-  // The armed unit's halos and tags; sent again only when they change.
+  // The selected unit’s valid targets and current plan markers.
   let shownTargeting: string | null = null
   $effect(() => {
-    const targeting = targetingFor(selection.selection, options)
+    const targeting = targetingFor(selectedUnit, options)
     const key = targeting === null ? null : JSON.stringify(targeting)
     if (key === shownTargeting) return
     shownTargeting = key
     untrack(() => props.onMapTargeting(targeting))
   })
 
-  // The armed unit's Move or busy prompt, offset from its point; sent again only when it changes.
-  let shownPrompt: string | null = null
-  /** The surface dropped the prompt the operator dismissed: the table forgets it, and a new prompt is sent afresh even where it reads the same. */
-  const promptDismissed = (): void => {
-    shownPrompt = null
-    send({ kind: 'prompt-dismissed' })
-  }
+  // Ground waypoints have no object id. They select their stable plan stop instead.
   $effect(() => {
-    const shown = selection.selection
-    const current = situation
-    let prompt: MapPrompt | null = null
-    if (shown.kind === 'armed' && shown.prompt !== null && current !== null) {
-      if (shown.prompt.kind === 'move') {
-        prompt = { point: shown.prompt.point, options: [{ label: movePromptText(current, shown.unitId), onConfirm: () => send({ kind: 'prompt', choice: 'move' }) }], onDismiss: promptDismissed }
-      } else if (shown.prompt.job !== null) {
-        const choices = busyChoices(shown.prompt.job)
-        const point = pointOf(shown.prompt.target)
-        if (point !== undefined) {
-          prompt = {
-            point,
-            options: [
-              { label: choices.after, onConfirm: () => send({ kind: 'prompt', choice: 'after' }) },
-              ...(shown.prompt.afterOnly ? [] : [{ label: choices.now, tone: 'warning' as const, onConfirm: () => send({ kind: 'prompt', choice: 'now' }) }]),
-            ],
-            onDismiss: promptDismissed,
-          }
-        }
-      }
-    }
-    const key = prompt === null ? null : JSON.stringify([prompt.point.coordinates, prompt.options.map(option => option.label)])
-    if (key === shownPrompt) return
-    shownPrompt = key
-    untrack(() => props.onMapPrompt(prompt))
+    const item = props.selectedItemId
+    if (item === null) return
+    untrack(() => {
+      const unit = selectedUnit
+      const stop = unit?.plan.find(stop => 'point' in stop.target && waypointItemId(unit.id, stop.id) === item)
+      if (stop === undefined) return
+      send({ kind: 'stop', stopId: stop.id })
+      props.onSelectItem(null)
+    })
   })
 
   // The camera centres clear of the docked panel or the open sheet.
@@ -469,9 +444,11 @@
   style:width={layout.mode === 'docked' ? `${layout.widthPx}px` : null}
   style:height={layout.mode === 'sheet' && open ? `${layout.heightPx}px` : null}
   style:top={layout.mode === 'docked' ? `${panelTopClearancePx}px` : null}
-  style:bottom={layout.mode === 'docked' ? `${panelBottomClearancePx}px` : '0px'}
+  style:bottom={layout.mode === 'docked' ? null : '0px'}
+  style:max-height={layout.mode === 'docked' ? `${Math.max(0, surfaceHeight - panelTopClearancePx - panelBottomClearancePx)}px` : null}
   style:padding-bottom={layout.mode === 'sheet' && open ? `${panelBottomClearancePx}px` : null}
   style:right={layout.mode === 'docked' ? `${panelEdgeGapPx}px` : '0px'}
+  class:unit-selected={selection.selection.kind === 'unit'}
   aria-label={dispatchWords.panel}
 >
   {#if !open}
@@ -490,7 +467,7 @@
     {#if situation === null}
       {#if problem === null}<p class="loading">{dispatchWords.loading}</p>{/if}
     {:else}
-      <div class="selection">
+      <div class="selection" aria-busy={unitPending}>
         {#if card !== null}
           <SelectionCard
             {card}
@@ -498,13 +475,10 @@
             {icon}
             confirming={confirming !== null && confirming === card.id}
             back={act(() => send({ kind: 'back' }))}
-            arm={act((unitId: string, when: 'after' | null) => send({ kind: 'arm', unitId, when }))}
-            targetRow={act((target: Stop) => send({ kind: 'target-row', target }))}
-            promptChoice={act((choice: 'after' | 'now') => send({ kind: 'prompt', choice }))}
-            recall={act((unitId: string) => { void command(async () => await client.recall(unitId), { unitIds: [unitId], target: situation === null ? dispatchWords.panel : situation.words.return }) })}
-            undo={act((unitId: string, commandId: string) => { void command(async () => await client.undo(unitId, commandId), null) })}
-            removeStop={act((unitId: string, stopId: string) => { void command(async () => await client.removeStop(unitId, stopId), null) })}
-            deliverTo={act((unitId: string, siteId: string) => { const unit = situation?.units.find(entry => entry.id === unitId); if (unit !== undefined) order(deliverToOrder(unit, siteId)) })}
+            targetRow={(target: Stop) => send({ kind: 'target-row', target })}
+            chooseStop={(stopId: string) => send({ kind: 'stop', stopId })}
+            {moveStop}
+            recall={(unitId: string) => { void editUnit(unitId, async () => await client.recall(unitId), { unitIds: [unitId], target: situation === null ? dispatchWords.panel : situation.words.return }) }}
             order={act(order)}
             toggleChip={act(toggleChip)}
             refresh={act((callId: string) => { void pin(callId) })}
@@ -520,26 +494,23 @@
       </div>
       {#if lists !== null}
         <div class="lists">
-          <OverviewLists view={lists} {icon} open={act(openRow)} />
+          <OverviewLists view={lists} {icon} open={openRow} />
           {#if lists.contacts && !lists.folded}
-            <ContactsSection heading={neutralLexicon.tracks} empty={neutralLexicon.noTracks} rows={contacts} {icon} open={act(openRow)} />
+            <ContactsSection heading={neutralLexicon.tracks} empty={neutralLexicon.noTracks} rows={contacts} {icon} open={openRow} />
           {/if}
         </div>
       {/if}
       {#if missingArtwork !== null}<p class="artwork">{missingArtwork}</p>{/if}
       {#if receipts.length > 0}
-        <ol class="receipts" aria-label={dispatchWords.undo}>
-          {#each receipts as receipt (receipt.commandId)}
-            <li>
-              <span class="receipt-text">{receiptText(receipt)}</span>
-              {#if receiptUndoable(receipt, nowMs)}<button type="button" onclick={act(() => undoReceipt(receipt))}>{receipt.undo}</button>{/if}
-            </li>
-          {/each}
-        </ol>
+        <p class="receipt-line latest" role="status">{receiptText(receipts[0]!)}</p>
       {/if}
     {/if}
   {/if}
 </section>
+
+{#if decision !== undefined}
+  <DispatchDecision title={decisionTitle} text={decisionText} actions={decisionActions} cancel={() => send({ kind: 'decide', choice: 'cancel' })} />
+{/if}
 
 <style>
   /* Its offsets, width and the open sheet's height come from dispatch-layout.ts. */
@@ -566,21 +537,18 @@
   .dispatch[data-mode='sheet'].folded { left: auto; padding: 0; border-radius: 10px 0 0 0; }
   .head { flex: none; display: flex; align-items: center; gap: 8px; }
   h2 { flex: 1; margin: 0; font-size: 12px; font-weight: 750; letter-spacing: .08em; text-transform: uppercase; color: var(--muted); }
-  /* The panel has a definite height in both modes, so the selection block's share resolves and it scrolls. */
-  .selection { flex: 0 1 auto; max-height: 70%; min-height: 0; overflow: auto; overscroll-behavior: contain; }
-  .lists { flex: 1 1 0; min-height: 0; overflow: auto; overscroll-behavior: contain; display: grid; align-content: start; gap: 4px; }
+  .selection { flex: 0 1 auto; max-height: min(46dvh, 400px); min-height: 0; overflow: auto; overscroll-behavior: contain; }
+  .unit-selected .selection { max-height: none; flex: 1 1 auto; }
+  .unit-selected .lists { flex: none; }
+  .lists { flex: 1 1 auto; min-height: 0; overflow: auto; overscroll-behavior: contain; display: grid; align-content: start; gap: 4px; }
   .hint { margin: 0; padding: 10px 8px; border: 1px dashed var(--border); border-radius: 8px; color: var(--muted); }
   .loading { margin: 0; color: var(--muted); }
   .problem { margin: 0; color: var(--critical); }
   .artwork { flex: none; margin: 0; color: var(--warning); font-size: 11px; }
-  .receipts { flex: none; display: grid; gap: 4px; margin: 0; padding: 6px 0 0; border-top: 1px solid var(--border); list-style: none; }
-  /* Every receipt row keeps one height, Undo or not, so no other receipt's Undo slides under the pointer. */
-  .receipts li { box-sizing: border-box; height: 48px; display: flex; align-items: center; gap: 6px; overflow: hidden; }
-  .receipt-text { flex: 1; min-width: 0; font-size: 12px; line-height: 15px; display: -webkit-box; -webkit-line-clamp: 3; line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; overflow-wrap: anywhere; }
   button { min-height: 44px; min-width: 44px; padding: 4px 10px; border: 1px solid var(--border); border-radius: 8px; background: var(--panel); color: inherit; font: inherit; font-size: 12px; cursor: pointer; touch-action: manipulation; }
   button:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
-  .receipts button { border-color: var(--accent); color: var(--accent); font-weight: 650; }
   .tab { display: grid; gap: 2px; padding: 8px 14px; border: 0; border-radius: 10px 0 0 0; background: transparent; text-align: left; }
   .receipt-line { color: var(--muted); font-size: 11px; }
+  .receipt-line.latest { flex: none; margin: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
   .fold { font-size: 18px; line-height: 1; }
 </style>
