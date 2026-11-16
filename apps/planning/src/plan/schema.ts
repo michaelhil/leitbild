@@ -449,11 +449,14 @@ export type Robust = z.infer<typeof robustSchema>
 /**
  * The re-timings were not worked out, said so, never left out silently, and never a part of the record:
  * `time`, the sub-solve's time ran out before they could all be made; `unplaced`, re-timing could not place
- * `job`, and lane K could not name one crew or tool that has no time left for it.
+ * `job`, and lane K could not name one crew or tool that has no time left for it; `refused`, lane K refused to
+ * judge a re-timing, for `reason`.
  */
 export const robustNotWorkedOutSchema = z.union([
   z.object({ notWorkedOut: z.literal('time') }).strict(),
   z.object({ notWorkedOut: z.literal('unplaced'), job: keySchema }).strict(),
+  // lane K refused to judge a re-timing (a link into a locked job broken, say): its reason, in its words.
+  z.object({ notWorkedOut: z.literal('refused'), reason: wordsSchema }).strict(),
 ])
 /** option.robust: the record, or why there is none. */
 export type RobustField = Robust | z.infer<typeof robustNotWorkedOutSchema>

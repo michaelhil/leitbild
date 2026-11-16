@@ -89,8 +89,9 @@ export const retimedRows = (planned: PlanInputs, pessimistic: PlanInputs, option
  * judged by lane K, a job that could not be placed included. Never a part of one: `{notWorkedOut: 'time'}`
  * when the next re-timing would not end by `until` (epoch ms), judged by the longest so far and before the
  * first by `estimateMs` (the sub-solve's own measured compile and check time); `{notWorkedOut: 'unplaced', job}`
- * when a re-timing left a job unplaced and lane K refused to name a crew without time for it; undefined when a
- * re-timing cannot be made or lane K refuses it for another reason.
+ * when a re-timing left a job unplaced and lane K refused to name a crew without time for it;
+ * `{notWorkedOut: 'refused', reason}` when lane K refused a re-timing for another reason; undefined only when a
+ * re-timing cannot be made at all (the option's rows no longer read back on its plan).
  */
 export const robustOf = (inputs: PlanInputs, option: Planned, judge: JudgeRetimed, until = Infinity, now: () => number = Date.now, estimateMs = 0): RobustField | undefined => {
   const jobs = rangedJobs(inputs, option.rows)
@@ -105,14 +106,18 @@ export const robustOf = (inputs: PlanInputs, option: Planned, judge: JudgeRetime
     const retimed = retimedRows(planned, withExtraRules(atHigh(inputs, new Set(high)), option.variant.also), option)
     const judged = retimed === undefined ? undefined : judge({ inputs, variant: option.variant, planned: option.rows, retimed: retimed.rows, high })
     longest = Math.max(longest, now() - started)   // never below the first estimate
-    // A job the re-timing could not place, for which lane K names no crew or tool without time: said so.
+    // A job the re-timing could not place, for which lane K names no crew or tool without time: said so; any
+    // other refusal by lane K, with lane K's reason. Never left out.
     if (judged?.ok === false && retimed?.unplaced !== undefined) unplaced ??= retimed.unplaced
+    else if (judged?.ok === false) refused ??= judged.problems.join(' ').slice(0, 600)
     if (judged?.ok !== true) return undefined
     // A re-timing that holds keeps lane K's spans against their limits, as given (V12).
     return judged.outcome.holds && judged.spans !== undefined ? { ...judged.outcome, spans: judged.spans.map(span => ({ ...span })) } : judged.outcome
   }
   let unplaced: string | undefined
-  const notWorkedOut = (): RobustField | undefined => (late ? { notWorkedOut: 'time' } : unplaced !== undefined ? { notWorkedOut: 'unplaced', job: unplaced } : undefined)
+  let refused: string | undefined
+  const notWorkedOut = (): RobustField | undefined => (late ? { notWorkedOut: 'time' } : unplaced !== undefined ? { notWorkedOut: 'unplaced', job: unplaced }
+    : refused !== undefined && refused.trim() !== '' ? { notWorkedOut: 'refused', reason: refused.trim() } : undefined)
   const allPessimistic = once(jobs)
   if (allPessimistic === undefined) return notWorkedOut()
   const single: Array<Robust['single'][number]> = []

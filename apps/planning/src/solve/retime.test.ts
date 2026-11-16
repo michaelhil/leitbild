@@ -110,9 +110,9 @@ describe('the robust record', () => {
     expect(robust.single).toEqual(jobs.map(job => ({ job, outcome: own([job]) })))
   })
 
-  test('never partly: past its time it says so ("not worked out: the time ran out"); refused by lane K, nothing', () => {
+  test('never partly: past its time it says so ("not worked out: the time ran out"); refused by lane K, with its reason', () => {
     expect(robustOf(trimmed, option, laneKJudgeRetimed, Date.now() - 1)).toEqual({ notWorkedOut: 'time' })
-    expect(robustOf(trimmed, option, () => ({ ok: false, problems: ['refused'] }))).toBeUndefined()
+    expect(robustOf(trimmed, option, () => ({ ok: false, problems: ['refused'] }))).toEqual({ notWorkedOut: 'refused', reason: 'refused' })
   })
 
   test('nothing ranged: re-timing changes nothing, so the validated plan holds, unjudged', () => {
@@ -198,4 +198,28 @@ describe('M2: the re-timings stop before the process would be killed', () => {
     expect(outcome.option.status.word).toBe('validated feasible')
     expect(outcome.option.robust).toEqual({ notWorkedOut: 'time' })
   }, 30_000)
+})
+
+describe('B2: lane K\'s refusal is said, never left out', () => {
+  test('Train A with the eddy-current test locked Wed 08:00Z: Swap validated feasible, its record never missing', async () => {
+    const locked: PlanInputs = { ...flagship, jobs: flagship.jobs.map(job => (job.key === 'CCWHXA-ECT' ? { ...job, lock: { start: '2026-11-18T08:00:00Z' } } : job)) }
+    const result = await generate({ ...deps, judgeRetimed: laneKJudgeRetimed }, { inputs: locked, revision: 1, previous: null, input: { variants: [{ label: 'Swap', methods: swap }] }, by, signal: new AbortController().signal, seed: 1, evals: 600 })
+    const option = result.optionSet.options[0]!
+    expect(option.status.word).toBe('validated feasible')
+    expect(option.robust).toBeDefined()
+    // A refusal carries lane K's own reason: the same words lane K gives for that re-timing.
+    if (option.robust !== undefined && 'notWorkedOut' in option.robust && option.robust.notWorkedOut === 'refused') {
+      const jobs = rangedJobs(locked, option.rows)
+      const reasons = [jobs, ...jobs.map(job => [job])].flatMap(high => {
+        const found = retimedRows(locked, atHigh(locked, new Set(high)), option)
+        const judged = found === undefined ? undefined : judgeRetiming(locked, option.variant, option.rows, found.rows, high)
+        return judged?.ok === false ? [judged.problems.join(' ')] : []
+      })
+      expect(reasons).toContain(option.robust.reason)
+    }
+  }, 60_000)
+
+  test('any refusal of lane K\'s that is not an unplaced job is stored with its reason', () => {
+    expect(robustOf(trimmed, option, () => ({ ok: false, problems: ['The re-timing breaks a link into a locked job.'] }))).toEqual({ notWorkedOut: 'refused', reason: 'The re-timing breaks a link into a locked job.' })
+  })
 })
