@@ -60,3 +60,33 @@ describe('the estimate preview on the option on the timeline', () => {
     expect(previewOption(atItsHigh('CCWHXA-CLEAN'), swap).unplaced?.job).toBe('CCWHXA-ECT')
   }, 60_000)
 })
+
+describe('L2: after an edit each row keeps its own bought time need by need, not just whether it bought any', () => {
+  test('a lift on overtime with the crane in its own hours, beside a lift in the crane\'s extra Friday, keeps each (checked run: crane booked Wed and Thu only, seed 1)', async () => {
+    const { compile } = await import('./compile.ts')
+    const { prepare } = await import('./decode.ts')
+    const { undate } = await import('./date.ts')
+    // One crane day less, so the rebuild buys the crane's extra Friday and lifts can buy time on either need.
+    const short: PlanInputs = { ...flagship, calendars: flagship.calendars.map(entry => (entry.key === 'crane' ? { ...entry, periods: entry.periods.slice(1) } : entry)) }
+    const rebuild = (await generate(deps, { inputs: short, revision: 1, previous: null, input: {}, by, signal: new AbortController().signal, seed: 1, evals: 600 })).optionSet
+      .options.find(option => option.variant.methods.some(pick => pick.option === 'rebuild'))!
+    const boughtOn = (job: PlanInputs['jobs'][number], row: (typeof rebuild.rows)[number]) =>
+      job.needs.map(need => row.uses.some(use => need.anyOf.includes(use.resource) && use.purchase !== undefined))
+    const mixed = rebuild.rows.flatMap(row => {
+      const job = short.jobs.find(entry => entry.key === row.job)!
+      const perNeed = boughtOn(job, row)
+      return perNeed.includes(true) && perNeed.includes(false) && job.duration.range !== undefined ? [{ job, perNeed }] : []
+    })
+    // The run has both kinds: bought time on the crew only, and on the crane only.
+    expect(mixed.map(entry => entry.perNeed.indexOf(true)).sort()).toEqual([0, 1])
+    for (const { job, perNeed } of mixed) {
+      const edited: PlanInputs = { ...short, jobs: short.jobs.map(entry => (entry.key === job.key ? { ...entry, duration: { ...entry.duration, value: entry.duration.range!.high } } : entry)) }
+      const compiled = compile(edited, { methods: rebuild.variant.methods, buy: rebuild.variant.purchases })
+      if (!compiled.ok) throw new Error('compiles')
+      const found = undate(prepare(compiled.problem), compiled.index, rebuild.rows, true)
+      if (!found.ok) throw new Error('reads back')
+      const a = compiled.index.jobs.indexOf(job.key)
+      expect([job.key, compiled.index.modes[a]![found.schedule.mode[a]!]!.needs.map(need => need.purchased)]).toEqual([job.key, perNeed])
+    }
+  }, 120_000)
+})
