@@ -4,18 +4,25 @@ import { doubleClickMs } from '../../src/packs/einsatz/ui/selection.ts'
 const isUnitCommand = (request: Request, command: string): boolean => request.method() === 'POST'
   && new URL(request.url()).pathname.endsWith(`/capabilities/world.einsatz.unit.${command}/invoke`)
 
-const acceptedUnitCommand = async (page: Page, command: string, click: () => Promise<void>) => {
+const unitCommand = async (page: Page, command: string, click: () => Promise<void>, accepted = true) => {
   const [response] = await Promise.all([
     page.waitForResponse(response => isUnitCommand(response.request(), command)),
     click(),
   ])
   expect(response.status()).toBe(200)
-  expect(await response.json()).toMatchObject({ kind: 'command', result: { ok: true } })
+  expect(await response.json()).toMatchObject({ kind: 'command', result: { ok: accepted } })
   return response.request().postDataJSON()
 }
 
 // Each smoke test owns and removes the Workspace it created.
 const withDispatchDemo = async (page: Page, play: (world: FrameLocator, panel: Locator) => Promise<void>): Promise<void> => {
+  const mapOrigin = process.env.LEITBILD_E2E_MAP_ORIGIN
+  if (mapOrigin) {
+    await page.route('**/map/**', async route => {
+      const source = new URL(route.request().url())
+      await route.fulfill({ response: await route.fetch({ url: new URL(source.pathname + source.search, mapOrigin).href }) })
+    })
+  }
   await page.goto('/workspaces')
   await page.getByRole('button', { name: 'Stop automatic slide show' }).click()
   await page.getByRole('tab', { name: /Dispatch by touch/ }).click()
@@ -34,6 +41,7 @@ const withDispatchDemo = async (page: Page, play: (world: FrameLocator, panel: L
     await expect(panel).toBeVisible({ timeout: 90_000 })
     await play(world, panel)
   } finally {
+    await page.goto('about:blank')
     const response = await page.request.delete(`/api/workspaces/${encodeURIComponent(workspace.id)}`)
     expect(response.ok()).toBe(true)
   }
@@ -51,7 +59,7 @@ test('the dispatch demo sends a suggested unit from its call card', async ({ pag
     await expect(proposal).toBeEnabled({ timeout: 30_000 })
     // Let the panel's double-click interval pass before pressing another command.
     await page.waitForTimeout(Math.max(0, openedAt + doubleClickMs - Date.now()))
-    await acceptedUnitCommand(page, 'order', () => proposal.click())
+    await unitCommand(page, 'order', () => proposal.click())
   })
 })
 
@@ -64,7 +72,7 @@ test('selecting a unit allows direct dispatch and editing its assigned stops', a
     await unit.getByText('Targets', { exact: true }).click()
 
     const call = unit.getByRole('button', { name: /C-1 Tistedal fall/ })
-    expect(await acceptedUnitCommand(page, 'order', () => call.click())).toMatchObject({
+    expect(await unitCommand(page, 'order', () => call.click())).toMatchObject({
       input: { stops: [{ taskId: 'task:tistedal-fall' }] },
     })
     await expect(unit.getByRole('button', { name: /Remove stop 1:.*C-1 Tistedal fall/ })).toBeVisible()
@@ -82,23 +90,23 @@ test('selecting a unit allows direct dispatch and editing its assigned stops', a
 
     await clinic.click()
     const add = dialog.getByRole('button', { name: 'Add to plan' })
-    expect(await acceptedUnitCommand(page, 'order', () => add.click())).toMatchObject({
+    expect(await unitCommand(page, 'order', () => add.click())).toMatchObject({
       input: { stops: [{ siteId: 'site:halden-clinic' }], when: 'after' },
     })
     await expect(unit.getByRole('button', { name: /Remove stop 2:.*Halden emergency clinic/ })).toBeVisible()
 
     const triage = unit.getByRole('button', { name: /Remmen triage post/ })
     await triage.click()
-    await acceptedUnitCommand(page, 'order', () => add.click())
+    await unitCommand(page, 'order', () => add.click())
     const earlier = unit.getByRole('button', { name: /Move stop 3 earlier:.*Remmen triage post/ })
-    await acceptedUnitCommand(page, 'plan.reorder', () => earlier.click())
-    await expect(unit.getByRole('button', { name: /Remove stop 2:.*Remmen triage post/ })).toBeVisible()
+    await unitCommand(page, 'plan.reorder', () => earlier.click(), false)
+    await expect(unit.getByRole('alert')).toContainText('must follow the pickup it delivers')
 
     // The numbered stop row exercises the same confirmation as clicking a red map destination.
-    const removeClinic = unit.getByRole('button', { name: /Remove stop 3:.*Halden emergency clinic/ })
+    const removeClinic = unit.getByRole('button', { name: /Remove stop 2:.*Halden emergency clinic/ })
     await removeClinic.click()
     const removal = world.getByRole('dialog', { name: 'Remove stop?' })
-    await acceptedUnitCommand(page, 'stop.remove', () => removal.getByRole('button', { name: 'Remove stop', exact: true }).click())
+    await unitCommand(page, 'stop.remove', () => removal.getByRole('button', { name: 'Remove stop', exact: true }).click())
     await expect(removeClinic).toBeHidden()
     await expect(unit.getByRole('button', { name: /Remove stop 1:.*C-1 Tistedal fall/ })).toBeVisible()
     expect(orders).toHaveLength(3)
