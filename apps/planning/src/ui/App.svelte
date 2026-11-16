@@ -89,6 +89,8 @@
     .mark-good { color: var(--good); background: var(--good-bg); }
     .mark-warning { color: var(--warning); background: var(--warning-bg); }
     .mark-refusal { color: var(--refusal); background: var(--refusal-bg); border-width: 2px; }
+    /* A long mark (a what-if's "best found with … first") wraps inside its card, never past it (walk V5). */
+    .what-if-card .mark, .goals .mark { white-space: normal; max-width: 100%; overflow-wrap: anywhere; }
 
     .library { max-width: 1060px; margin: 24px auto; padding: 0 16px; }
     .eyebrow { color: var(--ink-3); text-transform: uppercase; letter-spacing: .09em; font-size: 10px; font-weight: 700; }
@@ -199,6 +201,7 @@
     .what-if-head { margin: 0 0 4px; display: flex; flex-wrap: wrap; gap: 6px; align-items: baseline; }
     .what-if-apart { font-size: 12px; color: var(--estimate); margin-bottom: 6px; }
     .what-if-outage { font-size: 13px; margin: 4px 0; }
+    .what-if-against { font-size: 13px; margin: 4px 0; color: var(--ink-2); }
     .why-policy { font-size: 13px; list-style: none; padding: 0; margin: 0 0 8px; }
     .why-policy li { margin-bottom: 2px; }
     .why-decided { font-size: 13px; margin-bottom: 4px; }
@@ -212,6 +215,9 @@
     .previous-set { list-style: none; padding: 0; margin: 0 0 8px; font-size: 13px; }
     .previous-set li { padding: 3px 0; }
     .compare-line { font-size: 13px; margin: 4px 0; }
+    .compare-outages { list-style: none; padding: 0; margin: 6px 0; font-size: 12px; }
+    .compare-outages li { padding: 4px 0; border-top: 1px solid var(--line-2); display: grid; gap: 2px; }
+    .compare-outages li.changed .outage-figures { font-weight: 600; }
     /* A dominated option is folded under the table; its name says which option dominates it. */
     .dominated-by { display: block; margin-top: 2px; }
     .dominated-line { margin: 6px 0 0; padding: 0 8px; font-size: 12px; }

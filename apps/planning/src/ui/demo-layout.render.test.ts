@@ -226,7 +226,7 @@ describe('demo layout pass', () => {
     expect(readableText(legend).replace(/\s+/g, ' ').trim()).toBe('validated feasible : every hard rule was checked independently · proven optimal : it cannot be better · best found : the best the search found, with any proven gap shown')
   })
 
-  test('8. a cost above fixed costs says the bound as a fact; a time goal keeps its gap', () => {
+  test('8. a bound is said as a fact, for a cost and for a time goal alike (walk V11)', () => {
     const model = trainAPlanned()
     const view = statusView(status({ word: 'validated feasible', run: runBasis(model.inputs.settings.grid), goals: [
       // Hand values: 11 h against a bound of 7.5 h leaves 3.5 h.
@@ -234,7 +234,8 @@ describe('demo layout pass', () => {
       // Fixed costs of NOK 340,000 are in every plan: the bound itself is said.
       { word: 'best found under budget', goal: 1, value: 472650, unit: 'NOK', bound: { value: 340000, source: 'fixed-costs', certificate: { kind: 'fixed-costs', items: [{ key: 'charged', amount: 340000 }] } } },
     ] }), contextOf(model))
-    expect(view.goals.map(goal => goal.distance)).toEqual(['could be up to 3.5 h better', 'no plan can cost less than NOK 340,000'])
+    // Walk V11 (increment 2): a time goal says its bound too, never "could be up to X better".
+    expect(view.goals.map(goal => goal.distance)).toEqual(['no plan has less than 7.5 h over the 54 h guideline', 'no plan can cost less than NOK 340,000'])
     const text = readableText(renderHtml(StatusBlock, { view }))
     expect(text).toContain('≈ best found no plan can cost less than NOK 340,000')
     expect(text).not.toContain('NOK 132,650')
@@ -259,7 +260,7 @@ describe('demo layout pass', () => {
     const inPlan = supply.inputs.resources.find(resource => resource.locator !== undefined)!
     expect(addedAs(supply.inputs, inPlan.locator!)).toBe('a crew or tool')
     expect(addedAs(supply.inputs, 'einsatz/unit/unit%3Atruck-9')).toBeNull()
-    expect(source('EquipmentPicker.svelte')).toContain(`{#if addedAs(context.inputs, subject.locator)} <MarkTag mark={{ shape: '✓', word: 'added' }} tone="good" />`)
+    expect(source('EquipmentPicker.svelte')).toContain(`{#if addedAs(context.inputs, subject.locator)}{' '}<MarkTag mark={{ shape: '✓', word: 'added' }} tone="good" />`)
   })
 
   test('walk 7 [05]: the newest answer is on top of the detail column, so "What sets the finish" never opens under an open job panel', () => {

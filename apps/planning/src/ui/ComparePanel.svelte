@@ -6,8 +6,14 @@
   // What differs from the earlier options, beside the timeline, from the Module's facts (explain versus): the
   // earlier set itself, the changes since, the measures that changed, the methods and purchases that differ,
   // and the jobs that moved, were added or are gone.
-  let { answer, previous = [], against = null, onAgainst, onClose }: {
+  let { answer, unpaired = false, previous = [], against = null, more = null, onMore, onAgainst, onClose }: {
     answer: Answer<CompareView>
+    /** The earlier set has no option of the shown option's variant: the planner chooses one. */
+    unpaired?: boolean
+    /** The moved jobs after the first ones, in plan order, once read. */
+    more?: CompareView['moved'] | null
+    /** Reads the moved jobs after the first ones, when the Module pages them. */
+    onMore?: (() => void) | undefined
     /** The earlier set, from the previous read section. */
     previous?: readonly PreviousRow[]
     /** The earlier option compared with. */
@@ -26,17 +32,17 @@
     <h3>The earlier set</h3>
     <ul class="previous-set">
       {#each previous as row (row.key)}
-        <li><MarkTag mark={row.mark} tone={row.mark.shape === '✓' ? 'good' : row.mark.shape === '✕' ? 'refusal' : 'warning'} /> {row.label}{#if row.recommended} <MarkTag mark={{ shape: '★', word: 'Recommended then' }} tone="good" />{/if}</li>
+        <li><MarkTag mark={row.mark} tone={row.mark.shape === '✓' ? 'good' : row.mark.shape === '✕' ? 'refusal' : 'warning'} /> {row.label}{#if row.recommended}{' '}<MarkTag mark={{ shape: '★', word: 'Recommended then' }} tone="good" />{/if}</li>
       {/each}
     </ul>
-    {#if previous.length > 1 && onAgainst && against !== null}
+    {#if previous.length > 0 && onAgainst}
       <Choice label="Compare with" options={previous.map(row => ({ value: row.key, label: row.label }))} bind:value={() => against ?? '', next => onAgainst?.(next)} />
     {/if}
   {/if}
   {#if answer.state === 'loading'}
     <p class="hint" aria-live="polite">Asking Planning…</p>
   {:else if answer.state === 'none'}
-    <p class="not-yet">{noPreviousWords}</p>
+    <p class="not-yet">{unpaired ? 'The earlier set has no option of the same method. Choose one under “Compare with”.' : noPreviousWords}</p>
   {:else if answer.state === 'not-built'}
     <p class="not-yet">Comparing with the earlier options is not available yet in this version of Planning.</p>
   {:else if answer.state === 'refused'}
@@ -52,14 +58,12 @@
     {#if view.same}<p>Nothing differs: the same values, methods, purchases and times.</p>{/if}
     <h3>Measures</h3>
     {#if view.outages.length > 0}
-      <table class="compare-goals">
-        <thead><tr><th scope="col">Outage</th><th scope="col" class="number">Now</th><th scope="col" class="number">Before</th><th scope="col" class="number">Change</th></tr></thead>
-        <tbody>
-          {#each view.outages as outage (outage.name)}
-            <tr class:changed={outage.change !== 'the same'}><th scope="row">{outage.name}</th><td class="number">{outage.now}</td><td class="number">{outage.was}</td><td class="number">{outage.change}</td></tr>
-          {/each}
-        </tbody>
-      </table>
+      <!-- A group name is long: each outage is a line of its own, so the narrow column never wraps it over many lines (walk V11). -->
+      <ul class="compare-outages">
+        {#each view.outages as outage (outage.name)}
+          <li class:changed={outage.change !== 'the same'}><span class="outage-name">{outage.name}</span>{' '}<span class="outage-figures">{outage.now}, before {outage.was} ({outage.change})</span></li>
+        {/each}
+      </ul>
     {/if}
     {#if view.goals === null}
       <p class="hint">{view.goalsNote}</p>
@@ -81,7 +85,17 @@
           <li><span class="step-name">{job.job}</span> · <span class="when">{job.was} → {job.now}</span> · <span class="because">{job.shift}</span></li>
         {/each}
       </ol>
-      {#if view.more}<p class="hint">{view.more}</p>{/if}
+      {#if view.moreCount > 0}
+        {#if more !== null && more.length > 0}
+          <details class="more-moved" open><summary>Show the other {view.moreCount}</summary>
+            <ol class="chain">{#each more as job, index (index)}<li><span class="step-name">{job.job}</span> · <span class="when">{job.was} → {job.now}</span> · <span class="because">{job.shift}</span></li>{/each}</ol>
+          </details>
+        {:else if onMore}
+          <button type="button" class="link" onclick={onMore}>Show the other {view.moreCount}</button>
+        {:else}
+          <p class="hint">{view.more}</p>
+        {/if}
+      {/if}
     {/if}
     {#if view.added.length > 0}<p class="compare-line">New in this set: {view.added.join(', ')}.</p>{/if}
     {#if view.removed}<p class="compare-line">{view.removed}</p>{/if}

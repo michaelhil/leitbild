@@ -169,14 +169,14 @@ describe('what differs from the earlier options', () => {
       .toEqual([{ name: 'Extra cost', now: 'NOK 474,750', was: 'NOK 464,250', change: '+NOK 10,500' }])
   })
 
-  test('the earlier set comes from the previous read section; the same option is compared when it has it, else the one it recommended', () => {
+  test('the earlier set comes from the previous read section; the same variant is compared by default, never the one it recommended (walk V3)', () => {
     const { option } = t12()
-    const page = sectionDataSchemas.previous.parse({ items: [{ ...option, key: 'old-a', fresh: false }, { ...option, key: 'old-b', fresh: false }], at: '2026-11-12T08:00:00.000Z', recommended: 'old-b' })
+    const page = sectionDataSchemas.previous.parse({ items: [{ ...option, key: 'a.55ac0be0', fresh: false }, { ...option, key: 'b.55ac0be0', fresh: false }], at: '2026-11-12T08:00:00.000Z', recommended: 'b.55ac0be0' })
     const items = page.items as unknown as readonly OptionView[]
-    expect(previousFor('old-a', { items, recommended: page.recommended }, null)).toBe('old-a')
-    expect(previousFor('opt-1', { items, recommended: page.recommended }, null)).toBe('old-b')
-    expect(previousFor('opt-1', { items, recommended: page.recommended }, 'old-a')).toBe('old-a')
-    expect(previousFor('opt-1', { items: [], recommended: null }, null)).toBeNull()
+    expect(previousFor({ ...option, key: 'a.1d8017c1' }, { items, recommended: page.recommended }, null)).toBe('a.55ac0be0')
+    expect(previousFor({ ...option, key: 'c.1d8017c1' }, { items, recommended: page.recommended }, null)).toBeNull()
+    expect(previousFor({ ...option, key: 'c.1d8017c1' }, { items, recommended: page.recommended }, 'a.55ac0be0')).toBe('a.55ac0be0')
+    expect(previousFor({ ...option, key: 'a.1d8017c1' }, { items: [], recommended: null }, null)).toBeNull()
   })
 
   test('no earlier set, and a part not built yet, are said in planner words', () => {

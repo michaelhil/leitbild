@@ -53,7 +53,7 @@ describe.skipIf(!enabled)('solver floors at the certified size (opt-in)', () => 
       const result = await run(flagship, request, CERTIFIED_SIZE, previous)
       const wallMs = performance.now() - at
       const childPeaksMb = pool.records().slice(-(request.variants?.length ?? 2)).map(record => record.peakRssMb ?? 0)
-      rungs.push({ rung: rung.rung, wallMs: Math.round(wallMs), servicePeakMb: stop(), childPeaksMb, words: wordsOf(result), stoppedBy: stoppedOf(result), robust: result.optionSet.options.map(option => option.robust === undefined ? null : option.robust.allPessimistic.holds) })
+      rungs.push({ rung: rung.rung, wallMs: Math.round(wallMs), servicePeakMb: stop(), childPeaksMb, words: wordsOf(result), stoppedBy: stoppedOf(result), robust: result.optionSet.options.map(option => option.robust === undefined ? null : 'notWorkedOut' in option.robust ? 'not worked out' : option.robust.allPessimistic.holds) })
       expect(wallMs).toBeLessThanOrEqual(20_000)
       for (const peak of childPeaksMb) expect(peak).toBeLessThanOrEqual(CHILD_RSS_LIMIT_MB)
       previous = result.optionSet

@@ -250,6 +250,11 @@ export interface SubSolveTask {
    * search ends early enough for the work after it, so the answer comes in time on a CPU-capped machine too.
    */
   readonly answerBy?: number
+  /**
+   * Generate granted this sub-solve's search its share of the Generate, less than its slot allows: the slot has
+   * spare time, from which the re-timings' reserve is taken first. Otherwise the slot limits the search.
+   */
+  readonly shareCapped?: boolean
 }
 export interface SubSolveOutcome {
   readonly option: Option
@@ -289,7 +294,9 @@ export const subSolve = (deps: SubSolveDeps): SubSolver => async (task, signal, 
   const { ruled, solving, planGoalOf } = solveInputsOf(inputs, variant)
   const asked = { ...(variant.also === undefined ? {} : { also: [...variant.also] }), ...(variant.lead === undefined ? {} : { lead: variant.lead }) }
   const base = { key: variant.key, label: variant.label.slice(0, 160), inputsRevision: task.revision }
+  const compileStarted = performance.now()
   const compiled = compile(solving, { methods: [...combo], buy: variant.buy })
+  const compileMs = performance.now() - compileStarted
   if (!compiled.ok) return { option: { ...base, variant: { methods: [...combo], purchases: [], ...asked }, status: refusedStatus(compiled.word, compiled.problems), rows: [], metrics: [] }, rounded: [], dropped: [] }
   const { problem, index } = compiled
   const outcome = (option: Option): SubSolveOutcome => ({ option, rounded: index.rounded, dropped: index.dropped })
@@ -303,7 +310,9 @@ export const subSolve = (deps: SubSolveDeps): SubSolver => async (task, signal, 
   }
   // Readiness blocks before any search: an input finding (a precondition not read from World, say) is
   // "invalid input" with the checker's cause, whatever a schedule would look like.
+  const checkStarted = performance.now()
   const blockers = inputProblems(deps.check({ inputs, variant: variantOut, rows: [] }).violations)
+  const checkMs = performance.now() - checkStarted
   if (blockers.length > 0) return outcome({ ...base, variant: stored(variantOut.purchases), status: refusedStatus('invalid input', blockers), rows: [], metrics: [] })
   const prep = prepare(problem)
   const found = bounds(problem, index, prep)
@@ -312,14 +321,30 @@ export const subSolve = (deps: SubSolveDeps): SubSolver => async (task, signal, 
     return outcome({ ...base, variant: stored(variantOut.purchases), status: infeasibleStatus(found.certificate, runBasis({ stoppedBy: 'done', evals: 0, cpuMs: 0 })), rows: [], metrics: [] })
   }
   if (estimateMemoryMb(problem) > MEMORY_BUDGET_MB) throw planningError(413, 'above_certified_size', 'This plan is too large for the certified size', { estimateMb: Math.ceil(estimateMemoryMb(problem)) })
-  // The search ends in time for the work after it, which takes no longer than the work before it took, once
-  // for the plan found and once more for each re-check of a starting option and each re-timing: the
-  // sub-solve answers by its time with its best checked result, never killed for running past it.
+  // The plan comes first, the pessimistic record second. The search ends in time for the work the plan needs
+  // after it, measured here, on this machine and under its throttle: no longer than the work before the search
+  // took (the hotfix's rule), and for a starting option's re-check two compiles and one lane K check, as long
+  // as this sub-solve's own compile and check took. The re-timings get a reserve (the same measured cost each)
+  // only when Generate's share, not the slot, capped this search (`shareCapped`): it comes out of the spare slot
+  // time first and only then off the search, so a sub-solve short of time never loses search to them. Either way each
+  // re-timing starts only when its estimate ends before the sub-solve must answer (robustOf), else the record
+  // says the time ran out. Never killed for running past its time.
   const by = Math.min(task.answerBy ?? Infinity, task.deadlineAt ?? Infinity)
-  const retimings = deps.judgeRetimed === undefined ? 0 : retimingCount(inputs, index.jobs.flatMap(job => (job === null ? [] : [job])))
-  const after = 1 + (task.start === undefined ? 0 : 1) + retimings
+  const usedBy = (rows: ReadonlyArray<Pick<DatedRow, 'uses'>>): string[] => [...new Set([...rows.flatMap(row => row.uses.flatMap(use => (use.purchase === undefined ? [] : [use.purchase]))), ...index.purchases.filter(purchase => purchase.committed).map(purchase => purchase.key)])]
+  // One re-timing is two compiles and lane K's judgement, a full check of rows: timed as an identity judgement
+  // of the starting option's own rows when there are any, else as the readiness check (lighter: under heavy
+  // load a record may then read that the time ran out).
+  const judgedMs = (() => {
+    if (task.start === undefined || deps.judgeRetimed === undefined) return undefined
+    const at = performance.now()
+    deps.judgeRetimed({ inputs, variant: checked(usedBy(task.start.rows).filter(key => index.allowedPurchases.includes(key))), planned: task.start.rows, retimed: task.start.rows, high: [] })
+    return performance.now() - at
+  })()
+  const perCheckMs = 2 * compileMs + (judgedMs ?? checkMs)
   const beforeSearchMs = performance.now() - started
-  const searchBudget = searchBudgetBy(budget, by, SEARCH_STOP_LATENCY_MS + beforeSearchMs * after)
+  const planReserveMs = SEARCH_STOP_LATENCY_MS + beforeSearchMs + (task.start === undefined ? 0 : perCheckMs)
+  const retimings = deps.judgeRetimed === undefined || task.shareCapped !== true ? 0 : retimingCount(inputs, index.jobs.flatMap(job => (job === null ? [] : [job])))
+  const searchBudget = searchBudgetBy(budget, by, planReserveMs + retimings * perCheckMs)
   // No time left to search: no plan, said as a search stopped by its time.
   if (searchBudget.wallMs <= 0) return outcome({ ...base, variant: stored(variantOut.purchases), status: unresolvedStatus(runBasis({ stoppedBy: 'wall', evals: 0, cpuMs: 0 }, searchBudget)), rows: [], metrics: [] })
   const startSchedule = task.start === undefined ? undefined : undate(prep, index, task.start.rows)
@@ -352,7 +377,7 @@ export const subSolve = (deps: SubSolveDeps): SubSolver => async (task, signal, 
       group === undefined ? undefined : bound => deps.verifyBound(inputs, variantOut, { group, unit: groupLeadGoal(group).tolerance.unit }, bound))
     return { ...base, variant: stored(planned.purchases), status, rows, metrics: metricsOf(inputs, report, variant.also) }
   }
-  const usedBy = (rows: ReadonlyArray<Pick<DatedRow, 'uses'>>): string[] => [...new Set([...rows.flatMap(row => row.uses.flatMap(use => (use.purchase === undefined ? [] : [use.purchase]))), ...index.purchases.filter(purchase => purchase.committed).map(purchase => purchase.key)])]
+
 
   /** The search's plan, or the status that says why there is none. */
   const searched = (): Option => {
@@ -402,7 +427,7 @@ export const subSolve = (deps: SubSolveDeps): SubSolver => async (task, signal, 
   // Unless the search beats the starting option, the starting option stands (re-checked above).
   const best = kept !== undefined && (own.status.word !== 'validated feasible' || compareOptions(rankable(kept, inputs), rankable(own, inputs)) <= 0) ? kept : own
   if (best.status.word !== 'validated feasible' || deps.judgeRetimed === undefined) return outcome(best)
-  const robust = robustOf(inputs, best, deps.judgeRetimed, by - SEARCH_STOP_LATENCY_MS, Date.now, beforeSearchMs)
+  const robust = robustOf(inputs, best, deps.judgeRetimed, by - SEARCH_STOP_LATENCY_MS, Date.now, perCheckMs)
   return outcome(robust === undefined ? best : { ...best, robust })
 }
 
@@ -466,10 +491,11 @@ export const generate = async (deps: GenerateDeps, request: GenerateRequest): Pr
     // last answers by the deadline.
     const slot = Math.min(remaining, Math.max(MIN_SUB_SOLVE_MS, remaining / left))
     const wall = Math.min(share.wallMs, slot * 0.9)
+    const shareCapped = share.wallMs < slot * 0.9
     const budget = { evals, cpuMs: Math.round(Math.min(share.cpuMs, wall * SOLVER_CPU_CAP_CORES)), wallMs: Math.round(wall) }
     const start = startFor(variant, combo)
     const task: SubSolveTask = {
-      inputs, revision: request.revision, variant: { key: variant.key, label: variant.label, buy: variant.buy, ...askedOf(variant) }, combo, budget, seed, deadlineAt, answerBy: Math.floor(now + slot),
+      inputs, revision: request.revision, variant: { key: variant.key, label: variant.label, buy: variant.buy, ...askedOf(variant) }, combo, budget, seed, deadlineAt, answerBy: Math.floor(now + slot), shareCapped,
       ...(start === undefined ? {} : { start: { rows: start.rows } }),
     }
     const outcome = await runSubSolve(task, request.signal, request.stoppedByWho)
@@ -498,7 +524,15 @@ export const generate = async (deps: GenerateDeps, request: GenerateRequest): Pr
       const who = request.stoppedByWho?.()
       return { ...first, status: cancelledStatus({ ...run, stoppedBy: 'cancelled', ...(who === undefined ? {} : { stoppedByWho: who }) }) }
     }
-    if (ordered.every(option => option.status.word === 'proven infeasible')) return first
+    if (ordered.every(option => option.status.word === 'proven infeasible')) {
+      if (ordered.length < 2 || first.status.word !== 'proven infeasible') return first
+      // Every method combination refused (V1): each one's cause stored beside the others, as lane K verifies
+      // it under that combination's own variant; one that does not prove leaves the what-if unresolved.
+      const byMethod = ordered.flatMap(option => (option.status.word === 'proven infeasible' ? [{ methods: option.variant.methods.map(pick => ({ ...pick })), purchases: [...option.variant.purchases], cause: option.status.cause }] : []))
+      const also = first.variant.also === undefined ? {} : { also: [...first.variant.also] }
+      const proven = byMethod.every(entry => deps.verify(inputs, { methods: entry.methods, purchases: entry.purchases, ...also }, entry.cause).proves)
+      return proven ? { ...first, status: { ...first.status, byMethod } } : { ...first, status: unresolvedStatus(first.status.run) }
+    }
     const input = ordered.find(option => option.status.word === 'invalid input') ?? ordered.find(option => option.status.word === 'unsupported feature')
     if (input !== undefined) return input
     if (!ordered.some(option => option.status.word === 'proven infeasible')) return first

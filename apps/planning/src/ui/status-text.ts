@@ -100,7 +100,7 @@ export interface GoalLine {
   readonly name: string
   readonly value: string
   readonly mark: Mark
-  /** How far from best, in words: "could be up to 3.5 h better", or the bound itself for fixed costs. */
+  /** The proven bound, said as itself: "no plan can cost less than NOK 340,000"; empty when none is informative. */
   readonly distance: string
 }
 
@@ -212,18 +212,43 @@ export interface StatusView {
   readonly run: string | null
 }
 
-/** One line on how the search ended: it ran to the end, or it stopped early and why. Said once, apart from the goals. */
-const runText = (status: Extract<Status, { run: unknown }>): string => {
-  const { run } = status
-  if (run.stoppedBy === 'done') return 'The search ran to the end.'
+/**
+ * How a search stopped before it finished, as the words after "The search stopped early": ", when its time was
+ * up", ": it reached the memory it may use", …; null when it ran to the end. One source for the option's own
+ * line, the banner and the attention card, so they never disagree (walk V7, V8).
+ */
+export const stopWords = (run: Extract<Status, { run: unknown }>['run']): string | null => {
+  if (run.stoppedBy === 'done') return null
+  if (run.stoppedBy === 'memory') return ': it reached the memory it may use'
   const why = {
-    evals: 'when its time was up', cpu: 'when its time was up', wall: 'when its time was up', memory: 'at the memory limit',
+    evals: 'when its time was up', cpu: 'when its time was up', wall: 'when its time was up',
     ended: 'when the solver process ended', cancelled: run.stoppedByWho === 'host' ? 'when the Host stopped it' : 'because you cancelled it',
   }[run.stoppedBy]
-  return `The search stopped early, ${why}.`
+  return `, ${why}`
+}
+/** One line on how the search ended: it ran to the end, or it stopped early and why. Said once, apart from the goals. */
+const runText = (status: Extract<Status, { run: unknown }>): string => {
+  const stop = stopWords(status.run)
+  return stop === null ? 'The search ran to the end.' : `The search stopped early${stop}.`
 }
 
-/** "0 h, proven optimal", "11 h, best found; could be up to 3.5 h better" or "NOK 472,650, best found; no plan can cost less than NOK 340,000". */
+/**
+ * A goal's proven bound said as itself, never as doubt about the plan (walk V11): "no plan can cost less than
+ * NOK 340,000", "no plan has fewer than 28.5 equipment-hours out of service", "no plan has less than 2 h over the
+ * 54 h guideline".
+ */
+export const boundWords = (goal: Goal, bound: number, unit: string): string => {
+  const amount = valueText(bound, unit)
+  switch (goal.metric) {
+    case 'extra-cost': return `no plan can cost less than ${amount}`
+    case 'span-over': return goal.threshold === undefined ? `no plan has an outage shorter than ${amount}` : `no plan has less than ${amount} over the ${quantityText(goal.threshold.value, goal.threshold.unit)} guideline`
+    case 'unavailable-hours': return unit === 'h' ? `no plan has fewer than ${hoursNumber(bound)} equipment-hours out of service` : `no plan has less than ${amount} of equipment out of service`
+    case 'finish': return `no plan finishes its last job earlier than ${amount} after the window opens`
+    case 'lateness': return `no plan has less than ${amount} of lateness`
+  }
+}
+
+/** "0 h, proven optimal", or "NOK 472,650, best found; no plan can cost less than NOK 340,000". */
 export const goalResult = (goal: GoalLine): string => `${goal.value}, ${goal.mark.word}${goal.distance === '' ? '' : `; ${goal.distance}`}`
 
 export const statusView = (status: Status, context: Context): StatusView => {
@@ -237,10 +262,8 @@ export const statusView = (status: Status, context: Context): StatusView => {
         // A bound that says nothing (the trivial zero bound: the gap is the whole value) gives no gap line.
         const informative = line.bound !== undefined && line.bound.certificate?.kind !== 'zero' && line.bound.value > 0
         const gap = line.word === 'proven optimal' || line.bound === undefined || !informative ? 0 : line.value - line.bound.value
-        // A bound made of costs every plan pays is said as that fact, not as doubt about this plan.
-        const distance = gap <= 0 || line.bound === undefined ? ''
-          : line.bound.certificate?.kind === 'fixed-costs' ? `no plan can cost less than ${valueText(line.bound.value, line.unit)}`
-          : `could be up to ${valueText(gap, line.unit)} better`
+        // The bound itself, for every goal (walk V11): "no plan has fewer than 28.5 equipment-hours out of service".
+        const distance = gap <= 0 || line.bound === undefined || goal === undefined ? '' : boundWords(goal, line.bound.value, line.unit)
         return { name, value, mark: goalMark(line.word), distance }
       })
       return {

@@ -628,13 +628,18 @@ export const bounds = (problem: NormalizedProblem, index: CompileIndex, prep: Pr
       continue
     }
     const least = leastSpan(prep, unlimited, s, units, help, index)
-    const rule = index.spans[s]!.rule ?? index.spans[s]!.id
+    // The rule breached is the tightest limit over the same items (V1): a what-if's 40 h rule on a group whose
+    // plan rule allows 72 h, never the 72 h. Its own limit is named with it.
+    const items = (t: number) => [...problem.spans[t]!.items].sort((x, y) => x - y).join(',')
+    const tightest = problem.spans.reduce((best, span, t) => (span.limit !== undefined && items(t) === items(s) && span.limit < problem.spans[best]!.limit! ? t : best), s)
+    const rule = index.spans[tightest]!.rule ?? index.spans[tightest]!.id
+    const breached = problem.spans[tightest]!.limit!
     const steps = least === undefined ? [{ job: jobKey(problem, index, prep.spanOpeners[s]![0]!), via: 'span-limit' as const }]
       : least.path.map(step => ({ job: step.job, via: step.via }))
     const { first: _first, ...refusal } = least ?? { first: 0 }
     return {
       certificate: { kind: 'temporal', steps: steps.slice(0, 32) }, goals: zeroGoals, spanWindows: [byTime.window],
-      ...(least === undefined ? {} : { span: { rule, limitHours: hours(index, limit), ...(refusal as Omit<SpanRefusal, 'rule' | 'limitHours'>), ...(energy === undefined ? {} : { alsoProven: energy }) } }),
+      ...(least === undefined ? {} : { span: { rule, limitHours: hours(index, breached), ...(refusal as Omit<SpanRefusal, 'rule' | 'limitHours'>), ...(energy === undefined ? {} : { alsoProven: energy }) } }),
     }
   }
   // 4. Everything together: span limits as max-lags, overload, continuity.
