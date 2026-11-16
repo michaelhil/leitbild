@@ -6,7 +6,7 @@ import { join } from 'node:path'
 import type { Component } from 'svelte'
 import { versusFactsSchema } from '../api/contract.ts'
 import { createPlanningClient } from './api.ts'
-import { attentionCards } from './attention.ts'
+import { attentionCards, pessimisticCard } from './attention.ts'
 import { floatText } from './explain-text.ts'
 import { modelOf, optionOf, runBasis, status, trainACaseInputs, trainAPlanned } from './fixtures/plans.ts'
 import { readableText, registerSvelte, renderHtml } from './fixtures/svelte-ssr.ts'
@@ -18,6 +18,7 @@ import { statusView, type Context } from './status-text.ts'
 import { whatIfAskedNotice, whatIfCard, whatIfsClearedNotice } from './what-if.ts'
 import { compareView, moreMoved, previousFor, whyView } from './why-text.ts'
 import { recommendedFactsSchema } from '../api/contract.ts'
+import { robustSchema } from '../plan/schema.ts'
 
 registerSvelte()
 type Any = Component<Record<string, unknown>>
@@ -182,5 +183,37 @@ describe('V9: what-if cards never vanish without a word', () => {
     expect(whatIfAskedNotice('Cheapest that keeps every rule', [afw], [afw, cheapest], false)).toBe('What-if answered: Cheapest that keeps every rule. Its card is below.')
     expect(whatIfsClearedNotice([afw, cheapest], [])).toBe('The 2 what-ifs were asked against the earlier options, so Generate cleared them. Ask again for the plan as it is now.')
     expect(whatIfsClearedNotice([], [])).toBeNull()
+  })
+})
+
+describe('V1: a refused what-if says each method\'s cause, against its own limit', () => {
+  test('each byMethod entry under its method\'s name, the rule named in the what-if\'s words; never "this plan allows"', () => {
+    const also = { kind: 'span-limit' as const, key: 'what-if-COOL-A-40h', group: 'COOL-A', limit: { value: 40, unit: 'h' as const }, singleEntry: true, words: 'What-if: Train A cooling chain back within 40 h.', source: { by: 'planner' as const } }
+    // Lane K's verified causes, one per method (a stand-in in the schema's shape, on the case's own jobs and crews).
+    const swapCause = { kind: 'temporal' as const, steps: [{ job: 'SWA-TAG', via: 'span-limit' as const }, { job: 'SWA-RTS', via: 'link' as const }] }
+    const rebuildCause = { kind: 'energy' as const, resources: ['mech-station'], jobs: ['SWA-TAG'], requiredHours: 49, availableHours: 48, from: inputs.settings.window!.start, to: inputs.settings.window!.end, span: also.key }
+    const refused = status({ word: 'proven infeasible', run: runBasis(grid), cause: swapCause, byMethod: [{ methods: picks('rebuild'), purchases: allowed, cause: rebuildCause }, { methods: picks('swap'), purchases: allowed, cause: swapCause }] })
+    const option = optionOf('w40', 'At most 40 h out', refused, { variant: { methods: picks('swap'), purchases: allowed, also: [also] } })
+    const model = modelOf(inputs, { options: { at: '2026-11-12T09:05:00.000Z', recommended: null, items: [option] }, refusals: { w40: ['Not possible: x', 'The shortest span this plan allows is 61.5 h, against 72 h.'] } })
+    const card = whatIfCard(option, model, contextOf(model))
+    expect(card.status.details.map(line => line.split(':')[0])).toEqual([label('rebuild'), label('swap')])
+    expect(card.status.details[0]).toContain('“What-if: Train A cooling chain back within 40 h.”')
+    const text = card.status.details.join(' ')
+    expect(text).not.toContain('this plan allows')
+    expect(text).not.toContain('no longer in this plan')
+  })
+})
+
+describe('V12: a job that holds alone with no margin is named', () => {
+  test('"Install SW A pump holds alone at its high estimate with no margin left: the chain is out exactly 72 h."', () => {
+    const planned = trainAPlanned()
+    // Lane K's figure on the flagship: the pump install alone holds with {rule: 'R2', hours: 72, margin: 0}.
+    const holdsExactly = { holds: true, spans: [{ rule: 'R2', hours: 72, margin: 0 }] }
+    const robust = robustSchema.parse({ allPessimistic: { holds: true, spans: [{ rule: 'R2', hours: 70, margin: 2 }] }, single: [{ job: 'SWA-PUMP-OUT', outcome: holdsExactly }, { job: 'SWA-TAG', outcome: { holds: true, spans: [{ rule: 'R2', hours: 60, margin: 12 }] } }] })
+    const card = pessimisticCard({ ...planned.options!.items[0]!, robust }, contextOf(planned))!
+    const group = planned.inputs.groups.find(item => item.key === 'COOL-A')!.label
+    const pump = planned.inputs.jobs.find(job => job.key === 'SWA-PUMP-OUT')!.title
+    expect(card.steps).toContain(`${pump} holds alone at its high estimate with no margin left: ${group} is out exactly 72 h.`)
+    expect(card.steps).toContain('The other job with an estimate range holds alone at its high estimate.')
   })
 })

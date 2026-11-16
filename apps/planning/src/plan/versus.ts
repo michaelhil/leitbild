@@ -46,8 +46,11 @@ export const versus = (input: {
   /** The option of the previous set it is compared with. */
   readonly previous: Option
   readonly plan: Pick<Plan, 'revision' | 'changes' | 'droppedChanges'>
+  /** The first moved job the facts give, for the next page of them (walk V10); default 0. */
+  readonly movedFrom?: number
 }): { readonly lines: string[]; readonly facts: VersusFacts } => {
   const { inputs, option, previous, plan } = input
+  const movedFrom = input.movedFrom ?? 0
   const zone = inputs.settings.timeZone
   const from = previous.inputsRevision, to = plan.revision
   const head = `'${option.label}' against '${previous.label}' of the previous options (revision ${from}; now revision ${to}).`
@@ -149,8 +152,8 @@ export const versus = (input: {
     lines: fitLines([...fixed, ...movedLines, ...jobLines]),
     facts: {
       ...frame, ...(goalFacts === undefined ? {} : { goals: goalFacts }), ...(outageFacts === undefined ? {} : { outages: outageFacts }), methods: methodFacts, buys: { added, dropped },
-      moved: moved.slice(0, movedShown).map(({ row, was }) => ({ job: row.job, now: { start: row.start, finish: row.finish }, was: { start: was.start, finish: was.finish } })),
-      movedMore: Math.max(0, moved.length - movedShown), added: joined, removed: left,
+      moved: moved.slice(movedFrom, movedFrom + movedShown).map(({ row, was }) => ({ job: row.job, now: { start: row.start, finish: row.finish }, was: { start: was.start, finish: was.finish } })),
+      movedMore: Math.max(0, moved.length - movedFrom - movedShown), added: joined, removed: left,
     },
   }
 }

@@ -341,7 +341,7 @@ describe('a plan-scoped edit never reads World; preview names what the re-timing
       // A valid change saves even so: the preview says what this option would break and asks for new options (walk 2, R2-4).
       // The rule by what it says, never by its key (walk 3, R3-6, R2-4-01).
       const group = rule.kind === 'span-limit' ? trainA.groups.find(entry => entry.key === rule.group)!.label : ''
-      expect(preview.body.result.preview.consequence).toBe(`Not saved yet. This option would break the ${limit} limit on ${group}; generate new options after saving.`)
+      expect(preview.body.result.preview.consequence).toBe(`Not saved yet. 'Rebuild in place' would break the ${limit} limit on ${group}; generate new options after saving.`)
       expect(preview.body.result.preview.consequence).not.toContain(rule.key)
       expect(preview.body.result.preview.violations).toEqual([rule.words])
       const saved = await local.call('planning.plan.edit', { resource: created.id, expectedRevision: 1, input: { edits: [{ edit: 'job', key: job.key, duration: { value: job.duration.value! + 6 } }] } })
@@ -396,7 +396,7 @@ describe('a lock is measured against the saved plan (walk 2, R2-5)', () => {
       expect(preview.status).toBe(200)
       expect(preview.body.result.preview.violations).toEqual([saved])
       expect(preview.body.result.preview.nearestAllowed).toBe('2026-11-17T15:00:00Z')
-      expect(preview.body.result.preview.consequence).toBe(`Not saved yet. This option would break the link '${pull.title}' before '${install.title}'; generate new options after saving. The nearest allowed start for ${install.title} is Tue 16:00.`)
+      expect(preview.body.result.preview.consequence).toBe(`Not saved yet. 'Rebuild in place' would break the link '${pull.title}' before '${install.title}'; generate new options after saving. The nearest allowed start for ${install.title} is Tue 16:00.`)
     } finally { await local.close() }
   })
 
@@ -424,10 +424,10 @@ describe('a lock is measured against the saved plan (walk 2, R2-5)', () => {
       const preview = (await local.call('planning.plan.edit', { resource: created.id, input: { edits: [{ edit: 'job', key: seal.key, lock: '2026-11-17T07:00:00Z' }], preview: true } })).body.result.preview
       const text: string = preview.consequence
       // The long form (two breaks named, the job named in the nearest start) is over 300 characters here.
-      const long = `Not saved yet. This option would break the capacity of '${crew.label}', the link '${title(links[0]!.from)}' before '${title(links[0]!.to)}' and 2 more; generate new options after saving. The nearest allowed start for ${seal.title} is Tue 13:00.`
+      const long = `Not saved yet. 'Rebuild in place' would break the capacity of '${crew.label}', the link '${title(links[0]!.from)}' before '${title(links[0]!.to)}' and 2 more; generate new options after saving. The nearest allowed start for ${seal.title} is Tue 13:00.`
       expect(long.length).toBeGreaterThan(300)
       expect([text.length <= 300, text.includes('…'), text.endsWith('.')]).toEqual([true, false, true])
-      expect(text).toBe(`Not saved yet. This option would break the capacity of '${crew.label}' and 3 more; generate new options after saving. The nearest allowed start for ${seal.title} is Tue 13:00.`)
+      expect(text).toBe(`Not saved yet. 'Rebuild in place' would break the capacity of '${crew.label}' and 3 more; generate new options after saving. The nearest allowed start for ${seal.title} is Tue 13:00.`)
       // What the shorter form leaves out is in the result's own fields.
       expect([preview.violations.length, preview.nearestAllowed]).toEqual([4, '2026-11-17T12:00:00Z'])
     } finally { await local.close() }
@@ -641,8 +641,8 @@ describe('increment 2: the structured facts, dominance and the previous section 
       expect(current.items.map(item => [item.key, item.dominated?.by ?? null, item.fresh])).toEqual([[swap.key, null, true], [rebuild.key, null, true], ['rebuild-later', rebuild.key, true], ['cheapest', null, true]])
       const before = await page('previous')
       expect(before.items.map(item => [item.key, item.dominated?.by ?? null, item.fresh])).toEqual([[swap.key, null, false], [rebuild.key, null, false], ['rebuild-later', rebuild.key, false]])
-      // Out of date: said without proof words.
-      expect(JSON.stringify(before.items.map(item => item.status))).not.toContain('proven optimal')
+      // Out of date (fresh false), its stored statuses as they were, proofs too: never relabelled (walk V2).
+      expect(before.items.map(item => item.status)).toEqual(previous.options.map(option => option.status))
       expect(before.at).toBe(previous.at)
       const none = await local.create('train-a-work-week')
       expect(sectionDataSchemas.previous.parse((await local.call('planning.plan.read', { resource: none.id, input: { section: 'previous' } })).body.result.sections[0].data)).toEqual({ items: [], at: null, recommended: null })
