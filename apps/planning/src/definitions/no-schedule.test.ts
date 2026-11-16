@@ -8,7 +8,7 @@ const keysIn = (value: unknown, path = ''): string[] => value === null || typeof
     : Object.entries(value).flatMap(([key, entry]) => [`${path}.${key}`, ...keysIn(entry, `${path}.${key}`)])
 
 test('no Definition carries a schedule or a typed-in World value', async () => {
-  for (const file of ['blank', 'train-a-work-week', 'supply-run']) {
+  for (const file of ['blank', 'halden-delivery-planning', 'train-a-work-week', 'supply-run']) {
     const document = await Bun.file(new URL(`./${file}.plan-definition.json`, import.meta.url)).json()
     expect(Object.keys(document).sort()).toEqual(['description', 'id', 'inputs', 'title'])
     const paths = keysIn(document.inputs)

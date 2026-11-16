@@ -1,6 +1,8 @@
 <script lang="ts">
-  import { resourceCatalogChangedMessageSchema } from '@leitbild/contracts'
+  import { resourceCatalogChangedMessageSchema, resourceIdSchema } from '@leitbild/contracts'
+  import { deliveryDemoDefinitionId } from '../definitions/delivery-demo.ts'
   import { createPlanningClient } from './api.ts'
+  import DeliveryDemo from './DeliveryDemo.svelte'
   import Library from './Library.svelte'
   import PlanScreen from './PlanScreen.svelte'
 
@@ -9,10 +11,14 @@
   const match = location.pathname.match(/^\/workspaces\/([^/]+)\/planning$/)
   if (!match?.[1]) throw new Error('Planning opens inside a Workspace')
   const workspaceId = decodeURIComponent(match[1])
-  const planId = new URLSearchParams(location.search).get('plan')
+  const query = new URLSearchParams(location.search)
+  const planId = query.get('plan')
+  const demo = query.get('demo')
+  const demoRun = resourceIdSchema.safeParse(query.get('run'))
   const client = createPlanningClient(workspaceId)
   const host = window.parent === window ? window : window.parent
   const workspaceHref = (planning?: string) => `/workspaces/${encodeURIComponent(workspaceId)}${planning === undefined ? '' : `?planning=${encodeURIComponent(planning)}`}`
+  const worldHref = (run: string, objectId?: string) => `${workspaceHref()}?${new URLSearchParams({ world: run, ...(objectId === undefined ? {} : { focus: objectId }) })}`
 
   const changed = (): void => {
     if (planId === null || window.parent === window) return
@@ -24,7 +30,12 @@
   const go = (href: string): void => { host.location.assign(href) }
 </script>
 
-{#if planId === null}
+{#if demo === deliveryDemoDefinitionId && demoRun.success}
+  {@const run = demoRun.data}
+  <DeliveryDemo {client} {run} mapHref={(objectId) => worldHref(run, objectId)} planHref={workspaceHref} />
+{:else if demo !== null}
+  <p class="loading" role="alert">Open the delivery demo from its World map. <a href={workspaceHref()} target="_top">Open Workspace</a></p>
+{:else if planId === null}
   <Library {client} onOpen={(plan) => go(workspaceHref(plan))} />
 {:else}
   <PlanScreen {client} {planId} onChanged={changed} onOpenWorkspace={() => go(workspaceHref())} onOpenLibrary={() => go(workspaceHref('library'))} />

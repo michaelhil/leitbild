@@ -14,6 +14,7 @@
   interface Props {
     readonly workspaceId: string
     readonly worldRunId: string | null
+    readonly worldFocus?: string | null
     readonly planningPath?: string | null
     readonly planningResource?: WorkspaceResourceReference | null
     readonly onResourceCatalogChange: () => void
@@ -41,7 +42,7 @@
   const minimumOpenShare = 20
 
   let {
-    workspaceId, worldRunId, planningPath = null, planningResource = null, onResourceCatalogChange, focusedSubjects, agentsRoomId, agentsVisible, onShowAgents, runRefusal, onOpenRun,
+    workspaceId, worldRunId, worldFocus = null, planningPath = null, planningResource = null, onResourceCatalogChange, focusedSubjects, agentsRoomId, agentsVisible, onShowAgents, runRefusal, onOpenRun,
     runAssistantAvailable, onOpenRunAssistant, onError, worldPane = $bindable(null),
   }: Props = $props()
   let splitPercent = $state(initialSplit)
@@ -294,7 +295,7 @@
     <iframe
       bind:this={worldFrame}
       class="module-frame active"
-      src={`/workspaces/${encodeURIComponent(workspaceId)}/world/runs/${encodeURIComponent(worldRunId)}`}
+      src={`/workspaces/${encodeURIComponent(workspaceId)}/world/runs/${encodeURIComponent(worldRunId)}${worldFocus ? `?${new URLSearchParams({ focus: worldFocus })}` : ''}`}
       title="World simulations"
       onload={worldFrameLoaded}
     ></iframe>

@@ -1,7 +1,7 @@
 // Operation inputs and outputs. The boundary validates with these exact schemas; what is published to
 // Host and the Assistant is stripForPublication(exact).
 import { z } from 'zod'
-import { workspaceResourceReferenceSchema } from '@leitbild/contracts'
+import { resourceIdSchema, workspaceResourceReferenceSchema } from '@leitbild/contracts'
 import { editSchema, sourceInputSchema } from '../plan/edit-schema.ts'
 import {
   calendarSchema, certifiedSizeSchema, changeSchema, datedRowSchema, dueRuleSchema, equipmentSchema, goalProofBreaks, goalWordSchema, gridSchema, groupSchema, instantSchema, jobSchema,
@@ -14,6 +14,7 @@ export const createInputSchema = z.object({
   edits: z.array(editSchema).max(60).optional().describe('Edits applied to the new plan, in order; same vocabulary as planning.plan.edit'),
   // Set once, at create: the edit vocabulary cannot change the grid of a plan with jobs.
   grid: gridSchema.optional().describe('Time step of the plan: 30min for work weeks, 30s for jobs of a few minutes; default 30min'),
+  demoRun: resourceIdSchema.optional().describe('Open the guided delivery plan for this running World simulation, creating it once and reading its facts'),
 }).strict()
 export const editInputSchema = z.object({
   edits: z.array(editSchema).min(1).max(60).describe('Applied together or not at all'),

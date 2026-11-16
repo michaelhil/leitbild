@@ -1,4 +1,4 @@
-// Planning's Module API behind Host: the manifest, Workspace lifecycle, the three Definitions, the plan
+// Planning's Module API behind Host: the manifest, Workspace lifecycle, the Definitions, the plan
 // Resources and the eight Planning operations (the ninth, the World facts query, is World's). Inputs are
 // validated with the exact schemas; what is published is stripForPublication(exact).
 import { z } from 'zod'
@@ -70,12 +70,12 @@ export const planningOperations: ReadonlyArray<Operation<any>> = [
   {
     id: 'planning.plan.create', kind: 'command', scope: 'definition', risk: 'write',
     title: 'Create a plan',
-    description: 'Start a new plan from a template: a blank plan, the Train A work week or the Supply run. The new plan is not linked to a simulation yet; its first card says which World simulation to start and then link. Optional edits, in the same words as changing a plan, are applied as it is made: equipment, crews, shift calendars, jobs, links, rules and goals. Creating a plan never changes the World.',
+    description: 'Start a new plan from a template. The standard start leaves the plan unlinked so you can choose its World simulation later. Optional edits use the same words as changing a plan and are applied as it is made. For the guided Two Halden deliveries demo, pass its current World Run as demoRun to create or reopen that run’s plan with World values already read. Starting a plan only reads World.',
     searchTerms: ['new', 'blank', 'empty', 'template', 'example', 'demo', 'start', 'outage', 'maintenance', 'work week'],
     input: createInputSchema, output: writeResultSchema,
-    invoke: async ({ operations }, invocation, input: z.infer<typeof createInputSchema>) => {
+    invoke: async ({ operations, signal }, invocation, input: z.infer<typeof createInputSchema>) => {
       const definition = invocation.definition!
-      const { result, created } = await operations.create(invocation.workspaceId, { id: definition.id, revisionId: definition.revisionId }, input, invocation.access)
+      const { result, created } = await operations.create(invocation.workspaceId, { id: definition.id, revisionId: definition.revisionId }, input, invocation.access, signal)
       return { result, created }
     },
   },

@@ -124,7 +124,10 @@ export const createPlanningStack = async (options: { readonly realAgents?: boole
   cleanup.push(() => pool.shutdown())
   const operations = createPlanningOperations({
     store, definitions, solver: createRealSolver(pool),
-    world: { read: async (access, run, input, signal) => planningFactsOutputSchema.parse(await createPlanningHostClient({ hostUrl }).call(access, 'world.simulation-run.planning-facts', { resource: run, input }, signal)) },
+    world: {
+      read: async (access, run, input, signal) => planningFactsOutputSchema.parse(await createPlanningHostClient({ hostUrl }).call(access, 'world.simulation-run.planning-facts', { resource: run, input }, signal)),
+      runSource: (run, signal) => createPlanningHostClient({ hostUrl }).runSource(run, signal),
+    },
   })
   const planning = createPlanningServer({ operations, definitions, store, port: 0, uiDistPath: planningHome })
   cleanup.push(() => planning.stop(true))

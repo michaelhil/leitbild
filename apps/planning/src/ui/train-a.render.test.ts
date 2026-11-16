@@ -45,6 +45,24 @@ describe('Train A on the plan screen', () => {
     expect(text).toContain('Link the running simulation')
   })
 
+  test('Generate waits for the first required World read without blocking plans that only display World items', () => {
+    const inputs = trainAInputs()
+    const unlinked = html(modelOf(inputs))
+    const generate = /<button[^>]*disabled[^>]*aria-describedby="generate-needs-world"[^>]*>Generate<\/button>/
+    expect(unlinked).toMatch(generate)
+    expect(readableText(unlinked)).toContain('Link the simulation and read its values first.')
+
+    const at = '2026-11-12T09:00:00Z'
+    const linked = { ...inputs, settings: { ...inputs.settings, run: { id: 'run-1', linkedAt: at } } }
+    expect(html(modelOf(linked))).toMatch(generate)
+    expect(screen(modelOf(linked))).toContain('Read the World values first.')
+
+    const read = { ...linked, world: { refreshedAt: at, facts: [] } }
+    expect(html(modelOf(read))).not.toMatch(generate)
+    const withoutChecks = { ...inputs, jobs: inputs.jobs.map(job => ({ ...job, checks: [] })) }
+    expect(html(modelOf(withoutChecks))).not.toMatch(generate)
+  })
+
   test('orientation comes from the plan: window, limits and guideline from its rules and goals, protected items, crews and their notes', () => {
     const model = modelOf(trainAInputs())
     const rules = screen(model, 'rules')
