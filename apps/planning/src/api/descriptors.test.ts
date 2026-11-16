@@ -70,9 +70,9 @@ describe('the Planning operations as published (design §5.1)', () => {
     }
   })
 
-  test('the three Definitions name create as their primary and are not featured', async () => {
+  test('the plan Definitions name create as their primary and are not featured', async () => {
     const definitions = (await harness.request(`/internal/workspaces/${harness.workspaceId}/definitions`)).body.definitions
-    expect(definitions.map((entry: { ref: { id: string } }) => entry.ref.id)).toEqual(['blank', 'train-a-work-week', 'supply-run'])
+    expect(definitions.map((entry: { ref: { id: string } }) => entry.ref.id)).toEqual(['blank', 'halden-delivery-planning', 'train-a-work-week', 'supply-run'])
     for (const definition of definitions) {
       expect(definition).toMatchObject({ ref: { moduleId: 'planning', type: 'planning.plan-definition' }, primaryCapabilityId: 'planning.plan.create', capabilityIds: ['planning.plan.create'] })
       expect(definition.currentRevisionId).toMatch(/^[0-9a-f]{16}$/)

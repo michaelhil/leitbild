@@ -1,0 +1,125 @@
+{
+  "id": "halden-delivery-planning",
+  "title": "Plan: Two Halden deliveries",
+  "description": "One truck, two nearby deliveries and a shared target. Try both orders in the guided Halden: plan two deliveries demo, which links the World simulation and reads the truck's unloading time.",
+  "inputs": {
+    "settings": {
+      "title": "Two Halden deliveries",
+      "purpose": "Schedule two unloads with one truck and compare which delivery meets its target.",
+      "timeZone": "Europe/Oslo",
+      "window": {
+        "start": "2026-11-16T08:00:00Z",
+        "end": "2026-11-16T09:00:00Z"
+      },
+      "dataDate": "2026-11-16T08:00:00Z",
+      "grid": "30s",
+      "currency": "NOK",
+      "run": null,
+      "scenario": {
+        "id": "halden-delivery-planning",
+        "title": "Halden: plan two deliveries"
+      }
+    },
+    "equipment": [],
+    "groups": [],
+    "calendars": [
+      {
+        "key": "morning",
+        "label": "Delivery window",
+        "weekly": [],
+        "periods": [{"start": "2026-11-16T08:00:00Z", "end": "2026-11-16T09:00:00Z"}],
+        "except": [],
+        "source": {"by": "planner"}
+      }
+    ],
+    "resources": [
+      {
+        "key": "truck",
+        "label": "Delivery truck",
+        "kind": "tool",
+        "count": 1,
+        "calendar": "morning",
+        "attributes": [],
+        "locator": "einsatz/unit/unit%3Adelivery-truck",
+        "source": {"by": "planner"}
+      }
+    ],
+    "purchases": [],
+    "methods": [
+      {
+        "key": "order",
+        "label": "Delivery order",
+        "options": [
+          {"key": "school-first", "label": "School first", "fixedCost": 0},
+          {"key": "sports-hall-first", "label": "Sports hall first", "fixedCost": 0}
+        ]
+      }
+    ],
+    "jobs": [
+      {
+        "key": "school",
+        "title": "School delivery",
+        "kind": "work",
+        "equipment": [],
+        "isolation": "none",
+        "duration": {
+          "value": null,
+          "unit": "min",
+          "calendar": "working",
+          "origin": {"by": "world", "refs": [{"locator": "einsatz/unit/unit%3Adelivery-truck", "fact": "unit:delivery-truck/service-seconds"}]}
+        },
+        "durationWith": [],
+        "needs": [{"anyOf": ["truck"], "amount": 1, "handover": false}],
+        "continuous": true,
+        "target": {"finishBy": "2026-11-16T08:15:00Z", "words": "The school wants its delivery unloaded by 09:15."},
+        "checks": [],
+        "tags": ["school"],
+        "locator": "einsatz/task/task%3Aschool-delivery"
+      },
+      {
+        "key": "sports-hall",
+        "title": "Sports hall delivery",
+        "kind": "work",
+        "equipment": [],
+        "isolation": "none",
+        "duration": {
+          "value": null,
+          "unit": "min",
+          "calendar": "working",
+          "origin": {"by": "world", "refs": [{"locator": "einsatz/unit/unit%3Adelivery-truck", "fact": "unit:delivery-truck/service-seconds"}]}
+        },
+        "durationWith": [],
+        "needs": [{"anyOf": ["truck"], "amount": 1, "handover": false}],
+        "continuous": true,
+        "target": {"finishBy": "2026-11-16T08:15:00Z", "words": "The sports hall wants its delivery unloaded by 09:15."},
+        "checks": [],
+        "tags": ["sports-hall"],
+        "locator": "einsatz/task/task%3Asports-hall-delivery"
+      }
+    ],
+    "links": [
+      {
+        "from": "school",
+        "to": "sports-hall",
+        "type": "FS",
+        "lag": {"value": 5, "unit": "min"},
+        "method": {"choice": "order", "option": "school-first"},
+        "words": "Allow five minutes to reach the next stop."
+      },
+      {
+        "from": "sports-hall",
+        "to": "school",
+        "type": "FS",
+        "lag": {"value": 5, "unit": "min"},
+        "method": {"choice": "order", "option": "sports-hall-first"},
+        "words": "Allow five minutes to reach the next stop."
+      }
+    ],
+    "rules": [],
+    "goals": [
+      {"metric": "lateness", "scope": {"tags": ["school"]}, "tolerance": {"value": 0, "unit": "min"}},
+      {"metric": "lateness", "scope": {"tags": ["sports-hall"]}, "tolerance": {"value": 0, "unit": "min"}}
+    ],
+    "world": {"refreshedAt": null, "facts": []}
+  }
+}

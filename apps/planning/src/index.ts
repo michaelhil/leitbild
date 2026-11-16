@@ -13,6 +13,7 @@ if (!hostUrl) throw new Error('WORKSPACE_HOST_URL is required: Planning reads Wo
 const home = resolve(process.env.LEITBILD_PLANNING_HOME ?? './data')
 const host = createPlanningHostClient({ hostUrl })
 const world: WorldFactsPort = {
+  runSource: host.runSource,
   read: async (access, run, input, signal) => planningFactsOutputSchema.parse(await host.call(access, 'world.simulation-run.planning-facts', { resource: run, input }, signal)),
 }
 

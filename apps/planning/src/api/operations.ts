@@ -1,19 +1,21 @@
 // The nine operations' behaviour (eight here; the World facts query is World's). The UI and the Assistant
 // reach these only through Host and module-api.ts, so both take one path. Planning writes nothing in World:
-// its only World call is the facts read in refresh. Generate, explain and preview run on the solver port
+// it reads World facts and looks up the source Scenario of a guided demonstration.
+// Generate, explain and preview run on the solver port
 // (lane S). Lane K's checker and its re-verifications run inside Generate's solver child, once; the service
 // stores their result, validated against the plan schema, and never runs the checker on a read: "what overtime
 // buys" reads each rung's stored figures through lane K's rungStanding (check/buys.ts), which runs no checker.
+import { createHash } from 'node:crypto'
 import { z } from 'zod'
 import {
   inspectionViewSchema, planningFactsOutputSchema, workspaceResourceReferenceSchema,
   type AccessContext, type InspectionView, type PlanningFactsInput, type PlanningFactsOutput, type WorkspaceId, type WorkspaceResourceReference,
 } from '@leitbild/contracts'
-import { planningError } from '../errors.ts'
+import { isPlanningError, planningError } from '../errors.ts'
 import { applyEdits, requireAuthority, type ChangeRecord, type EditOutcome, type StoredActor, type Weakening } from '../plan/edits.ts'
 import { definitionRevision, startPlan } from '../definitions/start.ts'
-import type { PlanDefinitionsPort } from '../definitions/index.ts'
-import { outTogether, readiness, worldSubjects, type ReadinessItem } from '../plan/readiness.ts'
+import { deliveryDemoDefinitionId, type PlanDefinition, type PlanDefinitionsPort } from '../definitions/index.ts'
+import { outTogether, readiness, worldRefs, worldSubjects, type ReadinessItem } from '../plan/readiness.ts'
 import { buysItems, methodLadders, type FinishCause } from '../plan/buys.ts'
 import { rungStanding } from '../check/buys.ts'
 import { changesSince, versus } from '../plan/versus.ts'
@@ -113,6 +115,8 @@ export interface SolverPort {
 export interface WorldFactsPort {
   /** `signal` ends the read: the refresh deadline or the caller's abort. */
   readonly read: (access: AccessContext, run: WorkspaceResourceReference, input: PlanningFactsInput, signal: AbortSignal) => Promise<PlanningFactsOutput>
+  /** The Run's source Scenario, read through Host's Workspace resource catalogue. */
+  readonly runSource?: (run: WorkspaceResourceReference, signal: AbortSignal) => Promise<string | undefined>
 }
 
 export interface PlanningOperationsPorts {
@@ -172,6 +176,16 @@ export const planReference = (workspaceId: WorkspaceId, planId: string): Workspa
 
 const runReference = (workspaceId: WorkspaceId, runId: string): WorkspaceResourceReference =>
   workspaceResourceReferenceSchema.parse({ workspaceId, moduleId: 'world', type: 'world.simulation-run', id: runId })
+
+/** One guided plan per Run, including when the launcher retries an interrupted request. */
+const demoPlanId = (run: WorkspaceResourceReference, definition: string): string => {
+  const bytes = createHash('sha256').update(JSON.stringify([run.workspaceId, run.id, definition])).digest().subarray(0, 16)
+  // UUID version 8, with the RFC variant for application-defined identifiers.
+  bytes[6] = (bytes[6]! & 0x0f) | 0x80
+  bytes[8] = (bytes[8]! & 0x3f) | 0x80
+  const hex = bytes.toString('hex')
+  return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`
+}
 
 const appendChange = (plan: Plan, change: Omit<Plan['changes'][number], 'seq'>): Pick<Plan, 'changes' | 'droppedChanges'> => {
   const seq = (plan.changes.at(-1)?.seq ?? plan.droppedChanges) + 1
@@ -375,8 +389,7 @@ export const createPlanningOperations = (ports: PlanningOperationsPorts) => {
    * every page followed, all within `deadline`. Einsatz projects arrival facts only for units and tasks read
    * together, so an Einsatz plan with more than 32 Einsatz items is refused, never truncated.
    */
-  const readWorld = async (workspaceId: WorkspaceId, runId: string, inputs: PlanInputs, access: AccessContext, deadline: AbortSignal, late: () => Error): Promise<{ readonly facts: WorldFactCopy[]; readonly observedAt: string }> => {
-    const subjects = worldSubjects(inputs)
+  const readWorld = async (reference: WorkspaceResourceReference, subjects: readonly string[], access: AccessContext, deadline: AbortSignal, late: () => Error): Promise<{ readonly facts: WorldFactCopy[]; readonly observedAt: string }> => {
     const byPack = new Map<string, string[]>()
     for (const locator of subjects) {
       const pack = locator.slice(0, locator.indexOf('/'))
@@ -387,7 +400,6 @@ export const createPlanningOperations = (ports: PlanningOperationsPorts) => {
     const batches = [...byPack.values()].flatMap(locators => Array.from({ length: Math.ceil(locators.length / 32) }, (_, index) => locators.slice(index * 32, index * 32 + 32)))
     const facts: WorldFactCopy[] = []
     let oldestRead: string | undefined
-    const reference = runReference(workspaceId, runId)
     for (const batch of batches) {
       let cursor: string | undefined
       do {
@@ -399,7 +411,7 @@ export const createPlanningOperations = (ports: PlanningOperationsPorts) => {
         }
         const answer = planningFactsOutputSchema.safeParse(raw)
         if (!answer.success) throw planningError(502, 'invalid_host_response', 'World answered the facts query outside its contract')
-        if (answer.data.run.id !== runId) throw planningError(502, 'invalid_host_response', 'World answered for another simulation')
+        if (answer.data.run.id !== reference.id || answer.data.run.workspaceId !== reference.workspaceId) throw planningError(502, 'invalid_host_response', 'World answered for another simulation')
         // The oldest read time of the batches: every value is at least this fresh.
         if (oldestRead === undefined || Date.parse(answer.data.observedAt) < Date.parse(oldestRead)) oldestRead = answer.data.observedAt
         // An item larger than a page continues on the next one under the same locator: facts merge by locator.
@@ -408,6 +420,49 @@ export const createPlanningOperations = (ports: PlanningOperationsPorts) => {
       } while (cursor !== undefined)
     }
     return { facts, observedAt: oldestRead ?? now() }
+  }
+
+  const openDeliveryDemo = async (definition: PlanDefinition, run: WorkspaceResourceReference, access: AccessContext, signal: AbortSignal): Promise<{ plan: Plan; created: boolean }> => {
+    const deadline = AbortSignal.any([signal, AbortSignal.timeout(refreshDeadlineMs)])
+    const late = () => planningError(503, 'world_unavailable', 'World is taking longer than expected. Try opening Planning again.')
+    if (ports.world.runSource === undefined) throw planningError(503, 'world_unavailable', 'Planning could not check the World simulation.')
+    let scenarioId: string | undefined
+    try { scenarioId = await ports.world.runSource(run, deadline) } catch (error) {
+      if (deadline.aborted) throw late()
+      throw error
+    }
+    if (deadline.aborted) throw late()
+    if (scenarioId !== definition.inputs.settings.scenario?.id) {
+      throw planningError(409, 'demo_run_mismatch', 'Start the Halden delivery demo in World to open its plan.')
+    }
+    const workspaceId = run.workspaceId
+    const id = demoPlanId(run, definition.id)
+    const checkLink = (plan: Plan): Plan => {
+      if (plan.inputs.settings.run?.id !== run.id) throw planningError(409, 'demo_run_mismatch', 'This plan’s World link was changed in the full editor. Start another demo run to make a new plan.')
+      return plan
+    }
+    try {
+      return { plan: checkLink(await store.read(workspaceId, id)), created: false }
+    } catch (error) {
+      if (!isPlanningError(error) || error.code !== 'plan_not_found') throw error
+    }
+
+    const { plan } = startPlan({ definition, workspaceId, id, at: now(), by: storedActor(access), edits: [{ edit: 'plan', run: run.id }] })
+    // The two stop locators let visitors find the jobs on the map. Only the truck's design time is a
+    // solver input here; leaving the stop locators out of this read keeps preparation independent of routing.
+    const subjects = [...new Set(worldRefs(plan.inputs).map(({ ref }) => ref.locator))]
+    const { facts, observedAt } = await readWorld(run, subjects, access, deadline, late)
+    if (deadline.aborted) throw late()
+    const linked = { ...plan, inputs: planInputsSchema.parse({ ...plan.inputs, world: { refreshedAt: observedAt, facts } }) }
+    if (readinessOf(linked, new Map()).some(item => item.blocks)) {
+      throw planningError(409, 'demo_world_values_missing', 'The delivery truck’s unloading time could not be read. Return to the World demo and try again.')
+    }
+    try {
+      return { plan: await store.create(workspaceId, linked), created: true }
+    } catch (error) {
+      if (!isPlanningError(error) || error.code !== 'plan_exists') throw error
+      return { plan: checkLink(await store.read(workspaceId, id)), created: false }
+    }
   }
 
   /**
@@ -573,8 +628,18 @@ export const createPlanningOperations = (ports: PlanningOperationsPorts) => {
 
     list: async (workspaceId: WorkspaceId) => store.list(workspaceId),
 
-    create: async (workspaceId: WorkspaceId, definition: { readonly id: string; readonly revisionId: string }, input: z.infer<typeof createInputSchema>, access: AccessContext): Promise<{ readonly result: WriteResult; readonly created: WorkspaceResourceReference }> => {
+    create: async (workspaceId: WorkspaceId, definition: { readonly id: string; readonly revisionId: string }, input: z.infer<typeof createInputSchema>, access: AccessContext, signal: AbortSignal = new AbortController().signal): Promise<{ readonly result: WriteResult; readonly created?: WorkspaceResourceReference }> => {
       const found = definitionRevision(ports.definitions, definition)
+      if (input.demoRun !== undefined) {
+        if (found.id !== deliveryDemoDefinitionId || input.edits !== undefined || input.grid !== undefined) {
+          throw planningError(400, 'invalid_request', 'demoRun applies only to the guided delivery plan and takes no other inputs.')
+        }
+        const { plan, created } = await openDeliveryDemo(found, runReference(workspaceId, input.demoRun), access, signal)
+        return {
+          result: writeResult(plan, ['Opened the linked delivery plan with its World values']),
+          ...(created ? { created: planReference(workspaceId, plan.id) } : {}),
+        }
+      }
       const { plan, changes } = startPlan({ definition: found, workspaceId, id: crypto.randomUUID(), at: now(), by: storedActor(access), edits: input.edits ?? [], ...(input.grid === undefined ? {} : { grid: input.grid }) })
       const stored = await store.create(workspaceId, plan)
       return { result: writeResult(stored, [`Created '${stored.inputs.settings.title}' from '${found.title}'`, ...changeLines(changes, stored.inputs, 11)]), created: planReference(workspaceId, stored.id) }
@@ -795,7 +860,7 @@ export const createPlanningOperations = (ports: PlanningOperationsPorts) => {
       const run = plan.inputs.settings.run
       const zone = plan.inputs.settings.timeZone
       if (run === null) return writeResult(plan, ['Nothing read: no simulation is linked to this plan'])
-      const { facts, observedAt } = await readWorld(workspaceId, run.id, plan.inputs, access, deadline, late)
+      const { facts, observedAt } = await readWorld(runReference(workspaceId, run.id), worldSubjects(plan.inputs), access, deadline, late)
       const key = (fact: WorldFactCopy) => `${fact.locator}\u0000${fact.id}`
       const previous = new Map(plan.inputs.world.facts.map(fact => [key(fact), fact]))
       const valueChanged = (fact: WorldFactCopy) => {
