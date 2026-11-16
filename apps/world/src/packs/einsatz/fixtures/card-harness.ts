@@ -11,9 +11,9 @@ import {
   armedOrderWith,
   busyChoices,
   cardFor,
-  currentJobOf,
   deliverToOrder,
   dispatchKindOf,
+  jobText,
   movePromptText,
   overview,
   ownReceipt,
@@ -49,7 +49,7 @@ import { operator, type OpenRun } from './run-harness.ts'
  * receipts show, and the panel's client (`ui/einsatz-client.ts`) what is
  * read and sent, validated with the Capabilities' own schemas. It performs
  * the selection effects as `DispatchPanel.svelte` does. It reads the
- * situation, and an armed unit's options, after every action and Run step
+ * situation, and the shown unit's options, after every action and Run step
  * (the panel reads only when an Einsatz record it sees changed,
  * `einsatzRecordsKey`, and carries waiting times and ETAs on its own clock
  * between reads; the harness has no clock, so it reads each time); it pins
@@ -121,7 +121,7 @@ export interface CardScreen {
   readonly prompt: () => ReadonlyArray<string> | null
   /** The object the map selects. */
   readonly mapSelection: () => string | null
-  /** Reads the situation again, and an armed unit's options. */
+  /** Reads the situation again, and the shown unit's options. */
   readonly sync: () => Promise<void>
   readonly mapTap: (objectId: string, gapMs?: number) => Promise<void>
   readonly groundTap: (position: readonly [number, number], gapMs?: number) => Promise<void>
@@ -209,7 +209,7 @@ export const openCardScreen = async (run: OpenRun, options: { readonly actor?: A
     const armed = selection.selection
     if (armed.kind !== 'armed' || armed.unitId !== answer.unitId) return
     armedOrder = armedOrderWith(armedOrder, answer)
-    await send({ kind: 'current-job', unitId: answer.unitId, job: currentJobOf(answer) })
+    await send({ kind: 'current-job', unitId: answer.unitId, job: answer.busy })
   }
 
   const pin = async (callId: string): Promise<void> => {
@@ -243,7 +243,7 @@ export const openCardScreen = async (run: OpenRun, options: { readonly actor?: A
     const outcome = await outcomeOf(async () => await client.order(input))
     await send({ kind: 'result', unitId, target, outcome: outcome.ok ? { ok: true } : { ok: false, code: outcome.code, text: outcome.text }, atMs: wallMs })
     if (outcome.ok) {
-      const dropped = drops === null ? null : `${drops.label}${drops.code === null ? '' : ` · ${drops.code}`}`
+      const dropped = drops === null ? null : jobText(drops)
       receipts = withReceipts(receipts, [ownReceipt({ commandId: outcome.commandId, unitIds: [unitId], unitLabel: unitLabel(unitId), targetLabel: stopLabel(target), dropped, atMs: wallMs })])
     }
   }
@@ -298,8 +298,8 @@ export const openCardScreen = async (run: OpenRun, options: { readonly actor?: A
 
   const sync = async (): Promise<void> => {
     await readSituation()
-    const armed = selection.selection
-    if (armed.kind === 'armed') await readOptions(armed.unitId)
+    const shown = selection.selection
+    if (shown.kind === 'unit' || shown.kind === 'armed') await readOptions(shown.unitId)
   }
 
   /** An operator action at `gapMs` after the previous one. */

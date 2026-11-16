@@ -12,13 +12,13 @@ import {
   closedCallCard,
   contactRows,
   countsLine,
-  currentJobOf,
   deliverToOrder,
   dispatchKindOf,
   einsatzRecordsKey,
   dispatchWords,
   edgeTabText,
   emptySelectionText,
+  jobText,
   maxReceipts,
   movePromptText,
   overview,
@@ -171,6 +171,19 @@ describe('Unit card', () => {
     expect(card.deliverTo.map(chip => chip.label)).toEqual(['Depot A'])
   })
 
+  test('a unit whose options list no target an order would take: Dispatch is disabled with the reason most refusals give; with one valid target, or before its options, it is not', () => {
+    const stuck = optionsFor('r1', { targets: [], refused: [
+      { target: { taskId: 'job-1' }, label: 'J-1 Ridge', code: 'unit_committed', text: 'R1 is handing over at Depot A' },
+      { target: { taskId: 'job-2' }, label: 'J-2 Bay', code: 'unit_committed', text: 'R1 is handing over at Depot A' },
+      { target: { siteId: 'depot-b' }, label: 'Depot B', code: 'site_not_accepting', text: 'Depot B is closed for arrivals' },
+    ] })
+    expect(unitCard(situation, situation.units[0]!, su('r1'), stuck, null, 0).dispatch).toEqual({ label: 'Task R1…', enabled: false, reason: 'R1 is handing over at Depot A' })
+    expect(unitCard(situation, situation.units[0]!, su('r1'), optionsFor('r1'), null, 0).dispatch.enabled).toBe(true)
+    expect(unitCard(situation, situation.units[0]!, su('r1'), null, null, 0).dispatch.enabled).toBe(true)
+    // Another unit's options say nothing of this one.
+    expect(unitCard(situation, situation.units[0]!, su('r1'), { ...stuck, unitId: 'k1' }, null, 0).dispatch.enabled).toBe(true)
+  })
+
   test('a unit another role commands is read-only and says who commands it', () => {
     const other = situationOf({ units: [unit('r1', { commandedBy: 'Blue command' })] })
     const card = unitCard(other, other.units[0]!, su('r1'), null, null, 0)
@@ -182,8 +195,8 @@ describe('Unit card', () => {
     const loading = unitCard(situation, situation.units[0]!, sa('r1'), null, null, 0)
     expect(loading.armed).toEqual({ banner: 'Task R1…', slot: { kind: 'empty' }, rows: [], loading: true })
     const busy = optionsFor('r1', {
-      busy: { taskId: 'job-2', label: 'J-2 Bay', freeInS: 300 },
-      targets: [{ target: { taskId: 'job-1' }, verb: 'pick-up', label: 'J-1 Ridge', etaS: 240, drops: { taskId: 'job-2', label: 'J-2 Bay', code: 'Q1' } }],
+      busy: { taskId: 'job-2', label: 'J-2 Bay', code: 'Q1', freeInS: 300 },
+      targets: [{ target: { taskId: 'job-1' }, verb: 'pick-up', label: 'J-1 Ridge', etaS: 240 }],
     })
     const order = armedOrderWith(null, busy)
     const armed = unitCard(situation, situation.units[0]!, sa('r1', { refusal: { targetId: 'depot-b', text: 'Depot B is closed', untilMs: 9 } }), busy, order, 0).armed!
@@ -193,6 +206,8 @@ describe('Unit card', () => {
       { key: JSON.stringify({ siteId: 'depot-b' }), target: { siteId: 'depot-b' }, text: 'Depot B', eta: null, drops: null, refused: 'Depot B is closed for arrivals' },
     ])
     expect(armed.slot).toEqual({ kind: 'refusal', text: 'Depot B is closed' })
+    // Armed by "+ Add stop" the order drops nothing.
+    expect(unitCard(situation, situation.units[0]!, sa('r1', { when: 'after' }), busy, order, 0).armed!.rows[0]!.drops).toBeNull()
     // Options of another unit are never shown.
     expect(unitCard(situation, situation.units[0]!, sa('r1'), optionsFor('k1'), null, 0).armed!.loading).toBe(true)
     expect(unitCard(situation, situation.units[0]!, sa('r1', { when: 'after' }), null, null, 0).armed!.banner).toBe('Task R1… (after current job)')
@@ -225,7 +240,7 @@ describe('Unit card', () => {
 
   test('HF5: the busy slot names the job the prompt pinned, not the latest options; until they name one it says it is reading', () => {
     const job = { taskId: 'job-2', label: 'J-2 Bay', code: 'Q1', freeInS: 300 }
-    const later = optionsFor('r1', { busy: { taskId: 'job-1', label: 'J-1 Ridge', freeInS: 60 } })
+    const later = optionsFor('r1', { busy: { taskId: 'job-1', label: 'J-1 Ridge', code: 'Q0', freeInS: 60 } })
     const asked = unitCard(situation, situation.units[0]!, sa('r1', { prompt: { kind: 'busy', target: { taskId: 'job-1' }, job } }), later, null, 0).armed!
     expect(asked.slot).toEqual({ kind: 'busy', after: `${dispatchWords.after} (free in 5 min)`, now: `${dispatchWords.now} (drops J-2 Bay · Q1)` })
     expect(unitCard(situation, situation.units[0]!, sa('r1', { prompt: { kind: 'busy', target: { taskId: 'job-1' }, job: null } }), later, null, 0).armed!.slot).toEqual({ kind: 'busy-reading' })
@@ -417,13 +432,12 @@ describe('Armed feedback, prompts and receipts', () => {
     expect(shown.targets).toHaveLength(13)
   })
 
-  test('the busy prompt: the current job as the options name it, After current job, and Now naming what it drops; the Move prompt in the lexicon\'s word', () => {
-    expect(currentJobOf(optionsFor('r1'))).toBeNull()
-    const busy = optionsFor('r1', { busy: { taskId: 'job-2', label: 'J-2 Bay', freeInS: 300 }, targets: [{ target: { taskId: 'job-1' }, verb: 'serve', label: 'J-1 Ridge', etaS: 1, drops: { taskId: 'job-2', label: 'J-2 Bay', code: 'Q1' } }] })
-    const job = currentJobOf(busy)!
-    expect(job).toEqual({ taskId: 'job-2', label: 'J-2 Bay', code: 'Q1', freeInS: 300 })
+  test('the busy prompt: the current job as the options name it, with its priority code, After current job, and Now naming what it drops; the Move prompt in the lexicon\'s word', () => {
+    const busy = optionsFor('r1', { busy: { taskId: 'job-2', label: 'J-2 Bay', code: 'Q1', freeInS: 300 } })
+    const job = busy.busy!
+    expect(jobText(job)).toBe('J-2 Bay · Q1')
     expect(busyChoices(job)).toEqual({ after: `${dispatchWords.after} (free in 5 min)`, now: `${dispatchWords.now} (drops J-2 Bay · Q1)` })
-    expect(busyChoices({ ...job, code: null, freeInS: null })).toEqual({ after: dispatchWords.after, now: `${dispatchWords.now} (drops J-2 Bay)` })
+    expect(busyChoices({ ...job, freeInS: null })).toEqual({ after: dispatchWords.after, now: `${dispatchWords.now} (drops J-2 Bay · Q1)` })
     expect(movePromptText(situation, 'r1')).toBe('Shift R1 here')
   })
 

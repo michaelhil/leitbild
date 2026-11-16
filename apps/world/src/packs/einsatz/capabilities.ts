@@ -126,7 +126,7 @@ export const einsatzCapabilities: ReadonlyArray<SimulationCapability> = [
     readScope: 'collection',
     id: einsatzQueryIds.unitOptions,
     title: 'Where a unit may be ordered',
-    description: 'For one unit: every target an order may name now, nearest first, with the verb (serve, pick up, deliver, go to, engage), the ETA and, for a busy unit, the task an order with when "now" drops; and every target an order would be refused for, with its code and reason. A busy unit names its task and when it is free. Example: `{unitId:\'unit:a4\'}`.',
+    description: 'For one unit: every target an order may name now, nearest first, with the verb (serve, pick up, deliver, go to, engage) and the ETA; and every target an order would be refused for, with its code and reason. A busy unit names its current task (which an order with when "now" drops), its priority code and when it is free. Example: `{unitId:\'unit:a4\'}`.',
     searchTerms: [...dispatchTerms, 'targets', 'options', 'where can'],
     input: unitOptionsInputSchema,
     output: unitOptionsSchema,

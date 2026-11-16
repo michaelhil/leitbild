@@ -281,6 +281,7 @@ export interface UnitCardView {
   readonly status: { readonly word: string; readonly tone: UnitTone; readonly due: string | null }
   /** "Commanded by …" for a unit the viewer cannot command: the card is read-only. */
   readonly readOnly: string | null
+  /** "Dispatch A4…", disabled with the reason while its options list no target an order would take. */
   readonly dispatch: ButtonView
   readonly recall: ButtonView
   /** "Undo last order (by Assistant: C-2 → Depot B)": who gave the order it takes back, and where it sent the unit. */
@@ -303,18 +304,13 @@ const loadLabels = (unit: SituationUnit): ReadonlyArray<string> => unit.carry?.l
 
 const dueText = (unit: SituationUnit, elapsedS: number): string | null => unit.phaseDueInS === null ? null : clockText(unit.phaseDueInS - elapsedS)
 
-/** The job a busy unit's options name, with its priority code where a target names it. */
-export const currentJobOf = (options: UnitOptions): CurrentJob | null => {
-  const busy = options.busy
-  if (busy === null) return null
-  const code = options.targets.find(target => target.drops?.taskId === busy.taskId)?.drops?.code ?? null
-  return { taskId: busy.taskId, label: busy.label, code, freeInS: busy.freeInS }
-}
+/** A busy unit's current job in words: "C-3 · P3". */
+export const jobText = (job: CurrentJob): string => `${job.label} · ${job.code}`
 
 /** The busy prompt's two options, labelled from the job the prompt named when it opened. */
 export const busyChoices = (job: CurrentJob): { readonly after: string; readonly now: string } => ({
   after: job.freeInS === null ? dispatchWords.after : `${dispatchWords.after} (free in ${minutesText(job.freeInS)})`,
-  now: `${dispatchWords.now} (drops ${job.label}${job.code === null ? '' : ` · ${job.code}`})`,
+  now: `${dispatchWords.now} (drops ${jobText(job)})`,
 })
 
 const armedSlot = (selection: Extract<Selection, { kind: 'armed' }>): ArmedSlot => {
@@ -328,13 +324,15 @@ const armedView = (unit: SituationUnit, words: Words, options: UnitOptions | nul
   const valid = new Map((own?.targets ?? []).map(target => [stopKey(target.target), target]))
   const refused = new Map((own?.refused ?? []).map(entry => [stopKey(entry.target), entry]))
   const rows = order !== null && order.unitId === unit.id ? order.rows : []
+  // Armed by "+ Add stop", the order goes after the current job and drops nothing.
+  const drops = own?.busy == null || selection.when === 'after' ? null : `drops ${jobText(own.busy)}`
   return {
     banner: `${words.send} ${unit.label}…${selection.when === 'after' ? ` (${dispatchWords.after.toLowerCase()})` : ''}`,
     slot: armedSlot(selection),
     rows: rows.map(row => {
       const target = valid.get(row.key)
       if (target !== undefined) {
-        return { key: row.key, target: row.target, text: `${verbText(target.verb, words)} ${target.label}`, eta: minutesText(target.etaS), drops: target.drops === undefined ? null : `drops ${target.drops.label} · ${target.drops.code}`, refused: null }
+        return { key: row.key, target: row.target, text: `${verbText(target.verb, words)} ${target.label}`, eta: minutesText(target.etaS), drops, refused: null }
       }
       return { key: row.key, target: row.target, text: row.label, eta: null, drops: null, refused: refused.get(row.key)?.text ?? dispatchWords.notListed }
     }),
@@ -348,6 +346,14 @@ const lastOrderText = (unit: SituationUnit): string | null => {
   if (last === null) return null
   const stops = unit.plan.filter(stop => stop.by.isViewer === last.by.isViewer && stop.by.label === last.by.label).map(stop => stop.label)
   return `by ${last.by.isViewer ? dispatchWords.you.toLowerCase() : last.by.label}: ${stops.length === 0 ? unit.status.word : stops.join(' → ')}`
+}
+
+/** Why no order can be given to the unit now: its options list no target an order would take, only refused ones; the reason most of them share. Null while some target is valid, or before its options are read. */
+const noTargetReason = (unit: SituationUnit, options: UnitOptions | null): string | null => {
+  if (options === null || options.unitId !== unit.id || options.targets.length > 0 || options.refused.length === 0) return null
+  const counts = new Map<string, number>()
+  for (const entry of options.refused) counts.set(entry.text, (counts.get(entry.text) ?? 0) + 1)
+  return [...counts].reduce((best, entry) => entry[1] > best[1] ? entry : best)[0]
 }
 
 /** A unit's card, armed or not. */
@@ -372,7 +378,7 @@ export const unitCard = (situation: Situation, unit: SituationUnit, selection: S
     title: [unit.label, unit.typeLabel, ...(unit.group === null ? [] : [unit.group.label])].join(' · '),
     status: { word: unit.status.word, tone: unit.status.tone, due: dueText(unit, elapsedS) },
     readOnly,
-    dispatch: button(`${words.send} ${unit.label}…`, readOnly ?? destroyed),
+    dispatch: button(`${words.send} ${unit.label}…`, readOnly ?? destroyed ?? noTargetReason(unit, options)),
     recall: button(recallLabel, readOnly ?? destroyed ?? (loaded.length > 0 ? `Carrying ${joined(loaded)}: deliver first` : null)),
     undo: { ...button(lastOrder === null ? dispatchWords.undoLast : `${dispatchWords.undoLast} (${lastOrder})`, readOnly ?? (lastCommand === null ? dispatchWords.nothingToUndo : null)), commandId: lastCommand },
     planHeading: words.plan,

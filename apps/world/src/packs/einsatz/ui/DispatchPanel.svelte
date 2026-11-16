@@ -15,13 +15,13 @@
     busyChoices,
     cardFor,
     contactRows,
-    currentJobOf,
     deliverToOrder,
     dispatchKindOf,
     dispatchWords,
     edgeTabText,
     einsatzRecordsKey,
     emptySelectionText,
+    jobText,
     movePromptText,
     overview,
     ownReceipt,
@@ -60,9 +60,9 @@
    *
    * It holds the Run's situation, read on open and whenever an Einsatz
    * record the screen sees changes (`einsatzRecordsKey`: Einsatz announces
-   * no Pack data revision); an armed unit's options, read on arming and on
-   * every such change while it stays armed, with the armed list's order
-   * fixed at arming; and the
+   * no Pack data revision); the shown unit's options, read when its card
+   * opens, again on arming, and on every such change while its card shows,
+   * with the armed list's order fixed at arming; and the
    * call card's proposal, pinned when the card opens and read again only on
    * Refresh, which keeps the old answer greyed until the new one arrives. It
    * never holds the configuration.
@@ -184,7 +184,7 @@
       const armed = selection.selection
       if (armed.kind !== 'armed' || armed.unitId !== answer.unitId) return
       armedOrder = armedOrderWith(armedOrder, answer)
-      send({ kind: 'current-job', unitId: answer.unitId, job: currentJobOf(answer) })
+      send({ kind: 'current-job', unitId: answer.unitId, job: answer.busy })
     } catch (error) {
       if (!disposed && read === optionsRead) feedback = messageOf(error)
     }
@@ -266,7 +266,7 @@
     if (disposed) return
     send({ kind: 'result', unitId, target, outcome: outcome.ok ? { ok: true } : { ok: false, code: outcome.code, text: outcome.text }, atMs: Date.now() })
     if (outcome.ok) {
-      const dropped = drops === null ? null : `${drops.label}${drops.code === null ? '' : ` · ${drops.code}`}`
+      const dropped = drops === null ? null : jobText(drops)
       receipts = withReceipts(receipts, [ownReceipt({ commandId: outcome.commandId, unitIds: [unitId], unitLabel: unitLabel(unitId), targetLabel: stopLabel(target), dropped, atMs: Date.now() })])
     }
   }
@@ -379,14 +379,14 @@
     }
   })
 
-  // Every change of an Einsatz record the screen sees reads the situation again, and an armed unit's options; the first runs on open.
+  // Every change of an Einsatz record the screen sees reads the situation again, and the shown unit's options; the first runs on open.
   const recordsKey = $derived(einsatzRecordsKey(props.objects))
   $effect(() => {
     void recordsKey
     untrack(() => {
       void readSituation()
-      const armed = selection.selection
-      if (armed.kind === 'armed') void readOptions(armed.unitId)
+      const shown = selection.selection
+      if (shown.kind === 'unit' || shown.kind === 'armed') void readOptions(shown.unitId)
     })
   })
 

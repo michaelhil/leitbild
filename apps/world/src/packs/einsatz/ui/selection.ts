@@ -26,7 +26,8 @@ import type { OrderWhen, Stop } from '../order-schema.ts'
  * The reducer returns its effects; the panel performs them in order:
  * `select` shares the selection with the map, `submit` sends a
  * `world.einsatz.unit.order` for the armed unit, `options` reads
- * `world.einsatz.unit.options` for it, `recommend` pins the call card's
+ * `world.einsatz.unit.options` for a unit whose card opens and again when
+ * it is armed, `recommend` pins the call card's
  * proposal and `late-refusal` reports a refused order whose unit is no
  * longer armed, which would otherwise be lost.
  */
@@ -47,12 +48,12 @@ export interface ClickedObject {
 
 export type Clicked = ClickedObject | { readonly kind: 'ground'; readonly point: GeoJsonPoint }
 
-/** A busy unit's current job, which an order with `when: 'now'` drops. */
+/** A busy unit's current job, as its options name it (`busy`): the task an order with `when: 'now'` drops. */
 export interface CurrentJob {
   readonly taskId: string
   readonly label: string
-  /** Its priority code, where the options name it. */
-  readonly code: string | null
+  /** Its priority code. */
+  readonly code: string
   /** Estimated seconds until the job is done; null when unknown. */
   readonly freeInS: number | null
 }
@@ -62,12 +63,14 @@ export type ArmedPrompt =
   /** A tap on open ground: "Move A4 here". */
   | { readonly kind: 'move'; readonly point: GeoJsonPoint }
   /**
-   * The server refused `when_required`: "After current job" or "Now (drops
-   * …)". The job is the one the unit's options named first after the prompt
-   * opened, and stays that one: the prompt never re-labels under the
-   * pointer, and "Now" sends exactly the task it names, so the server's
-   * `drops_mismatch` catches a job that changed meanwhile. Null until the
-   * options name it; "Now" is not offered before.
+   * A target tapped for a busy unit: "After current job" or "Now (drops
+   * …)". It opens on the tap, from the job the unit's options read named;
+   * when that read had not arrived, or called the unit free, the tap
+   * submits and the server's `when_required` opens it, with the job the
+   * options name next. The job stays the one it opened with: the prompt
+   * never re-labels under the pointer, and "Now" sends exactly the task it
+   * names, so the server's `drops_mismatch` catches a job that changed
+   * meanwhile. Null until the options name it; "Now" is not offered before.
    */
   | { readonly kind: 'busy'; readonly target: Stop; readonly job: CurrentJob | null }
 
@@ -89,6 +92,8 @@ export type Selection =
     readonly when: 'after' | null
     readonly prompt: ArmedPrompt | null
     readonly refusal: ShownRefusal | null
+    /** The unit's current job as its latest options read names it, null while it is free; absent until a read arrives. */
+    readonly job?: CurrentJob | null
   }
   | { readonly kind: 'call'; readonly callId: string }
   | { readonly kind: 'site'; readonly siteId: string }
@@ -123,7 +128,7 @@ export type SelectionEvent =
   /** The surface cleared the shared selection. */
   | { readonly kind: 'cleared' }
   | { readonly kind: 'result'; readonly unitId: string; readonly target: Stop; readonly outcome: SubmitOutcome; readonly atMs: number }
-  /** The unit's options arrived; they name its current job, or none while it is free. */
+  /** The unit's options arrived; they name its current job (`busy`), or none while it is free. */
   | { readonly kind: 'current-job'; readonly unitId: string; readonly job: CurrentJob | null }
   | { readonly kind: 'tick'; readonly atMs: number }
 
@@ -181,24 +186,36 @@ const cardOf = (object: ClickedObject): Selection => {
   }
 }
 
-/** The effects of moving from one selection to the next: the map follows, an armed unit reads its options, a newly opened call card pins its proposal. */
+/**
+ * The effects of moving from one selection to the next: the map follows, a
+ * unit whose card opens reads its options, which say whether any order can
+ * be given to it, and reads them again when it is armed, so the targets and
+ * its current job are fresh; a newly opened call card pins its proposal.
+ */
 const transition = (state: SelectionState, next: Selection, extra: ReadonlyArray<SelectionEffect> = []): SelectionStep => {
   const before = state.selection
   const effects: SelectionEffect[] = []
   const objectId = selectedObjectOf(next)
   if (objectId !== selectedObjectOf(before)) effects.push({ kind: 'select', objectId })
-  if (next.kind === 'armed' && (before.kind !== 'armed' || before.unitId !== next.unitId)) effects.push({ kind: 'options', unitId: next.unitId })
+  const unitId = next.kind === 'unit' || next.kind === 'armed' ? next.unitId : null
+  const shown = before.kind === 'unit' || before.kind === 'armed' ? before.unitId : null
+  if (unitId !== null && (unitId !== shown || (next.kind === 'armed' && before.kind !== 'armed'))) effects.push({ kind: 'options', unitId })
   if (next.kind === 'call' && (before.kind !== 'call' || before.callId !== next.callId)) effects.push({ kind: 'recommend', callId: next.callId })
   return { state: { ...state, selection: next }, effects: [...effects, ...extra] }
 }
 
 const unchanged = (state: SelectionState): SelectionStep => ({ state, effects: [] })
 
-const submit = (state: SelectionState, armed: Extract<Selection, { kind: 'armed' }>, target: Stop): SelectionStep => ({
-  // The prompt goes: what was asked is answered by this submit. A refusal shown stays until the result replaces it or it expires.
-  state: { ...state, selection: { ...armed, prompt: null } },
-  effects: [{ kind: 'submit', unitId: armed.unitId, target, when: armed.when, drops: null }],
-})
+/**
+ * A target for the armed unit. A unit its options read names busy asks
+ * After or Now at once, sending nothing yet; any other submits, and the
+ * server decides. The prompt shown goes: this tap answers what it asked. A
+ * refusal shown stays until the result replaces it or it expires.
+ */
+const submit = (state: SelectionState, armed: Extract<Selection, { kind: 'armed' }>, target: Stop): SelectionStep => {
+  if (armed.when === null && armed.job != null) return { state: { ...state, selection: { ...armed, prompt: { kind: 'busy', target, job: armed.job } } }, effects: [] }
+  return { state: { ...state, selection: { ...armed, prompt: null } }, effects: [{ kind: 'submit', unitId: armed.unitId, target, when: armed.when, drops: null }] }
+}
 
 const clickIn = (state: SelectionState, on: Clicked): SelectionStep => {
   const selection = state.selection
@@ -270,9 +287,10 @@ export const reduceSelection = (state: SelectionState, event: SelectionEvent): S
       return { state: { ...state, selection: { ...selection, refusal } }, effects: [] }
     }
     case 'current-job': {
-      // Only an open busy prompt that has not yet named its job takes one; from then on it keeps it.
-      if (selection.kind !== 'armed' || selection.unitId !== event.unitId || selection.prompt?.kind !== 'busy' || selection.prompt.job !== null || event.job === null) return unchanged(state)
-      return { state: { ...state, selection: { ...selection, prompt: { ...selection.prompt, job: event.job } } }, effects: [] }
+      if (selection.kind !== 'armed' || selection.unitId !== event.unitId) return unchanged(state)
+      // An open busy prompt that has not yet named its job takes this one; from then on it keeps it.
+      const prompt = selection.prompt?.kind === 'busy' && selection.prompt.job === null && event.job !== null ? { ...selection.prompt, job: event.job } : selection.prompt
+      return { state: { ...state, selection: { ...selection, job: event.job, prompt } }, effects: [] }
     }
     case 'tick':
       if (selection.kind === 'armed' && selection.refusal !== null && event.atMs >= selection.refusal.untilMs) {

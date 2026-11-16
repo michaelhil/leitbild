@@ -46,10 +46,10 @@ const kinds = (effects: ReadonlyArray<SelectionEffect>) => effects.map(effect =>
 
 describe('B.3: a click on a unit', () => {
   for (const [name, selection] of Object.entries(states)) {
-    test(`${name}: another unit opens its card`, () => {
+    test(`${name}: another unit opens its card and reads its options`, () => {
       const result = step(selection, click(unitB))
       expect(result.state.selection).toEqual({ kind: 'unit', unitId: unitB.id })
-      expect(result.effects).toEqual([{ kind: 'select', objectId: unitB.id }])
+      expect(result.effects).toEqual([{ kind: 'select', objectId: unitB.id }, { kind: 'options', unitId: unitB.id }])
     })
   }
   test('S0, SC, SS: unit A opens its card', () => {
@@ -207,8 +207,11 @@ describe('B.3: a double-click acts as one click', () => {
 })
 
 describe('Arming and the armed unit\'s submits', () => {
-  test('"Dispatch A4…" arms the unit and reads its options', () => {
+  test('"Dispatch A4…" arms the unit and reads its options again', () => {
     expect(step(su, { kind: 'arm', unitId: unitA.id, when: null })).toEqual({ state: start(sa), effects: [{ kind: 'options', unitId: unitA.id }] })
+  })
+  test('one level back from SA, or an accepted order, keeps the unit\'s card and reads nothing', () => {
+    expect(step(sa, { kind: 'back' }).effects).toEqual([])
   })
   test('an accepted submit returns to the unit\'s card', () => {
     const result = step(sa, { kind: 'result', unitId: unitA.id, target: { taskId: call.id }, outcome: { ok: true }, atMs: 1 })
@@ -226,15 +229,38 @@ describe('Arming and the armed unit\'s submits', () => {
     const refused = step(sa, { kind: 'result', unitId: unitA.id, target: { taskId: call.id }, outcome: { ok: false, code: 'when_required', text: 'busy' }, atMs: 1 }).state
     const job = { taskId: 't-9', label: 'C-9', code: 'P3', freeInS: 300 }
     const named = reduceSelection(refused, { kind: 'current-job', unitId: unitA.id, job }).state
-    expect(named.selection).toEqual({ ...sa, prompt: { kind: 'busy', target: { taskId: call.id }, job } })
-    // A later read naming another job, or none, changes nothing: the prompt never re-labels.
-    expect(reduceSelection(named, { kind: 'current-job', unitId: unitA.id, job: { ...job, taskId: 't-8', label: 'C-8' } }).state).toBe(named)
-    expect(reduceSelection(named, { kind: 'current-job', unitId: unitA.id, job: null }).state).toBe(named)
+    expect(named.selection).toEqual({ ...sa, job, prompt: { kind: 'busy', target: { taskId: call.id }, job } })
+    // A later read naming another job, or none, never re-labels the prompt.
+    const promptOf = (state: SelectionState) => state.selection.kind === 'armed' ? state.selection.prompt : null
+    expect(promptOf(reduceSelection(named, { kind: 'current-job', unitId: unitA.id, job: { ...job, taskId: 't-8', label: 'C-8' } }).state)).toEqual(promptOf(named))
+    expect(promptOf(reduceSelection(named, { kind: 'current-job', unitId: unitA.id, job: null }).state)).toEqual(promptOf(named))
     expect(reduceSelection(named, { kind: 'prompt', choice: 'now' }).effects).toEqual([{ kind: 'submit', unitId: unitA.id, target: { taskId: call.id }, when: 'now', drops: job }])
-    // Outside a busy prompt the job is not kept.
-    expect(reduceSelection(start(sa), { kind: 'current-job', unitId: unitA.id, job }).state.selection).toEqual(sa)
+    // Outside a busy prompt the job is the armed unit's own, for its next tap.
+    expect(reduceSelection(start(sa), { kind: 'current-job', unitId: unitA.id, job }).state.selection).toEqual({ ...sa, job })
+    expect(reduceSelection(start(sa), { kind: 'current-job', unitId: unitB.id, job }).state.selection).toEqual(sa)
     const mismatch = reduceSelection(named, { kind: 'result', unitId: unitA.id, target: { taskId: call.id }, outcome: { ok: false, code: 'drops_mismatch', text: 'A works for C-8' }, atMs: 5 })
     expect(mismatch.state.selection).toMatchObject({ kind: 'armed', refusal: { targetId: call.id, text: 'A works for C-8' } })
+  })
+  test('a unit its options read names busy asks After or Now at once on a target tap or a target row, sending nothing; Now drops the job read', () => {
+    const job = { taskId: 't-9', label: 'C-9', code: 'P3', freeInS: 300 }
+    const busy: Selection = { ...sa, job }
+    const tapped = step(busy, click(call))
+    expect(tapped).toEqual({ state: { selection: { ...busy, prompt: { kind: 'busy', target: { taskId: call.id }, job } }, lastClick: expect.anything() }, effects: [] })
+    expect(step(busy, { kind: 'target-row', target: { siteId: site.id } }).state.selection).toEqual({ ...busy, prompt: { kind: 'busy', target: { siteId: site.id }, job } })
+    expect(reduceSelection(tapped.state, { kind: 'prompt', choice: 'now' }).effects).toEqual([{ kind: 'submit', unitId: unitA.id, target: { taskId: call.id }, when: 'now', drops: job }])
+    expect(reduceSelection(tapped.state, { kind: 'prompt', choice: 'after' }).effects).toEqual([{ kind: 'submit', unitId: unitA.id, target: { taskId: call.id }, when: 'after', drops: null }])
+    // Armed by "+ Add stop" the order goes after the job: no prompt.
+    expect(kinds(step({ ...busy, when: 'after' }, click(call)).effects)).toEqual(['submit'])
+  })
+  test('the server\'s net: a tap before the options read arrives, or after one that called the unit free, submits; when_required then asks, with the job the next read names', () => {
+    for (const armed of [sa, { ...sa, job: null }] as const) {
+      const sent = step(armed, click(call))
+      expect(sent.effects).toEqual([{ kind: 'submit', unitId: unitA.id, target: { taskId: call.id }, when: null, drops: null }])
+      const refused = reduceSelection(sent.state, { kind: 'result', unitId: unitA.id, target: { taskId: call.id }, outcome: { ok: false, code: 'when_required', text: 'busy' }, atMs: 1 })
+      expect(refused.effects).toEqual([{ kind: 'options', unitId: unitA.id }])
+      const job = { taskId: 't-9', label: 'C-9', code: 'P3', freeInS: null }
+      expect(reduceSelection(refused.state, { kind: 'current-job', unitId: unitA.id, job }).state.selection).toEqual({ ...armed, job, prompt: { kind: 'busy', target: { taskId: call.id }, job } })
+    }
   })
   test('any other refusal shows beside the target for 4 s, stays armed and sends nothing', () => {
     const refused = step(sa, { kind: 'result', unitId: unitA.id, target: { siteId: site.id }, outcome: { ok: false, code: 'site_not_accepting', text: 'S-1 is closed' }, atMs: 1_000 })

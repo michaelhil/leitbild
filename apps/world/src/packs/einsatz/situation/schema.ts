@@ -221,21 +221,17 @@ export type UnitOptionsInput = z.output<typeof unitOptionsInputSchema>
 export const unitOptionsSchema = z.object({
   unitId: idSchema.describe('The unit the answer is for.'),
   busy: z.object({
-    taskId: idSchema.describe('The task the unit works for now.'),
+    taskId: idSchema.describe('The task the unit works for now; an order with when "now" drops it.'),
     label: text.describe('That task\'s label.'),
+    code: text.describe('That task\'s priority code.'),
     freeInS: seconds.nullable().describe('Estimated seconds until its current job is done; null when it cannot be estimated.'),
-  }).strict().nullable().describe('Set when the unit is busy: an order then needs when ("after" or "now" with drops).'),
+  }).strict().nullable().describe('Set when the unit is busy: an order then needs when ("after" or "now" with drops = taskId).'),
   targets: z.array(z.object({
     target: stopSchema.describe('The stop, in world.einsatz.unit.order form.'),
     verb: z.enum(stopVerbs).describe('What the unit would do there.'),
     label: text.describe('The target\'s label.'),
     etaS: seconds.describe('Seconds to arrive, turnout included; routed for road units, straight-line for direct ones.'),
-    drops: z.object({
-      taskId: idSchema.describe('The task dropped.'),
-      label: text.describe('Its label.'),
-      code: text.describe('Its priority code.'),
-    }).strict().optional().describe('The busy unit\'s current task, which an order with when "now" drops.'),
-  }).strict()).describe('Valid targets, nearest first.'),
+  }).strict()).describe('Valid targets, nearest first; for a busy unit, those an order "after" its current job or "now" would take.'),
   refused: z.array(z.object({
     target: stopSchema.describe('The stop, in world.einsatz.unit.order form.'),
     label: text.describe('The target\'s label.'),
