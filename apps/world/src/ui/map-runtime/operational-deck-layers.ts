@@ -112,7 +112,8 @@ const pointFill = (point: OperationalPointFeature): ColorRgba => {
 
 const targetColors = {
   valid: { fill: rgba(22, 133, 92, 44), stroke: rgba(22, 133, 92, 245) },
-  assigned: { fill: rgba(190, 32, 60, 48), stroke: rgba(190, 32, 60, 245) },
+  // The plan's red is distinct from the reserved alarm reds.
+  assigned: { fill: rgba(168, 63, 77, 48), stroke: rgba(168, 63, 77, 245) },
   refused: { fill: rgba(71, 85, 105, 40), stroke: rgba(71, 85, 105, 245) },
 }
 

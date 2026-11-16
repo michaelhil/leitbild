@@ -84,8 +84,8 @@ describe('Einsatz job chain paths', () => {
     }).filter(feature => feature.geometry.type === 'Point')
     expect(points()).toEqual([])
     expect(points('c1').map(feature => packMapFeatureSchema.parse(feature))).toMatchObject([
-      { geometry: at(0.01), color: '#be203c', selection: { panelId: 'einsatz.dispatch', itemId: waypointItemId('c1', 'step-1') } },
-      { geometry: at(0.02), color: '#be203c', selection: { panelId: 'einsatz.dispatch', itemId: waypointItemId('c1', 'step-2') } },
+      { geometry: at(0.01), color: '#a83f4d', selection: { panelId: 'einsatz.dispatch', itemId: waypointItemId('c1', 'step-1') } },
+      { geometry: at(0.02), color: '#a83f4d', selection: { panelId: 'einsatz.dispatch', itemId: waypointItemId('c1', 'step-2') } },
     ])
     expect(points('c2').map(feature => feature.selection?.itemId)).toEqual([waypointItemId('c2', 'step-1')])
   })

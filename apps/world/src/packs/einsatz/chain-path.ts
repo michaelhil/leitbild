@@ -128,7 +128,7 @@ export const plannedWaypointFeatures = (
       categoryId,
       geometry: step.target.point,
       symbol: { icon: 'map-pin' },
-      color: '#be203c',
+      color: '#a83f4d',
       selection: { panelId, itemId },
       summary: `${object.label} · Stop ${index + 1}`,
     }]
