@@ -150,7 +150,7 @@ export const GUIDE_PAGES: ReadonlyArray<GuidePage> = [
       },
       {
         id: 'einsatz', title: 'Einsatz',
-        body: 'Einsatz (German for a call-out) is Leitbild’s dispatch and command engine. Ambulances, patrol cars, fire engines, trucks or tanks: every unit type, call and role comes from the scenario, not from code. Tap a call or a unit, then Dispatch. The Dispatch panel lists every call and unit, so one person can run the demo.',
+        body: 'Einsatz (German for a call-out) is Leitbild’s dispatch and command engine. Ambulances, patrol cars, fire engines, trucks or tanks: every unit type, call and role comes from the scenario, not from code. Tap a call, then Dispatch. The Dispatch panel lists every call and unit, so one person can run the demo.',
         why: 'One engine for emergency-service, logistics and military exercises, built for teams.',
         limits: 'The exercises are fictional, and the Assistant is not available in exercises with roles.',
         media: { kind: 'shot', shot: 'guide-einsatz', alt: 'The Dispatch panel over Halden: open calls ranked by priority with their waiting times, the units below them, and units on the map.' },
