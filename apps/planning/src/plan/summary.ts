@@ -5,6 +5,7 @@ import { resultLimitBytes, type ItemStatus, type OptionWarning, type SectionName
 import type { BuysItem } from './buys.ts'
 import type { ChangeRecord, Weakening } from './edits.ts'
 import type { OutTogether, Precondition, ReadinessItem } from './readiness.ts'
+import { planningError } from '../errors.ts'
 
 type Inputs = PlanInputs
 type Option = NonNullable<Plan['options']>['options'][number]
@@ -403,9 +404,20 @@ const optionItems = (options: readonly Option[], states: ReadonlyMap<string, Opt
 
 export interface Section { readonly id: string; readonly title: string; readonly description?: string; readonly data: unknown }
 
-/** Takes items from `offset` while the section data stays inside `budget` bytes; `more` continues it. */
-export const page = <T>(items: readonly T[], offset: number, budget: number, wrap: (shown: readonly T[], more: string | undefined) => unknown): unknown => {
-  if (offset > items.length) throw new RangeError('The cursor is past the end of this section')
+/**
+ * A record larger than a page (a known limit until list items are bounded): its own refusal, naming the
+ * section. No cursor reaches it, so none is hinted.
+ */
+const recordTooLarge = (section: SectionName) => planningError(422, 'record_too_large', section === 'options' || section === 'previous'
+  ? `One option in this plan is too large to list in the ${section} section in this version of Planning. Nothing stored is lost; explain still reads each option.`
+  : `One record in this plan is too large to list in the ${section} section in this version of Planning. Nothing stored is lost.`, { section })
+
+/**
+ * Takes items from `offset` while the section data stays inside `budget` bytes; `more` continues it. A cursor
+ * past the end is refused with the hint that continues a section; a record larger than a page as too large.
+ */
+export const page = <T>(section: SectionName, items: readonly T[], offset: number, budget: number, wrap: (shown: readonly T[], more: string | undefined) => unknown): unknown => {
+  if (offset > items.length) throw planningError(400, 'invalid_request', 'The cursor is past the end of this section', { expected: { cursor: 'the "more" value of the previous page of the same section' } })
   let count = 0
   let best = wrap([], offset < items.length ? String(offset) : undefined)
   while (offset + count < items.length) {
@@ -415,7 +427,7 @@ export const page = <T>(items: readonly T[], offset: number, budget: number, wra
     best = candidate
     count += 1
   }
-  if (count === 0 && offset < items.length) throw new RangeError('One record of this section is larger than a page')
+  if (count === 0 && offset < items.length) throw recordTooLarge(section)
   return best
 }
 
@@ -426,7 +438,7 @@ const titles: Readonly<Record<SectionName, string>> = {
 }
 
 const pagedSection = (name: SectionName, items: readonly unknown[], offset: number, budget: number, extra: Record<string, unknown> = {}): Section[] =>
-  [{ id: name, title: titles[name], data: page(items, offset, budget, (shown, more) => ({ ...extra, items: shown, ...(more === undefined ? {} : { more }) })) }]
+  [{ id: name, title: titles[name], data: page(name, items, offset, budget, (shown, more) => ({ ...extra, items: shown, ...(more === undefined ? {} : { more }) })) }]
 
 /** The summary: the plan's frame, settings and goals, what needs attention, and the certified size. */
 const summarySection = (context: SectionContext, budget: number): Section[] => {

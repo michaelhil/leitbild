@@ -154,4 +154,28 @@ describe('a refusal is a compact item in the options and previous sections', () 
       }
     } finally { await local.close() }
   }, 300_000)
+
+  test('at the schema\'s most, 64 purchases of 64 characters: options and previous refuse record_too_large, naming the section, with no cursor hint', async () => {
+    // A known limit until list items are bounded (increment 3): a plain option at the schema's most is larger than a page.
+    const key = (stem: string) => stem.padEnd(64, 'x')
+    const originals = trainAInputs.purchases.map(purchase => purchase.key)
+    const renamed = <T>(value: T): T => JSON.parse(originals.reduce((text, from, k) => text.replaceAll(`"${from}"`, `"${key(`purchase-${k}-`)}"`), JSON.stringify(value)))
+    const base = renamed(trainAInputs)
+    const purchases = Array.from({ length: 64 }, (_, k) => base.purchases[k] ?? { ...base.purchases[k % base.purchases.length]!, key: key(`purchase-${k}-`) })
+    const inputs = planInputsSchema.parse({ ...base, purchases })
+    expect(planInputsSchema.safeParse({ ...base, purchases: [...purchases, { ...purchases[0]!, key: 'one-more' }] }).success).toBe(false)
+    const wide = optionSchema.parse({ ...renamed(swap), variant: { ...renamed(swap).variant, purchases: purchases.map(purchase => purchase.key) } })
+    const plan = await stored([wide], inputs)
+    for (const section of ['options', 'previous'] as const) {
+      const answer = await harness.call('planning.plan.read', { resource: plan.id, input: { section } })
+      expect([answer.status, answer.body.error]).toEqual([422, {
+        code: 'record_too_large', retryable: false, details: { section },
+        message: `One option in this plan is too large to list in the ${section} section in this version of Planning. Nothing stored is lost; explain still reads each option.`,
+      }])
+    }
+    // A cursor past the end is the refusal that hints the cursor: there a cursor is the way on.
+    const past = await harness.call('planning.plan.read', { resource: plan.id, input: { section: 'options', cursor: '9' } })
+    expect([past.status, past.body.error.code, past.body.error.details]).toEqual([400, 'invalid_request', { expected: { cursor: 'the "more" value of the previous page of the same section' } }])
+  }, 120_000)
+
 })
