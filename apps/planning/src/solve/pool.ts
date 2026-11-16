@@ -242,7 +242,9 @@ export const createSolverPool = (options: PoolOptions = {}): SolverPool => {
       unanswered: (stoppedBy, wallMs) => {
         const who = stoppedBy === 'cancelled' ? stoppedByWho?.() : undefined
         const status = unresolvedStatus({ grid: task.inputs.settings.grid, engine: SOLVER_VERSIONS.engine, formulation: formulationOf(task.inputs.settings.grid), seed: task.seed, budget: { ...budget }, stoppedBy, ...(who === undefined ? {} : { stoppedByWho: who }), evals: 0, cpuMs: 0 })
-        const option = { key: task.variant.key, label: task.variant.label.slice(0, 160), inputsRevision: task.revision, variant: { methods: [...task.combo], purchases: [] }, status, rows: [], metrics: [] }
+        // A what-if keeps what it asks (its extra rule, its lead) on this path too, so it is never a plain option.
+        const asked = { ...(task.variant.also === undefined ? {} : { also: [...task.variant.also] }), ...(task.variant.lead === undefined ? {} : { lead: task.variant.lead }) }
+        const option = { key: task.variant.key, label: task.variant.label.slice(0, 160), inputsRevision: task.revision, variant: { methods: [...task.combo], purchases: [], ...asked }, status, rows: [], metrics: [] }
         return { value: { option, rounded: [], dropped: [] }, record: { wallMs, cpuMs: 0, evals: 0, stoppedBy } }
       },
     })

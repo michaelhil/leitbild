@@ -76,23 +76,9 @@ export const retimedRows = (planned: PlanInputs, pessimistic: PlanInputs, option
     && before.problem.activities.every((activity, a) => activity.id === after.problem.activities[a]!.id && activity.modes.length === after.problem.activities[a]!.modes.length)
   if (!same) return undefined
   const prep = prepare(after.problem)
-  const placedIn = (decoded: ReturnType<typeof repair>['decoded']) => (a: number): boolean => decoded.finish[a]! >= 0 && decoded.finish[a]! < prep.H && decoded.start[a]! < prep.H
-  let { decoded } = repair(prep, saved.schedule)
-  const first = placedIn(decoded)
-  if (after.index.jobs.some((job, a) => job !== null && !first(a))) {
-    // A job left without a slot in its own mode: the same crews and tools in their widest mode, then again.
-    // Sound only because it buys nothing new: every mode of this compile is made of the option's own purchases
-    // (compiled with buy = the purchases it uses), so the job only works into time the option already buys.
-    const crews = (m: { readonly demands: ReadonlyArray<{ readonly resource: number }> }) => m.demands.map(demand => demand.resource).sort((x, y) => x - y).join(',')
-    const mode = Int32Array.from(saved.schedule.mode, (m, a) => {
-      if (after.index.jobs[a] === null || first(a)) return m
-      const modes = after.problem.activities[a]!.modes
-      const same = modes.flatMap((candidate, k) => (crews(candidate) === crews(modes[m]!) ? [k] : []))
-      return same.reduce((best, k) => (prep.cal[modes[k]!.calendar]!.list.length > prep.cal[modes[best]!.calendar]!.list.length ? k : best), m)
-    })
-    decoded = repair(prep, { start: saved.schedule.start, mode }).decoded
-  }
-  const placed = placedIn(decoded)
+  // The shared repair: a job with no slot in its own mode takes the same crews' widest mode (decode.ts repair).
+  const { decoded, lost: unplacedActivities } = repair(prep, saved.schedule)
+  const placed = (a: number): boolean => !unplacedActivities.includes(a)
   const lost = after.index.jobs.flatMap((job, a) => (job !== null && !placed(a) ? [a] : []))
   const root = lost.filter(a => prep.preds[a]!.every(link => placed(link.from))).sort((x, y) => decoded.start[x]! - decoded.start[y]! || x - y)[0]
   return { rows: dateSchedule(prep, after.index, { start: decoded.start, mode: decoded.mode }, placed), ...(root === undefined ? {} : { unplaced: after.index.jobs[root]! }) }

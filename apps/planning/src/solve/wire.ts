@@ -102,14 +102,18 @@ const previewSchema = z.object({
   violations: z.array(violationSchema),
   nearestAllowed: z.object({ job: keySchema, at: instantSchema }).strict().optional(),
   lockFindings: z.array(violationSchema).optional(),
+  unplaced: z.object({ job: keySchema, resource: keySchema.optional(), after: instantSchema.optional() }).strict().optional(),
 }).strict()
 
 /** The child's preview, validated; refused, never patched. */
 export const previewFromWire = (wire: unknown): PreviewResult | { readonly problem: string } => {
   const parsed = previewSchema.safeParse(decode(wire))
   if (!parsed.success) return { problem: parsed.error.issues.slice(0, 3).map(issue => `${issue.path.join('.')}: ${issue.message}`).join('; ') }
-  const { nearestAllowed, lockFindings, ...rest } = parsed.data
-  return { ...rest, ...(nearestAllowed === undefined ? {} : { nearestAllowed }), ...(lockFindings === undefined ? {} : { lockFindings }) }
+  const { nearestAllowed, lockFindings, unplaced, ...rest } = parsed.data
+  return {
+    ...rest, ...(nearestAllowed === undefined ? {} : { nearestAllowed }), ...(lockFindings === undefined ? {} : { lockFindings }),
+    ...(unplaced === undefined ? {} : { unplaced: { job: unplaced.job, ...(unplaced.resource === undefined ? {} : { resource: unplaced.resource }), ...(unplaced.after === undefined ? {} : { after: unplaced.after }) } }),
+  }
 }
 
 const aboutSchema = z.object({ kind: z.literal('resource'), key: keySchema }).strict()
