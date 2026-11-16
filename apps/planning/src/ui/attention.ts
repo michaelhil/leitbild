@@ -112,7 +112,7 @@ export const pessimisticCard = (option: OptionView, context: Context): Card | nu
   const tight = robust.single.filter(entry => exactly(entry.outcome) !== null).length
   const holding = robust.single.length - alone.length - tight
   const others = holding > 0 && (alone.length > 0 || tight > 0) ? [holding === 1 ? 'The other job with an estimate range holds alone at its high estimate.' : `The other ${holding} jobs with an estimate range each hold alone at their high estimate.`] : []
-  const how = 'Re-timed in the same order with the same crews, nothing earlier, and checked. Re-timed jobs may use any working time the option already buys. A plan made again at those estimates may do better.'
+  const how = 'Re-timed in the same order with the same crews, nothing earlier, and checked. Re-timed jobs may use more of the overtime and nights the option already buys, which can cost more. A plan made again at those estimates may do better.'
   if (together === null && alone.length === 0) {
     return {
       mark: { shape: '✓', word: 'Pessimistic estimates' },
