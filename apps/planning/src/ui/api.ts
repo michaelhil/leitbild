@@ -68,12 +68,16 @@ export const createPlanningClient = (workspaceId: string, transport: Transport =
     planRef,
     /** Plans and simulation Runs in this Workspace, from Host's resource catalogue. */
     catalog: async () => workspaceResourceCatalogSchema.parse(await request(`${base}/resources`)),
-    /** Planning's Definitions (New plan and the two demonstrations), from Host's catalogue. */
+    /** Planning's Definitions, from Host's catalogue. */
     definitions: async () => workspaceDefinitionCatalogSchema.parse(await request(`${base}/definitions?moduleId=planning`)),
     create: (definition: ModuleDefinitionDescriptor, edits?: readonly Edit[], grid?: '30min' | '30s') => invoke('planning.plan.create', {
       definition: { ...definition.ref, revisionId: definition.currentRevisionId },
       input: { ...(edits === undefined ? {} : { edits }), ...(grid === undefined ? {} : { grid }) },
     }, writeResultSchema),
+    createDemo: (definition: ModuleDefinitionDescriptor, run: string, signal?: AbortSignal) => invoke('planning.plan.create', {
+      definition: { ...definition.ref, revisionId: definition.currentRevisionId },
+      input: { demoRun: run },
+    }, writeResultSchema, signal),
     read: async (id: string, input: ReadInput): Promise<InspectionView> =>
       (await invoke('planning.plan.read', { resource: planRef(id), input }, inspectionViewSchema)).result,
     edit: async (id: string, expectedRevision: number, input: EditInput): Promise<WriteResult> =>
