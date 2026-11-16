@@ -53,53 +53,45 @@ const noSpan: Option = optionSchema.parse({ ...asked, key: 'at40-one-unspanned',
 const stored = await harness.store.create(harness.workspaceId, planWith(harness.workspaceId, [asked, noSpan]))
 const read = await loadPlan(client, stored.id)
 const item = (key: string): OptionView => read.options!.items.find(option => option.key === key)!
-const label = (option: string) => trainAInputs.methods[0]!.options.find(entry => entry.key === option)!.label
 const actions = createPlanActions(client, stored.id)
 const chain = await actions.whyNotPossible(asked.key)
 
-describe('the compact item: each method\'s line from its span summary, or the line the read gave', () => {
-  test('the read pages the refusal compact: span summaries and one line per method, no path', () => {
+describe('the compact item (shape E): each method\'s line exactly as the read gives it', () => {
+  test('the read pages the refusal compact: one line per method, figures first, no path', () => {
     const shown = item(asked.key).status
     if (shown.word !== 'proven infeasible') throw new Error('refused')
-    expect(shown.byMethod!.map(entry => entry.span)).toEqual(refused.byMethod!.map(entry => ({ rule: entry.span!.rule, leastHours: entry.span!.leastHours, limitHours: entry.span!.limitHours })))
-    expect(JSON.stringify(shown)).not.toMatch(/"path"|"later"|"alsoProven"/)
+    expect(shown.byMethod!.length).toBe(refused.byMethod!.length)
+    // Each stored span's figures open one line, against the hours asked (lane P's read words them).
+    for (const entry of refused.byMethod!) expect(shown.byMethod!.filter(line => line.line.startsWith(`Out at least ${entry.span!.leastHours} h, against the 40 h asked: `))).toHaveLength(1)
+    expect(JSON.stringify(shown)).not.toMatch(/"path"|"later"|"alsoProven"|"methods"|"purchases"/)
   })
 
-  test('"<method>: out at least <leastHours> h, against the <limitHours> h asked", from each span summary', () => {
+  test('the card says each line as given: no method prefix built, nothing stripped', () => {
     const option = item(asked.key)
-    const card = whatIfCard(option, read, context)
     if (option.status.word !== 'proven infeasible') throw new Error('refused')
-    expect(option.status.byMethod!.length).toBeGreaterThan(1)
-    for (const entry of option.status.byMethod!) expect(card.status.details).toContain(`${label(entry.methods[0]!.option)}: out at least ${hoursText(entry.span!.leastHours)}, against the ${hoursText(entry.span!.limitHours)} asked.`)
+    const card = whatIfCard(option, read, context)
+    expect(card.status.details).toEqual(option.status.byMethod!.map(entry => entry.line))
     expect(card.status.details.join(' ')).not.toContain('held by an outage limit')
     // A refused card shows no unpriced measures: there is no plan to leave anything unpriced.
     expect(card.unpriced).toEqual([])
   })
 
-  test('a method without a span says the line the read gave it, under its name', () => {
+  test('a method without a stored span says the line the read gave from its cause, as given', () => {
     const option = item(noSpan.key)
     if (option.status.word !== 'proven infeasible') throw new Error('refused')
-    const entry = option.status.byMethod![other]!
-    expect(entry.span).toBeUndefined()
-    expect(entry.line).not.toMatch(/^Out at least/)
-    const details = whatIfCard(option, read, context).status.details
-    // The card already says no plan keeps every rule: the line's own "Not possible:" lead is not repeated.
-    expect(details).toContain(`${label(entry.methods[0]!.option)}: ${entry.line.replace(/^Not possible:\s*/, '')}`)
-    expect(details.join(' ')).not.toContain('Not possible:')
-    // The methods with their span still say their hours.
-    expect(details.filter(detail => detail.includes(', against the 40 h asked.'))).toHaveLength(option.status.byMethod!.length - 1)
+    const lines = option.status.byMethod!.map(entry => entry.line)
+    expect(lines.filter(line => !line.startsWith('Out at least'))).toHaveLength(1)
+    expect(whatIfCard(option, read, context).status.details).toEqual(lines)
   })
 
-  test('a span held by a plan rule names that rule in its words, never "asked"', () => {
+  test('a what-if refused with no lines by method: its own span against the rule asked, in that rule\'s words', () => {
     const option = item(asked.key)
-    if (option.status.word !== 'proven infeasible') throw new Error('refused')
-    const rule = trainAInputs.rules.find(entry => entry.kind === 'span-limit' && entry.group === 'COOL-A')!
-    if (rule.kind !== 'span-limit') throw new Error('the plan has its cooling chain limit')
-    // A stand-in: the first method's span on the plan's own rule at its limit, the other summaries as read.
-    const [first, ...rest] = option.status.byMethod!
-    const onPlanRule: OptionView = { ...option, status: { ...option.status, byMethod: [{ ...first!, span: { ...first!.span!, rule: rule.key, limitHours: rule.limit.value } }, ...rest] } }
-    const details = whatIfCard(onPlanRule, read, context).status.details
-    expect(details).toContain(`${label(first!.methods[0]!.option)}: out at least ${hoursText(first!.span!.leastHours)}, against the ${hoursText(rule.limit.value)} of “${rule.words}”.`)
+    if (option.status.word !== 'proven infeasible' || option.status.span === undefined) throw new Error('the read gives the span summary')
+    // The same compact item with one method combination only (a plan with one method has no lines by method).
+    const { byMethod: _lines, ...single } = option.status
+    const details = whatIfCard({ ...option, status: single }, read, context).status.details
+    expect(details[0]).toBe(`Out at least ${hoursText(option.status.span.leastHours)}, against the ${hoursText(option.status.span.limitHours)} of “${at40.words}”.`)
+    expect(details.join(' ')).not.toContain(at40.key)
   })
 })
 

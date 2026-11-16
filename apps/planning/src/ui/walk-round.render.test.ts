@@ -193,23 +193,22 @@ describe('V9: what-if cards never vanish without a word', () => {
 })
 
 describe('V1: a refused what-if says each method\'s cause, against its own limit', () => {
-  test('each byMethod entry under its method\'s name, the rule named in the what-if\'s words; never "this plan allows"', () => {
+  test('each line by method as the read gives it, in its order; never the plan\'s refusal lines', () => {
     const also = { kind: 'span-limit' as const, key: 'what-if-COOL-A-40h', group: 'COOL-A', limit: { value: 40, unit: 'h' as const }, singleEntry: true, words: 'What-if: Train A cooling chain back within 40 h.', source: { by: 'planner' as const } }
     // Lane K's verified causes, one per method (a stand-in in the schema's shape, on the case's own jobs and crews).
     const swapCause = { kind: 'temporal' as const, steps: [{ job: 'SWA-TAG', via: 'span-limit' as const }, { job: 'SWA-RTS', via: 'link' as const }] }
     const rebuildCause = { kind: 'energy' as const, resources: ['mech-station'], jobs: ['SWA-TAG'], requiredHours: 49, availableHours: 48, from: inputs.settings.window!.start, to: inputs.settings.window!.end, span: also.key }
-    // The compact item as the options section pages it: each method's line is the Module's first sentence for
-    // its cause, worded on the inputs with the what-if's rule (as api/operations.ts itemStatus words it).
-    const line = (cause: Parameters<typeof refusalLines>[0], option: string) => clip(refusalLines(cause, withExtraRules(inputs, [also]), undefined, allowed, picks(option))[0]!, 200)
-    const refused = itemOf({ word: 'proven infeasible', run: runBasis(grid), cause: swapCause, byMethod: [{ methods: picks('rebuild'), purchases: allowed, line: line(rebuildCause, 'rebuild') }, { methods: picks('swap'), purchases: allowed, line: line(swapCause, 'swap') }] })
+    // The compact item (shape E) as the options section pages it: each line is the Module's first sentence for
+    // its cause, worded with the what-if's rule, then the method's name (as api/operations.ts itemStatus words it).
+    const line = (cause: Parameters<typeof refusalLines>[0], option: string) => clip(`${refusalLines(cause, withExtraRules(inputs, [also]), undefined, allowed, picks(option))[0]!.replace(/\.$/, '')}: ${label(option)}.`, 200)
+    const lines = [line(swapCause, 'swap'), line(rebuildCause, 'rebuild')]
+    const refused = itemOf({ word: 'proven infeasible', run: runBasis(grid), cause: swapCause, byMethod: lines.map(text => ({ line: text })) })
     const option = optionOf('w40', 'At most 40 h out', refused, { variant: { methods: picks('swap'), purchases: allowed, also: [also] } })
     const model = modelOf(inputs, { options: { at: '2026-11-12T09:05:00.000Z', recommended: null, items: [option] }, refusals: { w40: ['Not possible: x', 'The shortest span this plan allows is 61.5 h, against 72 h.'] } })
     const card = whatIfCard(option, model, contextOf(model))
-    expect(card.status.details.map(entry => entry.split(':')[0])).toEqual([label('rebuild'), label('swap')])
-    expect(card.status.details.join(' ')).toContain('What-if: Train A cooling chain back within 40 h.')
+    expect(card.status.details).toEqual(lines)
     const text = card.status.details.join(' ')
     expect(text).not.toContain('this plan allows')
-    expect(text).not.toContain('no longer in this plan')
     expect(text).not.toContain(also.key)
   })
 })

@@ -6,9 +6,9 @@
 import { timeUnitMs } from '../time/units.ts'
 import type { GenerateInput } from './api.ts'
 import { hoursText, quantityText } from './format.ts'
-import { createNames, otherWarnings, sizeCautionOf, type ItemStatus, type OptionView, type PlanModel } from './model.ts'
+import { createNames, otherWarnings, sizeCautionOf, type OptionView, type PlanModel } from './model.ts'
 import { outageOf, planLimitOf } from './options-glance.ts'
-import { certificateText, goalMark, goalShort, statusView, type Context, type GoalLine, type StatusView } from './status-text.ts'
+import { goalMark, goalShort, statusView, type Context, type GoalLine, type StatusView } from './status-text.ts'
 import { unpricedOf, type Unpriced } from './unpriced.ts'
 
 export type WhatIfKind = 'out' | 'first' | 'cheapest'
@@ -140,31 +140,18 @@ const againstRecommended = (option: OptionView, model: PlanModel, context: Conte
   return parts.length === 0 ? null : `Against ${recommended.label} (recommended): ${parts.join(', ')}.`
 }
 
-/** Method picks in planner words: "Swap in refurbished spare", or every method when the request fixed none. */
-const methodsLabel = (methods: ReadonlyArray<{ readonly choice: string; readonly option: string }>, inputs: Context['inputs']): string =>
-  methods.length === 0 ? 'Every method' : methods.map(pick => inputs.methods.find(choice => choice.key === pick.choice)?.options.find(entry => entry.key === pick.option)?.label ?? 'a method option no longer in this plan').join(', ')
-
-/** A span as the compact item gives it: its rule, the least outage proven and the limit, in h. */
-type SpanSummary = NonNullable<Extract<ItemStatus, { word: 'proven infeasible' }>['span']>
-
 /**
- * A refused what-if's causes (walk V1), one per method combination under its method's name, from the compact
- * item (coordinator, after the re-walk sizes): a method with a span says its least outage against the limit,
- * "asked" when the what-if's own rule holds it, else that rule in its words (re-walk N2); a method without
- * one says the `line` the read gave it, without its "Not possible:" lead. With no methods by name, the
- * option's own cause, worded with the what-if's rule among the plan's. The full chain is "Why not possible".
+ * A refused what-if's causes (walk V1), from the compact item (coordinator, shape E): each method's `line`
+ * exactly as the read gives it, figures first and then the method's name, so the screen and an Agent read the
+ * same words. With no lines by method (one combination), the refusal as a plain one, its span and cause worded
+ * with the what-if's rule among the plan's, so the rule asked reads in its words. The full chain is "Why not
+ * possible" (explain refusal).
  */
 const refusalByMethod = (option: OptionView, context: Context): readonly string[] => {
   if (option.status.word !== 'proven infeasible') return []
+  if (option.status.byMethod !== undefined) return option.status.byMethod.map(entry => entry.line)
   const withAlso = { ...context.inputs, rules: [...context.inputs.rules, ...option.variant.also ?? []] }
-  const asked: Context = { ...context, inputs: withAlso, names: createNames(withAlso) }
-  const askedRules = new Set((option.variant.also ?? []).map(rule => rule.key))
-  const least = (span: SpanSummary): string =>
-    `out at least ${hoursText(span.leastHours)}, against the ${hoursText(span.limitHours)}${askedRules.has(span.rule) ? ' asked' : ` of “${asked.names.rule(span.rule)}”`}.`
-  const own = option.status
-  const entries = own.byMethod ?? [{ methods: option.variant.methods, span: own.span, line: null }]
-  // The card already says no plan keeps every rule, so a line's own "Not possible:" lead is not repeated.
-  return entries.map(entry => `${methodsLabel(entry.methods, context.inputs)}: ${entry.span !== undefined ? least(entry.span) : entry.line?.replace(/^Not possible:\s*/, '') ?? certificateText(own.cause, asked)}`)
+  return statusView(option.status, { ...context, inputs: withAlso, names: createNames(withAlso) }).details
 }
 
 export const whatIfCard = (option: OptionView, model: PlanModel, context: Context): WhatIfCardView => {
