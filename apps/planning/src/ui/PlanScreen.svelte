@@ -44,7 +44,7 @@
   import { whatIfAskedNotice, whatIfCard, whatIfChoices, whatIfsClearedNotice, type WhatIfKind, type WhatIfVariant } from './what-if.ts'
   import WhyRecommended from './WhyRecommended.svelte'
   import type { RecommendedFacts, VersusFacts } from '../api/contract.ts'
-  import { compareView, moreMoved, policyLines, previousFor, previousRows, recommendedAnswer, versusAnswer, whyView, type Answer, type CompareView, type WhyView } from './why-text.ts'
+  import { carryOver, compareView, moreMoved, panelClosedNotice, policyLines, previousFor, previousRows, recommendedAnswer, versusAnswer, whyView, type Answer, type CompareView, type WhyView } from './why-text.ts'
   import WorkList from './WorkList.svelte'
 
   /**
@@ -118,15 +118,14 @@
   /** Every moved job read from the further pages, kept as the Module gave it, and how many remain. */
   let compareMoreMoved = $state<VersusFacts['moved']>([])
   let compareMoreLeft = $state(0)
+  /** One click reads every remaining page of moved jobs, then shows them all in plan order (re-walk N3). */
   const readMoreMoved = (): void => {
     const option = compareFor, against = compareAgainst, cursor = compareCursor
-    if (option === null || against === null || cursor === null || context === null) return
+    if (option === null || against === null || cursor === null) return
     void attempt(async () => {
-      const result = await actions.versus(option, against, cursor)
-      if (result.versus === undefined) return
-      compareMoreMoved = [...compareMoreMoved, ...result.versus.moved]
-      compareMoreLeft = result.versus.movedMore
-      compareCursor = result.more ?? null
+      compareMoreMoved = [...compareMoreMoved, ...await actions.allMoved(option, against, cursor)]
+      compareMoreLeft = 0
+      compareCursor = null
     })
   }
   let compareFor = $state<string | null>(null)
@@ -192,6 +191,8 @@
     ? [...whatIfOptions(model)].sort((left, right) => Number(right.key === askedLast) - Number(left.key === askedLast)).map(option => whatIfCard(option, model!, context))
     : [])
   const recommendedOption = $derived(planOptions(model ?? { options: null }).find(option => option.key === model?.options?.recommended && option.fresh) ?? null)
+  /** The recommended option, also when made before the latest change: the star and "Why recommended" say so (N5). */
+  const recommendedShown = $derived(planOptions(model ?? { options: null }).find(option => option.key === model?.options?.recommended) ?? null)
   const shownIsWhatIf = $derived(shown !== null && isWhatIf(shown))
   const compareOption = $derived(model?.options?.items.find(option => option.key === compareFor) ?? null)
   // Why recommended and what differs, written from the Module's facts, never from its lines.
@@ -215,7 +216,7 @@
   const choices = $derived(context === null ? [] : [
     ...crewHourPurchases(context.inputs).length > 0 ? [{ panel: 'ladder' as const, word: 'What overtime buys' }] : [],
     ...whatIfChoices(context).kinds.length > 0 ? [{ panel: 'whatif' as const, word: whatIfs.length > 0 ? `What-ifs (${whatIfs.length})` : 'Ask a what-if' }] : [],
-    ...recommendedOption !== null && recommendedOption.status.word === 'validated feasible' ? [{ panel: 'why' as const, word: 'Why recommended?' }] : [],
+    ...recommendedShown !== null && recommendedShown.status.word === 'validated feasible' ? [{ panel: 'why' as const, word: 'Why recommended?' }] : [],
     ...shown !== null ? [{ panel: 'compare' as const, word: 'Compare with the earlier options' }] : [],
   ])
 
@@ -231,24 +232,38 @@
     if (shown.notice !== null) notice = shown.notice
     finish = null
     why = null
+    // A job removed by the change takes its panel with it, said plainly (re-walk N1).
+    if (selectedJob !== null && !shown.model.inputs.jobs.some(job => job.key === selectedJob)) {
+      selectedJob = null
+      notice = 'The job shown was removed by the change, so its panel was closed.'
+    }
     // An open question is asked again of the plan as it now is, so its answer never speaks of the one before.
     if (choosing !== null) ask(choosing)
   }
 
   /** Asks the Module the open question; a part of Planning not built yet is said as "not available yet". */
   const ask = (question: ChoosePanel): void => {
+    // A question naming an option that a Generate replaced closes its panel with a plain notice, never a red
+    // request error (re-walk N1).
+    const replaced = (cause: unknown): boolean => isRequestError(cause) && (cause.code === 'unknown_reference' || cause.code === 'option_stale')
+    const close = (): void => { if (choosing === question) { choosing = null; notice = panelClosedNotice(question) } }
     const missing = <T,>(cause: unknown): Answer<T> => isNotBuilt(cause) ? { state: 'not-built' }
       : isRequestError(cause) && cause.code === 'no_previous_options' ? { state: 'none' }
         : { state: 'refused', text: refusalText(cause, context?.names.any) }
     if (question === 'ladder') {
       buys = { state: 'loading', pages: [], text: null }
       actions.buys().then(pages => { buys = { state: 'ready', pages, text: null } }, cause => {
+        if (replaced(cause)) { close(); return }
         buys = isNotBuilt(cause) ? { state: 'not-built', pages: [], text: null } : { state: 'refused', pages: [], text: refusalText(cause, context?.names.any) }
       })
     } else if (question === 'why') {
+      if (model === null || recommendedShown === null) { whyAnswer = { state: 'refused', text: 'No option is recommended yet. Generate first.' }; return }
+      // Made before the latest change: the earlier reasons stay, marked out of date; nothing is asked (N5).
+      if (!recommendedShown.fresh) { if (whyAnswer.state !== 'answered') whyAnswer = { state: 'none' }; return }
+      // The option it is weighed against moves to the same method in the new set, or to the next in rank (N1).
+      whyAgainst = carryOver(whyAgainst === '' ? null : whyAgainst, planOptions(model).filter(option => option.fresh)) ?? ''
       whyAnswer = { state: 'loading' }
-      if (model?.options?.recommended == null) whyAnswer = { state: 'refused', text: 'No option is recommended yet. Generate first.' }
-      else actions.whyRecommended(whyAgainst === '' ? null : whyAgainst).then(result => { whyAnswer = recommendedAnswer(result) }, cause => { whyAnswer = missing(cause) })
+      actions.whyRecommended(whyAgainst === '' ? null : whyAgainst).then(result => { whyAnswer = recommendedAnswer(result) }, cause => { if (replaced(cause)) close(); else whyAnswer = missing(cause) })
     } else if (question === 'compare') {
       const option = selectedOption
       compareFor = option
@@ -266,7 +281,7 @@
         compareMoreMoved = []
         compareMoreLeft = 0
         compareAnswer = versusAnswer(result)
-      }).catch(cause => { compareAnswer = missing(cause) })
+      }).catch(cause => { if (replaced(cause)) close(); else compareAnswer = missing(cause) })
     }
   }
   /** Opens a question beside the timeline, on top of the detail column; a second click on its button closes it. */
@@ -482,8 +497,8 @@
             onAsk={askWhatIf} onSelect={showOption} onPick={pick} onClose={() => { choosing = null; whatIfKind = null }} />
         {/key}
       {:else if choosing === 'why'}
-        {#if recommendedOption}
-          <WhyRecommended title={`Why “${recommendedOption.label}” is recommended`} policy={policyLines(context)} answer={whyShown} choices={whyChoices} against={whyAgainst} onAgainst={option => { whyAgainst = option; ask('why') }} onClose={() => { choosing = null }} />
+        {#if recommendedShown}
+          <WhyRecommended title={recommendedShown.fresh ? `Why “${recommendedShown.label}” is recommended` : `Why “${recommendedShown.label}” was recommended before your latest change`} policy={policyLines(context)} answer={whyShown} outOfDate={!recommendedShown.fresh} choices={recommendedShown.fresh ? whyChoices : []} against={whyAgainst} onAgainst={option => { whyAgainst = option; ask('why') }} onClose={() => { choosing = null }} />
         {:else}
           <section class="why-panel"><div class="panel-heading"><h2 tabindex="-1">Why recommended</h2><button type="button" class="quiet" onclick={() => { choosing = null }}>Close</button></div><p class="hint">No option is recommended on the plan as it is now. Generate first.</p></section>
         {/if}

@@ -7,6 +7,7 @@ import type { RecommendedFacts, VersusFacts } from '../api/contract.ts'
 import { noPreviousWords, type ExplainResult } from './api.ts'
 import { hoursText, quantityText, type Mark } from './format.ts'
 import type { OptionView, PlanModel } from './model.ts'
+import type { ChoosePanel } from './options-glance.ts'
 import { goalAimText, goalName, goalShort, statusMark, type Context } from './status-text.ts'
 
 /** Where a question to the Module stands. `none`: there is nothing to compare with (no earlier set). */
@@ -227,3 +228,17 @@ export const previousFor = (shown: Pick<OptionView, 'key' | 'variant'> | null, p
 
 /** No earlier set to compare with, in the screen's words (the refusal no_previous_options says the same). */
 export { noPreviousWords }
+
+/**
+ * Where a key chosen in an open panel goes when Generate makes a new option set (re-walk N1): the same option if
+ * it is still there, else the plain option of the same variant (its key without the set suffix), else none.
+ */
+export const carryOver = (key: string | null, options: ReadonlyArray<Pick<OptionView, 'key' | 'variant'>>): string | null => {
+  if (key === null) return null
+  if (options.some(option => option.key === key)) return key
+  return options.find(option => plain(option) && baseKey(option.key) === baseKey(key))?.key ?? null
+}
+
+const panelNames: Readonly<Record<ChoosePanel, string>> = { ladder: 'What overtime buys', whatif: 'Ask a what-if', why: 'Why recommended', compare: 'Compare with the earlier options' }
+/** Said when a panel's question named options a Generate replaced: the panel closes, never a request error (N1). */
+export const panelClosedNotice = (panel: ChoosePanel): string => `The options changed, so “${panelNames[panel]}” was closed. Open it again for the new options.`

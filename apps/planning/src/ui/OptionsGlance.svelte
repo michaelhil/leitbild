@@ -46,7 +46,8 @@
           <tr class="values">
             <th scope="row">
               <button type="button" class="link option-name" disabled={busy} aria-pressed={row.key === selected} title={row.key === selected ? 'Shown on the timeline' : 'Show on the timeline'} onclick={(event) => { event.stopPropagation(); if (row.key !== selected) onSelect(row.key) }}>{row.label}</button>
-              {#if row.recommended}<MarkTag mark={{ shape: '★', word: 'Recommended' }} tone="good" />{/if}
+              <!-- While the plan is out of date, the star says so, as "Why recommended" does (re-walk N5). -->
+              {#if row.recommended}<MarkTag mark={{ shape: '★', word: row.stale ? 'Recommended before your latest change' : 'Recommended' }} tone={row.stale ? 'warning' : 'good'} />{/if}
               {#if row.dominatedBy}<small class="dominated-by">Dominated by “{row.dominatedBy}”</small>{/if}
             </th>
             {#if row.cells === null}
