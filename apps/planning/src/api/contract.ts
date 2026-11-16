@@ -335,15 +335,15 @@ export const spanSummarySchema = z.object({ rule: keySchema, leastHours: z.numbe
 const [feasibleStatusSchema, refusalStatusSchema, invalidStatusSchema, unsupportedStatusSchema, cancelledStatusSchema, unresolvedStatusSchema] = statusSchema.options
 /**
  * A refusal as the options and previous sections page it (coordinator, after the re-walk sizes): the option's
- * own method's cause as stored; its span as a summary; and per method its picks, purchases, span summary and
- * `line`, that method's one sentence (at most 200 characters) from its stored cause or span. The full proof
- * (the path, the later start, the energy proof) is worded only by explain refusal, from storage.
+ * own method's cause as stored; its span as a summary; and per method its picks, span summary and
+ * `line`, that method's one sentence (at most 200 characters) from its stored cause or span. Its purchases and
+ * the full proof (the path, the later start, the energy proof) stay in storage, worded only by explain refusal.
  */
 export const compactRefusalSchema = z.object({
   ...refusalStatusSchema.shape,
   span: spanSummarySchema.optional(),
   byMethod: z.array(z.object({
-    methods: z.array(z.object({ choice: keySchema, option: keySchema }).strict()), purchases: z.array(keySchema), span: spanSummarySchema.optional(), line: z.string().min(1).max(200),
+    methods: z.array(z.object({ choice: keySchema, option: keySchema }).strict()), span: spanSummarySchema.optional(), line: z.string().min(1).max(200),
   }).strict()).min(2).max(8).optional(),
 }).strict()
 /** An item's status: the stored status, with a refusal in its compact form. */

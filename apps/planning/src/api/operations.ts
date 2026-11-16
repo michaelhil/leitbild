@@ -272,8 +272,9 @@ export const createPlanningOperations = (ports: PlanningOperationsPorts) => {
   }
   /**
    * A status as the options and previous sections page it (coordinator, after the re-walk sizes): a refusal
-   * keeps its own method's cause; each span is cut to its summary, and each method gets one sentence, from its
-   * stored span or cause with no checker. The path, later start and energy proof stay for explain refusal.
+   * keeps its own method's cause; each span is cut to its summary, and each method gets its picks and one sentence,
+   * from its stored span or cause with no checker. Purchases, path, later start and energy proof stay for explain
+   * refusal.
    */
   const itemStatus = (inputs: PlanInputs, option: Option, status: Status): ItemStatus => {
     if (status.word !== 'proven infeasible') return status
@@ -286,7 +287,7 @@ export const createPlanningOperations = (ports: PlanningOperationsPorts) => {
     return {
       word: status.word, cause: status.cause, run: status.run,
       ...(status.span === undefined ? {} : { span: summary(status.span) }),
-      ...(status.byMethod === undefined ? {} : { byMethod: status.byMethod.map(entry => ({ methods: entry.methods, purchases: entry.purchases, ...(entry.span === undefined ? {} : { span: summary(entry.span) }), line: line(entry) })) }),
+      ...(status.byMethod === undefined ? {} : { byMethod: status.byMethod.map(entry => ({ methods: entry.methods, ...(entry.span === undefined ? {} : { span: summary(entry.span) }), line: line(entry) })) }),
     }
   }
   const optionStates = (plan: Plan): ReadonlyMap<string, OptionState> =>

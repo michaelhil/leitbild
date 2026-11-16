@@ -58,6 +58,8 @@ describe('a refusal is a compact item in the options and previous sections', () 
       expect(item.status.span).toEqual({ rule: at40.status.span!.rule, leastHours: at40.status.span!.leastHours, limitHours: at40.status.span!.limitHours })
       expect(item.status.byMethod!.map(entry => [entry.methods, entry.span, entry.line])).toEqual(at40.status.byMethod!.map(entry => [entry.methods, { rule: entry.span!.rule, leastHours: entry.span!.leastHours, limitHours: entry.span!.limitHours }, `Out at least ${entry.span!.leastHours} h, against the 40 h asked.`]))
       expect(JSON.stringify(item)).not.toMatch(/"path"|"later"|"alsoProven"/)
+      // Each entry is {methods, span?, line}: its purchases stay in storage, for explain refusal.
+      expect(item.status.byMethod!.map(entry => Object.keys(entry).sort())).toEqual(at40.status.byMethod!.map(() => ['line', 'methods', 'span']))
       expect(bytes(item)).toBeLessThanOrEqual(roomy)
     }
   }, 120_000)
