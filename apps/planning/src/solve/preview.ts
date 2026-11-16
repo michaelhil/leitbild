@@ -28,6 +28,12 @@ export interface PreviewResult {
    * every job that waits on it, and their "not scheduled" findings.
    */
   readonly unplaced?: { readonly job: string; readonly resource?: string; readonly after?: string }
+  /**
+   * A job whose crews or tools the edit changed (date.ts `crews`): its row has no way of doing the job on the
+   * edited inputs, so this preview cannot re-time it. A finding, never a stale option: `rows` are the option's
+   * own, not re-timed, with no findings; saving the change and Generating shows the result.
+   */
+  readonly crewsChanged?: { readonly job: string }
 }
 
 /** The option's schedule back on the compiled grid (date.ts `undate`); `edited` for a preview. */
@@ -79,13 +85,16 @@ const lockAgainstSaved = (inputs: PlanInputs, option: Option, index: CompileInde
 
 /**
  * The preview of `option` on the (edited) `inputs`. A planning error only for a stale option (its rows no
- * longer read back on the plan, or it no longer compiles); a job the edit leaves without a slot is a finding.
+ * longer read back on the plan, or it no longer compiles); a job the edit leaves without a slot is a finding,
+ * and so is a job whose crews the edit changed (adversary L1).
  */
 export const previewOption = (inputs: PlanInputs, option: Option): PreviewResult => {
   // Repair from the option's own dated schedule: with no edit it comes back exactly; after an edit only
   // the jobs it forces, and what they push, move (decode.ts repair, the re-timing's own).
   const { index, prep } = compiled(inputs, option)
-  const saved = scheduleOf(prep, index, option, true)
+  const found = undate(prep, index, option.rows, true)
+  if (!found.ok && found.reason === 'crews') return { rows: option.rows, violations: [], crewsChanged: { job: found.job } }
+  const saved = found.ok ? found.schedule : scheduleOf(prep, index, option, true)
   const { decoded, lost } = repair(prep, saved, plannedCrews(index, option.rows))
   const placed = (a: number): boolean => !lost.includes(a)
   const schedule = { start: decoded.start, mode: decoded.mode }
