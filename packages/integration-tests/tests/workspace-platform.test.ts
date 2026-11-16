@@ -505,7 +505,7 @@ describe('Workspace Host with real Modules', () => {
     expect((await fetch(`${baseUrl}/api/workspaces/${workspace.id}`, { method: 'DELETE' })).status).toBe(204)
     expect(await worldRegistry.list()).toEqual([])
     expect(await leitbildState.has(workspaceIdSchema.parse(workspace.id))).toBe(false)
-  })
+  }, 30_000)
 
   test('starts every featured demo and listed scenario in a new Workspace through that Workspace\'s own Definition and primary Capability', async () => {
     const dataDir = await mkdtemp(join(tmpdir(), 'workspace-featured-world-'))

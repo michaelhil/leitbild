@@ -2,7 +2,7 @@
 // Definition's primary card only when they take no required input. Host's own cardCapability throws on a
 // violation, which stuck every Workspace page holding a Study (ops addendum).
 import { afterAll, expect, test } from 'bun:test'
-import { workspaceCapabilityCatalogSchema, workspaceDefinitionCatalogSchema, workspaceResourceCatalogSchema } from '@leitbild/contracts'
+import { platformErrorSchema, workspaceCapabilityCatalogSchema, workspaceDefinitionCatalogSchema, workspaceResourceCatalogSchema } from '@leitbild/contracts'
 import { cardCapability } from '../../../apps/leitbild/src/ui/card-actions.ts'
 import { createPlanningStack } from './planning-stack.ts'
 
@@ -22,7 +22,7 @@ test('generic plan cards run with no input and the guided plan starts from World
         body: JSON.stringify({ definition: { ...definition.ref, revisionId: definition.currentRevisionId }, input: {} }),
       })
       expect(started.status).toBe(400)
-      expect((await started.json()).error.code).toBe('demo_run_required')
+      expect(platformErrorSchema.parse(await started.json()).error.code).toBe('demo_run_required')
       continue
     }
     const primary = cardCapability(definition, 'primary', capabilities)!
