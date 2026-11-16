@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test'
 import { objectIdSchema, type OperationalObject } from '../../../core/model/index.ts'
-import { assertMapTargeting, mapTargetingMaxTargets } from '../../../ui/surface-panel-interaction.ts'
+import { assertMapTargeting, mapTargetingMaxTags } from '../../../ui/surface-panel-interaction.ts'
 import { einsatzPackId } from '../ids.ts'
 import { recommendAnswerSchema, type RecommendAnswer } from '../recommendation-schema.ts'
 import { situationSchema, unitOptionsSchema, type Situation, type UnitOptions } from '../situation/schema.ts'
@@ -392,16 +392,30 @@ describe('Overview', () => {
 })
 
 describe('Armed feedback, prompts and receipts', () => {
-  test('targeting: halos with ETA tags on the valid targets that are objects, the refused target\'s reason first in the refused tone; nothing outside SA', () => {
+  test('targeting: a halo on every valid target that is an object, ETA tags on the nearest, the refused target\'s reason first in the refused tone; not complete until the options arrive; nothing outside SA', () => {
     expect(targetingFor(su('r1'), optionsFor('r1'))).toBeNull()
-    expect(targetingFor(sa('r1'), null)).toEqual({ from: oid('r1'), targets: [] })
-    expect(targetingFor(sa('r1'), optionsFor('r1'))).toEqual({ from: oid('r1'), targets: [{ id: oid('job-1'), tag: '4 min', tone: 'valid' }, { id: oid('depot-a'), tag: '7 min', tone: 'valid' }] })
+    expect(targetingFor(sa('r1'), null)).toEqual({ from: oid('r1'), complete: false, targets: [] })
+    expect(targetingFor(sa('r1'), optionsFor('k1'))).toEqual({ from: oid('r1'), complete: false, targets: [] })
+    expect(targetingFor(sa('r1'), optionsFor('r1'))).toEqual({ from: oid('r1'), complete: true, targets: [{ id: oid('job-1'), tag: '4 min', tone: 'valid' }, { id: oid('depot-a'), tag: '7 min', tone: 'valid' }] })
     const refused = sa('r1', { refusal: { targetId: 'depot-b', text: 'Depot B is closed', untilMs: 1 } })
     expect(targetingFor(refused, optionsFor('r1'))!.targets[0]).toEqual({ id: oid('depot-b'), tag: 'Depot B is closed', tone: 'refused' })
-    // Each targeting passes the surface's own check (at most eight, no target twice or as its own object, every tag worded).
+    // Each targeting passes the surface's own check (at most eight tags, no target twice or as its own object, every tag worded).
     expect(assertMapTargeting('einsatz.dispatch', targetingFor(refused, optionsFor('r1'))!)).toBeDefined()
+  })
+
+  test('E3: dimmed means not a valid target: every valid target is listed however far, only the nearest are tagged, and a refused one is not listed', () => {
     const many = optionsFor('r1', { targets: Array.from({ length: 12 }, (_, index) => ({ target: { taskId: `job-${index}` }, verb: 'serve', label: `J-${index}`, etaS: index * 60 })) })
-    expect(targetingFor(sa('r1'), many)!.targets).toHaveLength(mapTargetingMaxTargets)
+    const targeting = targetingFor(sa('r1'), many)!
+    expect(targeting.targets.map(target => target.id)).toEqual(Array.from({ length: 12 }, (_, index) => oid(`job-${index}`)))
+    expect(targeting.targets.filter(target => target.tag !== undefined).map(target => target.id)).toEqual(Array.from({ length: mapTargetingMaxTags }, (_, index) => oid(`job-${index}`)))
+    // The ninth nearest valid target is marked, untagged; the refused Depot B is not among the targets, so the map dims it.
+    expect(targeting.targets[mapTargetingMaxTags]).toEqual({ id: oid(`job-${mapTargetingMaxTags}`), tone: 'valid' })
+    expect(targeting.targets.some(target => target.id === oid('depot-b'))).toBe(false)
+    expect(assertMapTargeting('einsatz.dispatch', targeting)).toBe(targeting)
+    // A refusal shown takes one of the tags.
+    const shown = targetingFor(sa('r1', { refusal: { targetId: 'depot-b', text: 'Depot B is closed', untilMs: 1 } }), many)!
+    expect(shown.targets.filter(target => target.tag !== undefined)).toHaveLength(mapTargetingMaxTags)
+    expect(shown.targets).toHaveLength(13)
   })
 
   test('the busy prompt: the current job as the options name it, After current job, and Now naming what it drops; the Move prompt in the lexicon\'s word', () => {

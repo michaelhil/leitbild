@@ -119,7 +119,7 @@ const refusedHaloStroke = rgba(71, 85, 105, 245)
 
 const haloFill = (point: OperationalPointFeature): ColorRgba => {
   if (point.selected) return rgba(29, 102, 210, 62)
-  if (point.targetTag !== null) return point.targetRefused ? refusedHaloFill : targetHaloFill
+  if (point.targeted) return point.targetRefused ? refusedHaloFill : targetHaloFill
   if (point.highlighted) return rgba(193, 122, 19, 58)
   if (point.alert !== null) return colorWithAlpha(point.alert.color, 52)
   return rgba(255, 255, 255, 0)
@@ -127,13 +127,13 @@ const haloFill = (point: OperationalPointFeature): ColorRgba => {
 
 const haloStroke = (point: OperationalPointFeature): ColorRgba => {
   if (point.selected) return rgba(29, 102, 210, 245)
-  if (point.targetTag !== null) return point.targetRefused ? refusedHaloStroke : targetHaloStroke
+  if (point.targeted) return point.targetRefused ? refusedHaloStroke : targetHaloStroke
   if (point.highlighted) return rgba(193, 122, 19, 230)
   if (point.alert !== null) return colorWithAlpha(point.alert.color, 230)
   return rgba(255, 255, 255, 0)
 }
 
-const haloRingged = (point: OperationalPointFeature): boolean => point.selected || point.targetTag !== null || point.highlighted
+const haloRingged = (point: OperationalPointFeature): boolean => point.selected || point.targeted || point.highlighted
 
 /** A glyph's colour: faint while dimmed by an armed order, softened while muted. */
 const glyphColor = (point: OperationalPointFeature): ColorRgba => point.dimmed ? white(95) : point.muted ? white(150) : white(245)

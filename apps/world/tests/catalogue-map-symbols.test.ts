@@ -175,7 +175,7 @@ describe('operational map icons', () => {
     const plain = store.update(input(null))
     expect(plain.points.map(point => [point.id, point.targetTag, point.dimmed])).toEqual([['a', null, false], ['b', null, false], ['c', null, false], ['d', null, false]])
     const valid = (tag: string) => ({ tag, refused: false })
-    const armed = store.update(input({ fromId: 'a', targets: new Map([['b', valid('4 min')], ['c', valid('Move · 9 min')]]) }))
+    const armed = store.update(input({ fromId: 'a', complete: true, targets: new Map([['b', valid('4 min')], ['c', valid('Move · 9 min')]]) }))
     expect(armed.revisions.points).toBe(plain.revisions.points + 1)
     expect(armed.points.map(point => [point.id, point.targetTag, point.dimmed, point.color[3]])).toEqual([['a', null, false, 255], ['b', '4 min', false, 255], ['c', 'Move · 9 min', false, 255], ['d', null, true, 72]])
     const layers = layersOf(armed, emptyCatalogueSymbolAtlas)
@@ -188,6 +188,28 @@ describe('operational map icons', () => {
     expect(layersOf(cleared, emptyCatalogueSymbolAtlas).map(layer => layer.id)).toEqual(todaysLayerIds)
   })
 
+  test('E3: dimmed means not a valid target: a valid target beyond the tagged ones is haloed and never dimmed, an object not among the targets is; before the targets are complete nothing is dimmed', () => {
+    const store = createMapFeatureStore()
+    const objects = [objectOf('a', 11.3), objectOf('b', 11.4), objectOf('c', 11.5), objectOf('d', 11.6)]
+    const input = (targeting: MapTargetingRender) => ({
+      objects, selectedControllerId: 'a', highlightedObjectIds: [], targeting,
+      hiddenObjectCategoryIds: [], alertPalette: 'day' as const, placementPoints: [], packFeatures: [],
+      hasNewInfo: () => false, presentationFor: presentationWith({}),
+    })
+    // b is a tagged valid target, c a valid one past the tagged few, d not a target (refused, or no stop at all).
+    const targets = new Map([['b', { tag: '4 min', refused: false }], ['c', { tag: null, refused: false }]])
+    const armed = store.update(input({ fromId: 'a', complete: true, targets }))
+    expect(armed.points.map(point => [point.id, point.targeted, point.targetTag, point.dimmed])).toEqual([['a', false, null, false], ['b', true, '4 min', false], ['c', true, null, false], ['d', false, null, true]])
+    const layers = layersOf(armed, emptyCatalogueSymbolAtlas)
+    const halos = layers.find(layer => layer.id === 'leitbild-object-halos')?.props as unknown as { readonly getRadius: (point: unknown) => number; readonly getLineColor: (point: unknown) => ReadonlyArray<number> }
+    const [b, c] = ['b', 'c'].map(id => armed.points.find(point => point.id === id)!)
+    expect([halos.getRadius(b), halos.getRadius(c)]).toEqual([18, 18])
+    expect(halos.getLineColor(c)).toEqual(halos.getLineColor(b))
+    expect((layers.find(layer => layer.id === 'leitbild-target-tags')?.props.data as ReadonlyArray<{ readonly id: string }>).map(point => point.id)).toEqual(['b'])
+    const reading = store.update(input({ fromId: 'a', complete: false, targets: new Map() }))
+    expect(reading.points.map(point => point.dimmed)).toEqual([false, false, false, false])
+  })
+
   test('a target a click was just refused for is ringed and tagged apart, with the refusal as its tag, and never dimmed', () => {
     const store = createMapFeatureStore()
     const objects = [objectOf('a', 11.3), objectOf('b', 11.4), objectOf('c', 11.5), objectOf('d', 11.6)]
@@ -195,7 +217,7 @@ describe('operational map icons', () => {
       objects,
       selectedControllerId: 'a',
       highlightedObjectIds: [],
-      targeting: { fromId: 'a', targets: new Map([['b', { tag: 'Needs fire suppression', refused: true }], ['c', { tag: '4 min', refused: false }]]) },
+      targeting: { fromId: 'a', complete: true, targets: new Map([['b', { tag: 'Needs fire suppression', refused: true }], ['c', { tag: '4 min', refused: false }]]) },
       hiddenObjectCategoryIds: [], alertPalette: 'day' as const,
       placementPoints: [],
       packFeatures: [],
@@ -223,7 +245,7 @@ describe('operational map icons', () => {
       objects,
       selectedControllerId: 'a',
       highlightedObjectIds: [],
-      targeting: { fromId: 'a', targets: new Map([['b', { tag: '4 min', refused: false }], ['c', { tag: '9 min', refused: false }]]) },
+      targeting: { fromId: 'a', complete: true, targets: new Map([['b', { tag: '4 min', refused: false }], ['c', { tag: '9 min', refused: false }]]) },
       hiddenObjectCategoryIds: [], alertPalette: 'day' as const,
       placementPoints: [],
       packFeatures: [],

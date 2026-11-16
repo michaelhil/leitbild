@@ -83,9 +83,10 @@
     /** The operator dismissed the prompt without confirming: a map click elsewhere, its × or Esc. Once per prompt. */
     readonly onPromptDismissed: (prompt: MapPrompt) => void
     /**
-     * The open map-target panel's armed order: halos with tags on its
-     * targets, every other object dimmed, and a line from its object to a
-     * mouse pointer (`MapTargeting`); null while nothing is armed.
+     * The open map-target panel's armed order: halos on its targets, tags on
+     * the nearest, every other object dimmed once the targets are complete,
+     * and a line from its object to a mouse pointer (`MapTargeting`); null
+     * while nothing is armed.
      */
     readonly targeting?: MapTargeting | null
     readonly hiddenObjectCategoryIds?: ReadonlyArray<string>
@@ -249,7 +250,11 @@
   let objectTookClick = false
   let featureSelection: NonNullable<PackMapFeature['selection']> | null = null
 
-  const targetingRender = $derived<MapTargetingRender | null>(targeting === null ? null : { fromId: targeting.from, targets: new Map(targeting.targets.map(target => [target.id as string, { tag: target.tag, refused: target.tone === 'refused' }])) })
+  const targetingRender = $derived<MapTargetingRender | null>(targeting === null ? null : {
+    fromId: targeting.from,
+    complete: targeting.complete,
+    targets: new Map(targeting.targets.map(target => [target.id as string, { tag: target.tag ?? null, refused: target.tone === 'refused' }])),
+  })
   /** Whether a line follows the pointer: a panel's armed order while the pointer is a mouse. */
   const pointerLineWanted = (pointerType: string | null): boolean => targeting !== null && hoverCardsFor(pointerType)
 

@@ -6,7 +6,7 @@ import type { Stop, UnitOrderInput } from '../order-schema.ts'
 import type { Eta, RecommendAnswer } from '../recommendation-schema.ts'
 import type { Situation, SituationCall, SituationSite, SituationUnit, StopVerb, UnitOptions, UnitTone } from '../situation/schema.ts'
 import { clockText, contactIcon } from '../situation/text.ts'
-import { mapTargetingMaxTargets, type MapTargeting } from '../../../ui/surface-panel-interaction.ts'
+import { mapTargetingMaxTags, type MapTargeting } from '../../../ui/surface-panel-interaction.ts'
 import { selectedObjectOf, stopObjectId, type CurrentJob, type DispatchObjectKind, type Selection } from './selection.ts'
 
 /**
@@ -825,20 +825,29 @@ export const overview = (situation: Situation, selection: Selection, opened: Rea
 // ——— Armed feedback on the map ———
 
 /**
- * What the map draws while a unit is armed: halos with ETA tags on the
- * nearest valid targets (at most `mapTargetingMaxTargets`), and a refused target's
- * reason at that target, in the `refused` tone, while it is shown. Before the options arrive no
- * target carries a tag, but the unit is armed and a click still submits.
+ * What the map draws while a unit is armed: a halo on every valid target
+ * that is an object, with an ETA tag on the nearest ones (all tags together
+ * at most `mapTargetingMaxTags`), and a refused target's reason at that
+ * target, in the `refused` tone, while it is shown. Every other object is
+ * dimmed, so a dimmed object is never one an order would take. Before the
+ * options arrive the targeting is not `complete`: nothing is dimmed and no
+ * valid target is marked, but the unit is armed and a click still submits.
  */
 export const targetingFor = (selection: Selection, options: UnitOptions | null): MapTargeting | null => {
   if (selection.kind !== 'armed') return null
   const refusal = selection.refusal
-  const refused = refusal?.targetId === null || refusal === null ? [] : [{ id: refusal.targetId, tag: refusal.text, tone: 'refused' as const }]
-  const valid = options === null || options.unitId !== selection.unitId ? [] : options.targets.flatMap(target => {
+  const refused = refusal?.targetId === null || refusal === null ? [] : [{ id: objectIdSchema.parse(refusal.targetId), tag: refusal.text, tone: 'refused' as const }]
+  const own = options !== null && options.unitId === selection.unitId ? options : null
+  const valid = (own?.targets ?? []).flatMap(target => {
     const id = stopObjectId(target.target)
-    return id === null || id === refusal?.targetId ? [] : [{ id, tag: minutesText(target.etaS), tone: 'valid' as const }]
+    return id === null || id === refusal?.targetId ? [] : [{ id: objectIdSchema.parse(id), etaS: target.etaS }]
   })
-  return { from: objectIdSchema.parse(selection.unitId), targets: [...refused, ...valid].slice(0, mapTargetingMaxTargets).map(target => ({ id: objectIdSchema.parse(target.id), tag: target.tag, tone: target.tone })) }
+  const tags = mapTargetingMaxTags - refused.length
+  return {
+    from: objectIdSchema.parse(selection.unitId),
+    complete: own !== null,
+    targets: [...refused, ...valid.map((target, index) => index < tags ? { id: target.id, tag: minutesText(target.etaS), tone: 'valid' as const } : { id: target.id, tone: 'valid' as const })],
+  }
 }
 
 /** The Move prompt's one option. */
