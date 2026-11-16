@@ -3,25 +3,19 @@ import type { PackMapTarget } from '../../../core/packs/protocol.ts'
 import type { Actor } from '../../../core/simulation-runs/actors.ts'
 import { routeGroundClick, routeObjectClick, type MapClickContext, type MapClickRoute, type MapTargetPanel } from '../../../ui/map-target-routing.ts'
 import { einsatzPackId } from '../ids.ts'
-import type { OrderWhen, Stop, UnitOrderInput } from '../order-schema.ts'
+import type { Stop, UnitOrderInput } from '../order-schema.ts'
 import type { Situation, SituationCall, UnitOptions } from '../situation/schema.ts'
 import { einsatzPackView } from '../ui-pack.ts'
 import { createEinsatzClient, type CommandOutcome, type EinsatzClient } from '../ui/einsatz-client.ts'
 import {
-  armedOrderWith,
-  busyChoices,
   cardFor,
-  deliverToOrder,
   dispatchKindOf,
   jobText,
-  movePromptText,
   overview,
   ownReceipt,
   pinProposal,
   receiptsFromSituation,
-  receiptUndoable,
   withReceipts,
-  type ArmedOrder,
   type CardView,
   type OverviewView,
   type PinnedProposal,
@@ -30,11 +24,14 @@ import {
 import {
   activationActs,
   initialSelection,
+  moveQueuedStop,
+  planExpectation,
   reduceSelection,
   selectionChangeEvent,
+  stopKey,
   stopObjectId,
   type ClickedObject,
-  type CurrentJob,
+  type Decision,
   type Selection,
   type SelectionEffect,
   type SelectionEvent,
@@ -58,11 +55,11 @@ import { operator, type OpenRun } from './run-harness.ts'
  * surface routes them with the panel open (`ui/map-target-routing.ts`,
  * the Pack's own targeting), so a tap selects, reaches the panel as a map
  * target, clears the shared selection, or does nothing, exactly as in the
- * browser; and, as on the map, every map tap first dismisses a shown map
- * prompt.
+ * browser. The selected unit and its current plan determine what target
+ * clicks do, and decisions use the same choices as the panel dialog.
  *
  * It counts operator actions: each map tap, ground tap, row tap, card or
- * footer button and map prompt option is one, whether or not it acts. The
+ * footer button and dialog option is one, whether or not it acts. The
  * wall clock is the test's own: every action comes `paceMs` after the
  * previous one, as a person's do, unless a test gives its own gap, so the
  * panel's double-click guard (`activationActs`) is exercised exactly.
@@ -79,29 +76,21 @@ export interface ScreenCall {
 
 /** A button of the selection block's card or of the footer, by what it does. */
 export type CardControl =
-  /** The unit card's "Dispatch A4…". */
-  | { readonly kind: 'arm' }
-  | { readonly kind: 'add-stop' }
   | { readonly kind: 'recall' }
-  | { readonly kind: 'undo-last' }
   | { readonly kind: 'remove-stop'; readonly stopId: string }
-  /** A row of the armed card's target list, by the object it names. */
+  | { readonly kind: 'move-stop'; readonly stopId: string; readonly direction: -1 | 1 }
   | { readonly kind: 'target-row'; readonly objectId: string }
-  /** A busy choice in the armed card's slot. */
-  | { readonly kind: 'busy'; readonly choice: OrderWhen }
   /** The call card's Dispatch. */
   | { readonly kind: 'dispatch' }
   | { readonly kind: 'refresh' }
   | { readonly kind: 'chip'; readonly unitId: string }
   | { readonly kind: 'alternative'; readonly unitId: string }
-  /** A Deliver-to chip of the call card or the unit card. */
+  /** A Deliver-to chip of the call card. */
   | { readonly kind: 'deliver-to'; readonly siteId: string }
   | { readonly kind: 'close' }
   | { readonly kind: 'confirm-close' }
   | { readonly kind: 'site-toggle' }
   | { readonly kind: 'back' }
-  /** The newest receipt's Undo. */
-  | { readonly kind: 'receipt-undo' }
 
 export interface CardScreen {
   readonly actor: Actor
@@ -117,8 +106,8 @@ export interface CardScreen {
   readonly receipts: () => ReadonlyArray<Receipt>
   /** The refusal or failure the panel reports outside a target. */
   readonly feedback: () => string | null
-  /** The map prompt the panel shows, as its options' labels; null while none. */
-  readonly prompt: () => ReadonlyArray<string> | null
+  /** The decision the panel shows; null when it has no open dialog. */
+  readonly decision: () => Decision | null
   /** The object the map selects. */
   readonly mapSelection: () => string | null
   /** Reads the situation again, and the shown unit's options. */
@@ -128,8 +117,7 @@ export interface CardScreen {
   /** A tap on a row of the Overview lists. */
   readonly row: (object: ClickedObject, gapMs?: number) => Promise<void>
   readonly press: (control: CardControl, gapMs?: number) => Promise<void>
-  /** A tap on an option of the map prompt, by its index. */
-  readonly promptTap: (index: number, gapMs?: number) => Promise<void>
+  readonly decide: (choice: Extract<SelectionEvent, { kind: 'decide' }>['choice'], gapMs?: number) => Promise<void>
   /** Lets wall time pass, as the panel's ticker does. */
   readonly wait: (ms: number) => void
 }
@@ -146,8 +134,6 @@ const panel: MapTargetPanel = {
 }
 
 const messageOf = (error: unknown): string => error instanceof Error ? error.message : String(error)
-
-const sameStop = (a: Stop, b: Stop): boolean => JSON.stringify(a) === JSON.stringify(b)
 
 export const openCardScreen = async (run: OpenRun, options: { readonly actor?: Actor } = {}): Promise<CardScreen> => {
   const actor = options.actor ?? operator
@@ -167,7 +153,6 @@ export const openCardScreen = async (run: OpenRun, options: { readonly actor?: A
   let situation: Situation | null = null
   let selection: SelectionState = initialSelection
   let unitOptions: UnitOptions | null = null
-  let armedOrder: ArmedOrder | null = null
   let pinned: PinnedProposal | null = null
   let opened: ReadonlySet<string> = new Set()
   let lastSeenCall: SituationCall | null = null
@@ -186,7 +171,12 @@ export const openCardScreen = async (run: OpenRun, options: { readonly actor?: A
     if (situation === null) throw new Error('The screen has read no situation yet')
     return situation
   }
-  const currentCard = (): CardView | null => cardFor(shown(), selection.selection, { options: unitOptions, armedOrder, pinned, opened, lastSeenCall, elapsedS: 0 })
+  const selectedUnit = () => {
+    const current = selection.selection
+    return current.kind === 'unit' ? shown().units.find(unit => unit.id === current.unitId) : undefined
+  }
+  const currentDecision = (): Decision | null => selection.selection.kind === 'unit' ? selection.selection.decision ?? null : null
+  const currentCard = (): CardView | null => cardFor(shown(), selection.selection, { options: unitOptions, pinned, opened, lastSeenCall, elapsedS: 0 })
   const currentLists = (): OverviewView => overview(shown(), selection.selection, opened, 0)
 
   const readSituation = async (): Promise<void> => {
@@ -206,10 +196,6 @@ export const openCardScreen = async (run: OpenRun, options: { readonly actor?: A
       return
     }
     unitOptions = answer
-    const armed = selection.selection
-    if (armed.kind !== 'armed' || armed.unitId !== answer.unitId) return
-    armedOrder = armedOrderWith(armedOrder, answer)
-    await send({ kind: 'current-job', unitId: answer.unitId, job: answer.busy })
   }
 
   const pin = async (callId: string): Promise<void> => {
@@ -224,7 +210,7 @@ export const openCardScreen = async (run: OpenRun, options: { readonly actor?: A
 
   const unitLabel = (unitId: string): string => situation?.units.find(unit => unit.id === unitId)?.label ?? unitId
   const stopLabel = (stop: Stop): string => {
-    const listed = unitOptions?.targets.find(target => sameStop(target.target, stop))?.label
+    const listed = unitOptions?.targets.find(target => stopKey(target.target) === stopKey(stop))?.label
     if (listed !== undefined) return listed
     const id = stopObjectId(stop)
     return id === null ? 'the map point' : objects().find(object => object.id === id)?.label ?? id
@@ -238,24 +224,14 @@ export const openCardScreen = async (run: OpenRun, options: { readonly actor?: A
     }
   }
 
-  const submit = async (unitId: string, target: Stop, when: OrderWhen | null, drops: CurrentJob | null): Promise<void> => {
-    const input: UnitOrderInput = { units: [unitId], stops: [target], ...(when === null ? {} : { when }), ...(drops === null ? {} : { drops: drops.taskId }) }
-    const outcome = await outcomeOf(async () => await client.order(input))
-    await send({ kind: 'result', unitId, target, outcome: outcome.ok ? { ok: true } : { ok: false, code: outcome.code, text: outcome.text }, atMs: wallMs })
-    if (outcome.ok) {
-      const dropped = drops === null ? null : jobText(drops)
-      receipts = withReceipts(receipts, [ownReceipt({ commandId: outcome.commandId, unitIds: [unitId], unitLabel: unitLabel(unitId), targetLabel: stopLabel(target), dropped, atMs: wallMs })])
-    }
-  }
-
-  const command = async (run: () => Promise<CommandOutcome>, receipt: { readonly unitIds: ReadonlyArray<string>; readonly target: string } | null): Promise<void> => {
+  const command = async (run: () => Promise<CommandOutcome>, receipt: { readonly unitIds: ReadonlyArray<string>; readonly target: string; readonly dropped?: string | null } | null): Promise<void> => {
     feedback = null
     const outcome = await outcomeOf(run)
     if (!outcome.ok) {
       feedback = outcome.text
       return
     }
-    if (receipt !== null) receipts = withReceipts(receipts, [ownReceipt({ commandId: outcome.commandId, unitIds: receipt.unitIds, unitLabel: receipt.unitIds.map(unitLabel).join(', '), targetLabel: receipt.target, dropped: null, atMs: wallMs })])
+    if (receipt !== null) receipts = withReceipts(receipts, [ownReceipt({ commandId: outcome.commandId, unitIds: receipt.unitIds, unitLabel: receipt.unitIds.map(unitLabel).join(', '), targetLabel: receipt.target, dropped: receipt.dropped ?? null, atMs: wallMs })])
   }
 
   const order = async (input: UnitOrderInput): Promise<void> => {
@@ -267,6 +243,7 @@ export const openCardScreen = async (run: OpenRun, options: { readonly actor?: A
       case 'select':
         feedback = null
         confirming = null
+        unitOptions = null
         // The map takes the selection; the panel's selectedObjectId echo of it is no event.
         mapSelection = effect.objectId
         return
@@ -278,29 +255,31 @@ export const openCardScreen = async (run: OpenRun, options: { readonly actor?: A
         await pin(effect.callId)
         return
       case 'submit':
-        await submit(effect.unitId, effect.target, effect.when, effect.drops)
+        await command(async () => await client.order(effect.input), {
+          unitIds: effect.input.units,
+          target: stopLabel(effect.input.stops[0]!),
+          dropped: effect.job === null ? null : jobText(effect.job),
+        })
         return
-      case 'late-refusal':
-        feedback = `${unitLabel(effect.unitId)} → ${stopLabel(effect.target)}: ${effect.text}`
+      case 'remove':
+        await command(async () => await client.removeStop(effect.unitId, effect.stopId, effect.expectedPlan), null)
+        return
+      case 'feedback':
+        feedback = effect.text
         return
     }
   }
 
   async function send(event: SelectionEvent): Promise<void> {
-    const stepped = reduceSelection(selection, event, unitOptions)
-    const before = selection.selection
+    const stepped = reduceSelection(selection, event, unitOptions, selectedUnit())
     selection = stepped.state
-    const after = stepped.state.selection
-    // The armed list's order holds while the same unit stays armed.
-    if (after.kind !== 'armed') armedOrder = null
-    else if (before.kind !== 'armed' || before.unitId !== after.unitId) armedOrder = unitOptions?.unitId === after.unitId ? armedOrderWith(null, unitOptions) : null
     for (const effect of stepped.effects) await perform(effect)
   }
 
   const sync = async (): Promise<void> => {
     await readSituation()
     const shown = selection.selection
-    if (shown.kind === 'unit' || shown.kind === 'armed') await readOptions(shown.unitId)
+    if (shown.kind === 'unit') await readOptions(shown.unitId)
   }
 
   /** An operator action at `gapMs` after the previous one. */
@@ -352,15 +331,6 @@ export const openCardScreen = async (run: OpenRun, options: { readonly actor?: A
     }
   }
 
-  /**
-   * Every map tap first dismisses the prompt the map shows, as the map does
-   * with any click that is not on one of the prompt's own buttons: the
-   * surface drops it and calls its `onDismiss`, which the panel answers so.
-   */
-  const mapClick = async (): Promise<void> => {
-    if (promptOf() !== null) await send({ kind: 'prompt-dismissed' })
-  }
-
   /** A card, row or footer command: it acts unless it is the second half of a double-click. */
   const guarded = async (run: () => Promise<void>): Promise<void> => {
     if (!activationActs(quietFromMs, wallMs)) return
@@ -375,11 +345,6 @@ export const openCardScreen = async (run: OpenRun, options: { readonly actor?: A
 
   const pressed = async (control: CardControl): Promise<void> => {
     const card = currentCard()
-    if (control.kind === 'receipt-undo') {
-      const receipt = required(receipts.find(entry => receiptUndoable(entry, wallMs)), 'receipt with Undo')
-      for (const unitId of receipt.unitIds) await command(async () => await client.undo(unitId, receipt.commandId), null)
-      return
-    }
     if (control.kind === 'back') return await send({ kind: 'back' })
     if (card === null) throw new Error(`No card is open for ${control.kind}`)
     if (card.kind === 'unit') {
@@ -387,23 +352,22 @@ export const openCardScreen = async (run: OpenRun, options: { readonly actor?: A
         if (button === null || !button.enabled) throw new Error(`${what} is not enabled on ${card.title}`)
       }
       switch (control.kind) {
-        case 'arm': enabled(card.armed === null ? card.dispatch : null, 'Dispatch'); return await send({ kind: 'arm', unitId: card.id, when: null })
-        case 'add-stop': enabled(card.armed === null ? card.addStop : null, 'Add stop'); return await send({ kind: 'arm', unitId: card.id, when: 'after' })
         case 'recall': enabled(card.recall, 'Return'); return await command(async () => await client.recall(card.id), { unitIds: [card.id], target: shown().words.return })
-        case 'undo-last': enabled(card.undo, 'Undo'); return await command(async () => await client.undo(card.id, required(card.undo.commandId, 'order to undo')), null)
-        case 'remove-stop': return await command(async () => await client.removeStop(card.id, control.stopId), null)
+        case 'remove-stop': {
+          required(card.removable ? card.plan.find(stop => stop.id === control.stopId) : null, `removable stop ${control.stopId}`)
+          return await send({ kind: 'stop', stopId: control.stopId })
+        }
+        case 'move-stop': {
+          const stop = required(card.plan.find(entry => entry.id === control.stopId), `stop ${control.stopId}`)
+          const available = control.direction < 0 ? stop.canMoveUp : stop.canMoveDown
+          if (!available) throw new Error(`Stop ${control.stopId} cannot move in that direction`)
+          const expectedPlan = planExpectation(required(selectedUnit(), 'selected unit').plan)
+          const stopIds = required(moveQueuedStop(expectedPlan, control.stopId, control.direction), 'new stop order')
+          return await command(async () => await client.reorder(card.id, expectedPlan, stopIds), null)
+        }
         case 'target-row': {
-          const row = required(card.armed?.rows.find(entry => stopObjectId(entry.target) === control.objectId), `target row for ${control.objectId}`)
+          const row = required(card.targets.find(entry => stopObjectId(entry.target) === control.objectId), `target row for ${control.objectId}`)
           return await send({ kind: 'target-row', target: row.target })
-        }
-        case 'busy': {
-          if (card.armed?.slot.kind !== 'busy') throw new Error(`${card.title} offers no busy choice`)
-          return await send({ kind: 'prompt', choice: control.choice })
-        }
-        case 'deliver-to': {
-          const unit = required(shown().units.find(entry => entry.id === card.id), 'unit')
-          required(card.armed === null ? card.deliverTo.find(site => site.siteId === control.siteId) : null, `Deliver-to chip for ${control.siteId}`)
-          return await order(deliverToOrder(unit, control.siteId))
         }
         default: throw new Error(`A unit card has no ${control.kind}`)
       }
@@ -453,15 +417,6 @@ export const openCardScreen = async (run: OpenRun, options: { readonly actor?: A
     throw new Error(`A ${card.kind} card has no ${control.kind}`)
   }
 
-  const promptOf = (): { readonly labels: ReadonlyArray<string>; readonly choices: ReadonlyArray<'move' | OrderWhen> } | null => {
-    const armed = selection.selection
-    if (armed.kind !== 'armed' || armed.prompt === null || situation === null) return null
-    if (armed.prompt.kind === 'move') return { labels: [movePromptText(situation, armed.unitId)], choices: ['move'] }
-    if (armed.prompt.job === null) return null
-    const choices = busyChoices(armed.prompt.job)
-    return armed.prompt.afterOnly ? { labels: [choices.after], choices: ['after'] } : { labels: [choices.after, choices.now], choices: ['after', 'now'] }
-  }
-
   await sync()
   return {
     actor,
@@ -474,20 +429,18 @@ export const openCardScreen = async (run: OpenRun, options: { readonly actor?: A
     lists: currentLists,
     receipts: () => receipts,
     feedback: () => feedback,
-    prompt: () => promptOf()?.labels ?? null,
+    decision: currentDecision,
     mapSelection: () => mapSelection,
     sync,
     mapTap: async (objectId, gapMs = paceMs) => {
       step(gapMs)
       const object = objects().find(entry => entry.id === objectId)
       if (object === undefined) throw new Error(`The map shows no ${objectId}`)
-      await mapClick()
       await follow(routeObjectClick(object, mapClickContext()))
       await sync()
     },
     groundTap: async (position, gapMs = paceMs) => {
       step(gapMs)
-      await mapClick()
       await follow(routeGroundClick(geoPointFromLonLat(position[0], position[1]), mapClickContext()))
       await sync()
     },
@@ -501,18 +454,12 @@ export const openCardScreen = async (run: OpenRun, options: { readonly actor?: A
       await guarded(async () => await pressed(control))
       await sync()
     },
-    promptTap: async (index, gapMs = paceMs) => {
+    decide: async (choice, gapMs = paceMs) => {
       step(gapMs)
-      const prompt = promptOf()
-      if (prompt === null) throw new Error('The map shows no prompt')
-      const choice = prompt.choices[index]
-      if (choice === undefined) throw new Error(`The map prompt has no option ${index}`)
-      await send({ kind: 'prompt', choice })
+      required(currentDecision(), 'decision dialog')
+      await send({ kind: 'decide', choice })
       await sync()
     },
-    wait: ms => {
-      wallMs += ms
-      void send({ kind: 'tick', atMs: wallMs })
-    },
+    wait: ms => { wallMs += ms },
   }
 }

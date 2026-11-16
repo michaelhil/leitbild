@@ -165,7 +165,7 @@ export const playDemo = async (options: {
       .sort((a, b) => metresBetween(lonLatOf(a), lonLatOf(callObject)) - metresBetween(lonLatOf(b), lonLatOf(callObject)))
     for (const unit of candidates) {
       const options = await run.query<UnitOptions>('world.einsatz.unit.options', { unitId: unit.id }, screen.actor)
-      if (options.targets.some(target => 'taskId' in target.target && target.target.taskId === call.id)) return unit.id
+      if (options.targets.some(target => 'taskId' in target.target && target.target.taskId === call.id && target.canReplace)) return unit.id
     }
     return null
   }
@@ -178,6 +178,7 @@ export const playDemo = async (options: {
       const call = screen.situation().calls.find(entry => !tried.has(entry.id) && isUnserved(entry) && !queued.has(entry.id) && entry.waitingS >= reactS)
       if (call === undefined) return
       tried.add(call.id)
+      if (screen.selection().kind === 'unit') await screen.press({ kind: 'back' })
       const since = { clicks: screen.actions(), sent: screen.calls.length }
       await screen.row({ id: call.id, kind: 'call' })
       const card = screen.card()
@@ -190,10 +191,10 @@ export const playDemo = async (options: {
       const unitId = await divertable(call)
       if (unitId === null) continue
       await screen.mapTap(unitId)
-      await screen.press({ kind: 'arm' })
       await screen.mapTap(call.id)
-      if (screen.prompt() === null) throw new Error(`No busy choice for diverting ${unitId} to ${call.label}: ${screen.feedback() ?? JSON.stringify(screen.card())}`)
-      await screen.promptTap(1)
+      const decision = screen.decision()
+      if (decision?.kind !== 'order' || !decision.replace) throw new Error(`No replacement for diverting ${unitId} to ${call.label}: ${screen.feedback() ?? JSON.stringify(screen.card())}`)
+      await screen.decide('replace')
       logMove('divert', undefined, since)
     }
   }
@@ -246,9 +247,8 @@ export const playDemo = async (options: {
 
 /**
  * A beat: when a call arrives that a busy unit already on scene could serve
- * next, give it to the nearest such unit after its current job, by taps:
- * the unit, its Dispatch, the call, then "After current job" on the busy
- * prompt the map shows. 4 clicks.
+ * next, give it to the nearest such unit in three clicks: the unit, the
+ * call, then "Add to plan".
  */
 export const afterNearestBusy = (name: string, atS: number): Beat => ({
   name,
@@ -262,18 +262,17 @@ export const afterNearestBusy = (name: string, atS: number): Beat => ({
       .sort((a, b) => metresBetween(lonLatOf(a), lonLatOf(call)) - metresBetween(lonLatOf(b), lonLatOf(call)))[0]
     if (nearest === undefined) throw new Error(`${name}: no busy unit on scene could serve ${call.label}`)
     await screen.mapTap(nearest.id)
-    await screen.press({ kind: 'arm' })
     await screen.mapTap(call.id)
-    if (screen.prompt() === null) throw new Error(`${name}: ${nearest.label} asked no busy choice for ${call.label}: ${screen.feedback() ?? JSON.stringify(screen.card())}`)
-    await screen.promptTap(0)
+    const decision = screen.decision()
+    if (decision?.kind !== 'order' || !decision.add) throw new Error(`${name}: ${nearest.label} cannot add ${call.label}: ${screen.feedback() ?? JSON.stringify(screen.card())}`)
+    await screen.decide('add')
   },
 })
 
 /**
  * A beat: when two calls arrive together, give both to the unit suggested
- * for the first, in one plan, instead of sending a second unit: the unit,
- * its Dispatch, the first call, then "+ Add stop" and the second call. The
- * 5 clicks of a non-carrier's two-stop job (plan B.6).
+ * for the first, in one plan. Four clicks: the unit, the first call, the
+ * second call, then "Add to plan".
  */
 export const bothToOne = (name: string, atS: number): Beat => ({
   name,
@@ -285,9 +284,8 @@ export const bothToOne = (name: string, atS: number): Beat => ({
     const unitId = answer.proposal?.units[0]?.unitId
     if (unitId === undefined) throw new Error(`${name}: no unit is suggested for ${first.label}`)
     await screen.mapTap(unitId)
-    await screen.press({ kind: 'arm' })
     await screen.mapTap(first.id)
-    await screen.press({ kind: 'add-stop' })
     await screen.mapTap(second.id)
+    await screen.decide('add')
   },
 })
