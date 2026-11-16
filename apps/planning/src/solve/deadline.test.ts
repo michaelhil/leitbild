@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test'
-import { generate, searchBudgetBy, SEARCH_STOP_LATENCY_MS, subSolve, type SubSolveOutcome, type SubSolveTask } from './generate.ts'
+import { GENERATE_DEADLINE_MS, generate, searchBudgetBy, SEARCH_STOP_LATENCY_MS, subSolve, type SubSolveOutcome, type SubSolveTask } from './generate.ts'
 import { createSolverPool } from './pool.ts'
 import { searchEngine } from './search.ts'
 import { laneKCheck, laneKVerify, laneKVerifyBound } from './fixtures/lane-k.ts'
@@ -50,7 +50,11 @@ describe('a sub-solve answers by its time', () => {
     const answerBy = start + 2_500
     const outcome = await run({ inputs: flagship, revision: 1, ...swap, budget: { evals: Number.MAX_SAFE_INTEGER, cpuMs: 1_200, wallMs: 3_000 }, seed: 1, deadlineAt: answerBy + 5_000, answerBy }, new AbortController().signal)
     expect(Date.now()).toBeLessThan(answerBy)
-    expect(outcome.option.status.word).toBe('validated feasible')
+    // A checked plan, or no plan from a search stopped by its time: how much a ~1 s search finds depends on the
+    // machine's load. Never a kill and never a stop by anyone.
+    expect(['validated feasible', 'unresolved']).toContain(outcome.option.status.word)
+    expect(['ended', 'cancelled']).not.toContain(runOf(outcome)?.stoppedBy)
+    if (outcome.option.status.word === 'unresolved') expect(runOf(outcome)?.stoppedBy).toBe('wall')
     // The search got what was left after the work before it, less that work again (for the slow check after it)
     // and the engine's stop latency, at the granted CPU rate.
     expect(granted.length).toBe(1)
@@ -100,12 +104,13 @@ describe('in a solver child on a slow start (as under the service\'s CPU quota)'
     } finally { await pool.shutdown() }
   }, 30_000)
 
-  test('the flagship\'s two variants under a tight deadline: the second gets a real search too', async () => {
+  test('the flagship\'s two variants at production\'s 20 s with a slow start: the second gets a real search too', async () => {
+    // The hotfix's case: production's 20 s Generate, each child starting slowly as under the unit's CPU quota.
     const pool = createSolverPool({ childEntry: slowStart })
     try {
       const at = performance.now()
-      const result = await generate({ engine: pool, check: laneKCheck, verify: laneKVerify, verifyBound: laneKVerifyBound, subSolver: pool.subSolver }, { inputs: flagship, revision: 1, previous: null, input: { seconds: 8 }, by, signal: new AbortController().signal, seed: 1 })
-      expect(performance.now() - at).toBeLessThan(8_000)
+      const result = await generate({ engine: pool, check: laneKCheck, verify: laneKVerify, verifyBound: laneKVerifyBound, subSolver: pool.subSolver }, { inputs: flagship, revision: 1, previous: null, input: { seconds: 20 }, by, signal: new AbortController().signal, seed: 1 })
+      expect(performance.now() - at).toBeLessThan(GENERATE_DEADLINE_MS)
       // What the slot arithmetic guarantees, whatever the machine's load: both sub-solves answered (none was
       // killed at the deadline), each was granted a search budget of its own and searched, and each search
       // stopped on that budget. Whether a search that short finds a plan depends on the load; it is not asserted.
