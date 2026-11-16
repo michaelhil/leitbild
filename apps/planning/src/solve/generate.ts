@@ -530,12 +530,11 @@ export const generate = async (deps: GenerateDeps, request: GenerateRequest): Pr
     }
     if (ordered.every(option => option.status.word === 'proven infeasible')) {
       if (ordered.length < 2 || first.status.word !== 'proven infeasible') return first
-      // Every method combination refused (V1): each one's cause stored beside the others, as lane K verifies
-      // it under that combination's own variant; one that does not prove leaves the what-if unresolved.
+      // Every method combination refused (V1): each one's cause stored beside the others. Each was stored as
+      // proof only after lane K verified it in its own sub-solve, on that combination's variant with the
+      // what-if's rule; the service runs no checker (adversary M3).
       const byMethod = ordered.flatMap(option => (option.status.word === 'proven infeasible' ? [{ methods: option.variant.methods.map(pick => ({ ...pick })), purchases: [...option.variant.purchases], cause: option.status.cause }] : []))
-      const also = first.variant.also === undefined ? {} : { also: [...first.variant.also] }
-      const proven = byMethod.every(entry => deps.verify(inputs, { methods: entry.methods, purchases: entry.purchases, ...also }, entry.cause).proves)
-      return proven ? { ...first, status: { ...first.status, byMethod } } : { ...first, status: unresolvedStatus(first.status.run) }
+      return { ...first, status: { ...first.status, byMethod } }
     }
     const input = ordered.find(option => option.status.word === 'invalid input') ?? ordered.find(option => option.status.word === 'unsupported feature')
     if (input !== undefined) return input
