@@ -99,10 +99,11 @@ export const createPlanActions = (client: PlanningClient, planId: string, progre
         matches: scenario !== undefined && resource.sourceDefinition?.id === scenario,
       })),
     /** Shows an edit's consequence without saving. A refusal in words is a preview too; a server fault is not. */
-    preview: async (model: PlanModel, edits: readonly Edit[], label: string): Promise<Preview> => {
+    /** Shows an edit's consequence on `option`, the one on the timeline (walk V4); the Module's default is the recommended one. */
+    preview: async (model: PlanModel, edits: readonly Edit[], label: string, option: string | null = null): Promise<Preview> => {
       const asks = weakensRule(model, edits)
       try {
-        return { label, result: await client.edit(planId, model.revision, { edits: [...edits], preview: true }), refusal: null, asks }
+        return { label, result: await client.edit(planId, model.revision, { edits: [...edits], preview: true, ...(option === null ? {} : { option }) }), refusal: null, asks }
       } catch (cause) {
         if (!isRequestError(cause) || cause.status >= 500) throw cause
         const names = createNames(model.inputs, namesInEdits(edits))

@@ -15,7 +15,8 @@ import { ladderView, type BuysPage } from './ladder.ts'
 import { createNames, type OptionView, type PlanModel } from './model.ts'
 import { outcomeBanner } from './outcome.ts'
 import { statusView, type Context } from './status-text.ts'
-import { whatIfAskedNotice, whatIfCard, whatIfsClearedNotice } from './what-if.ts'
+import { whatIfAskedNotice, whatIfCard, whatIfKeepRule, whatIfsClearedNotice } from './what-if.ts'
+import { createPlanActions } from './plan-actions.ts'
 import { compareView, moreMoved, previousFor, whyView } from './why-text.ts'
 import { recommendedFactsSchema } from '../api/contract.ts'
 import { robustSchema } from '../plan/schema.ts'
@@ -27,6 +28,7 @@ const { default: Ladder } = await import('./Ladder.svelte') as { default: Any }
 const { default: Library } = await import('./Library.svelte') as { default: Any }
 const { default: StatusBlock } = await import('./StatusBlock.svelte') as { default: Any }
 const { default: WhyRecommended } = await import('./WhyRecommended.svelte') as { default: Any }
+const { default: WhatIfPanel } = await import('./WhatIfPanel.svelte') as { default: Any }
 
 const css = /<style>([\s\S]*)<\/style>/.exec(readFileSync(join(import.meta.dir, 'App.svelte'), 'utf8'))?.[1] ?? ''
 const inputs = trainACaseInputs()
@@ -215,5 +217,44 @@ describe('V12: a job that holds alone with no margin is named', () => {
     const pump = planned.inputs.jobs.find(job => job.key === 'SWA-PUMP-OUT')!.title
     expect(card.steps).toContain(`${pump} holds alone at its high estimate with no margin left: ${group} is out exactly 72 h.`)
     expect(card.steps).toContain('The other job with an estimate range holds alone at its high estimate.')
+  })
+})
+
+describe('V4: the preview re-times the option on the timeline', () => {
+  test('the preview request names the timeline\'s option; the Module\'s consequence is shown as it gives it', async () => {
+    const planned = trainAPlanned()
+    const sent: Array<Record<string, unknown>> = []
+    const workspace = '0b4b9a52-2f7e-4c1a-9d3e-00000000000a'
+    const client = createPlanningClient(workspace, async (_path, init) => {
+      sent.push((JSON.parse(String(init?.body)) as { input: Record<string, unknown> }).input)
+      // The Module's words, as lane P gives them: a test input standing in for its answer.
+      return Response.json({ result: { plan: { id: planned.id, title: planned.title, revision: planned.revision }, target: { kind: 'resource', ref: { workspaceId: workspace, moduleId: 'planning', type: 'planning.plan', id: planned.id } }, changed: [], attention: [], problems: [], preview: { saved: false, consequence: 'Not saved yet. On \'Option 1\': nothing else moves.', violations: [], weakens: [] } } })
+    })
+    const preview = await createPlanActions(client, planned.id).preview(planned, [{ edit: 'job', key: 'SWA-PUMP-OUT', duration: { value: 7 } }], 'Longer pull', 'opt-1')
+    expect(sent).toEqual([{ edits: [{ edit: 'job', key: 'SWA-PUMP-OUT', duration: { value: 7 } }], preview: true, option: 'opt-1' }])
+    expect(preview.result?.preview?.consequence).toBe('Not saved yet. On \'Option 1\': nothing else moves.')
+  })
+})
+
+describe('V9: the keep rule is shown with the what-ifs', () => {
+  test('the panel says which what-ifs stay, as the Module states its keep rule', () => {
+    const text = readableText(renderHtml(WhatIfPanel, { context, cards: [], onAsk: none, onSelect: none, onClose: none }))
+    expect(text).toContain(whatIfKeepRule)
+    expect(whatIfKeepRule).toBe('A plan holds at most 8 options. The newest what-ifs stay first, then the plan\'s own options, then earlier what-ifs, so an earlier what-if can be replaced. The same what-if asked again replaces itself. Generate without a what-if clears them all.')
+  })
+})
+
+describe('V10: the other moved jobs, page by page', () => {
+  test('after a page, "Show the other N" reads the next one while the Module has more', () => {
+    const jobs = inputs.jobs.slice(0, 8)
+    const at = (hours: number) => new Date(Date.parse(inputs.settings.window!.start) + hours * 3_600_000).toISOString()
+    const move = (index: number) => ({ job: jobs[index]!.key, was: { start: at(index), finish: at(index + 1) }, now: { start: at(index + 2), finish: at(index + 3) } })
+    const facts = versusFactsSchema.parse({ option: 'a', previous: 'a', from: 1, to: 2, complete: true, changes: [], methods: [], buys: { added: [], dropped: [] }, moved: [move(0)], movedMore: 5, added: [], removed: [] })
+    const view = compareView(facts, { label: 'A' }, { label: 'A' }, context)
+    const page = moreMoved(versusFactsSchema.parse({ ...facts, moved: [move(6), move(2)], movedMore: 3 }), context)
+    const text = readableText(renderHtml(ComparePanel, { answer: { state: 'answered', facts: view }, more: page, moreLeft: 3, onMore: none, onClose: none }))
+    expect(text).toContain('Show the other 5')
+    expect(text).toContain('Show the other 3')
+    expect(text.indexOf(jobs[2]!.title)).toBeLessThan(text.indexOf(jobs[6]!.title))
   })
 })

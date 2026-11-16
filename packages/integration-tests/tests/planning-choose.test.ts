@@ -20,7 +20,8 @@ const small = <T>(result: T): T => {
   expect(new TextEncoder().encode(JSON.stringify(result)).byteLength).toBeLessThanOrEqual(4_096)
   return result
 }
-const seconds = 10
+// The screen's own budget (Generate's default): at 10 s the rebuild is not always found under load.
+const seconds = 20
 const stored = (planId: string) => stack.store.read(stack.workspaceId, planId)
 const buys = async (planId: string) => sectionDataSchemas.buys.parse(small(await client.read(planId, { section: 'buys' })).sections[0]!.data).items
 type BuysItem = Awaited<ReturnType<typeof buys>>[number]
@@ -67,11 +68,30 @@ test('steps 1, 2 and 4: first plan, why recommended, the rungs to solve; seal at
   expect(ladder.flatMap(item => 'rung' in item ? [[item.rung.methods, item.rung.buy]] : [])).toEqual(methods.flatMap(combo => rungsOf(plan.inputs).map(rung => [combo, [...rung.buy]])))
   for (const items of perMethod(ladder)) expect(buysHonesty(plan, items, formulationOf(plan.inputs.settings.grid))).toEqual([])
 
-  // Step 4: the seal at 14 h, previewed, then saved; Generate again; what differs from the earlier set (T12).
+  // Step 4: the seal at 14 h, its high estimate, previewed on the recommended option, then saved; Generate again;
+  // what differs from the earlier set (T12). With its current order the option breaks what the pessimistic card
+  // says the seal alone at its high estimate breaks: the preview and the card re-time by the same repair.
   const seal = plan.inputs.jobs.find(job => job.title === 'Replace CCW A mechanical seal')!
+  expect(seal.duration.range?.high).toBe(14)
   const edits = [{ edit: 'job' as const, key: seal.key, duration: { value: 14, unit: 'h' as const } }]
-  const preview = small(await client.edit(planId, revision, { edits, preview: true }))
-  expect(preview.preview?.saved).toBe(false)
+  const preview = small(await client.edit(planId, revision, { edits, preview: true })).preview!
+  console.log('seal at 14 h:', preview.consequence)
+  const option = plan.options!.options.find(entry => entry.key === recommended)!
+  // The card's re-timing of the seal alone at its high estimate (absent when Generate had no time to work it out).
+  const robust = option.robust
+  const card = robust !== undefined && 'single' in robust ? robust.single.find(entry => entry.job === seal.key)?.outcome : undefined
+  console.log('the card for the seal at 14 h:', JSON.stringify(card ?? robust ?? null))
+  const label = plan.inputs.methods.flatMap(choice => choice.options).find(entry => option.variant.methods.some(pick => pick.option === entry.key))!.label
+  expect(preview.saved).toBe(false)
+  if (card !== undefined) expect(card.holds).toBe(false)
+  expect(preview.consequence).toStartWith(`With its current order, '${label}' would break: `)
+  expect(preview.consequence).toEndWith('Generate again to look for a new order.')
+  if (card !== undefined && !card.holds && 'rule' in card) {
+    const rule = plan.inputs.rules.find(entry => entry.key === card.rule)!
+    const group = rule.kind === 'span-limit' ? plan.inputs.groups.find(entry => entry.key === rule.group)!.label : ''
+    expect(preview.consequence).toContain(rule.kind === 'span-limit' ? `the ${rule.limit.value} ${rule.limit.unit} limit on ${group}` : rule.words)
+  }
+  if (card !== undefined && !card.holds && 'unplaced' in card) expect(preview.consequence).toContain(`'${plan.inputs.jobs.find(entry => entry.key === card.unplaced.job)!.title}' could not be done`)
   const saved = small(await client.edit(planId, revision, { edits, reason: 'The seal vendor now quotes 14 h' }))
   expect(saved.plan.revision).toBe(revision + 1)
   const earlier = (await stored(planId)).options!
