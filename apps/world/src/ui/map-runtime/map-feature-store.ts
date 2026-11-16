@@ -129,9 +129,11 @@ const operationalPointFor = (
   const selected = object.id === context.selectedControllerId
   const highlighted = context.highlightedObjectIds.has(object.id)
   const hasNewInfo = presentation.noteworthyUpdates === true && context.hasNewInfo(object)
-  const muted = presentation.muted === true || context.mutedObjectIds.has(object.id)
   const target = context.targeting?.targets.get(object.id) ?? null
   const targetTone = target?.tone ?? null
+  const dot = presentation.mapMarker === 'dot'
+  const mapMuted = presentation.mapMarker === 'muted' && !selected && targetTone === null
+  const muted = dot || mapMuted || presentation.muted === true || context.mutedObjectIds.has(object.id)
   const targetTag = target?.tag ?? null
   const targetTagAnchor = target?.anchor ?? 'middle'
   const dimmed = context.targeting !== null && context.targeting.complete && target === null && object.id !== context.targeting.fromId
@@ -149,6 +151,7 @@ const operationalPointFor = (
     highlighted ? 'h' : '',
     hasNewInfo ? 'n' : '',
     muted ? 'm' : '',
+    dot ? 'dot' : '',
     dimmed ? 'd' : '',
     targetTone === null ? '' : `t=${targetTone}=${targetTagAnchor}=${targetTag ?? ''}`,
     label ?? '',
@@ -168,13 +171,14 @@ const operationalPointFor = (
     highlighted,
     hasNewInfo,
     muted,
+    ...(dot ? { dot } : {}),
     targetTone,
     targetTag,
     targetTagAnchor,
     dimmed,
     sizePx,
     rotationDeg: 0,
-    priority: pointPriority(object, presentation),
+    priority: dot ? 0 : pointPriority(object, presentation),
     signature,
   }
 }

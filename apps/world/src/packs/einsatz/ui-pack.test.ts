@@ -12,6 +12,7 @@ import { definitionOf, lonLat, openRun, taskItem, unitItem } from './fixtures/ru
 import { trackDataSchema } from './engine/combat-model.ts'
 import { engineObjects } from './engine/objects.ts'
 import { config as engineConfig, low, templates, types as engineTypes } from './fixtures/engine-harness.ts'
+import { einsatzCommandIds } from './capabilities.ts'
 import { einsatzPack } from './pack.ts'
 import { einsatzDispatchPanelId, einsatzPackView } from './ui-pack.ts'
 import { dispatchWords } from './ui/presenters.ts'
@@ -141,7 +142,7 @@ describe('Einsatz UI declarations', () => {
     for (const object of objects) expect(targeting.isController(object)).toBe(recordType(object) === 'unit' && object.kind === 'mobile_entity')
     expect(objects.some(object => targeting.isController(object))).toBe(true)
 
-    const run = await openRun({ items: [unitItem('u1', engineTypes.roadCarrier, lonLat(0)), unitItem('h1', engineTypes.publicSite, lonLat(0.02)), taskItem('t1', templates.load, lonLat(0.01), { [low]: 1 })], paused: true })
+    const run = await openRun({ items: [unitItem('u1', engineTypes.roadCarrier, lonLat(0)), unitItem('u2', engineTypes.roadCarrier, lonLat(0.001)), unitItem('h1', engineTypes.publicSite, lonLat(0.02)), taskItem('t1', templates.load, lonLat(0.01), { [low]: 2 })], paused: true })
     try {
       const listed = run.run.snapshot().objects
       expect(['u1', 'h1', 't1'].map(id => targeting.isController(listed.find(object => object.id === id)!))).toEqual([true, false, false])
@@ -150,30 +151,35 @@ describe('Einsatz UI declarations', () => {
     }
   })
 
-  test('units are labelled with callsign, phase code and damage and toned free, committed or out of action; sites, tasks and tracks carry their labels; every object draws its catalogue icon', async () => {
-    const run = await openRun({ items: [unitItem('u1', engineTypes.roadCarrier, lonLat(0)), unitItem('h1', engineTypes.publicSite, lonLat(0.02)), taskItem('t1', templates.load, lonLat(0.01), { [low]: 1 })], paused: true })
+  test('the map fades committed units and fully covered calls and keeps completed calls as history dots', async () => {
+    const run = await openRun({ items: [unitItem('u1', engineTypes.roadCarrier, lonLat(0)), unitItem('u2', engineTypes.roadCarrier, lonLat(0.001)), unitItem('h1', engineTypes.publicSite, lonLat(0.02)), taskItem('t1', templates.load, lonLat(0.01), { [low]: 2 })], paused: true })
     try {
       const objects = run.run.snapshot().objects
       const objectOf = (id: string) => objects.find(object => object.id === id)!
       const present = (object: OperationalObject) => presentObject(object, { objects })
       const iconOf = (typeId: string) => engineConfig.unitTypes.find(type => type.id === typeId)!.icon
       expect(present(objectOf('u1'))).toMatchObject({ mapLabel: 'U1 · AV', status: { tone: 'ready' }, icon: iconOf(engineTypes.roadCarrier) })
+      expect(present(objectOf('u1')).mapMarker).toBeUndefined()
       expect(present(objectOf('h1'))).toMatchObject({ mapLabel: 'H1', icon: iconOf(engineTypes.publicSite) })
       expect(present(objectOf('h1')).status).toBeUndefined()
       expect(present(objectOf('t1'))).toMatchObject({ mapLabel: 'T1', icon: engineConfig.taskTemplates.find(template => template.id === templates.load)!.icon })
       // Every unit is drawn: no screen-side filter hides one.
       for (const object of objects) expect(present(object).mapIconVisible).not.toBe(false)
-      const committed = { ...objectOf('u1'), packData: { ...(objectOf('u1').packData as object), phase: 'en-route', taskId: 't1' } } as OperationalObject
-      expect(present(committed)).toMatchObject({ mapLabel: 'U1 · ER', status: { tone: 'working' } })
+      const current = (id: string) => presentObject(run.object(id)!, { objects: run.run.snapshot().objects })
       const closed = { ...objectOf('h1'), packData: { ...(objectOf('h1').packData as object), accepting: false } } as OperationalObject
-      expect(present(closed).mapLabel).toBe('H1 · closed')
-      // A call no unit is assigned to pulses (B.2, B.7); once a unit takes it, it stops.
-      // Its word stays the call's own status, so a display's status filter finds every open call by one word.
-      expect(present(objectOf('t1')).status).toEqual({ tone: 'idle', label: objectOf('t1').operational.status, indicator: { shape: 'dot', pulse: true } })
-      expect(objectOf('t1').operational.status).toBe('open')
-      const taken = objects.map(object => object.id === 'u1' ? committed : object)
-      expect(presentObject(objectOf('t1'), { objects: taken }).status).toBeUndefined()
-      expect(presentObject({ ...objectOf('t1'), lifecycle: 'resolved' } as OperationalObject, { objects }).status).toBeUndefined()
+      expect(present(closed)).toMatchObject({ mapLabel: 'H1 · closed', mapMarker: 'muted' })
+      expect(present(objectOf('t1')).status).toEqual({ tone: 'idle', label: 'open', indicator: { shape: 'dot', pulse: true } })
+      expect((await run.invoke(einsatzCommandIds.order, { units: ['u1'], stops: [{ taskId: 't1' }] })).ok).toBe(true)
+      expect(current('u1')).toMatchObject({ mapMarker: 'muted', status: { tone: 'working' } })
+      expect(current('t1').mapMarker).toBeUndefined()
+      expect(current('t1').status?.indicator.pulse).toBe(true)
+      expect((await run.invoke(einsatzCommandIds.order, { units: ['u2'], stops: [{ taskId: 't1' }] })).ok).toBe(true)
+      expect(current('t1')).toMatchObject({ mapMarker: 'muted', glance: [expect.any(String), 'All needs covered'] })
+      expect(current('t1').status).toBeUndefined()
+
+      const history = presentObject({ ...objectOf('t1'), lifecycle: 'resolved' }, { objects })
+      expect(history).toMatchObject({ mapMarker: 'dot', muted: true, color: '#b46e50', glance: [expect.any(String), 'Completed'] })
+      expect(history.mapLabel).toBeUndefined()
     } finally {
       await run.close()
     }

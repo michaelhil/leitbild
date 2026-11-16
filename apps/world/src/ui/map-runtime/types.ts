@@ -51,6 +51,7 @@ export interface OperationalPointFeature {
   readonly highlighted: boolean
   readonly hasNewInfo: boolean
   readonly muted: boolean
+  readonly dot?: boolean
   /** The target's halo, or null when it is outside the current targeting. */
   readonly targetTone: MapTargetingTone | null
   /** A tagged target's tag above its halo; null for any other object. */

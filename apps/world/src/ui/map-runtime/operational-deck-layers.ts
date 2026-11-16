@@ -58,6 +58,8 @@ export interface OperationalDeckLayerData {
   readonly visibleAreaSymbols: ReadonlyArray<OperationalSymbolFeature>
   /** Every point where the map draws its icon, fanned out where icons would overlap (`point-declutter.ts`). */
   readonly points: ReadonlyArray<OperationalPointFeature>
+  readonly iconPoints: ReadonlyArray<OperationalPointFeature>
+  readonly dotPoints: ReadonlyArray<OperationalPointFeature>
   /** A leader from each fanned icon to its true position. */
   readonly leaders: ReadonlyArray<PointLeader>
   readonly newInfoPoints: ReadonlyArray<OperationalPointFeature>
@@ -184,6 +186,8 @@ export const createOperationalDeckLayerDataCache = (): OperationalDeckLayerDataC
   let pointsRevision = -1
   let layoutZoom = Number.NaN
   let drawnPoints: ReadonlyArray<OperationalPointFeature> = emptyPoints
+  let iconPoints = emptyPoints
+  let dotPoints = emptyPoints
   let leaders: ReadonlyArray<PointLeader> = emptyLeaders
   let newInfoPoints: ReadonlyArray<OperationalPointFeature> = emptyPoints
   let placementRevision = -1
@@ -204,6 +208,8 @@ export const createOperationalDeckLayerDataCache = (): OperationalDeckLayerDataC
     pointsRevision = -1
     layoutZoom = Number.NaN
     drawnPoints = emptyPoints
+    iconPoints = emptyPoints
+    dotPoints = emptyPoints
     leaders = emptyLeaders
     newInfoPoints = emptyPoints
     placementRevision = -1
@@ -241,7 +247,9 @@ export const createOperationalDeckLayerDataCache = (): OperationalDeckLayerDataC
         drawnPoints = decluttered.points
         leaders = decluttered.leaders
         newInfoPoints = drawnPoints.filter(point => point.hasNewInfo)
-        pointsByAtlas = byAtlas(drawnPoints, catalogueAtlas, emptyPoints)
+        dotPoints = drawnPoints.filter(point => point.dot === true)
+        iconPoints = dotPoints.length === 0 ? drawnPoints : drawnPoints.filter(point => point.dot !== true)
+        pointsByAtlas = byAtlas(iconPoints, catalogueAtlas, emptyPoints)
         labelPoints = drawnPoints.some(point => point.label !== null) ? drawnPoints.filter(point => point.label !== null) : emptyPoints
         targetTagPoints = drawnPoints.some(point => point.targetTag !== null) ? drawnPoints.filter(point => point.targetTag !== null) : emptyPoints
       }
@@ -255,6 +263,8 @@ export const createOperationalDeckLayerDataCache = (): OperationalDeckLayerDataC
         visiblePaths,
         visibleAreaSymbols,
         points: drawnPoints,
+        iconPoints,
+        dotPoints,
         leaders,
         newInfoPoints,
         placementPoints,
@@ -296,7 +306,7 @@ export const createOperationalDeckLayers = (config: OperationalDeckLayerConfig):
   const visiblePaths = layerData.visiblePaths
   const points = layerData.points
   const diskClicks = config.diskClicks
-  const diskClickPoints = config.disksPick || diskClicks === null ? emptyPoints : points.filter(point => diskClicks(point.object))
+  const diskClickPoints = config.disksPick || diskClicks === null ? emptyPoints : layerData.iconPoints.filter(point => diskClicks(point.object))
   const catalogueAtlas = config.catalogueAtlas
   const onSymbolClick = (info: PickingInfo<OperationalPointFeature>): void => {
     const point = asPointPicking(info)
@@ -430,9 +440,44 @@ export const createOperationalDeckLayers = (config: OperationalDeckLayerConfig):
         getLineWidth: snapshot.revisions.points,
       },
     }),
+    // History dots keep their original picking area below the live objects.
+    ...(layerData.dotPoints.length > 0 ? [
+      new ScatterplotLayer<OperationalPointFeature>({
+        id: 'leitbild-object-dot-clicks',
+        data: layerData.dotPoints,
+        pickable: true,
+        visible: visible(visibleFamilies, 'objects'),
+        radiusUnits: 'pixels',
+        filled: true,
+        getPosition: point => point.position,
+        getRadius: point => statusDiskRadiusPx(point.sizePx),
+        getFillColor: rgba(0, 0, 0, 0),
+        onClick: onSymbolClick,
+        onHover: onSymbolHover,
+        updateTriggers: {
+          getPosition: snapshot.revisions.points,
+          getRadius: snapshot.revisions.points,
+        },
+      }),
+      new ScatterplotLayer<OperationalPointFeature>({
+        id: 'leitbild-object-dots',
+        data: layerData.dotPoints,
+        pickable: false,
+        visible: visible(visibleFamilies, 'objects'),
+        radiusUnits: 'pixels',
+        filled: true,
+        getPosition: point => point.position,
+        getRadius: 4,
+        getFillColor: pointFill,
+        updateTriggers: {
+          getPosition: snapshot.revisions.points,
+          getFillColor: snapshot.revisions.points,
+        },
+      }),
+    ] : []),
     new ScatterplotLayer<OperationalPointFeature>({
       id: 'leitbild-object-status-disks',
-      data: points,
+      data: layerData.iconPoints,
       // While the surface picks targets, a mouse click between the glyph's strokes lands on the disk: it is the object's, never the ground's.
       pickable: config.disksPick,
       visible: visible(visibleFamilies, 'objects'),

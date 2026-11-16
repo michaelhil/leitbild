@@ -60,6 +60,8 @@ export interface PackObjectPresentation {
   readonly fields: ReadonlyArray<PackObjectField>
   readonly status?: PackObjectStatusPresentation
   readonly muted?: boolean
+  /** Fade an object in normal map browsing, or draw it as a small, still-selectable dot. */
+  readonly mapMarker?: 'muted' | 'dot'
   readonly mapIconVisible?: boolean
   readonly mapLineVisible?: boolean
   readonly mapIconSizePx?: number

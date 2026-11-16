@@ -158,6 +158,42 @@ describe('operational map icons', () => {
     expect(snapshot.points.map(point => [point.id, point.muted])).toEqual([['a', false], ['b', true]])
   })
 
+  test('history dots are small and still pickable, and a faded asset regains emphasis when selected', () => {
+    const objects = [objectOf('asset', 11.3), objectOf('history', 11.4)]
+    const presentationFor = (object: OperationalObject): PackObjectPresentation => ({
+      ...presentationWith({})(object),
+      mapMarker: object.id === 'history' ? 'dot' : 'muted',
+    })
+    const snapshot = snapshotOf(objects, presentationFor)
+    const history = snapshot.points.find(point => point.id === 'history')!
+    expect(history).toMatchObject({ dot: true, muted: true, color: [51, 65, 85, 132] })
+    expect(snapshot.points.find(point => point.id === 'asset')?.muted).toBe(true)
+    const selected = createMapFeatureStore().update({
+      objects, selectedControllerId: 'asset', highlightedObjectIds: [], hiddenObjectCategoryIds: [],
+      alertPalette: 'day', placementPoints: [], packFeatures: [], hasNewInfo: () => false, presentationFor,
+    })
+    expect(selected.points.find(point => point.id === 'asset')?.muted).toBe(false)
+
+    const picked: string[] = []
+    const hovered: string[] = []
+    const layers = createOperationalDeckLayers({
+      snapshot, visibleFamilies: new Set(['objects']), catalogueAtlas: emptyCatalogueSymbolAtlas,
+      zoom: 10, disksPick: false, diskClicks: null, onObjectSeen: () => undefined,
+      onObjectSelected: point => { picked.push(point.id) },
+      onObjectHover: point => { if (point !== null) hovered.push(point.id) },
+    })
+    const layer = (id: string) => layers.find(entry => entry.id === id)!
+    expect(layer('leitbild-object-dots').props).toMatchObject({ data: [history], getRadius: 4, pickable: false })
+    expect(layer('leitbild-object-symbols').props.data).not.toContain(history)
+    type Pick = (info: { readonly object: unknown }) => void
+    const hit = layer('leitbild-object-dot-clicks')
+    expect(hit.props.pickable).toBe(true)
+    ;(hit.props.onClick as unknown as Pick)({ object: history })
+    ;(hit.props.onHover as unknown as Pick)({ object: history })
+    expect(picked).toEqual(['history'])
+    expect(hovered).toEqual(['history'])
+  })
+
   test('an armed order rings and tags its targets and dims every other object but its own, and nothing changes once it clears', () => {
     const store = createMapFeatureStore()
     const objects = [objectOf('a', 11.3), objectOf('b', 11.4), objectOf('c', 11.5), objectOf('d', 11.6)]

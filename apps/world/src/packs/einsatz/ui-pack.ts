@@ -3,6 +3,7 @@ import { createWorldPackDescriptor, type PackObjectField, type PackObjectPresent
 import { packField } from '../../core/packs/presentation.ts'
 import { plannedPathFeatures, plannedWaypointFeatures } from './chain-path.ts'
 import { einsatzColors } from './colors.ts'
+import type { TaskData } from './engine/model.ts'
 import { einsatzPackId, einsatzRuntimeId } from './ids.ts'
 import { neutralLexicon, type UnitPhase } from './lexicon.ts'
 import { contactIcon } from './situation/text.ts'
@@ -12,8 +13,8 @@ import { dispatchWords, einsatzRecordOf, tierWord, trackAgeText, type EinsatzRec
  * The browser-safe Einsatz view. It reads only the presentation each object
  * carries and imports no engine, configuration validation or map catalogue.
  *
- * Every Einsatz object draws its catalogue icon natively: a unit or site its
- * type's, a task its template's, a track its identified type's or, as a
+ * Einsatz objects use their catalogue icons: a unit or site its type's,
+ * an open task its template's, a track its identified type's or, as a
  * contact, a neutral one. A track shows only what its side knows. A contact
  * has a neutral icon and colour and no type, side or weapon range; an
  * identified track shows the type's icon and label, the side and the range;
@@ -30,10 +31,9 @@ import { dispatchWords, einsatzRecordOf, tierWord, trackAgeText, type EinsatzRec
  * it is damaged or destroyed, but no phase and no free or committed status;
  * a receiving site, its name and whether it is
  * closed; a task, its label; a track, its serial and the age of its last
- * detection. A unit's status tone says whether it is free, committed or out
- * of action. A call no unit is assigned to yet carries a pulsing status
- * under its own status word: with no coach line (plan B.2, B.7), the pulse
- * is the novice's cue.
+ * detection. Committed assets and calls with all needs covered recede.
+ * A call with uncovered needs keeps its pulsing status, even after a
+ * partial allocation. Completed calls keep a small history dot.
  *
  * The Dispatch panel is the Pack's one surface panel and its only list, so
  * no category takes a rail section. Open by default, it takes every map
@@ -41,7 +41,7 @@ import { dispatchWords, einsatzRecordOf, tierWord, trackAgeText, type EinsatzRec
  * double-click zoom, so a double-click on an object acts as one click. A
  * unit that moves is a map controller: a click on one selects it, and with
  * it selected every other click is the panel's to read (`ui/selection.ts`),
- * which only ever sends from an armed unit. A site, a task and a track are
+ * which decides whether the selected unit can dispatch. A site, a task and a track are
  * never controllers.
  */
 
@@ -78,10 +78,11 @@ const isMovingUnit = (object: OperationalObject): boolean => typeOf(object) === 
 
 const dot = { shape: 'dot' } as const
 
-/** Free (no task, no load), committed, or out of action, in neutral words. */
+/** Neutral map status for a free, committed or destroyed unit. */
 const unitStatus = (data: UnitData): PackObjectStatusPresentation => {
   if (data.integrity === 'destroyed') return { tone: 'error', label: neutralLexicon.destroyed, indicator: dot }
   const committed = data.taskId !== undefined || Object.values(data.load).some(count => count > 0)
+    || (Array.isArray(data.orders) && data.orders.length > 0)
   return committed ? { tone: 'working', label: 'Committed', indicator: dot } : { tone: 'ready', label: 'Free', indicator: dot }
 }
 
@@ -120,27 +121,13 @@ const presentTrack = (object: OperationalObject, data: TrackData, context: PackO
   }
 }
 
-/** The tasks some Einsatz unit is assigned to, once per object list. */
-const assignedTasksOf = (() => {
-  const cache = new WeakMap<ReadonlyArray<OperationalObject>, ReadonlySet<string>>()
-  return (objects: ReadonlyArray<OperationalObject>): ReadonlySet<string> => {
-    const known = cache.get(objects)
-    if (known !== undefined) return known
-    const assigned = new Set(objects.flatMap(object => {
-      if (object.packId !== einsatzPackId) return []
-      const record = einsatzRecordOf(object)
-      return record.type === 'unit' && record.taskId !== undefined ? [record.taskId] : []
-    }))
-    cache.set(objects, assigned)
-    return assigned
-  }
-})()
+/** Compare all counted needs, so a partly assigned call stays prominent. Reports have no counted needs. */
+const fullyCovered = (coverage: TaskData['coverage'] | undefined): boolean =>
+  coverage !== undefined
+  && coverage.requirements.length + coverage.loads.length > 0
+  && coverage.requirements.every(need => need.enRoute + need.onTask + need.completed >= need.count)
+  && coverage.loads.every(need => need.covered >= need.waiting)
 
-/**
- * An open call no unit is assigned to pulses until one is. Its word stays
- * the call's own status ("open"), as for an assigned call, so a display's
- * status filter finds every open call by one word.
- */
 const waitingStatus = (object: OperationalObject): PackObjectStatusPresentation => ({ tone: 'idle', label: object.operational.status, indicator: { shape: 'dot', pulse: true } })
 
 const presentEinsatzObject = (object: OperationalObject, context: PackObjectPresentationContext): PackObjectPresentation => {
@@ -149,6 +136,8 @@ const presentEinsatzObject = (object: OperationalObject, context: PackObjectPres
     case 'unit': {
       // A site that receives load carries its accepting state.
       const receiving = data.accepting !== undefined
+      const status = unitStatus(data)
+      const unavailable = data.accepting === false || (object.kind === 'mobile_entity' && status.tone !== 'ready')
       return {
         categoryId: unitsCategory,
         icon: data.presentation.icon,
@@ -156,20 +145,27 @@ const presentEinsatzObject = (object: OperationalObject, context: PackObjectPres
         summary: data.presentation.typeLabel,
         muted: object.lifecycle !== 'active' || data.integrity === 'destroyed',
         fields: [],
-        ...(receiving ? { mapLabel: data.accepting === true ? object.label : `${object.label} · closed` } : { mapLabel: unitLabel(object, data), ...(object.kind === 'facility' && data.integrity !== 'destroyed' ? {} : { status: unitStatus(data) }) }),
+        ...(unavailable ? { mapMarker: 'muted' as const } : {}),
+        ...(receiving ? { mapLabel: data.accepting === true ? object.label : `${object.label} · closed` } : { mapLabel: unitLabel(object, data), ...(object.kind === 'facility' && data.integrity !== 'destroyed' ? {} : { status }) }),
       }
     }
-    case 'task':
+    case 'task': {
+      const summary = data.presentation.typeLabel
+      const coverage = data.coverage as TaskData['coverage'] | undefined
+      const covered = fullyCovered(coverage)
+      const lastAction = data.lastAction as TaskData['lastAction']
+      const closed = object.lifecycle !== 'active'
       return {
         categoryId: tasksCategory,
         icon: data.presentation.icon,
         color: taskColor,
-        summary: data.presentation.typeLabel,
-        muted: object.lifecycle !== 'active',
+        summary,
         fields: [],
-        mapLabel: object.label,
-        ...(object.lifecycle === 'active' && !assignedTasksOf(context.objects).has(object.id) ? { status: waitingStatus(object) } : {}),
+        ...(closed
+          ? { mapMarker: 'dot', muted: true, glance: [summary, lastAction?.verb === 'close' ? (lastAction.cause ?? 'Closed') : 'Completed'] }
+          : { mapLabel: object.label, ...(covered ? { mapMarker: 'muted', glance: [summary, 'All needs covered'] } : { status: waitingStatus(object) }) }),
       }
+    }
     case 'track':
       return presentTrack(object, data, context)
     case 'track-index':
