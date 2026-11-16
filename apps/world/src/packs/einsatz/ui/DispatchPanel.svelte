@@ -27,6 +27,7 @@
     ownReceipt,
     pinProposal,
     receiptsFromSituation,
+    receiptText,
     receiptUndoable,
     targetingFor,
     withReceipts,
@@ -475,7 +476,7 @@
   {#if !open}
     <button type="button" class="tab" onclick={act(() => { sheetOpenedByOperator = true })}>
       <strong>{situation === null ? dispatchWords.panel : edgeTabText(situation)}</strong>
-      {#if receipts[0] !== undefined}<span class="receipt-line">{receipts[0].text}</span>{/if}
+      {#if receipts[0] !== undefined}<span class="receipt-line">{receiptText(receipts[0])}</span>{/if}
     </button>
   {:else}
     <header class="head">
@@ -529,7 +530,7 @@
         <ol class="receipts" aria-label={dispatchWords.undo}>
           {#each receipts as receipt (receipt.commandId)}
             <li>
-              <span class="receipt-text">{receipt.text}</span>
+              <span class="receipt-text">{receiptText(receipt)}</span>
               {#if receiptUndoable(receipt, nowMs)}<button type="button" onclick={act(() => undoReceipt(receipt))}>{receipt.undo}</button>{/if}
             </li>
           {/each}

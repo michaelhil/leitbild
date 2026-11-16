@@ -68,7 +68,6 @@ export const dispatchWords = {
   readingJob: 'Reading the current job…',
   refreshing: 'Reading the suggestion again…',
   suggestionHolds: 'The suggestion still holds',
-  you: 'You',
   mapPoint: 'the map point',
 } as const
 
@@ -104,7 +103,6 @@ export const verbText = (verb: StopVerb, words: Words): string => {
   }
 }
 
-const actorText = (by: { readonly label: string; readonly isViewer: boolean }): string => by.isViewer ? dispatchWords.you : by.label
 const joined = (labels: ReadonlyArray<string>): string => labels.join(', ')
 
 export interface ButtonView {
@@ -345,7 +343,7 @@ const lastOrderText = (unit: SituationUnit): string | null => {
   const last = unit.lastOrder
   if (last === null) return null
   const stops = unit.plan.filter(stop => stop.by.isViewer === last.by.isViewer && stop.by.label === last.by.label).map(stop => stop.label)
-  return `by ${last.by.isViewer ? dispatchWords.you.toLowerCase() : last.by.label}: ${stops.length === 0 ? unit.status.word : stops.join(' → ')}`
+  return `by ${last.by.label}: ${stops.length === 0 ? unit.status.word : stops.join(' → ')}`
 }
 
 /** Why no order can be given to the unit now: its options list no target an order would take, only refused ones; the reason most of them share. Null while some target is valid, or before its options are read. */
@@ -595,7 +593,7 @@ export const callCard = (situation: Situation, call: SituationCall, pinned: Pinn
     whyNot: answer === null ? [] : answer.answer.whyNot.map(entry => ({ label: entry.label, reasons: entry.reasons.join('; ') })),
     assigned: call.assigned.map(unit => ({
       unitId: unit.unitId,
-      text: [unit.label, unit.status.word, ...(unit.eta === null ? [] : [etaText(unit.eta, elapsedS)!]), `by ${unit.by.isViewer ? dispatchWords.you.toLowerCase() : unit.by.label}`].join(' · '),
+      text: [unit.label, unit.status.word, ...(unit.eta === null ? [] : [etaText(unit.eta, elapsedS)!]), `by ${unit.by.label}`].join(' · '),
     })),
     close: {
       label: frees.length === 0 ? words.close : `${words.close} (frees ${joined(frees)})`,
@@ -868,25 +866,36 @@ export interface Receipt {
   readonly commandId: string
   /** The units the order named; Undo takes it back for each. */
   readonly unitIds: ReadonlyArray<string>
+  /**
+   * Who gave the order, in the situation's words for its actor, the one word
+   * every surface uses; null on this viewer's own receipt until a situation
+   * read names its command.
+   */
+  readonly actor: string | null
+  /** The unit, the target and what was dropped: "A2 → C-1 (drops C-3 · P3)". */
   readonly text: string
-  /** "Undo (A2 returns to C-3)" when the order dropped a task, else "Undo". */
+  /** "Undo (A2 returns to C-3 · P3)" when the order dropped a task, else "Undo". */
   readonly undo: string
   readonly atMs: number
   /** This viewer's own order, from its own result: it names what the order dropped, which the situation cannot. */
   readonly own: boolean
 }
 
-/** A receipt of this viewer's own accepted order, naming what it dropped. */
+/** A receipt's line: "Operator: A2 → C-1 (drops C-3 · P3)". */
+export const receiptText = (receipt: Receipt): string => receipt.actor === null ? receipt.text : `${receipt.actor}: ${receipt.text}`
+
+/** A receipt of this viewer's own accepted order, naming what it dropped; its actor comes from the situation. */
 export const ownReceipt = (options: { readonly commandId: string; readonly unitIds: ReadonlyArray<string>; readonly unitLabel: string; readonly targetLabel: string; readonly dropped: string | null; readonly atMs: number }): Receipt => ({
   commandId: options.commandId,
   unitIds: options.unitIds,
-  text: `${dispatchWords.you}: ${options.unitLabel} → ${options.targetLabel}${options.dropped === null ? '' : ` (drops ${options.dropped})`}`,
+  actor: null,
+  text: `${options.unitLabel} → ${options.targetLabel}${options.dropped === null ? '' : ` (drops ${options.dropped})`}`,
   undo: options.dropped === null ? dispatchWords.undo : `${dispatchWords.undo} (${options.unitLabel} returns to ${options.dropped})`,
   atMs: options.atMs,
   own: true,
 })
 
-/** Receipts of orders the situation shows as new since the previous read: another actor's, or this viewer's from another surface. */
+/** Receipts of orders the situation shows as new since the previous read: another actor's, or this viewer's, whose own receipt then takes its actor. */
 export const receiptsFromSituation = (previous: Situation | null, next: Situation, atMs: number): ReadonlyArray<Receipt> => {
   if (previous === null) return []
   const before = new Map(previous.units.map(unit => [unit.id, unit.lastOrder?.commandId ?? null]))
@@ -894,7 +903,7 @@ export const receiptsFromSituation = (previous: Situation | null, next: Situatio
     const commandId = unit.lastOrder?.commandId ?? null
     if (commandId === null || unit.lastOrder === null || before.get(unit.id) === commandId) return []
     const target = unit.plan[0]?.label ?? unit.status.word
-    return [{ commandId, unitIds: [unit.id], text: `${actorText(unit.lastOrder.by)}: ${unit.label} → ${target}`, undo: dispatchWords.undo, atMs, own: false }]
+    return [{ commandId, unitIds: [unit.id], actor: unit.lastOrder.by.label, text: `${unit.label} → ${target}`, undo: dispatchWords.undo, atMs, own: false }]
   })
 }
 
@@ -902,16 +911,18 @@ export const receiptsFromSituation = (previous: Situation | null, next: Situatio
  * Adds receipts, newest on top; one per command, at most `maxReceipts`. A
  * viewer's own receipt takes the place of the situation's for the same
  * command, whichever arrived first, so what it names is never lost; it
- * keeps that place and Undo window.
+ * keeps that place and Undo window, and the actor the situation names.
  */
 export const withReceipts = (list: ReadonlyArray<Receipt>, added: ReadonlyArray<Receipt>): ReadonlyArray<Receipt> => {
   const ownOf = new Map(added.filter(receipt => receipt.own).map(receipt => [receipt.commandId, receipt]))
+  const actorOf = new Map(added.filter(receipt => !receipt.own).map(receipt => [receipt.commandId, receipt.actor]))
   const kept = list.map(receipt => {
-    const own = receipt.own ? undefined : ownOf.get(receipt.commandId)
-    return own === undefined ? receipt : { ...own, atMs: receipt.atMs }
+    if (receipt.own) return receipt.actor === null && actorOf.has(receipt.commandId) ? { ...receipt, actor: actorOf.get(receipt.commandId)! } : receipt
+    const own = ownOf.get(receipt.commandId)
+    return own === undefined ? receipt : { ...own, actor: receipt.actor, atMs: receipt.atMs }
   })
   const known = new Set(list.map(receipt => receipt.commandId))
-  const fresh = added.filter(receipt => !known.has(receipt.commandId))
+  const fresh = added.filter((receipt, index) => !known.has(receipt.commandId) && added.findIndex(entry => entry.commandId === receipt.commandId) === index)
   return [...fresh.reverse(), ...kept].slice(0, maxReceipts)
 }
 

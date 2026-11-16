@@ -26,6 +26,7 @@ import {
   pinProposal,
   proposalInvalidation,
   receiptsFromSituation,
+  receiptText,
   receiptUndoable,
   receiptUndoMs,
   siteCard,
@@ -328,7 +329,8 @@ describe('Call card', () => {
   test('after Dispatch the carrier\'s Deliver-to chips come alive in place and queue a site stop after its plan', () => {
     const sent = situationOf({ calls: [{ ...baseSituation.calls[0]!, assigned: [{ unitId: 'r1', label: 'R1', phase: 'en-route', status: { word: 'Moving', tone: 'busy' }, eta: routed(240), by: viewer }] }] })
     const card = callCard(sent, sent.calls[0]!, pinnedOf(), opened, 0)
-    expect(card.assigned[0]!.text).toBe('R1 · Moving · 4 min · by you')
+    // One actor word: the situation's, on every surface.
+    expect(card.assigned[0]!.text).toBe('R1 · Moving · 4 min · by Desk')
     expect(card.deliverTo).toEqual([{ unitLabel: 'R1', heading: `${dispatchWords.deliverTo} (R1)`, enabled: true, sites: [{ siteId: 'depot-a', text: 'Depot A · 5 min', order: { units: ['r1'], stops: [{ siteId: 'depot-a' }], when: 'after' } }] }])
   })
 
@@ -442,28 +444,44 @@ describe('Armed feedback, prompts and receipts', () => {
   })
 
   test('receipts name the actor, unit, target and what was dropped; Undo for 8 s; newest first, one per command, at most 3', () => {
-    const own = ownReceipt({ commandId: 'c1', unitIds: ['r1'], unitLabel: 'R1', targetLabel: 'J-1 Ridge', dropped: 'J-2 Bay', atMs: 1_000 })
-    expect([own.text, own.undo]).toEqual([`${dispatchWords.you}: R1 → J-1 Ridge (drops J-2 Bay)`, `${dispatchWords.undo} (R1 returns to J-2 Bay)`])
+    const own = ownReceipt({ commandId: 'c1', unitIds: ['r1'], unitLabel: 'R1', targetLabel: 'J-1 Ridge', dropped: 'J-2 Bay · Q1', atMs: 1_000 })
+    expect([receiptText(own), own.undo]).toEqual(['R1 → J-1 Ridge (drops J-2 Bay · Q1)', `${dispatchWords.undo} (R1 returns to J-2 Bay · Q1)`])
     expect([receiptUndoable(own, 1_000 + receiptUndoMs - 1), receiptUndoable(own, 1_000 + receiptUndoMs)]).toEqual([true, false])
     const before = situationOf({ units: [unit('r1'), unit('r2')] })
     expect(receiptsFromSituation(null, situation, 5)).toEqual([])
-    expect(receiptsFromSituation(before, situation, 5)).toEqual([{ commandId: 'cmd-7', unitIds: ['r2'], text: 'Assistant: R2 → J-2 Bay', undo: dispatchWords.undo, atMs: 5, own: false }])
+    const theirs = receiptsFromSituation(before, situation, 5)
+    expect(theirs).toEqual([{ commandId: 'cmd-7', unitIds: ['r2'], actor: 'Assistant', text: 'R2 → J-2 Bay', undo: dispatchWords.undo, atMs: 5, own: false }])
+    expect(receiptText(theirs[0]!)).toBe('Assistant: R2 → J-2 Bay')
     expect(receiptsFromSituation(situation, situation, 5)).toEqual([])
     let list = withReceipts([], [own])
-    list = withReceipts(list, receiptsFromSituation(before, situation, 5))
+    list = withReceipts(list, theirs)
     list = withReceipts(list, [own])
     expect(list.map(receipt => receipt.commandId)).toEqual(['cmd-7', 'c1'])
     list = withReceipts(list, [{ ...own, commandId: 'c2' }, { ...own, commandId: 'c3' }])
     expect(list.map(receipt => receipt.commandId)).toEqual(['c3', 'c2', 'cmd-7'])
     expect(list).toHaveLength(maxReceipts)
+    // One order of two units the situation shows on both is one receipt.
+    expect(withReceipts([], [...theirs, { ...theirs[0]!, unitIds: ['r1'] }]).map(receipt => receipt.commandId)).toEqual(['cmd-7'])
   })
 
-  test('an own receipt takes the place of the situation\'s receipt for the same command, whichever came first, so what it dropped is named', () => {
+  test('one actor word: an own receipt takes the place of the situation\'s for the same command, whichever came first, naming what it dropped and the actor the situation names', () => {
     const generic = receiptsFromSituation(situationOf({ units: [unit('r1'), unit('r2')] }), situation, 5)
-    const own = ownReceipt({ commandId: 'cmd-7', unitIds: ['r2'], unitLabel: 'R2', targetLabel: 'J-2 Bay', dropped: 'J-1 Ridge', atMs: 9 })
+    const own = ownReceipt({ commandId: 'cmd-7', unitIds: ['r2'], unitLabel: 'R2', targetLabel: 'J-2 Bay', dropped: 'J-1 Ridge · Q0', atMs: 9 })
+    expect(own.actor).toBeNull()
     const replaced = withReceipts(withReceipts([], generic), [own])
-    expect(replaced).toEqual([{ ...own, atMs: 5 }])
-    expect(withReceipts(withReceipts([], [own]), generic)).toEqual([own])
+    expect(replaced).toEqual([{ ...own, actor: 'Assistant', atMs: 5 }])
+    const named = withReceipts(withReceipts([], [own]), generic)
+    expect(named).toEqual([{ ...own, actor: 'Assistant' }])
+    expect(receiptText(named[0]!)).toBe('Assistant: R2 → J-2 Bay (drops J-1 Ridge · Q0)')
+  })
+
+  test('no word says "You": the viewer\'s own orders read in the situation\'s actor word on every surface', () => {
+    expect(Object.values(dispatchWords)).not.toContain('You')
+    const mine = situationOf({ units: [unit('r1', { plan: [{ id: 'leg-1', verb: 'serve', target: { taskId: 'job-1' }, label: 'J-1 Ridge', state: 'active', eta: routed(60), by: { label: 'Operator', isViewer: false } }], lastOrder: { by: { label: 'Operator', isViewer: false }, commandId: 'cmd-9' } })] })
+    const card = unitCard(mine, mine.units[0]!, su('r1'), null, null, 0)
+    expect([card.plan[0]!.by, card.undo.label]).toEqual(['by Operator', `${dispatchWords.undoLast} (by Operator: J-1 Ridge)`])
+    expect(overview(mine, none, opened, 0).units.groups[0]!.rows[0]!.actor).toBe('by Operator')
+    expect(receiptText(receiptsFromSituation(situationOf({ units: [unit('r1')] }), mine, 1)[0]!)).toBe('Operator: R1 → J-1 Ridge')
   })
 })
 
