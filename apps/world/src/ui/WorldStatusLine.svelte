@@ -12,9 +12,11 @@
     readonly placementHint: string
     /** Why this screen's view is not live now (its channel is down or reconnecting); null while it is. */
     readonly connectionProblem: string | null
+    readonly mapFocusLabel?: string | null
+    readonly planningDemoHref?: string | null
   }
 
-  const { clock, execution, feedback, placementHint, connectionProblem }: Props = $props()
+  const { clock, execution, feedback, placementHint, connectionProblem, mapFocusLabel = null, planningDemoHref = null }: Props = $props()
 
   let wallNow = $state(Date.now())
   const clockView = $derived(worldClockView({ clock, execution }, wallNow))
@@ -44,8 +46,11 @@
         {#if feedbackStatus && feedback.tone !== 'pending'}<span class="command-feedback-state">· {feedbackStatus}{#if feedback.detail !== undefined}:{/if}</span>{/if}
         {#if feedback.detail !== undefined}<span class="command-feedback-detail">{feedback.detail}</span>{/if}
       </p>
+    {:else if mapFocusLabel}
+      <p class="command-feedback" data-tone="notice"><span class="command-feedback-subject">Showing {mapFocusLabel} on the map.</span></p>
     {/if}
   </div>
+  {#if planningDemoHref}<a class="command-feedback planning-link" href={planningDemoHref} target="_top">Back to planning demo</a>{/if}
 </div>
 
 <style>
@@ -107,6 +112,8 @@
     gap: 2px 6px;
     overflow-wrap: anywhere;
   }
+
+  .planning-link { color: var(--text); font-weight: 650; align-items: center; }
 
   .command-feedback-subject {
     font-weight: 600;

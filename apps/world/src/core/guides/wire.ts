@@ -1,11 +1,12 @@
 import { z } from 'zod'
 import { presentationRecipientSchema, presentationReceiptSchema, presentationRequestSchema, presentationTargetSchema, presentationPromptEvidenceSchema } from '@leitbild/contracts'
 import { guideAttemptSchema } from './attempt.ts'
-import { guideEffectSchema } from './model.ts'
+import { guideDefinitionSchema, guideEffectSchema } from './model.ts'
 
 const effect = guideEffectSchema.extend({ requestId: z.string().optional(), delivery: z.string().optional(), reason: z.string().optional() }).strict()
 export const guideReadingSchema = z.object({
   available: z.literal(true), title: z.string(), description: z.string().optional(), attemptId: z.string().uuid().optional(),
+  planningDefinitionId: guideDefinitionSchema.shape.planningDefinitionId,
   revision: z.number().int().nonnegative().optional(), status: guideAttemptSchema.shape.status.optional(), stepAttemptId: z.string().uuid().optional(),
   problem: z.string().optional(),
   step: z.object({ id: z.string(), title: z.string(), instruction: z.string(), help: z.string().optional(), completion: z.enum(['acknowledge', 'condition', 'presentation', 'prompt-response']), effects: z.array(effect) }).strict().optional(),

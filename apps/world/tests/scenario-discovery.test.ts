@@ -12,6 +12,7 @@ describe('bundled scenario discovery', () => {
       'halden-border-human-red',
       'halden-border',
       'halden-cold-leg-recirculation',
+      'halden-delivery-planning',
       'halden-emergency',
       'halden-normal-operation',
       'halden-offsite-power-restoration',
@@ -37,7 +38,7 @@ describe('bundled scenario discovery', () => {
     for (const id of ['nordic-frequency-event', 'nordland-corridor-security', 'rogaland-black-start']) {
       expect(builtinScenarioDefinitions.find(source => source.id === id)?.packs.map(pack => pack.id)).toEqual(['electric-grid'])
     }
-    for (const id of ['halden-border', 'halden-border-human-red', 'halden-emergency', 'supply-run']) {
+    for (const id of ['halden-border', 'halden-border-human-red', 'halden-delivery-planning', 'halden-emergency', 'supply-run']) {
       expect(builtinScenarioDefinitions.find(source => source.id === id)?.packs.map(pack => pack.id)).toEqual(['einsatz'])
     }
     for (const id of ['norway-situation-monitor']) {

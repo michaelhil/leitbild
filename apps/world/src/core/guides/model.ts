@@ -67,6 +67,8 @@ export const guideDefinitionSchema = z.object({
   title: z.string().min(1).max(120),
   description: z.string().min(1).max(2_000).optional(),
   startPaused: z.boolean().default(true),
+  /** Optional, explicitly opened Planning template for the current simulation. */
+  planningDefinitionId: idSchema.optional(),
   // An initial-state lesson can explicitly refuse a copied checkpoint after its introduction is no longer true.
   entry: guideConditionSchema.optional(),
   steps: z.array(guideStepSchema).min(1),
