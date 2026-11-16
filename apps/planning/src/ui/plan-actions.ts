@@ -3,6 +3,7 @@
 // World is only read, through its planning-facts query.
 import type { PlanningSubject } from '@leitbild/contracts'
 import type { Edit } from '../plan/edit-schema.ts'
+import type { VersusFacts } from '../api/contract.ts'
 import { isRequestError, refusalAuthority, refusalNearest, refusalText, RUN, type ExplainResult, type GenerateInput, type PlanningClient } from './api.ts'
 import type { BuysPage } from './ladder.ts'
 import { whatIfRequest, type WhatIfVariant } from './what-if.ts'
@@ -199,6 +200,21 @@ export const createPlanActions = (client: PlanningClient, planId: string, progre
     whyRecommended: async (against: string | null): Promise<ExplainResult> => client.explain(planId, { ask: 'recommended', ...(against === null ? {} : { option: against }) }),
     /** What differs between an option and an option of the set made before the latest change. */
     versus: async (option: string, previous: string, cursor: string | null = null): Promise<ExplainResult> => client.explain(planId, { ask: 'versus', option, versus: { previous }, ...(cursor === null ? {} : { cursor }) }),
+    /**
+     * Every moved job after the first page, read page by page until there is no `more` (re-walk N3): one click
+     * shows them all.
+     */
+    allMoved: async (option: string, previous: string, cursor: string): Promise<VersusFacts['moved']> => {
+      const moved: Array<VersusFacts['moved'][number]> = []
+      let next: string | undefined = cursor
+      for (let pages = 0; next !== undefined && pages < 50; pages += 1) {
+        const result: ExplainResult = await client.explain(planId, { ask: 'versus', option, versus: { previous }, cursor: next })
+        moved.push(...result.versus?.moved ?? [])
+        next = result.more
+      }
+      if (next !== undefined) throw new Error('Planning kept answering with more moved jobs; the rest were not read.')
+      return moved
+    },
     /** The set made before the latest change, every page: what compare weighs against. */
     previous: async (): Promise<{ readonly at: string | null; readonly recommended: string | null; readonly items: readonly OptionView[] }> => {
       const pages = await readAll(client, planId, 'previous')

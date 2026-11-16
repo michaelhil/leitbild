@@ -7,11 +7,13 @@
   // Why the recommended option is recommended, beside the timeline, from the Module's facts: the plan's own
   // rule (every hard rule, then the goals in order), the option it was weighed against, the deciding goal,
   // the trade in each goal's unit, each goal side by side, what the method leaves unpriced, and the outage.
-  let { title, policy, answer, choices = [], against = '', onAgainst, onClose }: {
+  let { title, policy, answer, outOfDate = false, choices = [], against = '', onAgainst, onClose }: {
     title: string
     /** The plan's rule, one line each: every hard rule, then each goal in its full words. */
     policy: readonly string[]
     answer: Answer<WhyView>
+    /** The recommended option was made before the latest change: its reasons are the earlier ones (re-walk N5). */
+    outOfDate?: boolean
     /** The other options it can be weighed against; '' is the next in rank. */
     choices?: ReadonlyArray<{ readonly value: string; readonly label: string }>
     against?: string
@@ -25,6 +27,7 @@
     <h2 id="why-title" tabindex="-1">{title}</h2>
     <button type="button" class="quiet" onclick={onClose}>Close</button>
   </div>
+  {#if outOfDate}<p class="stale"><MarkTag mark={{ shape: '↻', word: 'Out of date' }} tone="warning" />{' '}Out of date: these are the reasons on the plan before your latest change. Generate again to know for the plan as it is now.</p>{/if}
   <h3>The rule it was chosen by</h3>
   <ul class="why-policy">{#each policy as line, index (index)}<li>{line}</li>{/each}</ul>
   {#if choices.length > 1 && onAgainst}
@@ -33,6 +36,8 @@
   <h3>What decided it</h3>
   {#if answer.state === 'loading'}
     <p class="hint" aria-live="polite">Asking Planning…</p>
+  {:else if outOfDate && answer.state === 'none'}
+    <p class="hint">The earlier reasons were not asked before the change.</p>
   {:else if answer.state === 'not-built' || answer.state === 'none'}
     <p class="not-yet">The deciding goal and the trade it made are not available yet in this version of Planning.</p>
   {:else if answer.state === 'refused'}

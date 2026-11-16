@@ -151,8 +151,9 @@ describe('V13: the what-if card says how it differs from the recommended option'
     const whatIf = optionOf('w48', 'At most 48 h out', feasible(goals(491_550)), { metrics: metrics(48, 60), variant: { methods: [], purchases: [], also: [{ kind: 'span-limit', key: 'w48', group: 'COOL-A', limit: { value: 48, unit: 'h' }, singleEntry: true, words: 'What-if', source: { by: 'planner' } }] } })
     const model = modelOf(inputs, { options: { at: '2026-11-12T09:05:00.000Z', recommended: 'swap', items: [recommended, whatIf] } })
     const card = whatIfCard(whatIf, model, contextOf(model))
-    expect(card.against).toBe(`Against ${label('swap')} (recommended): −1 h longest outage, +${moneyText(491_550 - 472_650, 'NOK')} extra cost, back at the same time.`)
-    expect(card.against).toBe(`Against ${label('swap')} (recommended): −1 h longest outage, +NOK 18,900 extra cost, back at the same time.`)
+    // Re-walk N6: the difference lies inside the plan's NOK 25,000 cost step, and the line says so.
+    expect(card.against).toBe(`Against ${label('swap')} (recommended): −1 h longest outage, +${moneyText(491_550 - 472_650, 'NOK')} extra cost (within the NOK 25,000 the plan counts as equal cost), back at the same time.`)
+    expect(card.against).toBe(`Against ${label('swap')} (recommended): −1 h longest outage, +NOK 18,900 extra cost (within the NOK 25,000 the plan counts as equal cost), back at the same time.`)
   })
 })
 

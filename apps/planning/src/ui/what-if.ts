@@ -126,7 +126,10 @@ const againstRecommended = (option: OptionView, model: PlanModel, context: Conte
   const myCost = costOf(option.status), theirCost = costOf(recommended.status)
   if (cost >= 0 && myCost !== undefined && theirCost !== undefined) {
     const by = myCost.value - theirCost.value
-    parts.push(Math.abs(by) < 0.5 ? 'the same extra cost' : `${signed(by, amount => quantityText(amount, myCost.unit))} extra cost`)
+    // Inside the plan's own cost step the two count as equal cost: said so, so a cheaper what-if is not misread (N6).
+    const step = context.inputs.goals[cost]!.tolerance
+    const band = step.value > 0 && Math.abs(by) < step.value ? ` (within the ${quantityText(step.value, step.unit)} the plan counts as equal cost)` : ''
+    parts.push(Math.abs(by) < 0.5 ? 'the same extra cost' : `${signed(by, amount => quantityText(amount, myCost.unit))} extra cost${band}`)
   }
   const lastTest = (of: OptionView) => of.metrics.find(metric => metric.id === 'last-test')
   const myBack = lastTest(option), theirBack = lastTest(recommended)
