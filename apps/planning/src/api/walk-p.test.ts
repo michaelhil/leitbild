@@ -23,7 +23,7 @@ describe('V4: the estimate preview runs on the option on the timeline, and says 
   const job = trainAInputs.jobs.find(entry => entry.title === 'Rebuild SW A bowl assembly in workshop')!
   const edits = [{ edit: 'job', key: job.key, duration: { value: 30, unit: 'h' } }]
 
-  test('on Rebuild the preview runs on Rebuild and names it; the walk\'s 30 h is lane S\'s refusal on Rebuild, never "no job moves"', async () => {
+  test('on Rebuild the preview runs on Rebuild and names it; the walk\'s 30 h breaks the 72 h rule in its current order', async () => {
     // Which option each preview is re-timed on, as the solver receives it.
     const solver = createRealSolver(pool)
     const seen: string[] = []
@@ -36,11 +36,17 @@ describe('V4: the estimate preview runs on the option on the timeline, and says 
       console.log('V4 on Rebuild:', moved.body.result.preview.consequence)
       expect(moved.body.result.preview.consequence).toMatch(/^Not saved yet\. On 'Rebuild in place': \d+ jobs? moves?; the last finish /)
       expect(moved.body.result.preview.moved.length).toBeGreaterThan(0)
-      // The walk's case: the preview is now made on Rebuild. Lane S's repair path then cannot place the pump install
-      // within the horizon and refuses, naming it; it is never the swap's "no job moves".
+      // The walk's case, on Rebuild: with its current order Rebuild breaks the 72 h rule, said as the order it
+      // keeps, and that Generate may find a new one (it later finds 67 h). Never the swap's "no job moves".
       const walk = await local.call('planning.plan.edit', { resource: plan.id, input: { edits, preview: true, option: rebuild.key } })
-      console.log('V4 walk case on Rebuild:', walk.status, walk.body.error?.message ?? walk.body.result.preview.consequence)
-      expect(JSON.stringify(walk.body)).not.toMatch(/[Nn]o job moves/)
+      const consequence: string = walk.body.result.preview.consequence
+      console.log('V4 walk case on Rebuild:', walk.status, consequence)
+      const rule = trainAInputs.rules.find(entry => entry.key === 'R2')!
+      const group = trainAInputs.groups.find(entry => entry.key === (rule.kind === 'span-limit' ? rule.group : ''))!.label
+      expect(walk.status).toBe(200)
+      expect(consequence).toStartWith(`With its current order, 'Rebuild in place' would break: the 72 h limit on ${group}`)
+      expect(consequence).toEndWith('Generate again to look for a new order.')
+      expect(walk.body.result.preview.moved.map((entry: { job: string }) => entry.job)).toContain(job.key)
       expect(seen).toEqual([rebuild.key, rebuild.key])
     } finally { await local.close() }
   }, 60_000)
@@ -173,14 +179,14 @@ describe('V4 and T12: a job the edit leaves with no slot is said as what the opt
       expect(answer.status).toBe(200)
       const name = (key: string) => trainAInputs.jobs.find(entry => entry.key === key)?.title ?? trainAInputs.resources.find(entry => entry.key === key)!.label
       const words = `'${name('CCWHXA-ECT')}' could not be done: ${name('ect-team')} has no slot long enough left after Wed 11:30, within 5 days after the window`
-      expect(answer.body.result.preview.consequence).toBe(`Not saved yet. 'Swap in refurbished spare' would break: ${words}.`)
+      expect(answer.body.result.preview.consequence).toBe(`With its current order, 'Swap in refurbished spare' would break: ${words}. Generate again to look for a new order.`)
       expect(answer.body.result.preview.violations[0]).toBe(`${words}.`)
       // Without lane K's crew and instant, the job alone.
       const bare = await createHarness({ solver: { ...inner, formulation: () => formulation, preview: async request => ({ rows: request.option.rows, violations: [], unplaced: { job: 'CCWHXA-ECT' } }) } })
       try {
         const other = await bare.store.create(bare.workspaceId, planWith(bare.workspaceId, [swap, rebuild]))
         const said = await bare.call('planning.plan.edit', { resource: other.id, input: { edits: [{ edit: 'job', key: clean.key, duration: { value: 12, unit: 'h' } }], preview: true } })
-        expect(said.body.result.preview.consequence).toBe(`Not saved yet. 'Swap in refurbished spare' would break: '${name('CCWHXA-ECT')}' could not be done: no slot is left for it within 5 days after the window.`)
+        expect(said.body.result.preview.consequence).toBe(`With its current order, 'Swap in refurbished spare' would break: '${name('CCWHXA-ECT')}' could not be done: no slot is left for it within 5 days after the window. Generate again to look for a new order.`)
       } finally { await bare.close() }
     } finally { await local.close() }
   })

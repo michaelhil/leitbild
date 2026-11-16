@@ -596,10 +596,13 @@ export const createPlanningOperations = (ports: PlanningOperationsPorts) => {
         const unplaced = timed.unplaced === undefined ? undefined : timed.unplaced.resource !== undefined && timed.unplaced.after !== undefined
           ? `'${nameOf(outcome.inputs, timed.unplaced.job)}' could not be done: ${nameOf(outcome.inputs, timed.unplaced.resource)} has no slot long enough left after ${timeWords(timed.unplaced.after, zone)}, ${within}`
           : `'${nameOf(outcome.inputs, timed.unplaced.job)}' could not be done: no slot is left for it ${within}`
-        const consequence = unplaced !== undefined ? wholeWithin(authorities.map(authority => `Not saved yet. '${shownName}' would break: ${unplaced}.${authority}`))
+        // The preview keeps the option's current order; Generate re-plans. So a break is said as the current
+        // order's, with the way to a new one, never as the plan's last word (walk V4, T12).
+        const broken = (what: string, nearest: string, authority: string) => `With its current order, '${shownName}' would break: ${what}.${nearest}${authority} Generate again to look for a new order.`
+        const consequence = unplaced !== undefined ? wholeWithin(authorities.map(authority => broken(unplaced, '', authority)))
           : wholeWithin(findings.length === 0 ? authorities.map(authority => `${moves}${authority}`)
           : authorities.flatMap(authority => nearests.flatMap(nearest => ([2, 1, 0] as const).map(shown =>
-            `Not saved yet. '${shownName}' would break ${retimingBreaks(findings, outcome.inputs, shown)}; generate new options after saving.${nearest}${authority}`))))
+            broken(retimingBreaks(findings, outcome.inputs, shown), nearest, authority)))))
         return writeResult(previewed, changeLines(outcome.changes, outcome.inputs), { preview: {
           saved: false, consequence,
           // Whole, so a rule's words are never cut (walk 3, R3-6); within the 4 KB result, later findings go first.
