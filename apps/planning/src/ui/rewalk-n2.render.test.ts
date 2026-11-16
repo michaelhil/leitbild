@@ -13,7 +13,7 @@ import { generate, type AlsoRule, type GenerateDeps } from '../solve/generate.ts
 import { laneKCheck, laneKVerify, laneKVerifyBound, laneKVerifySpan } from '../solve/fixtures/lane-k.ts'
 import { createSolverPool } from '../solve/pool.ts'
 import { searchEngine } from '../solve/search.ts'
-import { createPlanningClient } from './api.ts'
+import { moduleClient } from './fixtures/module-client.ts'
 import { readableText, registerSvelte, renderHtml } from './fixtures/svelte-ssr.ts'
 import { createTimeFormat, hoursText } from './format.ts'
 import { createNames, type OptionView } from './model.ts'
@@ -30,13 +30,7 @@ const none = () => {}
 const pool = createSolverPool()
 const harness = await createHarness({ solver: createRealSolver(pool) })
 afterAll(async () => { await pool.shutdown(); await harness.close() })
-/** The screen's own client on the Module's API: each capability call passed on as the Host passes it. */
-const client = createPlanningClient(harness.workspaceId, async (path, init) => {
-  const capability = decodeURIComponent(String(path).split('/capabilities/')[1]!.replace('/invoke', ''))
-  const body = JSON.parse(String(init!.body)) as { readonly resource?: { readonly id: string }; readonly input?: unknown; readonly expectedRevision?: number }
-  const answer = await harness.call(capability, { input: body.input ?? {}, ...(body.resource === undefined ? {} : { resource: body.resource.id }), ...(body.expectedRevision === undefined ? {} : { expectedRevision: body.expectedRevision }) })
-  return Response.json(answer.body, { status: answer.status })
-})
+const client = moduleClient(harness)
 
 const deps: GenerateDeps = { engine: searchEngine(), check: laneKCheck, verify: laneKVerify, verifyBound: laneKVerifyBound, verifySpan: laneKVerifySpan }
 const context: Context = { inputs: trainAInputs, names: createNames(trainAInputs), format: createTimeFormat(trainAInputs.settings.timeZone) }

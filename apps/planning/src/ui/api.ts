@@ -122,6 +122,20 @@ export const failureDetail = (error: unknown): string | null => isUnreadableAnsw
 /** No earlier set of options to compare with (409 no_previous_options): Planning keeps one when the plan changes and Generate runs again. */
 export const noPreviousWords = 'There is no earlier set of options to compare with yet. Planning keeps one when you change the plan and Generate again.'
 
+/** A section's plain name as the screen shows it (its tab's words), for a record too large to list; a section with no plain label has none. */
+const sectionNames: ReadonlyMap<string, string> = new Map([['schedule', 'schedule'], ['sources', 'equipment and World'], ['crews', 'crews and shifts'], ['rules', 'rules and goals']])
+/**
+ * A record larger than a page (422 record_too_large, naming the section): the plan cannot be shown. Said in
+ * planner words, never as a refused change, and never with the section's key.
+ */
+export const recordTooLargeWords = (section: unknown): string => {
+  if (section === 'options') return 'This plan cannot be shown: one of its options is too large for the list in this version of Planning. Nothing stored is lost.'
+  if (section === 'previous') return 'This plan cannot be shown: one of its earlier options is too large for the list in this version of Planning. Nothing stored is lost.'
+  const name = typeof section === 'string' ? sectionNames.get(section) : undefined
+  return name === undefined ? 'This plan cannot be shown: one record is too large for this version of Planning. Nothing stored is lost.'
+    : `This plan cannot be shown: one record of its ${name} is too large for this version of Planning. Nothing stored is lost.`
+}
+
 /** The nearest allowed time a refusal names, if any. */
 export const refusalNearest = (error: PlanningRequestError): string | null =>
   typeof error.details?.nearestAllowed === 'string' ? error.details.nearestAllowed : null
@@ -173,6 +187,8 @@ export const refusalText = (error: unknown, name: KeyNames = () => 'an item in t
       case 'option_stale': return 'This option no longer matches the plan. Generate again.'
       case 'option_not_feasible': return 'Only a validated feasible option on the current plan can become the baseline.'
       case 'unknown_reference': return 'Something this change names is no longer in the plan. Read the plan again and retry.'
+      // Not a change refusal: a read that cannot list one record (lane P's record_too_large).
+      case 'record_too_large': return recordTooLargeWords(error.details?.section)
       case 'invalid_request': {
         const issues = Array.isArray(error.details?.issues) ? (error.details.issues as Array<{ message?: unknown }>).flatMap(issue => typeof issue.message === 'string' ? [issue.message] : []) : []
         return issues.length > 0 ? `This change is not valid: ${issues.join('; ')}.` : 'This change is not valid for this plan.'
