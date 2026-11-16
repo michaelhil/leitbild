@@ -1,19 +1,17 @@
 // The real solver (lane S, solve/) and checker (lane K, check/) behind the operations' ports. index.ts
 // wires these; tests use the doubles in api/fixtures. Nothing here touches World.
-import { verifyCertificate, verifySpanRefusal } from '../check/certificate.ts'
+import { verifyCertificate } from '../check/certificate.ts'
 import { verifyBound } from '../check/optimal.ts'
 import { checkForSolver } from '../solve/lane-k-ports.ts'
-import { bounds } from '../solve/bounds.ts'
 import { formulationOf } from '../solve/compile.ts'
 import { compiled, scheduleOf } from '../solve/preview.ts'
 import { withExtraRules } from '../solve/keys.ts'
 import { makeExplainer, mostLimiting, refusalLines, type ExplainItem } from '../solve/explain.ts'
-import { spanRecordOf } from '../solve/status.ts'
 import { totalFloat } from '../solve/float.ts'
 import { CERTIFIED_SIZE, generate } from '../solve/generate.ts'
 import { SOLVER_BUSY_WORDS, type SolverPool } from '../solve/pool.ts'
 import type { Plan, PlanInputs } from '../plan/schema.ts'
-import { clip, nameOf, timeWords } from '../plan/summary.ts'
+import { clip, nameOf, timeWords, valueWords } from '../plan/summary.ts'
 import { isPlanningError, planningError } from '../errors.ts'
 import { byteLength } from '../plan/summary.ts'
 import { resultLimitBytes } from './contract.ts'
@@ -84,27 +82,29 @@ export const createRealSolver = (pool: SolverPool): SolverPort => {
       // Why recommended and versus are the service's (api/operations.ts), from stored options; any other ask is refused.
       if (!Object.hasOwn(solverAsks, ask)) throw planningError(500, 'invalid_planning_request', `The solver has no explain ask ${String(ask)}`)
       if (ask === 'refusal') {
-        const { problem, index, prep } = compiled(inputs, option)
         if (option.status.word !== 'proven infeasible') {
           const attempt = option.status.word === 'unresolved' ? option.status.attempt : undefined
           return { lines: [attempt === undefined ? 'No proof either way: the search found no plan in the time allowed. That is not proof that none exists.'
             : `No proof either way: the best attempt finishes ${nameOf(inputs, attempt.job)} ${attempt.pastWindowHours} h past the window. That is not proof that none exists.`], items: [] }
         }
-        // The span sentence is worded only when lane K proves its figures against the rule it names (V1), and
-        // the second (energy) proof only when lane K re-verifies it too. Without them the verified cause stands.
-        // A what-if is worded on the inputs with its own rule, so the rule reads in its words, never its key (B3).
+        // Worded from the status as stored only (re-walk N2, N4): the cause, and the span lane K proved in the
+        // solver child, with its path, later start and energy proof. No checker, compile or bounds runs on a
+        // read, so an out-of-date refusal keeps its words exactly. A what-if is worded on the inputs with its own
+        // rule, so the rule reads in its words, never its key (B3).
         const ruled = withExtraRules(inputs, option.variant.also)
-        const found = bounds(problem, index, prep).span
-        const span = found === undefined || !verifySpanRefusal(ruled, option.variant, found).proves ? undefined : found
-        const shown = span === undefined ? undefined : spanRecordOf(span, span.leastHours, span.alsoProven !== undefined && verifyCertificate(ruled, option.variant, span.alsoProven).proves)
+        const span = option.status.span
         const whatIf = option.variant.also !== undefined || option.variant.lead !== undefined || option.status.byMethod !== undefined
         const method = methodWords(inputs, option.variant.methods)
-        if (!whatIf || method === undefined) return bounded({ lines: refusalLines(option.status.cause, ruled, shown, option.variant.purchases, option.variant.methods), items: [] })
-        // A what-if refused for every method: its own method's proof, named, and one line for each other method's (B3).
-        const [first = '', ...rest] = refusalLines(option.status.cause, ruled, shown, option.variant.purchases, option.variant.methods, `this option (${method})`)
-        const others = (option.status.byMethod ?? []).filter(entry => JSON.stringify(entry.methods) !== JSON.stringify(option.variant.methods)).map(entry =>
-          clip(`For ${methodWords(inputs, entry.methods) ?? 'another method'}: ${refusalLines(entry.cause, ruled, undefined, entry.purchases, entry.methods)[0] ?? ''}`, 240))
-        return bounded({ lines: [clip(`For ${method}: ${first}`, 240), ...others, ...rest].slice(0, 20), items: [] })
+        if (!whatIf || method === undefined) return bounded({ lines: refusalLines(option.status.cause, ruled, span, option.variant.purchases, option.variant.methods), items: [] })
+        // A what-if refused for every method: each method's least outage against the hours asked (N2), then its
+        // own method's proof, named, and the first line of each other method's proof that has no span (B3).
+        const asked = new Set((option.variant.also ?? []).map(rule => rule.key))
+        const byMethod = option.status.byMethod ?? []
+        const least = byMethod.flatMap(entry => entry.span === undefined ? [] : [clip(`${methodWords(inputs, entry.methods) ?? 'Another method'}: out at least ${valueWords(entry.span.leastHours, 'h')}, against the ${valueWords(entry.span.limitHours, 'h')} ${asked.has(entry.span.rule) ? 'asked' : 'limit'}.`, 240)])
+        const [first = '', ...rest] = refusalLines(option.status.cause, ruled, span, option.variant.purchases, option.variant.methods, `this option (${method})`)
+        const others = byMethod.filter(entry => entry.span === undefined && JSON.stringify(entry.methods) !== JSON.stringify(option.variant.methods)).map(entry =>
+          clip(`For ${methodWords(inputs, entry.methods) ?? 'another method'}: ${refusalLines(entry.cause, ruled, entry.span, entry.purchases, entry.methods)[0] ?? ''}`, 240))
+        return bounded({ lines: [...least, clip(`For ${method}: ${first}`, 240), ...others, ...rest].slice(0, 20), items: [] })
       }
       const { explainer, index } = explainerOf(inputs, option)
       const activity = job === undefined ? undefined : index.jobs.indexOf(job)

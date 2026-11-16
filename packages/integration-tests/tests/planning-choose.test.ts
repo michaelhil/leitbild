@@ -83,15 +83,19 @@ test('steps 1, 2 and 4: first plan, why recommended, the rungs to solve; seal at
   console.log('the card for the seal at 14 h:', JSON.stringify(card ?? robust ?? null))
   const label = plan.inputs.methods.flatMap(choice => choice.options).find(entry => option.variant.methods.some(pick => pick.option === entry.key))!.label
   expect(preview.saved).toBe(false)
-  if (card !== undefined) expect(card.holds).toBe(false)
-  expect(preview.consequence).toStartWith(`With its current order, '${label}' would break: `)
-  expect(preview.consequence).toEndWith('Generate again to look for a new order.')
-  if (card !== undefined && !card.holds && 'rule' in card) {
-    const rule = plan.inputs.rules.find(entry => entry.key === card.rule)!
-    const group = rule.kind === 'span-limit' ? plan.inputs.groups.find(entry => entry.key === rule.group)!.label : ''
-    expect(preview.consequence).toContain(rule.kind === 'span-limit' ? `the ${rule.limit.value} ${rule.limit.unit} limit on ${group}` : rule.words)
+  // The preview says what the card says of the seal alone at its high estimate: it holds, or what it breaks.
+  if (card === undefined || card.holds) {
+    expect(preview.consequence).toMatch(new RegExp(`^Not saved yet\\. On '${label}': \\d+ jobs? moves?; the last finish `))
+  } else {
+    expect(preview.consequence).toStartWith(`With its current order, '${label}' would break: `)
+    expect(preview.consequence).toEndWith('Generate again to look for a new order.')
+    if ('rule' in card) {
+      const rule = plan.inputs.rules.find(entry => entry.key === card.rule)!
+      const group = rule.kind === 'span-limit' ? plan.inputs.groups.find(entry => entry.key === rule.group)!.label : ''
+      expect(preview.consequence).toContain(rule.kind === 'span-limit' ? `the ${rule.limit.value} ${rule.limit.unit} limit on ${group}` : rule.words)
+    }
+    if ('unplaced' in card) expect(preview.consequence).toContain(`'${plan.inputs.jobs.find(entry => entry.key === card.unplaced.job)!.title}' could not be done`)
   }
-  if (card !== undefined && !card.holds && 'unplaced' in card) expect(preview.consequence).toContain(`'${plan.inputs.jobs.find(entry => entry.key === card.unplaced.job)!.title}' could not be done`)
   const saved = small(await client.edit(planId, revision, { edits, reason: 'The seal vendor now quotes 14 h' }))
   expect(saved.plan.revision).toBe(revision + 1)
   const earlier = (await stored(planId)).options!

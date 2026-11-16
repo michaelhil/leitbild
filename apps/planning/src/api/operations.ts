@@ -679,10 +679,15 @@ export const createPlanningOperations = (ports: PlanningOperationsPorts) => {
         return resultOf(explainResultSchema, next === undefined ? result : { ...result, more: next })
       }
       const option = findOption(plan, input.option)
-      requireFresh(plan, option)
+      // A refusal is worded from its stored status alone, so it answers for an out-of-date option too, as a fact
+      // about the plan before the latest change (re-walk N4, as B1); every other ask needs a fresh option.
+      const stale = optionState(plan, option).stale
+      if (ask !== 'refusal' || !stale) requireFresh(plan, option)
       if (input.job !== undefined && !plan.inputs.jobs.some(job => job.key === input.job)) throw planningError(400, 'unknown_reference', `No job ${input.job} in this plan`, { about: [input.job] })
       if (ask === 'refusal' && option.status.word === 'validated feasible') throw planningError(409, 'option_not_feasible', `Option ${option.label} was not refused; ask why a job starts then or what sets the finish`, { about: [option.key] })
-      return resultOf(explainResultSchema, await solver.explain({ inputs: plan.inputs, option, ask, job: input.job, cursor: input.cursor }))
+      const answer = await solver.explain({ inputs: plan.inputs, option, ask, job: input.job, cursor: input.cursor })
+      if (ask !== 'refusal' || !stale) return resultOf(explainResultSchema, answer)
+      return resultOf(explainResultSchema, withinResult({ ...answer, lines: ['On the plan before your latest change: generate again to know for the plan as it is now.', ...answer.lines].slice(0, 20) }))
     },
 
     read: async (workspaceId: WorkspaceId, planId: string, input: z.infer<typeof readInputSchema>): Promise<InspectionView> => {
