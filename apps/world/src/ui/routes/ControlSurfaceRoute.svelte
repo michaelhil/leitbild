@@ -180,6 +180,8 @@
   let seenRevisions = $state(new Map<string, number>())
   let expectedRealtimeScenarioId = $state<string | null>(null)
   let realtimeAttached = $state(false)
+  /** Said on the status line from a close the screen did not ask for until the reconnected screen has read the Run again. */
+  let liveUpdatesProblem = $state<string | null>(null)
   let routeRevision = $state(0)
   let procedureRevision = $state(0)
   let procedureEvidenceRevision = $state(0)
@@ -1431,6 +1433,7 @@
   const prepareRunStartup = (nextStatus: 'Starting' | 'Resetting'): void => {
     realtimeConnection.disconnect()
     realtimeAttached = false
+    liveUpdatesProblem = null
     resetStartupDebug()
     surfaceLoadGeneration += 1
     postReadyPreloadStarted = false
@@ -1494,6 +1497,20 @@
     objects = [...body.snapshot.objects]
     scenarioState = body.snapshot.scenario
     clock = clockOrder.published(body.snapshot.clock)
+  }
+
+  /** A reconnected channel without a perspective missed what happened while it was down: read the Run again, as joining did. */
+  const resyncAfterReconnect = async (): Promise<void> => {
+    try {
+      await syncSimulationRunSnapshot()
+    } catch (err) {
+      if (realtimeAttached) liveUpdatesProblem = `Live updates are back, but the Run could not be read again: ${err instanceof Error ? err.message : String(err)}`
+      return
+    }
+    routeRevision += 1
+    procedureRevision += 1
+    if (realtimeAttached) liveUpdatesProblem = null
+    await refreshExecution()
   }
 
   const switchUnderWay = (): boolean => {
@@ -1655,8 +1672,9 @@
       onOpen: () => {
         status = 'Realtime channel open'
       },
-      onClose: () => {
+      onClose: (retry) => {
         realtimeAttached = false
+        liveUpdatesProblem = `Live updates lost · reconnecting${retry.attempt > 1 ? ` (attempt ${retry.attempt})` : ''}`
         if (startupSteps.find(step => step.id === 'realtime')?.status !== 'failed') failStep('realtime', 'Realtime channel disconnected')
         if (pendingRoleIds !== null) failRoleSwitch(pendingRoleIds, 'The realtime channel closed before the Run answered; this screen keeps its roles')
       },
@@ -1667,13 +1685,17 @@
       onInvalidMessage: (message) => {
         status = message
       },
-      onReady: (parsed) => {
+      onReady: (parsed, resumed) => {
+        const refuse = (message: string): void => {
+          failStep('realtime', message)
+          if (resumed) liveUpdatesProblem = message
+        }
         if (parsed.simulationRunId !== id) {
-          failStep('realtime', `Realtime attached to ${parsed.simulationRunId}, expected ${id}`)
+          refuse(`Realtime attached to ${parsed.simulationRunId}, expected ${id}`)
           return
         }
         if (expectedRealtimeScenarioId !== null && parsed.scenarioId !== expectedRealtimeScenarioId) {
-          failStep('realtime', `Realtime attached to scenario ${parsed.scenarioId ?? 'none'}, expected ${expectedRealtimeScenarioId}`)
+          refuse(`Realtime attached to scenario ${parsed.scenarioId ?? 'none'}, expected ${expectedRealtimeScenarioId}`)
           return
         }
         realtimeAttached = true
@@ -1683,6 +1705,11 @@
         status = 'Connected'
         completeStep('realtime')
         completeReadyWhenReady()
+        // A role Run's ready carries the perspective's snapshot, and adoptPerspective has already read it in.
+        if (resumed) {
+          if (parsed.perspective) liveUpdatesProblem = null
+          else void resyncAfterReconnect()
+        }
       },
       onEvent: (parsed) => {
         if (parsed.simulationRunId !== id) return
@@ -2348,7 +2375,7 @@
           <button type="button" aria-label="Dismiss scenario cue notice" onclick={() => { dismissedTimelineOutcome = timelineOutcome }}>×</button>
         </div>
       {/if}
-      <WorldStatusLine {clock} execution={executionState} feedback={commandFeedback.line} placementHint={placement.placementText()} />
+      <WorldStatusLine {clock} execution={executionState} feedback={commandFeedback.line} placementHint={placement.placementText()} connectionProblem={liveUpdatesProblem} />
       {#if runRoles && heldRoleIds}
         <RoleBar declaration={runRoles} held={heldRoleIds} switchingTo={pendingRoleIds} request={requestRoleChange} openDialog={() => { roleDialogOpen = true }} />
       {/if}

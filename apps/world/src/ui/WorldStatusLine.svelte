@@ -10,9 +10,11 @@
     readonly execution: RunExecutionState | null
     readonly feedback: CommandFeedbackLine | null
     readonly placementHint: string
+    /** Why this screen's view is not live now (its channel is down or reconnecting); null while it is. */
+    readonly connectionProblem: string | null
   }
 
-  const { clock, execution, feedback, placementHint }: Props = $props()
+  const { clock, execution, feedback, placementHint, connectionProblem }: Props = $props()
 
   let wallNow = $state(Date.now())
   const clockView = $derived(worldClockView({ clock, execution }, wallNow))
@@ -31,6 +33,7 @@
       {#if clockView.paused}<span class="world-clock-paused">Paused</span>{/if}
     </span>
   {/if}
+  {#if connectionProblem}<p class="command-feedback" data-tone="failed" role="status"><span class="command-feedback-subject">{connectionProblem}</span></p>{/if}
   <div class="command-feedback-region" role="status" aria-live="polite">
     {#if placementHint}
       <p class="command-feedback" data-tone="notice"><span class="command-feedback-subject">{placementHint}</span></p>

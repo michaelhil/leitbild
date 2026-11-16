@@ -51,6 +51,8 @@ export const createGuidanceSession = (config: {
   try { attempt = config.storage.getItem(key) } catch { /* Denied storage leaves an independent attempt. */ }
   let screen: GuidanceScreen = { recipient: null, guide: null, suggestion: null, cue: null, busy: false, error: null, restored: attempt !== null, explored: false }
   let closed = false, polling = false, cameraHeld = false, guideUnavailable = false, commandToken = 0, guidePresentationSuspended = false
+  // The document's lease lapsed (World answered no_recipient): a suspended page, a locked tablet, missed its renewals.
+  let leaseLost = false
   const appliedDrafts = new Set<string>()
   const handled = new Set<string>(), hostRequests = new Map<string, PresentationRequest>(), pendingClears = new Map<string, PresentationRequest>()
   const controller = new AbortController()
@@ -192,6 +194,7 @@ export const createGuidanceSession = (config: {
     } catch (error) {
       if (!closed) {
         const code = (error as { code?: string }).code
+        if (code === 'no_recipient') leaseLost = true
         update({ error: errorText(error), ...(code === 'guide_lease_conflict' ? { restored: true } : {}), ...(['no_recipient', 'presentation_perspective_changed'].includes(code ?? '') ? { recipient: null, restored: attempt !== null } : {}) })
         if (['no_recipient', 'presentation_perspective_changed'].includes(code ?? '')) { clear(); config.post({ type: 'leitbild:presentation-offer', recipient: null }) }
         else clearGuide()
@@ -245,12 +248,14 @@ export const createGuidanceSession = (config: {
       }).catch(error => update({ error: errorText(error) }))
     }
   }
-  const timer = setInterval(() => { void poll() }, 3_000)
+  // A lapsed lease registers this document again on the next tick, so delivery resumes; guide progress stays on World.
+  const timer = setInterval(() => { void (leaseLost && !screen.recipient && !screen.busy ? connect() : poll()) }, 3_000)
   const connect = async (): Promise<void> => {
     try {
       update({ busy: true, error: null })
       const recipient = presentationOutputs.register.parse(await call('presentation', 'register', { clientId: crypto.randomUUID(), documentId: crypto.randomUUID() }))
       if (closed) { await call('presentation', 'unregister', { recipient }); return }
+      leaseLost = false
       update({ recipient }); config.post({ type: 'leitbild:presentation-offer', recipient }); await readGuide(); await poll()
     } catch (error) { if (!closed) update({ error: errorText(error) }) }
     finally { update({ busy: false }) }
