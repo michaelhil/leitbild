@@ -5,8 +5,10 @@
 // - Holds (hover, hidden tab, carousel mostly off screen) pause with the
 //   remaining time kept, and resume when the last hold is released.
 // - Stopped is the user's state: keyboard focus inside, keyboard navigation,
-//   Pause, reduced motion, or opening by keyboard/deep link. Only Play clears it.
-// - Pointer or touch navigation restarts the full interval and keeps rotating.
+//   Pause, reduced motion, opening by keyboard/deep link, or, with
+//   `navigationStops` (the Demos modal), any user navigation by any input: a
+//   pick on a dot or thumbnail, Prev/Next or a swipe. Only Play clears it.
+// - Otherwise pointer or touch navigation restarts the full interval and keeps rotating.
 
 export const CAROUSEL_INTERVAL_MS = 5000
 export const SWIPE_MIN_PX = 60
@@ -42,6 +44,8 @@ export interface CarouselOptions {
   /** Reduced motion, or a carousel opened by keyboard or deep link. */
   readonly startStopped?: boolean
   readonly initialIndex?: number
+  /** Any user navigation (a dot or thumbnail pick, Prev/Next, a swipe) by tap or click stops rotation, so the slide chosen stays until Play. */
+  readonly navigationStops?: boolean
   readonly scheduler?: CarouselScheduler
 }
 
@@ -51,6 +55,8 @@ export interface CarouselController {
   next(input: CarouselInput): void
   previous(input: CarouselInput): void
   goTo(index: number, input: CarouselInput): void
+  /** A pick on a dot or thumbnail: `goTo`, and with `navigationStops` it stops rotation whatever the input. */
+  pick(index: number, input: CarouselInput): void
   play(): void
   stop(): void
   toggle(): void
@@ -115,14 +121,18 @@ export const createCarousel = (options: CarouselOptions): CarouselController => 
     emit()
   }
 
-  const goTo = (target: number, input: CarouselInput): void => {
+  const navigate = (target: number, stops: boolean): void => {
     if (destroyed || count === 0) return
     index = wrap(target, count)
-    if (input === 'keyboard') stopped = true
+    if (stops) stopped = true
     restartInterval()
     schedule()
     emit()
   }
+  const goTo = (target: number, input: CarouselInput): void => navigate(target, input === 'keyboard')
+  const navigationStops = options.navigationStops === true
+  /** Prev/Next (swipe goes through them) and picks: with `navigationStops` any input stops rotation. */
+  const userNavigate = (target: number, input: CarouselInput): void => navigate(target, navigationStops || input === 'keyboard')
   const play = (): void => {
     if (destroyed) return
     stopped = false
@@ -146,9 +156,10 @@ export const createCarousel = (options: CarouselOptions): CarouselController => 
       listener(snapshot())
       return () => { listeners.delete(listener) }
     },
-    next: input => goTo(index + 1, input),
-    previous: input => goTo(index - 1, input),
+    next: input => userNavigate(index + 1, input),
+    previous: input => userNavigate(index - 1, input),
     goTo,
+    pick: userNavigate,
     play,
     stop,
     toggle: () => stopped ? play() : stop(),
