@@ -108,7 +108,6 @@
       {#if card.targets.length > 0 || card.targetsLoading}
         <details class="unit-disclosure">
           <summary>Targets</summary>
-          {#if card.targetsLoading}<p class="note" role="status">{dispatchWords.loadingTargets}</p>{/if}
           <ol class="targets">
             {#each card.targets as row (row.key)}
               <li><button type="button" class="target" disabled={card.targetsLoading} onclick={() => props.targetRow(row.target)}>
