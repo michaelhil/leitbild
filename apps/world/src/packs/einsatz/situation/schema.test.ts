@@ -2,7 +2,7 @@ import { describe, expect, test } from 'bun:test'
 import type { z } from 'zod'
 import { commandIdSchema } from '../../../core/model/index.ts'
 import { capabilityJsonSchema } from '../../../simulation/capabilities.ts'
-import { unitOrderInputSchema, unitRecallInputSchema, unitStopRemoveInputSchema, unitUndoInputSchema } from '../order-schema.ts'
+import { unitOrderInputSchema, unitPlanReorderInputSchema, unitRecallInputSchema, unitStopRemoveInputSchema, unitUndoInputSchema } from '../order-schema.ts'
 import { recommendAnswerSchema } from '../recommendation-schema.ts'
 import { refusal, refusalCode } from '../refusal.ts'
 import { situationInputSchema, situationSchema, unitOptionsInputSchema, unitOptionsSchema } from './schema.ts'
@@ -51,8 +51,9 @@ const situation = {
 
 const options = {
   unitId: 'unit:u-2',
+  plan: [{ id: 'step-1', state: 'active' }, { id: 'step-2', state: 'queued' }],
   busy: { taskId: 'task:t-1', label: 'T-1 First', code: 'P1', freeInS: 400 },
-  targets: [{ target: { taskId: 'task:t-2' }, verb: 'serve', label: 'T-2 Second', etaS: 300, afterOnly: true }],
+  targets: [{ target: { taskId: 'task:t-2' }, verb: 'serve', label: 'T-2 Second', etaS: 300, afterOnly: true, canReplace: false, canAdd: true, replaceRefusal: 'Current call has higher priority' }],
   refused: [{ target: { siteId: 'unit:s-1' }, label: 'S-1', code: 'site_not_accepting', text: 'S-1 accepts no arrivals' }],
 }
 
@@ -104,12 +105,15 @@ describe('Einsatz wire schemas', () => {
     expect(refused({ ...order, when: 'later' })).toBe(true)
     expect(refused({ units: ['unit:u-1'], stops: [{ taskId: 'task:t-1', siteId: 'unit:s-1' }] })).toBe(true)
     expect(refused({ ...order, divert: [] })).toBe(true)
+    expect(refused({ ...order, units: ['unit:u-1', 'unit:u-2'], expectedPlan: [] })).toBe(true)
+    expect(unitOrderInputSchema.parse({ ...order, expectedPlan: [] }).expectedPlan).toEqual([])
   })
 
   test('the plan commands and queries take exactly their fields', () => {
     expect(unitUndoInputSchema.parse({ unitId: 'unit:u-1', commandId: 'cmd-1' })).toEqual({ unitId: 'unit:u-1', commandId: commandIdSchema.parse('cmd-1') })
     expect(unitUndoInputSchema.safeParse({ unitId: 'unit:u-1' }).success).toBe(false)
     expect(unitStopRemoveInputSchema.parse({ unitId: 'unit:u-1', stopId: 'step-2' }).stopId).toBe('step-2')
+    expect(unitPlanReorderInputSchema.safeParse({ unitId: 'unit:u-1', expectedPlan: options.plan, stopIds: ['step-2', 'step-2'] }).success).toBe(false)
     expect(unitRecallInputSchema.safeParse({ unitId: 'unit:u-1', fromTaskId: 'task:t-1' }).success).toBe(false)
     expect(situationInputSchema.parse({})).toEqual({})
     expect(situationInputSchema.parse({ group: 'g1' }).group).toBe('g1')
@@ -138,7 +142,7 @@ describe('Einsatz wire schemas', () => {
         }
       }
     }
-    const schemas = { situationInputSchema, situationSchema, unitOptionsInputSchema, unitOptionsSchema, recommendAnswerSchema, unitOrderInputSchema, unitUndoInputSchema, unitStopRemoveInputSchema, unitRecallInputSchema }
+    const schemas = { situationInputSchema, situationSchema, unitOptionsInputSchema, unitOptionsSchema, recommendAnswerSchema, unitOrderInputSchema, unitUndoInputSchema, unitStopRemoveInputSchema, unitPlanReorderInputSchema, unitRecallInputSchema }
     for (const [name, schema] of Object.entries(schemas)) walk(capabilityJsonSchema(schema), name)
     expect(undescribed).toEqual([])
   })

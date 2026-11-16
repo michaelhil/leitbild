@@ -1,5 +1,5 @@
 import type { StepTarget } from '../steps.ts'
-import { deliveryRefusal, planAppend, removeSteps } from './chain.ts'
+import { changedPlan, deliveryRefusal, planAppend, removeSteps } from './chain.ts'
 import { closeDraft, openDraft, putUnit, taskIn, unitIn } from './draft.ts'
 import { clockText } from '../situation/text.ts'
 import { freeInS } from './estimates.ts'
@@ -99,6 +99,15 @@ export const planOrder = (state: EngineState, intent: IntentOf<'order'>, actor: 
     const unit = state.units.get(id)
     if (unit === undefined) return notInPicture()
     units.push(unit)
+  }
+  if (intent.expectedPlan !== undefined) {
+    const unit = units[0]
+    if (units.length !== 1 || unit === undefined) return refused('invalid_input', 'An expected plan names one unit')
+    const changed = changedPlan(unit, intent.expectedPlan)
+    if (changed) return changed
+    if (intent.when === 'now' && unit.orders[0]?.state === 'queued') {
+      return refused('unit_committed', `${unit.label} has no active stop to replace yet`)
+    }
   }
   const busy = units.filter(isBusy)
   if (busy.length > 0 && units.length > 1) {

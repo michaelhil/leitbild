@@ -1,7 +1,7 @@
 import { z } from 'zod'
 import { idSchema, type CommandId, type GeoJsonPoint } from '../../../core/model/index.ts'
 import { configIdSchema, roeModes } from '../config-schema.ts'
-import { unitOrderInputSchema, unitRecallInputSchema, unitStopRemoveInputSchema, unitUndoInputSchema } from '../order-schema.ts'
+import { unitOrderInputSchema, unitPlanReorderInputSchema, unitRecallInputSchema, unitStopRemoveInputSchema, unitUndoInputSchema } from '../order-schema.ts'
 import type { Draft } from './draft.ts'
 import { pointSchema, propertyValueSchema, type Leg, type UnitRecord } from './model.ts'
 
@@ -25,6 +25,7 @@ export const intentFields = {
   recall: unitRecallInputSchema.shape,
   undo: unitUndoInputSchema.shape,
   stopRemove: unitStopRemoveInputSchema.shape,
+  planReorder: unitPlanReorderInputSchema.shape,
   taskCreate: {
     template: configIdSchema.describe('A task template id the configuration declares (world.einsatz.configuration).'),
     priority: configIdSchema.optional().describe('A declared priority id; without it the template\'s priority, else the lowest declared.'),
@@ -80,6 +81,8 @@ export const recallIntentSchema = z.object({ kind: z.literal('recall'), ...inten
 export const undoIntentSchema = z.object({ kind: z.literal('undo'), ...intentFields.undo }).strict()
 /** Remove one stop; the active one is released as a recall releases it, and the next stop starts. */
 export const stopRemoveIntentSchema = z.object({ kind: z.literal('stop.remove'), ...intentFields.stopRemove }).strict()
+/** Put the existing queued stops in a new order while the active step continues. */
+export const planReorderIntentSchema = z.object({ kind: z.literal('plan.reorder'), ...intentFields.planReorder }).strict()
 /**
  * Start the first queued step of an idle unit. No command asks for it: the
  * engine runs it like a standing order as soon as a unit's active step is
@@ -110,6 +113,7 @@ export const intentSchema = z.discriminatedUnion('kind', [
   recallIntentSchema,
   undoIntentSchema,
   stopRemoveIntentSchema,
+  planReorderIntentSchema,
   taskCreateIntentSchema,
   taskCloseIntentSchema,
   siteSetIntentSchema,

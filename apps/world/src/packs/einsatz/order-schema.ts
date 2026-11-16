@@ -1,6 +1,6 @@
 import { z } from 'zod'
 import { commandIdSchema, idSchema } from '../../core/model/index.ts'
-import { maxSteps, stepTargetSchema } from './steps.ts'
+import { maxHeldSteps, maxSteps, stepStates, stepTargetSchema } from './steps.ts'
 
 /**
  * Wire inputs of the Einsatz plan commands: `world.einsatz.unit.order`,
@@ -24,6 +24,14 @@ export type OrderWhen = typeof orderWhen[number]
 
 const distinct = (ids: ReadonlyArray<string>): boolean => new Set(ids).size === ids.length
 
+export const planExpectationSchema = z.array(z.object({
+  id: idSchema.describe('A stable stop id.'),
+  state: z.enum(stepStates).describe('Whether this stop is active or queued.'),
+}).strict()).max(maxHeldSteps)
+  .refine(stops => distinct(stops.map(stop => stop.id)) && stops.slice(1).every(stop => stop.state === 'queued'), 'Each stop is named once and only the first can be active.')
+  .describe('The unit’s ordered stop ids and states as last read, checked as a whole before changing the plan.')
+export type PlanExpectation = z.output<typeof planExpectationSchema>
+
 /**
  * Give units a plan, all or nothing. `when` is refused `when_required` when
  * a named unit is busy and it is absent, and an order naming a busy unit
@@ -41,8 +49,10 @@ export const unitOrderInputSchema = z.object({
     .describe('Required when a named unit is busy, else refused when_required: "after" appends after its current job; "now" replaces its current job and needs drops.'),
   drops: idSchema.optional()
     .describe('With when "now": the task id the busy unit drops, which must be its current task, else refused drops_mismatch.'),
+  expectedPlan: planExpectationSchema.optional(),
 }).strict()
   .refine(input => input.drops === undefined || input.when === 'now', { message: 'drops goes only with when "now"', path: ['drops'] })
+  .refine(input => input.expectedPlan === undefined || input.units.length === 1, { message: 'An expected plan names one unit', path: ['units'] })
   .describe('An order: units, the stops of their plan, and for a busy unit when it applies.')
 export type UnitOrderInput = z.output<typeof unitOrderInputSchema>
 
@@ -56,7 +66,16 @@ export const unitUndoInputSchema = z.object({
 export const unitStopRemoveInputSchema = z.object({
   unitId: idSchema.describe('The unit whose plan holds the stop.'),
   stopId: idSchema.describe('The stop id, as world.einsatz.situation lists it in the unit\'s plan.'),
+  expectedPlan: planExpectationSchema.optional(),
 }).strict().describe('Remove one stop from a unit\'s plan.')
+
+export const unitPlanReorderInputSchema = z.object({
+  unitId: idSchema.describe('The unit whose queued stops are reordered.'),
+  expectedPlan: planExpectationSchema,
+  stopIds: z.array(idSchema.describe('A queued stop id.')).min(1).max(maxSteps)
+    .refine(distinct, 'Each queued stop is named once.')
+    .describe('Every queued stop id, in the desired order. The active stop stays first.'),
+}).strict().describe('Reorder the queued stops of one unit’s plan.')
 
 /** Empty a unit's plan, releasing it from its task, and send it back to base; a unit carrying load is refused `unit_loaded`. */
 export const unitRecallInputSchema = z.object({

@@ -29,6 +29,7 @@ describe('Einsatz unit options', () => {
   test('a free unit lists every target an order accepts, nearest first, with the verb; refusals carry their code', async () => {
     const answer = await options(await field(), 'c1')
     expect(answer.busy).toBeNull()
+    expect(answer.plan).toEqual([])
     expect(answer.targets.map(target => [target.label, target.verb])).toEqual([['NEAR', 'pick-up'], ['FAR', 'pick-up'], ['CLINIC', 'go-to'], ['STORE', 'go-to']])
     expect(answer.targets.map(target => target.etaS)).toEqual([...answer.targets.map(target => target.etaS)].sort((a, b) => a - b))
     expect(answer.refused).toEqual([{ target: { taskId: 'lift' }, label: 'LIFT', code: 'requirement_unmet', text: 'C1 · Lift 400 kg · needs ≥ 500 kg' }])
@@ -46,12 +47,25 @@ describe('Einsatz unit options', () => {
     const answer = await options(state, 'c1')
     expect(answer.busy).toMatchObject({ taskId: 'far', label: 'FAR', code: 'Q1' })
     expect(answer.busy!.freeInS).toBeGreaterThan(0)
-    // No target repeats the job: it only says whether it must go after.
-    for (const target of answer.targets) expect(Object.keys(target).sort()).toEqual(['afterOnly', 'etaS', 'label', 'target', 'verb'])
+    expect(answer.plan).toEqual([{ id: 'step-1', state: 'active' }])
     // NEAR ranks lower than FAR, so a "now" divert from FAR is refused; "after" is still valid, so NEAR is listed.
-    expect(answer.targets.find(target => target.label === 'NEAR')).toMatchObject({ verb: 'pick-up', afterOnly: true })
+    expect(answer.targets.find(target => target.label === 'NEAR')).toMatchObject({
+      verb: 'pick-up', afterOnly: true, canReplace: false, canAdd: true, replaceRefusal: expect.stringContaining('more urgent'),
+    })
     expect(answer.targets.find(target => target.label === 'CLINIC')).toBeDefined()
     expect((await refusalOf(state, { kind: 'order', units: ['c1'], stops: [{ taskId: 'near' }], when: 'now', drops: 'far' })).code).toBe('divert_from_higher_priority')
+  })
+
+  test('an active move with a full queue permits replacing, but not adding', async () => {
+    const state = await run(await field(), {
+      kind: 'order', units: ['c1'], stops: Array.from({ length: 20 }, (_, index) => ({ point: at(0.04, index * 0.001) })),
+    })
+    const answer = await options(state, 'c1')
+    expect(answer.busy).toBeNull()
+    expect(answer.plan).toHaveLength(20)
+    expect(answer.targets.find(target => target.label === 'NEAR')).toMatchObject({
+      afterOnly: false, canReplace: true, canAdd: false, addRefusal: expect.stringContaining('20 stops'),
+    })
   })
 
   test('a unit not in the picture is refused, as a Capability rejection', async () => {

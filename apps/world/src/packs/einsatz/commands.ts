@@ -96,6 +96,10 @@ const intentFor = (context: CommandContext, kind: EinsatzCommandId, payload: unk
       const input = parse(einsatzCommandIds.stopRemove)
       return ok({ kind: 'stop.remove', ...input }, commanded(context, input.unitId))
     }
+    case einsatzCommandIds.planReorder: {
+      const input = parse(einsatzCommandIds.planReorder)
+      return ok({ kind: 'plan.reorder', ...input }, commanded(context, input.unitId))
+    }
     case einsatzCommandIds.undo: {
       const input = parse(einsatzCommandIds.undo)
       return ok({ kind: 'undo', ...input }, commanded(context, input.unitId))
