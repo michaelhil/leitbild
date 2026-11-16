@@ -25,7 +25,6 @@
     movePromptText,
     overview,
     ownReceipt,
-    panelLayoutKey,
     pinProposal,
     receiptsFromSituation,
     receiptUndoable,
@@ -79,8 +78,8 @@
    * as the banner's and the card's × do.
    *
    * No card, row or footer command acts within the double-click interval of
-   * the last one that acted or of the last re-layout (`activationActs`), so
-   * a double-click never reaches what took the first click's place.
+   * the last one that acted (`activationActs`), so a double-click never
+   * reaches what took the first click's place; every other click acts.
    */
   const props: SurfacePanelProps = $props()
 
@@ -108,7 +107,7 @@
   let iconRevision = $state(0)
   let root = $state<HTMLElement | null>(null)
   let disposed = false
-  /** When the last command acted or the layout last changed: the double-click guard. */
+  /** When the last command acted: the double-click guard. */
   let quietFromMs: number | null = null
 
   const icons = createIconCache({ load: loadMapSymbols, changed: () => { iconRevision += 1 } })
@@ -407,15 +406,6 @@
     if (shown.kind !== 'call' || current === null) return
     const row = current.calls.find(call => call.id === shown.callId)
     if (row !== undefined) untrack(() => { lastSeenCall = row })
-  })
-
-  // A change of what stands where re-arms the double-click guard.
-  let shownLayout: string | null = null
-  $effect(() => {
-    const key = panelLayoutKey(card, lists, receipts, confirming !== null)
-    if (key === shownLayout) return
-    shownLayout = key
-    quietFromMs = Date.now()
   })
 
   // The armed unit's halos and tags; sent again only when they change.

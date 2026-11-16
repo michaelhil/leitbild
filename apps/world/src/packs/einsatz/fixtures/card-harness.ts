@@ -17,7 +17,6 @@ import {
   movePromptText,
   overview,
   ownReceipt,
-  panelLayoutKey,
   pinProposal,
   receiptsFromSituation,
   receiptUndoable,
@@ -67,6 +66,8 @@ import { operator, type OpenRun } from './run-harness.ts'
  * wall clock is the test's own: every action comes `paceMs` after the
  * previous one, as a person's do, unless a test gives its own gap, so the
  * panel's double-click guard (`activationActs`) is exercised exactly.
+ * Reads take no wall time, so a refresh comes at the moment of the action
+ * before it.
  * Production code never imports this file.
  */
 
@@ -175,7 +176,6 @@ export const openCardScreen = async (run: OpenRun, options: { readonly actor?: A
   let confirming: string | null = null
   let mapSelection: string | null = null
   let quietFromMs: number | null = null
-  let layoutKey: string | null = null
 
   const objects = (): ReadonlyArray<OperationalObject> => run.run.snapshot().objects
   const kindOf = (objectId: string) => {
@@ -188,14 +188,6 @@ export const openCardScreen = async (run: OpenRun, options: { readonly actor?: A
   }
   const currentCard = (): CardView | null => cardFor(shown(), selection.selection, { options: unitOptions, armedOrder, pinned, opened, lastSeenCall, elapsedS: 0 })
   const currentLists = (): OverviewView => overview(shown(), selection.selection, opened, 0)
-
-  /** A change of what stands where re-arms the double-click guard, as the panel's layout effect does. */
-  const noteLayout = (): void => {
-    if (situation === null) return
-    const key = panelLayoutKey(currentCard(), currentLists(), receipts, confirming !== null)
-    if (key !== layoutKey) quietFromMs = wallMs
-    layoutKey = key
-  }
 
   const readSituation = async (): Promise<void> => {
     const next = await client.situation()
@@ -308,7 +300,6 @@ export const openCardScreen = async (run: OpenRun, options: { readonly actor?: A
     await readSituation()
     const armed = selection.selection
     if (armed.kind === 'armed') await readOptions(armed.unitId)
-    noteLayout()
   }
 
   /** An operator action at `gapMs` after the previous one. */

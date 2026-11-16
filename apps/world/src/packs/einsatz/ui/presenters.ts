@@ -912,40 +912,6 @@ export const withReceipts = (list: ReadonlyArray<Receipt>, added: ReadonlyArray<
 /** Whether a receipt still offers Undo. */
 export const receiptUndoable = (receipt: Receipt, nowMs: number): boolean => nowMs - receipt.atMs < receiptUndoMs
 
-// ——— Re-layout ———
-
-const cardLayout = (card: CardView | null): ReadonlyArray<unknown> => {
-  if (card === null) return ['none']
-  switch (card.kind) {
-    case 'unit': return card.armed === null
-      ? ['unit', card.id, card.plan.map(stop => stop.id), card.predicted !== null, card.deliverTo.length, card.addStop !== null, card.states.length]
-      : ['armed', card.id, card.armed.slot.kind, card.armed.loading, card.armed.rows.map(row => row.key), card.plan.map(stop => stop.id)]
-    case 'call': return ['call', card.id, card.proposal.units.length, card.proposal.waiting, card.deliverTo.map(entry => [entry.enabled, entry.sites.length]), card.alternatives.map(entry => entry.units.length), card.whyNot.length > 0, card.assigned.length, card.states.length]
-    case 'closed-call': return ['closed-call', card.id]
-    case 'site': return ['site', card.id, card.inbound.length, card.states.length]
-  }
-}
-
-/**
- * Where the panel's commands stand: which card shows and in which form,
- * what its slots and lists hold, the receipts, and the rows of the lists.
- * A change of it is a re-layout, after which no command acts for the
- * double-click interval (`activationActs`), so a second tap never lands on
- * what moved under it. A clock or an ETA running on, or a word changing in
- * place, moves nothing and is none.
- */
-export const panelLayoutKey = (card: CardView | null, view: OverviewView | null, receipts: ReadonlyArray<Receipt>, confirming: boolean): string => JSON.stringify([
-  cardLayout(card),
-  confirming,
-  receipts.map(receipt => receipt.commandId),
-  view === null ? null : [
-    view.folded,
-    view.calls.rows.map(row => [row.id, row.states.length]),
-    view.units.groups.map(group => group.rows.map(row => [row.id, row.states.length, row.current !== null || row.actor !== null])),
-    view.sites?.rows.map(row => [row.id, row.states.length, row.inbound !== null]) ?? null,
-  ],
-])
-
 // ——— Contacts ———
 
 export interface ContactRowView {

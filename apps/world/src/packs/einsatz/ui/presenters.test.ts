@@ -23,7 +23,6 @@ import {
   movePromptText,
   overview,
   ownReceipt,
-  panelLayoutKey,
   pinProposal,
   proposalInvalidation,
   receiptsFromSituation,
@@ -451,18 +450,6 @@ describe('Armed feedback, prompts and receipts', () => {
     const replaced = withReceipts(withReceipts([], generic), [own])
     expect(replaced).toEqual([{ ...own, atMs: 5 }])
     expect(withReceipts(withReceipts([], [own]), generic)).toEqual([own])
-  })
-
-  test('a re-layout is a change of what stands where: a card swap, a slot filling, a receipt or a row arriving; a clock running on is none', () => {
-    const key = (elapsedS: number, selection: Selection = su('r1'), receipts: ReadonlyArray<ReturnType<typeof ownReceipt>> = [], confirming = false) =>
-      panelLayoutKey(cardFor(situation, selection, { options: null, armedOrder: null, pinned: null, opened, lastSeenCall: null, elapsedS }), overview(situation, selection, opened, elapsedS), receipts, confirming)
-    expect(key(0)).toBe(key(30))
-    expect(key(0, sa('r1'))).not.toBe(key(0))
-    expect(key(0, sa('r1', { prompt: { kind: 'busy', target: { taskId: 'job-1' }, job: null } }))).not.toBe(key(0, sa('r1')))
-    expect(key(0, su('r1'), [ownReceipt({ commandId: 'c1', unitIds: ['r1'], unitLabel: 'R1', targetLabel: 'J-1', dropped: null, atMs: 1 })])).not.toBe(key(0))
-    expect(key(0, { kind: 'call', callId: 'job-1' }, [], true)).not.toBe(key(0, { kind: 'call', callId: 'job-1' }))
-    const more = situationOf({ calls: [...baseSituation.calls, { ...baseSituation.calls[1]!, id: 'job-3', label: 'J-3 Pier' }] })
-    expect(panelLayoutKey(null, overview(more, none, opened, 0), [], false)).not.toBe(panelLayoutKey(null, overview(situation, none, opened, 0), [], false))
   })
 })
 

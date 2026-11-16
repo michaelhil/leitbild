@@ -199,7 +199,7 @@ describe('B.3: a double-click acts as one click', () => {
     const first = reduceSelection(start(s0), click(call, 1_000))
     expect(reduceSelection(first.state, click(unitA, 1_100)).state.selection).toEqual(su)
   })
-  test('a card, row or footer command is the second half of a double-click within the interval of the last one that acted or of the last re-layout', () => {
+  test('a card, row or footer command is the second half of a double-click only within the interval of the last one that acted; the first ever acts', () => {
     expect(activationActs(null, 5)).toBe(true)
     expect(activationActs(1_000, 1_000 + doubleClickMs - 1)).toBe(false)
     expect(activationActs(1_000, 1_000 + doubleClickMs)).toBe(true)

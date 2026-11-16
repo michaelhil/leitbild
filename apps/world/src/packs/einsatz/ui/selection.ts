@@ -18,10 +18,10 @@ import type { OrderWhen, Stop } from '../order-schema.ts'
  * or a row in the panel was tapped. Double-clicks act as one click: a second
  * map click on the same object or the ground within `doubleClickMs` is a
  * no-op, and the panel lets no card, row or footer command act within
- * `doubleClickMs` of the last one that acted or of the last time its layout
- * changed (`activationActs`), so the second half of a double-click never
- * lands on whatever took the first one's place. Esc, the banner's × and the
- * card's × go one level back (`back`).
+ * `doubleClickMs` of the last one that acted (`activationActs`), so the
+ * second half of a double-click never lands on whatever took the first
+ * one's place. Any other click acts, however recently the panel changed.
+ * Esc, the banner's × and the card's × go one level back (`back`).
  *
  * The reducer returns its effects; the panel performs them in order:
  * `select` shares the selection with the map, `submit` sends a
@@ -285,8 +285,7 @@ export const reduceSelection = (state: SelectionState, event: SelectionEvent): S
 /**
  * Whether a card, row or footer command acts at `atMs`: not when it is the
  * second half of a double-click, within `doubleClickMs` of `quietFromMs`,
- * the last command that acted or the last change of the panel's layout,
- * whichever came later; null when neither happened yet.
+ * when the last command acted; null before any did.
  */
 export const activationActs = (quietFromMs: number | null, atMs: number): boolean => quietFromMs === null || atMs - quietFromMs >= doubleClickMs
 

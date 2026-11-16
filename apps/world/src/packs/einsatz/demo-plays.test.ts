@@ -705,6 +705,31 @@ describe('B.11 click counts at the Dispatch panel', () => {
     })
   })
 
+  test('the first click after the panel appears acts: a row tap at once opens the call\'s card', async () => {
+    await scene(async ({ screen, callId }) => {
+      await screen.row({ id: callId, kind: 'call' }, 0)
+      expect(screen.selection()).toEqual({ kind: 'call', callId })
+    })
+  })
+
+  test('the first click after a refresh acts: a new call and an order change the panel, and the next command still acts; only a double-click\'s second half is ignored', async () => {
+    await scene(async ({ run, screen, callId, answer }) => {
+      await screen.row({ id: callId, kind: 'call' })
+      // Another actor's order and a new call re-lay the panel while its card is open.
+      const other = answer.alternatives.flatMap(entry => entry.units)[0]!
+      expect((await run.invoke(ids.order, other.order)).ok).toBe(true)
+      const start = run.task(callId)
+      const position = lonLatOf(run.object(callId)!)
+      expect((await run.invoke(ids.taskCreate, { template: start.template, label: 'C-9 Second call', at: { type: 'Point', coordinates: [position[0] + 0.003, position[1]] }, loads: start.loads })).ok).toBe(true)
+      screen.wait(800)
+      await screen.sync()
+      // A command 50 ms after that refresh acts: Close asks its confirm.
+      await screen.press({ kind: 'close' }, 50)
+      await screen.press({ kind: 'confirm-close' })
+      expect(sent(screen)).toEqual([[ids.taskClose, { taskId: callId }, 'ok']])
+    })
+  })
+
   test('a double-click on Close never confirms: Close stays in its place, the confirm stands beside it', async () => {
     await scene(async ({ screen, callId }) => {
       await screen.mapTap(callId)
