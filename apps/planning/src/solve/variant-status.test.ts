@@ -67,3 +67,13 @@ describe('F2: every proof is re-derived on the purchases the sub-solve may use',
     for (const purchases of asked) expect(purchases).toEqual(permittedPurchases(flagship, [...top.buy]).sort())
   }, 60_000)
 })
+
+describe('M3: no lane K run in the service for a what-if refused by every method', () => {
+  test('each method\'s cause, verified in its own child, is stored as it came; the service verifies nothing', async () => {
+    const service: GenerateDeps = { ...deps, verify: () => { throw new Error('lane K ran in the service') } }
+    const result = await generate({ ...service, subSolver: answering({ rebuild: refused, swap: refused }) }, { inputs: flagship, revision: 1, previous: null, input: { variants: [{ label: 'At most 40 h out' }] }, by, signal: new AbortController().signal })
+    const option = result.optionSet.options[0]!
+    expect(option.status.word).toBe('proven infeasible')
+    expect(option.status.word === 'proven infeasible' && option.status.byMethod?.length).toBe(2)
+  })
+})

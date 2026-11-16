@@ -228,10 +228,13 @@ export const createSolverPool = (options: PoolOptions = {}): SolverPool => {
     const rate = rateFor(task.budget.cpuMs, task.budget.wallMs)
     const budget = { ...task.budget, cpuMs: Math.floor(rate * task.budget.wallMs) }
     const runOf = (outcome: SubSolveOutcome) => ('run' in outcome.option.status ? outcome.option.status.run : undefined)
+    // Killed by its own budget plus the margin, or by the Generate's deadline if that comes first. The child is
+    // told when (`killAt`), so it answers before it, its pessimistic re-timings included.
+    const killMs = Math.max(0, Math.min(budget.wallMs + marginMs, (task.deadlineAt ?? Infinity) - Date.now()))
+    const killAt = Date.now() + killMs
     return job<SubSolveOutcome>({
-      request: id => ({ type: 'subsolve', id, task: encode({ ...task, budget }), rssLimitMb, sampleMs }),
-      // Killed by its own budget plus the margin, or by the Generate's deadline if that comes first.
-      rate, wallMs: budget.wallMs, grantedCpuMs: budget.cpuMs, signal, deadlineMs: Math.max(0, Math.min(budget.wallMs + marginMs, (task.deadlineAt ?? Infinity) - Date.now())), ...(stoppedByWho === undefined ? {} : { stoppedByWho }),
+      request: id => ({ type: 'subsolve', id, task: encode({ ...task, budget, killAt }), rssLimitMb, sampleMs }),
+      rate, wallMs: budget.wallMs, grantedCpuMs: budget.cpuMs, signal, deadlineMs: killMs, ...(stoppedByWho === undefined ? {} : { stoppedByWho }),
       answer: message => {
         const outcome = message.type === 'outcome' ? outcomeFromWire(message.outcome) : { problem: 'a sub-solve answered with a bare search result' }
         if ('problem' in outcome) return outcome

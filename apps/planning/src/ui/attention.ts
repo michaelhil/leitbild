@@ -67,8 +67,11 @@ export const pessimisticCard = (option: OptionView, context: Context): Card | nu
   if (field === undefined || !option.fresh || option.status.word !== 'validated feasible') return null
   // The re-timings were not made, and why: said so, never a card that is silently missing.
   if ('notWorkedOut' in field) {
-    // Both causes in planner words: Generate's own time, or a job no single crew or tool is short of time for.
-    const why = field.notWorkedOut === 'time' ? 'Generate\'s time ran out before they could be made' : `re-timing could not place “${context.names.job(field.job)}”, and no single crew or tool is short of time for it`
+    // Each cause in planner words: Generate's own time, a job no single crew or tool is short of time for, or
+    // the checker's own reason why it could not judge the re-timing (adversary B2).
+    const why = field.notWorkedOut === 'time' ? 'Generate\'s time ran out before they could be made'
+      : field.notWorkedOut === 'unplaced' ? `re-timing could not place “${context.names.job(field.job)}”, and no single crew or tool is short of time for it`
+        : `the re-timing could not be judged: ${field.reason}`
     return {
       mark: { shape: '?', word: 'Pessimistic estimates' },
       title: `For ${option.label}, the pessimistic estimates were not worked out: ${why}.`,

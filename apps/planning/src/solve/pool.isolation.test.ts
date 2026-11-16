@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test'
 import { twinPlan, twinV3Options } from '../../tests/harness/twin-plan.ts'
-import { CERTIFIED_SIZE, generate } from './generate.ts'
+import { CERTIFIED_SIZE, generate, subSolve } from './generate.ts'
 import { createSolverPool } from './pool.ts'
 import { laneKCheck, laneKVerify, laneKVerifyBound } from './fixtures/lane-k.ts'
 import { trainAInputs } from './fixtures/train-a-case.ts'
@@ -9,27 +9,36 @@ import twinJson from './fixtures/twin-v3.json'
 // Every solve on a pool is independent (lane P's defect report): flagship, V1, V2, twin v3 and the flagship
 // again on ONE pool give exactly what each gives on a fresh pool. Evaluation budgets make the runs
 // reproducible only while evals, not time, ends each search: the evals are set far below what the 20 s
-// Generate's time budgets allow even on a loaded machine (measured: the flagship's 300 take about 0.13 s of CPU against
-// a 3.6 s CPU budget, the twin's 100 about 0.17 s against 7.2 s), and every search is checked to have stopped
-// on its evals before the plans are compared. The memory guard is set out of the way of the runner's memory.
+// Generate's time budgets allow even on a loaded machine (measured: the flagship's 300 take about 0.13 s of CPU
+// against a 3.6 s CPU budget). The twin's 330-job compile and bounds take most of a 20 s Generate's slot on a
+// loaded machine, so as the load in this test it is one sub-solve with time budgets far above what its 600 evals
+// need. Every search is checked to have stopped on its evals before the plans are compared. The memory guard is
+// set out of the way of the runner's memory.
 const flagship = trainAInputs({ read: true })
 const twin = twinPlan(twinJson, twinV3Options(twinJson))
 const requests = [
   { name: 'flagship', inputs: flagship, input: { seconds: 20 }, evals: 300 },
   { name: 'V1', inputs: flagship, input: { variants: [{ label: 'V1', methods: [{ choice: 'SWA-method', option: 'rebuild' }], buy: 'no-extra-crew-hours' as const }], seconds: 20 }, evals: 300 },
   { name: 'V2', inputs: flagship, input: { variants: [{ label: 'V2', methods: [{ choice: 'SWA-method', option: 'swap' }], buy: 'no-extra-crew-hours' as const }], seconds: 20 }, evals: 300 },
-  { name: 'twin', inputs: twin.inputs, input: { variants: [{ label: 'twin', methods: [...twin.variant.methods], buy: [...twin.variant.purchases] }], seconds: 20 }, evals: 100 },
+  { name: 'twin', inputs: twin.inputs, input: { variants: [{ label: 'twin', methods: [...twin.variant.methods], buy: [...twin.variant.purchases] }], seconds: 20 }, evals: 600 },
   { name: 'flagship again', inputs: flagship, input: { seconds: 20 }, evals: 300 },
 ]
-const summary = (result: Awaited<ReturnType<typeof generate>>) => result.optionSet.options.map(option => ({
+type Options = Awaited<ReturnType<typeof generate>>['optionSet']['options']
+const summary = (options: Options) => options.map(option => ({
   key: option.key, word: option.status.word, purchases: option.variant.purchases, metrics: option.metrics,
   stoppedBy: 'run' in option.status ? option.status.run.stoppedBy : null, evals: 'run' in option.status ? option.status.run.evals : null,
   rows: option.rows.map(row => [row.job, row.start, row.finish, row.uses.map(use => `${use.resource}${use.purchase === undefined ? '' : `+${use.purchase}`}`).join(',')]),
   ...(option.status.word === 'proven infeasible' ? { cause: option.status.cause } : {}),
 }))
-const run = (pool: ReturnType<typeof createSolverPool>, request: (typeof requests)[number]) =>
-  // Twin v3 (330 jobs) is above the certified size: as a load for this test it is solved directly, the size lifted.
-  generate({ engine: pool, check: laneKCheck, verify: laneKVerify, verifyBound: laneKVerifyBound, certifiedSize: { ...CERTIFIED_SIZE, maxJobs: 330, limitJobs: 330 } }, { inputs: request.inputs, revision: 1, previous: null, input: request.input, by: { kind: 'service', name: 'test' }, signal: new AbortController().signal, seed: 1, evals: request.evals })
+const run = async (pool: ReturnType<typeof createSolverPool>, request: (typeof requests)[number]): Promise<Options> => {
+  const deps = { engine: pool, check: laneKCheck, verify: laneKVerify, verifyBound: laneKVerifyBound }
+  if (request.name === 'twin') {
+    // Twin v3 (330 jobs, above the certified size), the load: one sub-solve, its time budgets far above its evals'.
+    const outcome = await subSolve(deps)({ inputs: twin.inputs, revision: 1, variant: { key: 'twin', label: 'twin', buy: [...twin.variant.purchases] }, combo: [...twin.variant.methods], budget: { evals: request.evals, cpuMs: 300_000, wallMs: 600_000 }, seed: 1 }, new AbortController().signal)
+    return [outcome.option]
+  }
+  return (await generate({ ...deps, certifiedSize: { ...CERTIFIED_SIZE, maxJobs: 330, limitJobs: 330 } }, { inputs: request.inputs, revision: 1, previous: null, input: request.input, by: { kind: 'service', name: 'test' }, signal: new AbortController().signal, seed: 1, evals: request.evals })).optionSet.options
+}
 
 describe('solves on one pool are independent', () => {
   test('flagship, V1, V2, twin v3, flagship on one pool equal each run alone', async () => {

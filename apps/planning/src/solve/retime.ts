@@ -22,7 +22,10 @@ interface Planned { readonly variant: CheckedVariant; readonly rows: readonly Ro
  * refuses what is no re-timing (a job missing, earlier, or on other crews) and findings it does not judge.
  */
 export type JudgeRetimed = (plan: { readonly inputs: PlanInputs; readonly variant: CheckedVariant; readonly planned: readonly Row[]; readonly retimed: readonly UndatedFloat[]; readonly high: readonly string[] }) =>
-  | { readonly ok: true; readonly outcome: Retimed; readonly spans?: ReadonlyArray<{ readonly rule: string; readonly hours: number; readonly margin: number }> }
+  | {
+    readonly ok: true; readonly outcome: Retimed; readonly spans?: ReadonlyArray<{ readonly rule: string; readonly hours: number; readonly margin: number }>
+    readonly extra?: { readonly cost: number; readonly bought: ReadonlyArray<{ readonly purchase: string; readonly value: number; readonly unit: string }> }
+  }
   | { readonly ok: false; readonly problems: readonly string[] }
 
 /** robust.single holds at most this many jobs (plan/schema.ts). */
@@ -50,6 +53,13 @@ export const retimingCount = (inputs: PlanInputs, jobs: readonly string[]): numb
   return ranged === 0 ? 0 : 1 + ranged
 }
 
+/** Per activity of a compile, the resource indexes its planned row used (undefined for a job with no row). */
+export const plannedCrews = (index: { readonly jobs: ReadonlyArray<string | null>; readonly resources: readonly string[] }, rows: readonly Row[]): Array<ReadonlySet<number> | undefined> =>
+  index.jobs.map(job => {
+    const row = job === null ? undefined : rows.find(entry => entry.job === job)
+    return row === undefined ? undefined : new Set(row.uses.map(use => index.resources.indexOf(use.resource)))
+  })
+
 /** The inputs with the named jobs at their high estimate. */
 export const atHigh = (inputs: PlanInputs, jobs: ReadonlySet<string>): PlanInputs => ({
   ...inputs,
@@ -76,8 +86,9 @@ export const retimedRows = (planned: PlanInputs, pessimistic: PlanInputs, option
     && before.problem.activities.every((activity, a) => activity.id === after.problem.activities[a]!.id && activity.modes.length === after.problem.activities[a]!.modes.length)
   if (!same) return undefined
   const prep = prepare(after.problem)
-  // The shared repair: a job with no slot in its own mode takes the same crews' widest mode (decode.ts repair).
-  const { decoded, lost: unplacedActivities } = repair(prep, saved.schedule)
+  // The shared repair: a job with no slot in its own mode takes the same crews' widest mode, and every job keeps
+  // exactly the crews and tools its planned row used (decode.ts repair).
+  const { decoded, lost: unplacedActivities } = repair(prep, saved.schedule, plannedCrews(after.index, option.rows))
   const placed = (a: number): boolean => !unplacedActivities.includes(a)
   const lost = after.index.jobs.flatMap((job, a) => (job !== null && !placed(a) ? [a] : []))
   const root = lost.filter(a => prep.preds[a]!.every(link => placed(link.from))).sort((x, y) => decoded.start[x]! - decoded.start[y]! || x - y)[0]
@@ -89,8 +100,9 @@ export const retimedRows = (planned: PlanInputs, pessimistic: PlanInputs, option
  * judged by lane K, a job that could not be placed included. Never a part of one: `{notWorkedOut: 'time'}`
  * when the next re-timing would not end by `until` (epoch ms), judged by the longest so far and before the
  * first by `estimateMs` (the sub-solve's own measured compile and check time); `{notWorkedOut: 'unplaced', job}`
- * when a re-timing left a job unplaced and lane K refused to name a crew without time for it; undefined when a
- * re-timing cannot be made or lane K refuses it for another reason.
+ * when a re-timing left a job unplaced and lane K refused to name a crew without time for it;
+ * `{notWorkedOut: 'refused', reason}` when lane K refused a re-timing for another reason; undefined only when a
+ * re-timing cannot be made at all (the option's rows no longer read back on its plan).
  */
 export const robustOf = (inputs: PlanInputs, option: Planned, judge: JudgeRetimed, until = Infinity, now: () => number = Date.now, estimateMs = 0): RobustField | undefined => {
   const jobs = rangedJobs(inputs, option.rows)
@@ -105,14 +117,21 @@ export const robustOf = (inputs: PlanInputs, option: Planned, judge: JudgeRetime
     const retimed = retimedRows(planned, withExtraRules(atHigh(inputs, new Set(high)), option.variant.also), option)
     const judged = retimed === undefined ? undefined : judge({ inputs, variant: option.variant, planned: option.rows, retimed: retimed.rows, high })
     longest = Math.max(longest, now() - started)   // never below the first estimate
-    // A job the re-timing could not place, for which lane K names no crew or tool without time: said so.
+    // A job the re-timing could not place, for which lane K names no crew or tool without time: said so; any
+    // other refusal by lane K, with lane K's reason. Never left out.
     if (judged?.ok === false && retimed?.unplaced !== undefined) unplaced ??= retimed.unplaced
+    else if (judged?.ok === false) refused ??= judged.problems.join(' ').slice(0, 600)
     if (judged?.ok !== true) return undefined
-    // A re-timing that holds keeps lane K's spans against their limits, as given (V12).
-    return judged.outcome.holds && judged.spans !== undefined ? { ...judged.outcome, spans: judged.spans.map(span => ({ ...span })) } : judged.outcome
+    // Lane K's figures, as given: a re-timing that holds keeps its spans against their limits (V12), and any
+    // re-timing with every job placed keeps the extra use of the option's purchases and its cost (M1).
+    const spans = judged.outcome.holds && judged.spans !== undefined ? { spans: judged.spans.map(span => ({ ...span })) } : {}
+    const extra = judged.extra === undefined ? {} : { extra: { cost: judged.extra.cost, bought: judged.extra.bought.map(entry => ({ ...entry })) } }
+    return { ...judged.outcome, ...spans, ...extra }
   }
   let unplaced: string | undefined
-  const notWorkedOut = (): RobustField | undefined => (late ? { notWorkedOut: 'time' } : unplaced !== undefined ? { notWorkedOut: 'unplaced', job: unplaced } : undefined)
+  let refused: string | undefined
+  const notWorkedOut = (): RobustField | undefined => (late ? { notWorkedOut: 'time' } : unplaced !== undefined ? { notWorkedOut: 'unplaced', job: unplaced }
+    : refused !== undefined && refused.trim() !== '' ? { notWorkedOut: 'refused', reason: refused.trim() } : undefined)
   const allPessimistic = once(jobs)
   if (allPessimistic === undefined) return notWorkedOut()
   const single: Array<Robust['single'][number]> = []

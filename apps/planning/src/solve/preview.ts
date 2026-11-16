@@ -3,6 +3,7 @@
 // (pool.ts), so the service keeps none of its memory; the service validates what comes back (wire.ts).
 import { checkPlan, type CheckRow } from '../check/check.ts'
 import { judgeRetiming } from '../check/retime.ts'
+import { plannedCrews } from './retime.ts'
 import { planningError } from '../errors.ts'
 import type { Plan, PlanInputs } from '../plan/schema.ts'
 import { nameOf } from '../plan/summary.ts'
@@ -85,7 +86,7 @@ export const previewOption = (inputs: PlanInputs, option: Option): PreviewResult
   // the jobs it forces, and what they push, move (decode.ts repair, the re-timing's own).
   const { index, prep } = compiled(inputs, option)
   const saved = scheduleOf(prep, index, option, true)
-  const { decoded, lost } = repair(prep, saved)
+  const { decoded, lost } = repair(prep, saved, plannedCrews(index, option.rows))
   const placed = (a: number): boolean => !lost.includes(a)
   const schedule = { start: decoded.start, mode: decoded.mode }
   // A preview may show an edit that breaks a limit in every schedule (a test lengthened past the span
