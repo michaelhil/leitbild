@@ -11,7 +11,7 @@ import { totalFloat } from '../solve/float.ts'
 import { CERTIFIED_SIZE, generate } from '../solve/generate.ts'
 import { SOLVER_BUSY_WORDS, type SolverPool } from '../solve/pool.ts'
 import type { Plan, PlanInputs } from '../plan/schema.ts'
-import { clip, nameOf, timeWords, valueWords } from '../plan/summary.ts'
+import { clip, methodWords, nameOf, timeWords, valueWords } from '../plan/summary.ts'
 import { isPlanningError, planningError } from '../errors.ts'
 import { byteLength } from '../plan/summary.ts'
 import { resultLimitBytes } from './contract.ts'
@@ -49,12 +49,6 @@ const explainerOf = (inputs: PlanInputs, option: Option) => {
   const dataDate = inputs.settings.dataDate === null ? undefined : Math.floor((Date.parse(inputs.settings.dataDate) - index.origin) / index.slotMs)
   const explainer = makeExplainer({ prep, index, schedule, floats: totalFloat(prep, index, schedule), purchases: option.variant.purchases, inputs, ...(dataDate === undefined || dataDate < 0 || dataDate >= index.windowSlots ? {} : { dataDateSlot: dataDate }) })
   return { explainer, index }
-}
-
-/** The method options a set of picks names, by their labels: "Rebuild in place"; undefined without one. */
-const methodWords = (inputs: PlanInputs, picks: ReadonlyArray<{ readonly choice: string; readonly option: string }>): string | undefined => {
-  const labels = picks.map(pick => inputs.methods.find(choice => choice.key === pick.choice)?.options.find(entry => entry.key === pick.option)?.label)
-  return labels.length === 0 || labels.some(label => label === undefined) ? undefined : labels.join(', ')
 }
 
 /** Each solver ask by name: an ask with no answer here is a programming error, never the finish chain. */

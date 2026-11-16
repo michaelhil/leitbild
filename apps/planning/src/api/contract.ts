@@ -334,33 +334,25 @@ export const buysRowSchema = z.object({
 export const spanSummarySchema = z.object({ rule: keySchema, leastHours: z.number().finite().nonnegative(), limitHours: z.number().finite().positive() }).strict()
 const [feasibleStatusSchema, refusalStatusSchema, invalidStatusSchema, unsupportedStatusSchema, cancelledStatusSchema, unresolvedStatusSchema] = statusSchema.options
 /**
- * A refusal as the options and previous sections page it (coordinator, after the re-walk sizes): the option's
- * own method's cause as stored; its span as a summary; and per method its picks, span summary and
- * `line`, that method's one sentence (at most 200 characters) from its stored cause or span. Its purchases and
- * the full proof (the path, the later start, the energy proof) stay in storage, worded only by explain refusal.
+ * A refusal as the options and previous sections page it (coordinator, shape E): the option's own method's
+ * cause as stored and its span as a summary; per method combination one `line` of at most 200 characters, the
+ * figures first and then the method's name, the option's own first and the rest in the plan's combination
+ * order. Each combination's picks, purchases, cause and full proof (the path, the later start, the energy
+ * proof) stay in storage, worded only by explain refusal.
  */
 export const compactRefusalSchema = z.object({
   ...refusalStatusSchema.shape,
   span: spanSummarySchema.optional(),
-  byMethod: z.array(z.object({
-    methods: z.array(z.object({ choice: keySchema, option: keySchema }).strict()), span: spanSummarySchema.optional(), line: z.string().min(1).max(200),
-  }).strict()).min(2).max(8).optional(),
+  byMethod: z.array(z.object({ line: z.string().min(1).max(200) }).strict()).min(2).max(8).optional(),
 }).strict()
 /** An item's status: the stored status, with a refusal in its compact form. */
 export const itemStatusSchema = z.discriminatedUnion('word', [feasibleStatusSchema, compactRefusalSchema, invalidStatusSchema, unsupportedStatusSchema, cancelledStatusSchema, unresolvedStatusSchema])
 export type ItemStatus = z.infer<typeof itemStatusSchema>
-/** The item rules: a what-if's lead as optionLeadIssue; a refusal by method names each once, its own included, with the own entry's span. */
+/** The item rule: a what-if's lead as optionLeadIssue. */
 const itemRefinement = (item: { readonly variant: z.infer<typeof optionWithoutRowsShape>['variant']; readonly status: ItemStatus }, context: z.core.$RefinementCtx): void => {
-  if (item.status.word === 'validated feasible') {
-    const issue = optionLeadIssue({ variant: item.variant, status: item.status })
-    if (issue !== undefined) context.addIssue({ code: 'custom', path: ['status', 'lead'], message: issue })
-  }
-  if (item.status.word !== 'proven infeasible' || item.status.byMethod === undefined) return
-  const picks = (methods: ReadonlyArray<{ readonly choice: string; readonly option: string }>) => JSON.stringify([...methods].sort((x, y) => (x.choice < y.choice ? -1 : x.choice > y.choice ? 1 : 0)))
-  const names = item.status.byMethod.map(entry => picks(entry.methods))
-  if (new Set(names).size !== names.length) context.addIssue({ code: 'custom', path: ['status', 'byMethod'], message: 'Each method combination of a refusal is named once' })
-  const own = item.status.byMethod.find(entry => picks(entry.methods) === picks(item.variant.methods))
-  if (own === undefined || JSON.stringify(own.span) !== JSON.stringify(item.status.span)) context.addIssue({ code: 'custom', path: ['status', 'byMethod'], message: 'A refusal over several methods names the option\'s own methods, with its span' })
+  if (item.status.word !== 'validated feasible') return
+  const issue = optionLeadIssue({ variant: item.variant, status: item.status })
+  if (issue !== undefined) context.addIssue({ code: 'custom', path: ['status', 'lead'], message: issue })
 }
 
 /**

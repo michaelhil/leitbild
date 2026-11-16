@@ -28,7 +28,7 @@ import type { Edit } from '../plan/edit-schema.ts'
 import { assertRevision, ownOption, type PlanStore, type RevisionGuard } from '../plan/store.ts'
 import {
   attentionKind, basisWords, buildSection, clip, datedWords, names, jobsPerSolve, sizeBand, sizeCautionWarning, sizeRefusalWords, weakeningWords, byteLength, changeLines, changeSummary, nameOf, optionWarning, readinessText,
-  spanAndCost, statusSentence, timeWords, valueWords, type OptionState, type Section, type SectionContext,
+  methodWords, spanAndCost, statusSentence, timeWords, valueWords, type OptionState, type Section, type SectionContext,
 } from '../plan/summary.ts'
 import type { Grid } from '../time/units.ts'
 import {
@@ -271,24 +271,40 @@ export const createPlanningOperations = (ports: PlanningOperationsPorts) => {
     return { stale: reason !== undefined, ...(reason === undefined ? {} : { reason }), warnings, shown, item: itemStatus(plan.inputs, option, shown), baselineAllowed: reason === undefined && stored.word === 'validated feasible' }
   }
   /**
-   * A status as the options and previous sections page it (coordinator, after the re-walk sizes): a refusal
-   * keeps its own method's cause; each span is cut to its summary, and each method gets its picks and one sentence,
-   * from its stored span or cause with no checker. Purchases, path, later start and energy proof stay for explain
-   * refusal.
+   * A status as the options and previous sections page it (coordinator, shape E): a refusal keeps its own
+   * method's cause and its span as a summary; each method combination is one `line`, built here from its stored
+   * span or cause with no checker: the figures first, then the method's name (its picks among the choices the
+   * combinations differ in), so a clip at 200 characters never cuts the figures. The option's own comes first,
+   * the rest in the plan's combination order. Picks, purchases, path, later start and energy proof stay in
+   * storage, for explain refusal.
    */
   const itemStatus = (inputs: PlanInputs, option: Option, status: Status): ItemStatus => {
     if (status.word !== 'proven infeasible') return status
     const summary = (span: NonNullable<typeof status.span>) => ({ rule: span.rule, leastHours: span.leastHours, limitHours: span.limitHours })
+    const item = { word: status.word, cause: status.cause, run: status.run, ...(status.span === undefined ? {} : { span: summary(status.span) }) }
+    const combinations = status.byMethod
+    if (combinations === undefined) return item
+    type Entry = (typeof combinations)[number]
     const ruled = withExtraRules(inputs, option.variant.also)
     const asked = new Set((option.variant.also ?? []).map(rule => rule.key))
-    const line = (entry: NonNullable<typeof status.byMethod>[number]): string => clip(entry.span !== undefined
-      ? `Out at least ${valueWords(entry.span.leastHours, 'h')}, against the ${valueWords(entry.span.limitHours, 'h')} ${asked.has(entry.span.rule) ? 'asked' : 'limit'}.`
-      : refusalLines(entry.cause, ruled, undefined, entry.purchases, entry.methods)[0] ?? 'Not possible with what this method may use.', 200)
-    return {
-      word: status.word, cause: status.cause, run: status.run,
-      ...(status.span === undefined ? {} : { span: summary(status.span) }),
-      ...(status.byMethod === undefined ? {} : { byMethod: status.byMethod.map(entry => ({ methods: entry.methods, ...(entry.span === undefined ? {} : { span: summary(entry.span) }), line: line(entry) })) }),
+    const picks = (entry: Entry, pick: { readonly choice: string; readonly option: string }) => entry.methods.some(other => other.choice === pick.choice && other.option === pick.option)
+    // A pick another combination does not make is one the combinations differ in; the rest are shared.
+    const name = (entry: Entry) => methodWords(inputs, entry.methods.filter(pick => combinations.some(other => !picks(other, pick)))) ?? 'another method'
+    const line = (entry: Entry): string => clip(entry.span !== undefined
+      ? `Out at least ${valueWords(entry.span.leastHours, 'h')}, against the ${valueWords(entry.span.limitHours, 'h')} ${asked.has(entry.span.rule) ? 'asked' : 'limit'}: ${name(entry)}.`
+      : `${(refusalLines(entry.cause, ruled, undefined, entry.purchases, entry.methods)[0] ?? 'Not possible with what this method may use.').replace(/\.$/, '')}: ${name(entry)}.`, 200)
+    // The plan's combination order (methodCombinations): by each choice's option, the plan's first choice first.
+    const place = (entry: Entry) => inputs.methods.map(choice => {
+      const at = choice.options.findIndex(entryOption => entryOption.key === entry.methods.find(pick => pick.choice === choice.key)?.option)
+      return at === -1 ? choice.options.length : at
+    })
+    const inOrder = (a: Entry, b: Entry): number => {
+      const [x, y] = [place(a), place(b)]
+      const k = x.findIndex((at, index) => at !== y[index])
+      return k === -1 ? 0 : x[k]! - y[k]!
     }
+    const own = (entry: Entry) => entry.methods.length === option.variant.methods.length && option.variant.methods.every(pick => picks(entry, pick))
+    return { ...item, byMethod: [...combinations].sort((a, b) => Number(own(b)) - Number(own(a)) || inOrder(a, b)).map(entry => ({ line: line(entry) })) }
   }
   const optionStates = (plan: Plan): ReadonlyMap<string, OptionState> =>
     new Map((plan.options?.options ?? []).map(option => [option.key, optionState(plan, option)]))

@@ -1,14 +1,17 @@
-// The options and previous sections page a compact item for a refusal (coordinator's decision after the re-walk
-// sizes): the option's own cause, each span as {rule, leastHours, limitHours}, and per method its span summary
-// and a one-sentence `line`; the full proof (path, later start, energy proof) only in explain refusal. Each
-// record fits its 4 KB page with room to spare, on the worst cases: an 8-method refused what-if, a plain refusal
-// with its stored energy proof, and the walk's full 8-option set.
+// The options and previous sections page a compact item for a refusal (coordinator, shape E): the option's own
+// cause and span summary, and per method combination one `line`, the figures first and then the method's name;
+// each combination's picks, purchases, cause and full proof only in explain refusal. Each record fits its 4 KB
+// page with room to spare: the 40 h what-if, a plain refusal with its stored energy proof, and the walk's full
+// 8-option set.
 import { afterAll, describe, expect, test } from 'bun:test'
 import { generate, type GenerateDeps } from '../solve/generate.ts'
 import { ladderRungs, rungRequest } from '../solve/ladder.ts'
 import { searchEngine } from '../solve/search.ts'
+import { refusalLines } from '../solve/explain.ts'
+import { withExtraRules } from '../solve/keys.ts'
 import { laneKCheck, laneKVerify, laneKVerifyBound, laneKVerifySpan } from '../solve/fixtures/lane-k.ts'
-import { optionSchema } from '../plan/schema.ts'
+import { optionSchema, type PlanInputs } from '../plan/schema.ts'
+import { clip } from '../plan/summary.ts'
 import { sectionDataSchemas } from './contract.ts'
 import { createSolverDouble } from './fixtures/doubles.ts'
 import { formulation, planWith, rebuild, swap, trainAInputs, type Option } from './fixtures/choose.ts'
@@ -39,45 +42,43 @@ const read = async (id: string, section: 'options' | 'previous') => {
   return items
 }
 const largest = (items: ReadonlyArray<unknown>) => Math.max(...items.map(bytes))
-/** The plan with `options` now and as its previous set, so both sections page them. */
-const stored = async (options: readonly Option[]) => {
-  const base = planWith(harness.workspaceId, options)
+/** The plan (on `inputs`) with `options` now and as its previous set, so both sections page them. */
+const stored = async (options: readonly Option[], inputs: PlanInputs = trainAInputs) => {
+  const base = planWith(harness.workspaceId, options, 3, { inputs })
   return harness.store.create(harness.workspaceId, { ...base, previousOptions: { at: base.options!.at, by: { kind: 'human' }, options: options.map(option => ({ ...option, inputsRevision: 2 })) } })
 }
+/** A pick list in planner words: its method options' labels. */
+const labels = (inputs: PlanInputs, methods: ReadonlyArray<{ readonly choice: string; readonly option: string }>) =>
+  methods.map(pick => inputs.methods.find(choice => choice.key === pick.choice)!.options.find(option => option.key === pick.option)!.label).join(', ')
 
 const [at40] = await generated({ variants: [{ label: 'At most 40 h out', also: [asked(40)] }] })
 if (at40?.status.word !== 'proven infeasible' || at40.status.byMethod === undefined) throw new Error('the 40 h what-if is refused for every method')
 
 describe('a refusal is a compact item in the options and previous sections', () => {
-  test('the 40 h what-if: its own cause, span summaries, and one line per method; no path, later start or energy proof', async () => {
+  test('the 40 h what-if: its own cause and span summary, and one line per method, figures first; no picks, path, later start or energy proof', async () => {
     const plan = await stored([swap, rebuild, at40])
     for (const section of ['options', 'previous'] as const) {
       const item = (await read(plan.id, section)).find(entry => entry.key === at40.key)!
       if (item.status.word !== 'proven infeasible' || at40.status.word !== 'proven infeasible') throw new Error('refused')
       expect(item.status.cause).toEqual(at40.status.cause)
       expect(item.status.span).toEqual({ rule: at40.status.span!.rule, leastHours: at40.status.span!.leastHours, limitHours: at40.status.span!.limitHours })
-      expect(item.status.byMethod!.map(entry => [entry.methods, entry.span, entry.line])).toEqual(at40.status.byMethod!.map(entry => [entry.methods, { rule: entry.span!.rule, leastHours: entry.span!.leastHours, limitHours: entry.span!.limitHours }, `Out at least ${entry.span!.leastHours} h, against the 40 h asked.`]))
+      // Each entry is {line}: the option's own first (as stored), each method named after its figures.
+      expect(item.status.byMethod).toEqual(at40.status.byMethod!.map(entry => ({ line: `Out at least ${entry.span!.leastHours} h, against the 40 h asked: ${labels(trainAInputs, entry.methods)}.` })))
       expect(JSON.stringify(item)).not.toMatch(/"path"|"later"|"alsoProven"/)
-      // Each entry is {methods, span?, line}: its purchases stay in storage, for explain refusal.
-      expect(item.status.byMethod!.map(entry => Object.keys(entry).sort())).toEqual(at40.status.byMethod!.map(() => ['line', 'methods', 'span']))
       expect(bytes(item)).toBeLessThanOrEqual(roomy)
     }
   }, 120_000)
 
-  test('the worst case: a what-if refused for 8 methods, each with its span; every record fits with room to spare', async () => {
+  test('a method without a span: its stored cause\'s one sentence, then the method\'s name', async () => {
     if (at40.status.word !== 'proven infeasible') throw new Error('refused')
     const [own, other] = at40.status.byMethod!
-    // Eight method combinations of the 40 h proofs: the option's own first, then seven more picks.
-    const picks = (k: number) => k === 0 ? own!.methods : [{ choice: 'SWA-method', option: `method-${k}` }]
-    const byMethod = Array.from({ length: 8 }, (_, k) => ({ ...(k % 2 === 0 ? own! : other!), methods: picks(k) }))
-    const eight = optionSchema.parse({ ...at40, key: 'eight-methods', status: { ...at40.status, byMethod: [{ ...own! }, ...byMethod.slice(1)] } })
-    console.log('stored 8-method refusal, without rows:', bytes({ ...eight, rows: undefined }))
-    const plan = await stored([swap, rebuild, eight])
-    for (const section of ['options', 'previous'] as const) {
-      const item = (await read(plan.id, section)).find(entry => entry.key === 'eight-methods')!
-      console.log(`${section}: 8-method item`, bytes(item))
-      expect(bytes(item)).toBeLessThanOrEqual(roomy)
-    }
+    const { span: _, ...plain } = other!
+    const mixed = optionSchema.parse({ ...at40, key: 'one-without-span', status: { ...at40.status, byMethod: [own, plain] } })
+    const plan = await stored([swap, rebuild, mixed])
+    const item = (await read(plan.id, 'options')).find(entry => entry.key === 'one-without-span')!
+    if (item.status.word !== 'proven infeasible') throw new Error('refused')
+    const sentence = refusalLines(plain.cause, withExtraRules(trainAInputs, at40.variant.also), undefined, plain.purchases, plain.methods)[0]!
+    expect(item.status.byMethod![1]).toEqual({ line: clip(`${sentence.replace(/\.$/, '')}: ${labels(trainAInputs, plain.methods)}.`, 200) })
   }, 120_000)
 
   test('a plain refusal with its stored energy proof, and the walk\'s full 8-option set: every record fits', async () => {

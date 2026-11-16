@@ -124,6 +124,12 @@ export const clip = (text: string, limit: number): string => {
   return `${(space > limit / 2 ? cut.slice(0, space) : cut).replace(/[\s,;:(–-]+$/, '')}…`
 }
 
+/** The method options a set of picks names, by their labels: "Rebuild in place"; undefined without one. */
+export const methodWords = (inputs: PlanInputs, picks: ReadonlyArray<{ readonly choice: string; readonly option: string }>): string | undefined => {
+  const labels = picks.map(pick => inputs.methods.find(choice => choice.key === pick.choice)?.options.find(entry => entry.key === pick.option)?.label)
+  return labels.length === 0 || labels.some(label => label === undefined) ? undefined : labels.join(', ')
+}
+
 // ───────────── changes ─────────────
 
 const whatWords: Readonly<Record<ChangeRecord['what'], string>> = {
