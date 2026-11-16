@@ -469,7 +469,7 @@
         {#if initial.notice}<p class="notice" role="status">{initial.notice}</p>{/if}
         {#key demos.length}
           <Carousel bind:this={carousel} items={demos} label="Demos" itemTitle={featured => featured.title} {slide} {thumb} {credit}
-            nav="thumbs" variant="panel" noun="demo" {startStopped} pickStops initialIndex={initial.index}
+            nav="thumbs" variant="panel" noun="demo" {startStopped} navigationStops initialIndex={initial.index}
             onindexchange={(index, featured) => { active = index; ondemochange?.(demoKey(featured.definition)) }} />
         {/key}
       {/if}

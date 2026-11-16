@@ -29,8 +29,8 @@
     noun?: string
     /** Start stopped: opened by keyboard (`click.detail === 0`) or by deep link. Reduced motion always starts stopped. */
     startStopped?: boolean
-    /** A tap or click on a dot or thumbnail stops rotation until Play (the Demos modal: Start launches the demo picked). */
-    pickStops?: boolean
+    /** A tap or click on a dot or thumbnail, Prev/Next or a swipe stops rotation until Play (the Demos modal: Start launches the demo on screen). */
+    navigationStops?: boolean
     initialIndex?: number
     intervalMs?: number
     /** Hold while less than half the carousel is on screen. */
@@ -42,7 +42,7 @@
 
   let {
     items, label, itemTitle, slide, thumb, nav = 'dots', variant = 'hero', noun = 'slide',
-    startStopped = false, pickStops = false, initialIndex = 0, intervalMs = CAROUSEL_INTERVAL_MS, observeVisibility = false,
+    startStopped = false, navigationStops = false, initialIndex = 0, intervalMs = CAROUSEL_INTERVAL_MS, observeVisibility = false,
     credit, onindexchange,
   }: Props = $props()
 
@@ -50,7 +50,7 @@
   const reducedMotion = typeof matchMedia === 'function' && matchMedia('(prefers-reduced-motion: reduce)').matches
   // Created once: the item count and the start state are read at mount.
   // svelte-ignore state_referenced_locally
-  const controller = createCarousel({ count: items.length, intervalMs, initialIndex, startStopped: startStopped || reducedMotion, pickStops })
+  const controller = createCarousel({ count: items.length, intervalMs, initialIndex, startStopped: startStopped || reducedMotion, navigationStops })
   let view = $state<CarouselSnapshot>(controller.snapshot())
   let root = $state<HTMLElement | null>(null)
   let pickers = $state<HTMLElement | null>(null)
