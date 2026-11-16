@@ -107,7 +107,7 @@ export const einsatzCapabilities: ReadonlyArray<SimulationCapability> = [
     readScope: 'collection',
     id: einsatzQueryIds.situation,
     title: 'What is running in the dispatch simulation',
-    description: 'What is running now in the dispatch simulation. Open calls (called *tasks*; the configured words are in `lexicon`) are ranked by priority, with waiting time, needs, coverage and assigned units. Every unit has its type, group, status, plan with ETAs, predicted delivery and the actor of its last order. Sites have accepting state and free slots, and there are counts. Start here. For who should go, call `world.einsatz.recommend {taskId}`. Re-read after each order. Example: `{}`, or `{group:\'<group id>\'}`.',
+    description: 'What is running now in the dispatch simulation. Open calls (called *tasks*; the configured words are in `words`) are ranked by priority, with waiting time, needs, coverage and assigned units. Every unit has its type, group, status, plan with ETAs, predicted delivery and the actor of its last order. Sites have accepting state and free slots, and there are counts. Start here. For who should go, call `world.einsatz.recommend {taskId}`. Re-read after each order. Example: `{}`, or `{group:\'<group id>\'}`.',
     searchTerms: [...dispatchTerms, 'overview', 'calls', 'units', 'sites', 'waiting', 'overdue'],
     input: situationInputSchema,
     output: situationSchema,
