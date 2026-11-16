@@ -291,4 +291,3 @@ export const bothToOne = (name: string, atS: number): Beat => ({
     await screen.mapTap(second.id)
   },
 })
-

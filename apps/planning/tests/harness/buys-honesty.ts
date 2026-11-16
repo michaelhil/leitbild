@@ -126,4 +126,3 @@ export const buysHonesty = (plan: Plan, items: readonly BuysItem[], formulation:
   }
   return findings
 }
-

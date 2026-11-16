@@ -82,4 +82,3 @@ export const optionKey = (inputs: PlanInputs, variant: WhatIf & { readonly metho
   }
   return Object.keys(asked).length === 0 ? base : `${base}-${digest(JSON.stringify(asked))}`
 }
-
