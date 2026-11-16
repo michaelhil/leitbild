@@ -42,6 +42,15 @@ const weatherEverywhere = (answer: RoadWeatherSample): PackRuntimeQueries => ({
   invoke: async query => (query.input as { readonly points: ReadonlyArray<unknown> }).points.map(point => ({ point, sample: answer })),
 })
 
+/** The Weather runtime with every road-weather read failing. */
+const withFailingSamples = (adapter: PackRuntimeAdapter): PackRuntimeAdapter => ({
+  ...adapter,
+  connect: async config => {
+    const connection = await adapter.connect(config)
+    return { ...connection, invokeQuery: async query => { if (query.capabilityId === roadWeatherQueryId) throw new Error('Weather does not answer'); return await connection.invokeQuery(query) } }
+  },
+})
+
 const field = (): Promise<EngineState> => runAll(emptyState(), [
   newUnit('c1', types.roadCarrier, at(0)),
   newUnit('d1', types.directCarrier, at(0)),
@@ -108,7 +117,7 @@ describe('Einsatz road weather', () => {
     const items = [unitItem('c1', types.roadCarrier, lonLat(0)), unitItem('d1', types.directCarrier, lonLat(0)), taskItem('t1', templates.load, lonLat(0.02), { [low]: 1 })]
     const definition = { ...definitionOf(items), packs: [foggyWeather, { id: einsatzPackId, config: fixture, items }] }
     const compiled = await compileScenarioDefinition(definition, [weatherPack, einsatzPack], { routing })
-    const recommendIn = async (adapters: ReadonlyArray<PackRuntimeAdapter>) => {
+    const recommendIn = async (adapters: ReadonlyArray<PackRuntimeAdapter>, advanceS = 0) => {
       const clock = createSimulationClock({ currentTime: compiled.world.startsAt, updatedAt: nowIso(), paused: true })
       const connection = await createRuntimeHub(adapters).connect({
         simulationRunId: 'run-einsatz-road-weather' as SimulationRunId,
@@ -124,6 +133,7 @@ describe('Einsatz road weather', () => {
         },
       })
       try {
+        clock.set({ ...clock.read(), currentTime: new Date(Date.parse(compiled.world.startsAt) + advanceS * 1_000).toISOString() as IsoTimestamp })
         await connection.setClock(clock.read())
         const objects = (await connection.getSnapshot()).objects
         const answer = await connection.invokeQuery({ capabilityId: einsatzQueryIds.recommend, input: { taskId: 't1' }, readPolicy: unrestrictedQueryReadPolicy }) as RecommendAnswer
@@ -141,5 +151,8 @@ describe('Einsatz road weather', () => {
     expect(without.objects.find(object => object.id === 'c1')!.spatial.route).toBeUndefined()
     expect(etaOf(withWeather.answer, 'c1') - turnoutS).toBeCloseTo((etaOf(without.answer, 'c1') - turnoutS) / 0.5, 6)
     expect(etaOf(withWeather.answer, 'd1')).toBe(etaOf(without.answer, 'd1'))
+    // A Weather read that keeps failing leaves the runtime degraded, though the advance itself succeeds.
+    const failing = await recommendIn([withFailingSamples(createLocalWeatherPackRuntimeAdapter()), createEinsatzPackRuntimeAdapter({ routing })], 60)
+    expect(failing.health).toEqual(['degraded', 'ready'])
   })
 })

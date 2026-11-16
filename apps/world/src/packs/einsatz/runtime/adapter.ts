@@ -124,8 +124,10 @@ const connectEinsatz = async (config: PackRuntimeConnectionConfig, routing: Rout
     if (closed || health.state === 'failed') return
     health = { ...health, state, failureCount: health.failureCount + 1, lastFailure: { at: nowIso(), operation, message: message(error) } }
   }
+  /** Set while the last road-weather read failed: health stays degraded until a Weather read succeeds. */
+  let weatherFailing = false
   const succeeded = (): void => {
-    health = { ...health, ...(health.state === 'degraded' ? { state: 'ready' as const } : {}), lastSuccessfulInteractionAt: nowIso() }
+    health = { ...health, ...(health.state === 'degraded' && !weatherFailing ? { state: 'ready' as const } : {}), lastSuccessfulInteractionAt: nowIso() }
   }
 
   const savedState = (): SavedState => ({ revision, config: current.catalog.config, serials, engine: runtimeStateOf(current) })
@@ -236,12 +238,16 @@ const connectEinsatz = async (config: PackRuntimeConnectionConfig, routing: Rout
   /**
    * The state with each road unit's road weather read now, when the Run has
    * the Weather Pack. A failed Weather read is no engine fault: the units
-   * keep the pace last read, and runtime health records the failure.
+   * keep the pace last read, and runtime health stays degraded until a
+   * Weather read succeeds again.
    */
   const weathered = async (state: EngineState): Promise<EngineState> => {
     try {
-      return await withRoadWeather(state, config.queries)
+      const read = await withRoadWeather(state, config.queries)
+      weatherFailing = false
+      return read
     } catch (error) {
+      weatherFailing = true
       fault('road-weather', error, 'degraded')
       return state
     }
