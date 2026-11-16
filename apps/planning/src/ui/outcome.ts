@@ -49,8 +49,16 @@ export interface RefusalProof { readonly headline: string; readonly parts: reado
 export const refusalProof = (lines: readonly string[] | undefined, context: Context): RefusalProof | null => {
   const line = refusalLine(lines)
   if (line === null) return null
+  return { headline: `Not possible: ${line}`, parts: proofParts(lines ?? [], context, line) }
+}
+
+/**
+ * The Module's refusal lines in order, each list of jobs as rows of a name and its times; `without` is a line
+ * said elsewhere (the headline). "Why not possible" shows a what-if's chain this way, in the Module's order.
+ */
+export const proofParts = (lines: readonly string[], context: Context, without: string | null = null): readonly ProofPart[] => {
   const parts: Array<{ text: string | null; steps: ProofStep[] }> = []
-  for (const entry of (lines ?? []).map(item => item.trim().replace(/^Not possible:\s*/, '')).filter(item => item !== '' && item !== line)) {
+  for (const entry of lines.map(item => item.trim().replace(/^Not possible:\s*/, '')).filter(item => item !== '' && item !== without)) {
     if (!entry.startsWith('- ')) { parts.push({ text: entry, steps: [] }); continue }
     const cut = entry.lastIndexOf(': ')
     const name = cut === -1 ? entry.slice(2) : entry.slice(2, cut)
@@ -58,7 +66,7 @@ export const refusalProof = (lines: readonly string[] | undefined, context: Cont
     const last = parts.at(-1) ?? parts[parts.push({ text: null, steps: [] }) - 1]!
     last.steps.push({ name, detail: cut === -1 ? '' : entry.slice(cut + 2), job: named.length === 1 ? named[0]!.key : null })
   }
-  return { headline: `Not possible: ${line}`, parts }
+  return parts
 }
 
 export const outcomeOf = (option: OptionView, model: PlanModel, context: Context): Outcome => {

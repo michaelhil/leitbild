@@ -42,6 +42,7 @@
   import WhatIfCard from './WhatIfCard.svelte'
   import WhatIfPanel from './WhatIfPanel.svelte'
   import { whatIfAskedNotice, whatIfCard, whatIfChoices, whatIfsClearedNotice, type WhatIfKind, type WhatIfVariant } from './what-if.ts'
+  import WhyNotPossible from './WhyNotPossible.svelte'
   import WhyRecommended from './WhyRecommended.svelte'
   import type { RecommendedFacts, VersusFacts } from '../api/contract.ts'
   import { carryOver, compareView, moreMoved, panelClosedNotice, policyLines, previousFor, previousRows, recommendedAnswer, versusAnswer, whyView, type Answer, type CompareView, type WhyView } from './why-text.ts'
@@ -105,6 +106,9 @@
   /** The what-if asked last: its card comes first. */
   let askedLast = $state<string | null>(null)
   let whyAnswer = $state<Answer<RecommendedFacts>>({ state: 'loading' })
+  /** "Why not possible" per refused option, once asked: explain refusal's full chain. A new read of the plan clears it. */
+  let whyNot = $state<Readonly<Record<string, Answer<readonly string[]>>>>({})
+  let whyNotRead = 0
   /** The option why recommended weighs against: '' for the next in rank. */
   let whyAgainst = $state('')
   let compareAnswer = $state<Answer<VersusFacts>>({ state: 'loading' })
@@ -232,6 +236,8 @@
     if (shown.notice !== null) notice = shown.notice
     finish = null
     why = null
+    whyNot = {}
+    whyNotRead += 1
     // A job removed by the change takes its panel with it, said plainly (re-walk N1).
     if (selectedJob !== null && !shown.model.inputs.jobs.some(job => job.key === selectedJob)) {
       selectedJob = null
@@ -239,6 +245,18 @@
     }
     // An open question is asked again of the plan as it now is, so its answer never speaks of the one before.
     if (choosing !== null) ask(choosing)
+  }
+
+  /**
+   * "Why not possible": asks explain refusal for the option's full chain (the path, later start and energy proof
+   * the compact item does not carry), fresh or made before the latest change. An answer for an earlier read is dropped.
+   */
+  const askWhyNot = (option: string): void => {
+    const read = whyNotRead
+    const answered = (answer: Answer<readonly string[]>): void => { if (read === whyNotRead) whyNot = { ...whyNot, [option]: answer } }
+    answered({ state: 'loading' })
+    actions.whyNotPossible(option).then(lines => answered({ state: 'answered', facts: lines }),
+      cause => answered(isNotBuilt(cause) ? { state: 'not-built' } : { state: 'refused', text: refusalText(cause, context?.names.any) }))
   }
 
   /** Asks the Module the open question; a part of Planning not built yet is said as "not available yet". */
@@ -468,7 +486,7 @@
         <section class="shown-option" aria-labelledby="shown-title">
           <h2 id="shown-title">Shown on the timeline</h2>
           <!-- A what-if's refusal is its causes by method on the card, never the plan's refusal lines (walk V1). -->
-          <WhatIfCard card={whatIfCard(shown, model, context)} selected busy={busy || generating !== null} onSelect={showOption} onPick={pick} />
+          <WhatIfCard card={whatIfCard(shown, model, context)} {context} why={whyNot[shown.key] ?? null} selected busy={busy || generating !== null} onSelect={showOption} onWhy={askWhyNot} onPick={pick} />
         </section>
       {/if}
     {:else}
@@ -476,6 +494,11 @@
         <h2 id="shown-title">{shown.label}</h2>
         {#if requestText(shown, model.inputs)}<p class="hint">{requestText(shown, model.inputs)}</p>{/if}
         <StatusBlock view={statusView(shown.status, context)} warnings={otherWarnings(shown)} caution={sizeCautionOf(shown)} stale={!shown.fresh} {proof} onPick={pick} />
+        <!-- A current refusal shows its proof above; one made before the latest change asks for it (re-walk N4). -->
+        {#if shown.status.word === 'proven infeasible' && proof === null}
+          {@const key = shown.key}
+          <WhyNotPossible answer={whyNot[key] ?? null} {context} onAsk={() => askWhyNot(key)} onPick={pick} />
+        {/if}
       </section>
     {/if}
   {/if}
@@ -493,8 +516,8 @@
           onFiner={() => { whatIfKind = 'out'; openChoice('whatif') }} onSelect={showOption} onMethod={next => { ladderMethod = next }} onPick={pick} onClose={() => { choosing = null }} />
       {:else if choosing === 'whatif'}
         {#key whatIfKind}
-          <WhatIfPanel {context} cards={whatIfs} kind={whatIfKind} selected={selectedOption} busy={busy || generating !== null} {asking} missing={whatIfMissing}
-            onAsk={askWhatIf} onSelect={showOption} onPick={pick} onClose={() => { choosing = null; whatIfKind = null }} />
+          <WhatIfPanel {context} cards={whatIfs} kind={whatIfKind} selected={selectedOption} busy={busy || generating !== null} {asking} missing={whatIfMissing} why={whyNot}
+            onAsk={askWhatIf} onSelect={showOption} onWhy={askWhyNot} onPick={pick} onClose={() => { choosing = null; whatIfKind = null }} />
         {/key}
       {:else if choosing === 'why'}
         {#if recommendedShown}

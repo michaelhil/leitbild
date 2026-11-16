@@ -1,54 +1,161 @@
-// Re-walk N2 on the screen (impl/inc23/batch2-rewalk-fixes.md): a refusal's hours come from the span stored with
-// it, proven in the solver child; the rule is named in its own words; a refused card shows no unpriced
-// measures. On lane S's real record: "At most 40 h out" for the Train A cooling chain (solve/whatif-refusal.test.ts).
-import { describe, expect, test } from 'bun:test'
+// Re-walk N2 on the screen (impl/inc23/batch2-rewalk-fixes.md), on the compact item (coordinator, after the
+// re-walk sizes): the options section pages a refusal with each span as {rule, leastHours, limitHours} and per
+// method a one-sentence `line`; the full chain (path, later start, energy proof) comes only from explain
+// refusal, which "Why not possible" asks. On lane S's real record, "At most 40 h out" for the Train A cooling
+// chain, stored in the Module and read back through the screen's own read (read-plan.ts) on the Module's API.
+import { afterAll, describe, expect, test } from 'bun:test'
+import type { Component } from 'svelte'
+import { planWith, trainAInputs, type Option } from '../api/fixtures/choose.ts'
+import { createHarness } from '../api/fixtures/harness.ts'
+import { createRealSolver } from '../api/wiring.ts'
+import { optionSchema } from '../plan/schema.ts'
 import { generate, type AlsoRule, type GenerateDeps } from '../solve/generate.ts'
 import { laneKCheck, laneKVerify, laneKVerifyBound, laneKVerifySpan } from '../solve/fixtures/lane-k.ts'
-import { trainAInputs } from '../solve/fixtures/train-a-case.ts'
+import { createSolverPool } from '../solve/pool.ts'
 import { searchEngine } from '../solve/search.ts'
-import { modelOf } from './fixtures/plans.ts'
+import { createPlanningClient } from './api.ts'
+import { readableText, registerSvelte, renderHtml } from './fixtures/svelte-ssr.ts'
 import { createTimeFormat, hoursText } from './format.ts'
 import { createNames, type OptionView } from './model.ts'
+import { createPlanActions } from './plan-actions.ts'
+import { loadPlan } from './read-plan.ts'
 import { certificateText, statusView, type Context } from './status-text.ts'
 import { whatIfCard } from './what-if.ts'
 
-const deps: GenerateDeps = { engine: searchEngine(), check: laneKCheck, verify: laneKVerify, verifyBound: laneKVerifyBound, verifySpan: laneKVerifySpan }
-const flagship = trainAInputs({ read: true })
-const context: Context = { inputs: flagship, names: createNames(flagship), format: createTimeFormat(flagship.settings.timeZone) }
-const at40: Extract<AlsoRule, { kind: 'span-limit' }> = { kind: 'span-limit', key: 'what-if-COOL-A-40h', group: 'COOL-A', limit: { value: 40, unit: 'h' }, singleEntry: true, words: 'What-if: Train A cooling chain back within 40 h.', source: { by: 'planner' } }
-const asked = (await generate(deps, { inputs: flagship, revision: 1, previous: null, input: { variants: [{ label: 'At most 40 h out', also: [at40] }] }, by: { kind: 'service', name: 'test' }, signal: new AbortController().signal, seed: 1, evals: 600 })).optionSet.options[0]!
-const view = (stored: typeof asked): OptionView => ({ key: stored.key, label: stored.label, variant: stored.variant, status: stored.status, metrics: stored.metrics, inputsRevision: 1, fresh: true, warnings: [] })
-const label = (option: string) => flagship.methods[0]!.options.find(entry => entry.key === option)!.label
+registerSvelte()
+type Any = Component<Record<string, unknown>>
+const { default: WhatIfCard } = await import('./WhatIfCard.svelte') as { default: Any }
+const none = () => {}
 
-describe('N2: a refused what-if says each method\'s least outage against the limit asked', () => {
-  test('"<method>: out at least <leastHours> h, against the <limitHours> h asked", from each stored span', () => {
-    if (asked.status.word !== 'proven infeasible') throw new Error('lane S refuses the 40 h what-if')
-    const spans = (asked.status.byMethod ?? []).flatMap(entry => entry.span === undefined ? [] : [{ method: label(entry.methods[0]!.option), span: entry.span }])
-    expect(spans.length).toBeGreaterThan(0)
-    const card = whatIfCard(view(asked), modelOf(flagship, { options: { at: '2026-11-12T09:05:00.000Z', recommended: null, items: [view(asked)] } }), context)
-    for (const { method, span } of spans) expect(card.status.details).toContain(`${method}: out at least ${hoursText(span.leastHours)}, against the ${hoursText(span.limitHours)} asked.`)
+const pool = createSolverPool()
+const harness = await createHarness({ solver: createRealSolver(pool) })
+afterAll(async () => { await pool.shutdown(); await harness.close() })
+/** The screen's own client on the Module's API: each capability call passed on as the Host passes it. */
+const client = createPlanningClient(harness.workspaceId, async (path, init) => {
+  const capability = decodeURIComponent(String(path).split('/capabilities/')[1]!.replace('/invoke', ''))
+  const body = JSON.parse(String(init!.body)) as { readonly resource?: { readonly id: string }; readonly input?: unknown; readonly expectedRevision?: number }
+  const answer = await harness.call(capability, { input: body.input ?? {}, ...(body.resource === undefined ? {} : { resource: body.resource.id }), ...(body.expectedRevision === undefined ? {} : { expectedRevision: body.expectedRevision }) })
+  return Response.json(answer.body, { status: answer.status })
+})
+
+const deps: GenerateDeps = { engine: searchEngine(), check: laneKCheck, verify: laneKVerify, verifyBound: laneKVerifyBound, verifySpan: laneKVerifySpan }
+const context: Context = { inputs: trainAInputs, names: createNames(trainAInputs), format: createTimeFormat(trainAInputs.settings.timeZone) }
+const at40: Extract<AlsoRule, { kind: 'span-limit' }> = { kind: 'span-limit', key: 'what-if-COOL-A-40h', group: 'COOL-A', limit: { value: 40, unit: 'h' }, singleEntry: true, words: 'What-if: Train A cooling chain back within 40 h.', source: { by: 'planner' } }
+const [asked] = (await generate(deps, { inputs: trainAInputs, revision: 3, previous: null, input: { variants: [{ label: 'At most 40 h out', also: [at40] }] }, by: { kind: 'service', name: 'test' }, signal: new AbortController().signal, seed: 1, evals: 600 })).optionSet.options
+if (asked?.status.word !== 'proven infeasible' || asked.status.byMethod === undefined) throw new Error('lane S refuses the 40 h what-if for every method')
+const refused = asked.status
+// The same real record with one other method's span not stored, as a refusal without a span is kept: that
+// method's sentence is then the `line` lane P's read words from its stored cause.
+const other = refused.byMethod!.findIndex(entry => JSON.stringify(entry.methods) !== JSON.stringify(asked.variant.methods))
+const { span: _dropped, ...unspanned } = refused.byMethod![other]!
+const noSpan: Option = optionSchema.parse({ ...asked, key: 'at40-one-unspanned', label: 'At most 40 h out, one method without its span', status: { ...refused, byMethod: refused.byMethod!.map((entry, k) => k === other ? unspanned : entry) } })
+
+const stored = await harness.store.create(harness.workspaceId, planWith(harness.workspaceId, [asked, noSpan]))
+const read = await loadPlan(client, stored.id)
+const item = (key: string): OptionView => read.options!.items.find(option => option.key === key)!
+const label = (option: string) => trainAInputs.methods[0]!.options.find(entry => entry.key === option)!.label
+const actions = createPlanActions(client, stored.id)
+const chain = await actions.whyNotPossible(asked.key)
+
+describe('the compact item: each method\'s line from its span summary, or the line the read gave', () => {
+  test('the read pages the refusal compact: span summaries and one line per method, no path', () => {
+    const shown = item(asked.key).status
+    if (shown.word !== 'proven infeasible') throw new Error('refused')
+    expect(shown.byMethod!.map(entry => entry.span)).toEqual(refused.byMethod!.map(entry => ({ rule: entry.span!.rule, leastHours: entry.span!.leastHours, limitHours: entry.span!.limitHours })))
+    expect(JSON.stringify(shown)).not.toMatch(/"path"|"later"|"alsoProven"/)
+  })
+
+  test('"<method>: out at least <leastHours> h, against the <limitHours> h asked", from each span summary', () => {
+    const option = item(asked.key)
+    const card = whatIfCard(option, read, context)
+    if (option.status.word !== 'proven infeasible') throw new Error('refused')
+    expect(option.status.byMethod!.length).toBeGreaterThan(1)
+    for (const entry of option.status.byMethod!) expect(card.status.details).toContain(`${label(entry.methods[0]!.option)}: out at least ${hoursText(entry.span!.leastHours)}, against the ${hoursText(entry.span!.limitHours)} asked.`)
     expect(card.status.details.join(' ')).not.toContain('held by an outage limit')
     // A refused card shows no unpriced measures: there is no plan to leave anything unpriced.
     expect(card.unpriced).toEqual([])
-  }, 120_000)
+  })
+
+  test('a method without a span says the line the read gave it, under its name', () => {
+    const option = item(noSpan.key)
+    if (option.status.word !== 'proven infeasible') throw new Error('refused')
+    const entry = option.status.byMethod![other]!
+    expect(entry.span).toBeUndefined()
+    expect(entry.line).not.toMatch(/^Out at least/)
+    const details = whatIfCard(option, read, context).status.details
+    // The card already says no plan keeps every rule: the line's own "Not possible:" lead is not repeated.
+    expect(details).toContain(`${label(entry.methods[0]!.option)}: ${entry.line.replace(/^Not possible:\s*/, '')}`)
+    expect(details.join(' ')).not.toContain('Not possible:')
+    // The methods with their span still say their hours.
+    expect(details.filter(detail => detail.includes(', against the 40 h asked.'))).toHaveLength(option.status.byMethod!.length - 1)
+  })
+
+  test('a span held by a plan rule names that rule in its words, never "asked"', () => {
+    const option = item(asked.key)
+    if (option.status.word !== 'proven infeasible') throw new Error('refused')
+    const rule = trainAInputs.rules.find(entry => entry.kind === 'span-limit' && entry.group === 'COOL-A')!
+    if (rule.kind !== 'span-limit') throw new Error('the plan has its cooling chain limit')
+    // A stand-in: the first method's span on the plan's own rule at its limit, the other summaries as read.
+    const [first, ...rest] = option.status.byMethod!
+    const onPlanRule: OptionView = { ...option, status: { ...option.status, byMethod: [{ ...first!, span: { ...first!.span!, rule: rule.key, limitHours: rule.limit.value } }, ...rest] } }
+    const details = whatIfCard(onPlanRule, read, context).status.details
+    expect(details).toContain(`${label(first!.methods[0]!.option)}: out at least ${hoursText(first!.span!.leastHours)}, against the ${hoursText(rule.limit.value)} of “${rule.words}”.`)
+  })
 })
 
-describe('N2: a span step names its rule in the rule\'s own words', () => {
+describe('N2: a span names its rule in the rule\'s own words, from span.rule', () => {
   test('"held by “<rule words>”", never "held by an outage limit"', () => {
-    const rule = flagship.rules.find(item => item.kind === 'span-limit' && item.group === 'COOL-A')!
+    const rule = trainAInputs.rules.find(entry => entry.kind === 'span-limit' && entry.group === 'COOL-A')!
     const text = certificateText({ kind: 'temporal', steps: [{ job: 'SWA-TAG', via: 'span-limit' }, { job: 'SWA-RTS', via: 'link' }] }, context, { rule: rule.key })
     expect(text).toContain(`(held by “${rule.words}”)`)
     expect(text).not.toContain('an outage limit')
   })
 
-  test('a plain refusal with a stored span says its least outage against its own rule', () => {
-    const rule = flagship.rules.find(item => item.kind === 'span-limit' && item.group === 'COOL-A')!
-    if (asked.status.word !== 'proven infeasible') throw new Error('lane S refuses the 40 h what-if')
-    const entry = (asked.status.byMethod ?? []).find(item => item.span !== undefined)
-    if (entry?.span === undefined) throw new Error('lane S stores a span')
-    // The same stored shape on the plan's own rule (a stand-in: the plan's 72 h rule with the what-if's figures).
-    const span = { ...entry.span, rule: rule.key, limitHours: rule.kind === 'span-limit' ? rule.limit.value : 72 }
-    const details = statusView({ word: 'proven infeasible', cause: entry.cause, span, run: asked.status.run }, context).details
+  test('a plain refusal with a span summary says its least outage against its own rule', () => {
+    const rule = trainAInputs.rules.find(entry => entry.kind === 'span-limit' && entry.group === 'COOL-A')!
+    const option = item(asked.key)
+    if (option.status.word !== 'proven infeasible' || option.status.span === undefined) throw new Error('the read gives the span summary')
+    // The same compact shape on the plan's own rule (a stand-in: the plan's 72 h rule with the what-if's figures).
+    const span = { ...option.status.span, rule: rule.key, limitHours: rule.kind === 'span-limit' ? rule.limit.value : 72 }
+    const details = statusView({ word: 'proven infeasible', cause: option.status.cause, span, run: option.status.run }, context).details
     expect(details[0]).toBe(`Out at least ${hoursText(span.leastHours)}, against the ${hoursText(span.limitHours)} of “${rule.words}”.`)
-  }, 120_000)
+  })
+})
+
+describe('"Why not possible" opens explain refusal: the full chain, fresh or out of date', () => {
+  test('the action asks explain refusal for the option and gives its lines', async () => {
+    const direct = (await harness.call('planning.plan.explain', { resource: stored.id, input: { ask: 'refusal', option: asked.key } })).body.result.lines as string[]
+    expect(chain).toEqual(direct)
+    // The full chain: the own method's proof with its path of jobs, which the compact item does not carry.
+    expect(chain.some(line => line.startsWith('- '))).toBe(true)
+  })
+
+  test('a refused what-if card offers "Why not possible"; asked, it shows the chain, each job a row', () => {
+    const card = whatIfCard(item(asked.key), read, context)
+    const closed = readableText(renderHtml(WhatIfCard, { card, context, onSelect: none, onWhy: none }))
+    expect(closed).toContain('Why not possible')
+    const steps = chain.filter(line => line.startsWith('- ')).map(line => line.slice(2, line.lastIndexOf(': ')))
+    for (const step of steps) expect(closed).not.toContain(step)
+    const open = readableText(renderHtml(WhatIfCard, { card, context, why: { state: 'answered', facts: chain }, onSelect: none, onWhy: none }))
+    for (const step of steps) expect(open).toContain(step)
+    for (const line of chain.filter(entry => !entry.startsWith('- '))) expect(open).toContain(line)
+  })
+
+  test('while Planning answers, the card says it is asking', () => {
+    const text = readableText(renderHtml(WhatIfCard, { card: whatIfCard(item(asked.key), read, context), context, why: { state: 'loading' }, onSelect: none, onWhy: none }))
+    expect(text).toContain('Asking Planning for the proof')
+  })
+
+  test('out of date after an edit: the card says so, and the chain answers as the plan before the change', async () => {
+    const job = trainAInputs.jobs.find(entry => entry.title === 'Rebuild SW A bowl assembly in workshop')!
+    await client.edit(stored.id, read.revision, { edits: [{ edit: 'job', key: job.key, duration: { value: 30, unit: 'h' } }] })
+    const after = await loadPlan(client, stored.id)
+    const option = after.options!.items.find(entry => entry.key === asked.key)!
+    expect(option.fresh).toBe(false)
+    const lines = await actions.whyNotPossible(asked.key)
+    expect(lines[0]).toBe('On the plan before your latest change: generate again to know for the plan as it is now.')
+    const text = readableText(renderHtml(WhatIfCard, { card: whatIfCard(option, after, context), context, why: { state: 'answered', facts: lines }, onSelect: none, onWhy: none }))
+    expect(text).toContain('Out of date')
+    expect(text).toContain(lines[0]!)
+  }, 60_000)
 })

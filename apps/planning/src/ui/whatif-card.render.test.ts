@@ -135,15 +135,18 @@ describe('a what-if is a card, never a row', () => {
     expect(card.question).toBe(`Asked: the shortest outage for ${afw.label} first, then the plan's goals in order.`)
     const text = readableText(renderHtml(WhatIfCard, { card, onSelect: none }))
     expect(text.split('proven optimal').length - 1).toBe(1)
+    // Only a refusal has a chain to open: a validated card offers no "Why not possible".
+    expect(readableText(renderHtml(WhatIfCard, { card, context: contextOf(model), onSelect: none, onWhy: none }))).not.toContain('Why not possible')
   })
 
   test('at most 48 h out, refused: the card says it is not possible and why, and what was asked', () => {
     const model = withWhatIfs()
     const card = whatIfCard(model.options!.items[3]!, model, contextOf(model))
     expect(card.question).toBe(`Asked: every hard rule of the plan, and ${cool.label} out for at most 48 h.`)
-    const text = readableText(renderHtml(WhatIfCard, { card, onSelect: none }))
+    const text = readableText(renderHtml(WhatIfCard, { card, context: contextOf(model), onSelect: none, onWhy: none }))
     expect(text).toContain('✕ proven infeasible')
     expect(text).toContain('No plan can keep every hard rule. The proof:')
+    expect(text).toContain('Why not possible')
   })
 
   test('the panel shows the cards under the question; before the solver builds it, a what-if is "not available yet"', () => {

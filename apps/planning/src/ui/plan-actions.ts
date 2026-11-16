@@ -198,6 +198,11 @@ export const createPlanActions = (client: PlanningClient, planId: string, progre
      * the option named.
      */
     whyRecommended: async (against: string | null): Promise<ExplainResult> => client.explain(planId, { ask: 'recommended', ...(against === null ? {} : { option: against }) }),
+    /**
+     * "Why not possible": a refusal's full chain, the path, later start and energy proof the compact item does
+     * not carry, as explain refusal words it from storage, for a fresh option or one made before the latest change.
+     */
+    whyNotPossible: async (option: string): Promise<readonly string[]> => (await client.explain(planId, { ask: 'refusal', option })).lines,
     /** What differs between an option and an option of the set made before the latest change. */
     versus: async (option: string, previous: string, cursor: string | null = null): Promise<ExplainResult> => client.explain(planId, { ask: 'versus', option, versus: { previous }, ...(cursor === null ? {} : { cursor }) }),
     /**

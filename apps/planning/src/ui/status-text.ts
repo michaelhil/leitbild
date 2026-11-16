@@ -2,7 +2,7 @@
 // exactly the status schema's; everything around them explains what they cover.
 import type { Certificate, GoalWord, PlanInputs, StatusWord } from '../plan/schema.ts'
 import { hoursNumber, hoursText, quantityText, type Mark, type TimeFormat } from './format.ts'
-import { joinWords, type Goal, type Names, type Status } from './model.ts'
+import { joinWords, type Goal, type ItemStatus, type Names, type Status } from './model.ts'
 
 export const statusMark = (word: StatusWord): Mark => ({
   'validated feasible': { shape: '✓', word },
@@ -228,7 +228,7 @@ export const stopWords = (run: Extract<Status, { run: unknown }>['run']): string
   return `, ${why}`
 }
 /** One line on how the search ended: it ran to the end, or it stopped early and why. Said once, apart from the goals. */
-const runText = (status: Extract<Status, { run: unknown }>): string => {
+const runText = (status: Extract<Status | ItemStatus, { run: unknown }>): string => {
   const stop = stopWords(status.run)
   return stop === null ? 'The search ran to the end.' : `The search stopped early${stop}.`
 }
@@ -252,7 +252,7 @@ export const boundWords = (goal: Goal, bound: number, unit: string): string => {
 /** "0 h, proven optimal", or "NOK 472,650, best found; no plan can cost less than NOK 340,000". */
 export const goalResult = (goal: GoalLine): string => `${goal.value}, ${goal.mark.word}${goal.distance === '' ? '' : `; ${goal.distance}`}`
 
-export const statusView = (status: Status, context: Context): StatusView => {
+export const statusView = (status: Status | ItemStatus, context: Context): StatusView => {
   const mark = statusMark(status.word)
   switch (status.word) {
     case 'validated feasible': {

@@ -8,7 +8,7 @@ import { laneKCheck, laneKJudgeRetimed, laneKVerify, laneKVerifyBound } from '..
 import { trainAInputs } from '../solve/fixtures/train-a-case.ts'
 import { searchEngine } from '../solve/search.ts'
 import { pessimisticCard } from './attention.ts'
-import { identifiers } from './fixtures/plans.ts'
+import { identifiers, itemOf } from './fixtures/plans.ts'
 import { routineBreaches } from './fixtures/svelte-ssr.ts'
 import { createTimeFormat } from './format.ts'
 import { createNames, type OptionView } from './model.ts'
@@ -18,7 +18,7 @@ const deps: GenerateDeps = { engine: searchEngine(), check: laneKCheck, verify: 
 const flagship = trainAInputs({ read: true })
 const solve = async (inputs: PlanInputs, option: 'swap' | 'rebuild') => (await generate(deps, { inputs, revision: 1, previous: null, input: { variants: [{ label: option, methods: [{ choice: 'SWA-method', option }] }] }, by: { kind: 'service', name: 'test' }, signal: new AbortController().signal, seed: 1, evals: 600 })).optionSet.options[0]!
 const contextOf = (inputs: PlanInputs): Context => ({ inputs, names: createNames(inputs), format: createTimeFormat(inputs.settings.timeZone) })
-const viewOf = (stored: Awaited<ReturnType<typeof solve>>, label: string): OptionView => ({ key: stored.key, label, variant: stored.variant, status: stored.status, metrics: stored.metrics, inputsRevision: 1, fresh: true, warnings: [], ...(stored.robust === undefined ? {} : { robust: stored.robust }) })
+const viewOf = (stored: Awaited<ReturnType<typeof solve>>, label: string): OptionView => ({ key: stored.key, label, variant: stored.variant, status: itemOf(stored.status), metrics: stored.metrics, inputsRevision: 1, fresh: true, warnings: [], ...(stored.robust === undefined ? {} : { robust: stored.robust }) })
 const lines = (card: ReturnType<typeof pessimisticCard>) => card === null ? [] : [card.title, card.text, ...card.steps]
 const title = (inputs: PlanInputs, key: string) => inputs.jobs.find(job => job.key === key)!.title
 

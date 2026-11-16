@@ -1,11 +1,11 @@
 // What the screen holds about one plan, assembled from planning.plan.read sections (read-plan.ts).
 // Presenters read only this; they never fetch.
 import type { z } from 'zod'
-import type { OptionWarning, writeResultSchema } from '../api/contract.ts'
+import type { ItemStatus, OptionWarning, writeResultSchema } from '../api/contract.ts'
 import type { Edit } from '../plan/edit-schema.ts'
 import type { CertifiedSize, Plan, PlanInputs, RobustField, Status, optionSchema } from '../plan/schema.ts'
 
-export type { Status }
+export type { ItemStatus, Status }
 export type StoredOption = z.infer<typeof optionSchema>
 export type DatedRow = StoredOption['rows'][number]
 export type Rule = PlanInputs['rules'][number]
@@ -23,7 +23,7 @@ export interface OptionView {
   readonly key: string
   readonly label: string
   readonly variant: StoredOption['variant']
-  readonly status: Status
+  readonly status: ItemStatus
   readonly metrics: StoredOption['metrics']
   readonly inputsRevision: number
   readonly fresh: boolean

@@ -5,7 +5,7 @@ import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import type { Component } from 'svelte'
 import { createPlanningClient } from './api.ts'
-import { modelOf, optionOf, runBasis, status, trainACaseInputs } from './fixtures/plans.ts'
+import { itemOf, modelOf, optionOf, runBasis, status, trainACaseInputs } from './fixtures/plans.ts'
 import { readableText, registerSvelte, renderHtml } from './fixtures/svelte-ssr.ts'
 import { createTimeFormat } from './format.ts'
 import { createNames, type OptionView, type PlanModel } from './model.ts'
@@ -26,7 +26,7 @@ const grid = inputs.settings.grid
 const method = inputs.methods[0]!
 const picks = (option: string) => [{ choice: method.key, option }]
 const label = (option: string) => method.options.find(entry => entry.key === option)!.label
-const feasible = (goals: unknown[]) => status({ word: 'validated feasible', run: runBasis(grid), goals })
+const feasible = (goals: unknown[]) => itemOf(status({ word: 'validated feasible', run: runBasis(grid), goals }))
 const plain = (key: string, option: string, extra: Partial<OptionView> = {}) => optionOf(key, label(option), feasible([]), { variant: { methods: picks(option), purchases: [] }, ...extra })
 const none = () => {}
 

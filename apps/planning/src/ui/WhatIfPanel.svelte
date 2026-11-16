@@ -1,19 +1,19 @@
 <script lang="ts">
   import Choice from './Choice.svelte'
   import type { NameKind } from './explain-text.ts'
-  import type { RefusalProof } from './outcome.ts'
   import type { Context } from './status-text.ts'
   import WhatIfCard from './WhatIfCard.svelte'
   import { whatIfChoices, whatIfKeepRule, whatIfVariant, type WhatIfAsk, type WhatIfCardView, type WhatIfKind, type WhatIfVariant } from './what-if.ts'
+  import type { Answer } from './why-text.ts'
 
   // Ask a what-if, beside the timeline: one question at a time, sent as one Generate request kept beside the
   // plan's own options. The answers are cards under the question, newest first; none is a row of the options
   // table. A part of Planning not built yet is said as "not available yet", never as a fault.
-  let { context, cards, proofs = {}, kind: initialKind = null, selected = null, busy = false, asking = false, missing = null, onAsk, onSelect, onPick, onClose }: {
+  let { context, cards, why = {}, kind: initialKind = null, selected = null, busy = false, asking = false, missing = null, onAsk, onSelect, onWhy, onPick, onClose }: {
     context: Context
     cards: readonly WhatIfCardView[]
-    /** Each refused what-if's proof, from the Module's refusal. */
-    proofs?: Readonly<Record<string, RefusalProof | null>>
+    /** Each refused what-if's "Why not possible", once asked: the full chain from explain refusal. */
+    why?: Readonly<Record<string, Answer<readonly string[]>>>
     /** The kind to start on, e.g. "at most … h out" when the ladder pointed here. */
     kind?: WhatIfKind | null
     selected?: string | null
@@ -23,6 +23,7 @@
     missing?: string | null
     onAsk: (label: string, variant: WhatIfVariant) => void
     onSelect: (option: string) => void
+    onWhy?: ((option: string) => void) | undefined
     onPick?: ((kind: NameKind, key: string) => void) | undefined
     onClose: () => void
   } = $props()
@@ -77,7 +78,7 @@
     <h3>What-ifs asked</h3>
     <div class="what-if-cards">
       {#each cards as card (card.key)}
-        <WhatIfCard {card} proof={proofs[card.key] ?? null} selected={card.key === selected} {busy} {onSelect} {onPick} />
+        <WhatIfCard {card} {context} why={why[card.key] ?? null} selected={card.key === selected} {busy} {onSelect} {onWhy} {onPick} />
       {/each}
     </div>
   {/if}
