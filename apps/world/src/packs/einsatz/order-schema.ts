@@ -51,17 +51,14 @@ export const unitUndoInputSchema = z.object({
   unitId: idSchema.describe('The unit whose last order is taken back.'),
   commandId: commandIdSchema.describe('The commandId the accepted order answered with; it must be the unit\'s latest order, else refused newer_order_exists.'),
 }).strict().describe('Undo one order of one unit.')
-export type UnitUndoInput = z.output<typeof unitUndoInputSchema>
 
 /** Remove one stop of a unit's plan; an unknown stop is refused `step_not_found`. */
 export const unitStopRemoveInputSchema = z.object({
   unitId: idSchema.describe('The unit whose plan holds the stop.'),
   stopId: idSchema.describe('The stop id, as world.einsatz.situation lists it in the unit\'s plan.'),
 }).strict().describe('Remove one stop from a unit\'s plan.')
-export type UnitStopRemoveInput = z.output<typeof unitStopRemoveInputSchema>
 
 /** Empty a unit's plan, releasing it from its task, and send it back to base; a unit carrying load is refused `unit_loaded`. */
 export const unitRecallInputSchema = z.object({
   unitId: idSchema.describe('The unit to bring back to base.'),
 }).strict().describe('Return a unit to base.')
-export type UnitRecallInput = z.output<typeof unitRecallInputSchema>

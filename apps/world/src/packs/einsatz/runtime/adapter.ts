@@ -40,7 +40,7 @@ type QueryId = typeof einsatzQueryIds[keyof typeof einsatzQueryIds]
 
 /** A restored Run whose saved Einsatz state this runtime does not read: refused, never migrated. */
 const savedStateInvalid = (error: unknown): Error =>
-  new Error(refusal('einsatz_saved_state_invalid', `This Run's saved Einsatz state is of an older shape and cannot be restored; start a new Run (${error instanceof Error ? error.message.slice(0, 300) : String(error)})`))
+  new Error(refusal('einsatz_saved_state_invalid', `This runtime cannot read this Run's saved Einsatz state, so the Run cannot be restored; start a new Run (${error instanceof Error ? error.message.slice(0, 300) : String(error)})`))
 
 /** Wall-time cadence at which positions follow the Run clock between explicit advances. */
 const tickIntervalMs = 1_000
@@ -101,7 +101,7 @@ const connectEinsatz = async (config: PackRuntimeConnectionConfig, routing: Rout
   try {
     current = readState()
   } catch (error) {
-    // A restored Run whose Einsatz records this runtime does not read is an Einsatz Run of an older shape: it is refused, never migrated.
+    // A restored Run whose Einsatz records this runtime does not read is refused, never migrated.
     if (config.initialObjects !== undefined) throw savedStateInvalid(error)
     throw error
   }
@@ -124,8 +124,10 @@ const connectEinsatz = async (config: PackRuntimeConnectionConfig, routing: Rout
     if (closed || health.state === 'failed') return
     health = { ...health, state, failureCount: health.failureCount + 1, lastFailure: { at: nowIso(), operation, message: message(error) } }
   }
+  /** Set while the last road-weather read failed: health stays degraded until a Weather read succeeds. */
+  let weatherFailing = false
   const succeeded = (): void => {
-    health = { ...health, ...(health.state === 'degraded' ? { state: 'ready' as const } : {}), lastSuccessfulInteractionAt: nowIso() }
+    health = { ...health, ...(health.state === 'degraded' && !weatherFailing ? { state: 'ready' as const } : {}), lastSuccessfulInteractionAt: nowIso() }
   }
 
   const savedState = (): SavedState => ({ revision, config: current.catalog.config, serials, engine: runtimeStateOf(current) })
@@ -236,12 +238,16 @@ const connectEinsatz = async (config: PackRuntimeConnectionConfig, routing: Rout
   /**
    * The state with each road unit's road weather read now, when the Run has
    * the Weather Pack. A failed Weather read is no engine fault: the units
-   * keep the pace last read, and runtime health records the failure.
+   * keep the pace last read, and runtime health stays degraded until a
+   * Weather read succeeds again.
    */
   const weathered = async (state: EngineState): Promise<EngineState> => {
     try {
-      return await withRoadWeather(state, config.queries)
+      const read = await withRoadWeather(state, config.queries)
+      weatherFailing = false
+      return read
     } catch (error) {
+      weatherFailing = true
       fault('road-weather', error, 'degraded')
       return state
     }

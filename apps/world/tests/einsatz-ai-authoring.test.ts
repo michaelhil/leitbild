@@ -82,6 +82,11 @@ describe('an AI agent adds an asset type by configuration and dispatches it', ()
     const described = await ai('world.scenario-authoring.describe', { detail: 'authoring', packIds: ['einsatz'] })
     expect(described.status).toBe(200)
     expect(JSON.stringify(described.body.result.packs[0])).toContain('priorities')
+    // What it reads keeps its own Run open to it (probe 5c) and names where icon ids come from.
+    for (const words of ['declares no roles or sides', 'declaring roles makes the Run refuse AI', 'world.map.symbols']) expect(described.body.result.packs[0].description).toContain(words)
+    const controllerOnly = (described.body.result.commands as ReadonlyArray<{ readonly id: string; readonly description: string }>).filter(command => command.description.includes('controller only'))
+    expect(controllerOnly.map(command => [command.id, command.description.startsWith('In a Run that declares roles: controller only.')])).toEqual(
+      ['world.einsatz.task.create', 'world.einsatz.unit.create', 'world.einsatz.unit.adjust'].map(id => [id, true]))
     const created = await ai('world.scenario.create', { source: harbourRescue })
     expect(created.status).toBe(201)
     const started = await ai('world.scenario.start', {}, { definition: created.body.result.definition })

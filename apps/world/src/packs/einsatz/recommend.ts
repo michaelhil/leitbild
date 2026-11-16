@@ -72,12 +72,12 @@ const compareSets = (a: ReadonlyArray<Candidate>, b: ReadonlyArray<Candidate>): 
 const byEta = (a: Candidate, b: Candidate): number => etaSeconds(a.eta) - etaSeconds(b.eta) || byId(a.unit, b.unit)
 
 /**
- * The smallest set of candidates that, beside `base`, serves the task for the
+ * The smallest set of candidates that serves the task for the
  * caller's units, by fit then ETA. Candidates are grouped by how they fill
  * the task and taken nearest first within a group; sizes are tried from the
  * smallest up.
  */
-const smallestCover = (state: EngineState, task: TaskRecord, view: RoleView, base: ReadonlyArray<Candidate>, candidates: ReadonlyArray<Candidate>): ReadonlyArray<Candidate> | undefined => {
+const smallestCover = (state: EngineState, task: TaskRecord, view: RoleView, candidates: ReadonlyArray<Candidate>): ReadonlyArray<Candidate> | undefined => {
   const grouped = new Map<string, Candidate[]>()
   for (const entry of [...candidates].sort(byEta)) {
     const signature = fillSignature(state, task, entry.unit)
@@ -88,7 +88,7 @@ const smallestCover = (state: EngineState, task: TaskRecord, view: RoleView, bas
   const serves = (set: ReadonlyArray<Candidate>): boolean => {
     judged += 1
     if (judged > searchBudget) throw capabilityRejection('capability_work_limit', `${task.label} has too many unit combinations to recommend; send units directly`)
-    return !stillNeeds(state, task, view, [...base, ...set].map(entry => entry.unit))
+    return !stillNeeds(state, task, view, set.map(entry => entry.unit))
   }
   // Coverage only grows as units are added, so when all of them together do not serve, no subset does.
   if (!serves(candidates)) return undefined
@@ -111,13 +111,11 @@ const smallestCover = (state: EngineState, task: TaskRecord, view: RoleView, bas
 /**
  * Drops members that add nothing beside the rest, latest arrival first, so a
  * partial set fills as much as all of them with as few units as it can.
- * Members of `keep` stay.
  */
-const pruned = (state: EngineState, task: TaskRecord, set: ReadonlyArray<Candidate>, keep: ReadonlySet<string> = new Set()): ReadonlyArray<Candidate> => {
+const pruned = (state: EngineState, task: TaskRecord, set: ReadonlyArray<Candidate>): ReadonlyArray<Candidate> => {
   let current = [...set]
   const full = fillWith(state, task, current.map(entry => entry.unit))
   for (const entry of [...set].sort(byEta).reverse()) {
-    if (keep.has(entry.unit.id)) continue
     const without = current.filter(other => other !== entry)
     if (sameFill(fillWith(state, task, without.map(other => other.unit)), full)) current = without
   }
@@ -208,7 +206,7 @@ export const recommend = async (input: {
   const etas = await etasTo(state, units.free, task.point, input.routing)
   const free = units.free.map((unit): Candidate => ({ unit, eta: etas.get(unit.id)! }))
 
-  const proposal = smallestCover(state, task, view, [], free) ?? pruned(state, task, free)
+  const proposal = smallestCover(state, task, view, free) ?? pruned(state, task, free)
   const proposed = proposal.map(entry => entry.unit)
   const inProposal = new Set(proposed.map(unit => unit.id))
   const unitEta = (entry: Candidate) => ({ unitId: entry.unit.id, label: entry.unit.label, eta: entry.eta })

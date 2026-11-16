@@ -3,478 +3,103 @@
     {
       "name": "repeated ids in every id list, all reported at once",
       "config": {
-        "hostility": {
-          "a": [
-            "b",
-            "b"
-          ]
-        },
+        "hostility": { "a": ["b", "b"] },
         "loadClasses": [
-          {
-            "id": "L1",
-            "label": "First",
-            "code": "A",
-            "noun": {
-              "one": "item",
-              "other": "items"
-            }
-          },
-          {
-            "id": "L1",
-            "label": "Again",
-            "code": "B",
-            "noun": {
-              "one": "item",
-              "other": "items"
-            }
-          }
+          { "id": "L1", "label": "First", "code": "A", "noun": { "one": "item", "other": "items" } },
+          { "id": "L1", "label": "Again", "code": "B", "noun": { "one": "item", "other": "items" } }
         ],
         "unitTypes": [
           {
-            "id": "mover",
-            "label": "Mover",
-            "icon": "circle",
-            "tags": [
-              "x",
-              "x"
-            ],
+            "id": "mover", "label": "Mover", "icon": "circle", "tags": ["x", "x"],
             "components": {
-              "mobility": {
-                "mode": "road"
-              },
-              "service": {
-                "provides": [
-                  "help",
-                  "help"
-                ],
-                "onSceneS": 60
-              },
-              "carry": {
-                "capacity": 1,
-                "classes": [
-                  "L1",
-                  "L1"
-                ]
-              }
+              "mobility": { "mode": "road" },
+              "service": { "provides": ["help", "help"], "onSceneS": 60 },
+              "carry": { "capacity": 1, "classes": ["L1", "L1"] }
             },
             "properties": [
-              {
-                "id": "p",
-                "label": "P",
-                "kind": "boolean",
-                "default": false
-              },
-              {
-                "id": "p",
-                "label": "P again",
-                "kind": "boolean",
-                "default": true
-              }
+              { "id": "p", "label": "P", "kind": "boolean", "default": false },
+              { "id": "p", "label": "P again", "kind": "boolean", "default": true }
             ]
           },
+          { "id": "mover", "label": "Mover again", "icon": "circle", "components": { "mobility": { "mode": "direct", "speedMps": 10 } } },
           {
-            "id": "mover",
-            "label": "Mover again",
-            "icon": "circle",
-            "components": {
-              "mobility": {
-                "mode": "direct",
-                "speedMps": 10
-              }
-            }
+            "id": "site", "label": "Site", "icon": "circle",
+            "components": { "receiving": { "accepts": ["L1", "L1"], "slots": 1, "handoverS": 0, "accepting": true } }
           },
           {
-            "id": "site",
-            "label": "Site",
-            "icon": "circle",
-            "components": {
-              "receiving": {
-                "accepts": [
-                  "L1",
-                  "L1"
-                ],
-                "slots": 1,
-                "handoverS": 0,
-                "accepting": true
-              }
-            }
-          },
-          {
-            "id": "emitter",
-            "label": "Emitter",
-            "icon": "circle",
-            "tags": [
-              "t"
-            ],
-            "components": {
-              "effector": {
-                "rangeM": 100,
-                "targets": [
-                  "t",
-                  "t"
-                ]
-              }
-            },
-            "standingOrders": {
-              "roe": "hold"
-            },
-            "properties": [
-              {
-                "id": "e",
-                "label": "E",
-                "kind": "enum",
-                "values": [
-                  {
-                    "id": "a",
-                    "label": "A"
-                  },
-                  {
-                    "id": "a",
-                    "label": "A again"
-                  }
-                ],
-                "default": "a"
-              }
-            ]
+            "id": "emitter", "label": "Emitter", "icon": "circle", "tags": ["t"],
+            "components": { "effector": { "rangeM": 100, "targets": ["t", "t"] } },
+            "standingOrders": { "roe": "hold" },
+            "properties": [{ "id": "e", "label": "E", "kind": "enum", "values": [{ "id": "a", "label": "A" }, { "id": "a", "label": "A again" }], "default": "a" }]
           }
         ],
         "taskTemplates": [
           {
-            "id": "job",
-            "label": "Job",
-            "icon": "flag",
+            "id": "job", "label": "Job", "icon": "flag",
             "requires": [
-              {
-                "provides": "help",
-                "count": 1,
-                "label": {
-                  "one": "helper",
-                  "other": "helpers"
-                }
-              },
-              {
-                "provides": "help",
-                "count": 2,
-                "label": {
-                  "one": "helper",
-                  "other": "helpers"
-                }
-              }
+              { "provides": "help", "count": 1, "label": { "one": "helper", "other": "helpers" } },
+              { "provides": "help", "count": 2, "label": { "one": "helper", "other": "helpers" } }
             ]
           },
-          {
-            "id": "job",
-            "label": "Job again",
-            "icon": "flag"
-          }
+          { "id": "job", "label": "Job again", "icon": "flag" }
         ],
-        "priorities": [
-          {
-            "id": "routine",
-            "label": "Routine",
-            "code": "R"
-          }
-        ]
+        "priorities": [{ "id": "routine", "label": "Routine", "code": "R" }]
       },
       "issues": [
-        {
-          "code": "duplicate_id",
-          "path": [
-            "hostility",
-            "a",
-            1
-          ]
-        },
-        {
-          "code": "duplicate_id",
-          "path": [
-            "loadClasses",
-            1,
-            "id"
-          ]
-        },
-        {
-          "code": "duplicate_id",
-          "path": [
-            "unitTypes",
-            0,
-            "tags",
-            1
-          ]
-        },
-        {
-          "code": "duplicate_id",
-          "path": [
-            "unitTypes",
-            0,
-            "components",
-            "service",
-            "provides",
-            1
-          ]
-        },
-        {
-          "code": "duplicate_id",
-          "path": [
-            "unitTypes",
-            0,
-            "components",
-            "carry",
-            "classes",
-            1
-          ]
-        },
-        {
-          "code": "duplicate_id",
-          "path": [
-            "unitTypes",
-            0,
-            "properties",
-            1,
-            "id"
-          ]
-        },
-        {
-          "code": "duplicate_id",
-          "path": [
-            "unitTypes",
-            1,
-            "id"
-          ]
-        },
-        {
-          "code": "duplicate_id",
-          "path": [
-            "unitTypes",
-            2,
-            "components",
-            "receiving",
-            "accepts",
-            1
-          ]
-        },
-        {
-          "code": "duplicate_id",
-          "path": [
-            "unitTypes",
-            3,
-            "components",
-            "effector",
-            "targets",
-            1
-          ]
-        },
-        {
-          "code": "duplicate_id",
-          "path": [
-            "unitTypes",
-            3,
-            "properties",
-            0,
-            "values",
-            1,
-            "id"
-          ]
-        },
-        {
-          "code": "duplicate_id",
-          "path": [
-            "taskTemplates",
-            0,
-            "requires",
-            1,
-            "provides"
-          ]
-        },
-        {
-          "code": "duplicate_id",
-          "path": [
-            "taskTemplates",
-            1,
-            "id"
-          ]
-        }
+        { "code": "duplicate_id", "path": ["hostility", "a", 1] },
+        { "code": "duplicate_id", "path": ["loadClasses", 1, "id"] },
+        { "code": "duplicate_id", "path": ["unitTypes", 0, "tags", 1] },
+        { "code": "duplicate_id", "path": ["unitTypes", 0, "components", "service", "provides", 1] },
+        { "code": "duplicate_id", "path": ["unitTypes", 0, "components", "carry", "classes", 1] },
+        { "code": "duplicate_id", "path": ["unitTypes", 0, "properties", 1, "id"] },
+        { "code": "duplicate_id", "path": ["unitTypes", 1, "id"] },
+        { "code": "duplicate_id", "path": ["unitTypes", 2, "components", "receiving", "accepts", 1] },
+        { "code": "duplicate_id", "path": ["unitTypes", 3, "components", "effector", "targets", 1] },
+        { "code": "duplicate_id", "path": ["unitTypes", 3, "properties", 0, "values", 1, "id"] },
+        { "code": "duplicate_id", "path": ["taskTemplates", 0, "requires", 1, "provides"] },
+        { "code": "duplicate_id", "path": ["taskTemplates", 1, "id"] }
       ]
     },
     {
       "name": "repeated load class code",
       "config": {
         "loadClasses": [
-          {
-            "id": "L1",
-            "label": "First",
-            "code": "A",
-            "noun": {
-              "one": "item",
-              "other": "items"
-            }
-          },
-          {
-            "id": "L2",
-            "label": "Second",
-            "code": "A",
-            "noun": {
-              "one": "item",
-              "other": "items"
-            }
-          }
+          { "id": "L1", "label": "First", "code": "A", "noun": { "one": "item", "other": "items" } },
+          { "id": "L2", "label": "Second", "code": "A", "noun": { "one": "item", "other": "items" } }
         ]
       },
-      "issues": [
-        {
-          "code": "duplicate_code",
-          "path": [
-            "loadClasses",
-            1,
-            "code"
-          ]
-        }
-      ]
+      "issues": [{ "code": "duplicate_code", "path": ["loadClasses", 1, "code"] }]
     },
     {
       "name": "references to undeclared load classes, tags, priorities and task templates",
       "config": {
-        "loadClasses": [
-          {
-            "id": "L1",
-            "label": "First",
-            "code": "A",
-            "noun": {
-              "one": "item",
-              "other": "items"
-            }
-          }
-        ],
+        "loadClasses": [{ "id": "L1", "label": "First", "code": "A", "noun": { "one": "item", "other": "items" } }],
         "unitTypes": [
           {
-            "id": "mover",
-            "label": "Mover",
-            "icon": "circle",
+            "id": "mover", "label": "Mover", "icon": "circle",
             "components": {
-              "mobility": {
-                "mode": "road"
-              },
-              "carry": {
-                "capacity": 1,
-                "classes": [
-                  "L9"
-                ]
-              },
-              "effector": {
-                "rangeM": 100,
-                "targets": [
-                  "ghost"
-                ]
-              },
-              "durability": {
-                "stepFireS": 10
-              }
+              "mobility": { "mode": "road" },
+              "carry": { "capacity": 1, "classes": ["L9"] },
+              "effector": { "rangeM": 100, "targets": ["ghost"] },
+              "durability": { "stepFireS": 10 }
             },
-            "standingOrders": {
-              "roe": "hold",
-              "onStepLost": {
-                "createTask": "nothing",
-                "perStep": {
-                  "L8": 1
-                }
-              }
-            }
+            "standingOrders": { "roe": "hold", "onStepLost": { "createTask": "nothing", "perStep": { "L8": 1 } } }
           },
           {
-            "id": "site",
-            "label": "Site",
-            "icon": "circle",
-            "components": {
-              "receiving": {
-                "accepts": [
-                  "L7"
-                ],
-                "slots": 1,
-                "handoverS": 0,
-                "accepting": true
-              }
-            }
+            "id": "site", "label": "Site", "icon": "circle",
+            "components": { "receiving": { "accepts": ["L7"], "slots": 1, "handoverS": 0, "accepting": true } }
           }
         ],
-        "taskTemplates": [
-          {
-            "id": "job",
-            "label": "Job",
-            "icon": "flag",
-            "priority": "X6"
-          }
-        ],
-        "priorities": [
-          {
-            "id": "routine",
-            "label": "Routine",
-            "code": "R"
-          }
-        ]
+        "taskTemplates": [{ "id": "job", "label": "Job", "icon": "flag", "priority": "X6" }],
+        "priorities": [{ "id": "routine", "label": "Routine", "code": "R" }]
       },
       "issues": [
-        {
-          "code": "unknown_load_class",
-          "path": [
-            "unitTypes",
-            0,
-            "components",
-            "carry",
-            "classes",
-            0
-          ]
-        },
-        {
-          "code": "unknown_tag",
-          "path": [
-            "unitTypes",
-            0,
-            "components",
-            "effector",
-            "targets",
-            0
-          ]
-        },
-        {
-          "code": "unknown_task_template",
-          "path": [
-            "unitTypes",
-            0,
-            "standingOrders",
-            "onStepLost",
-            "createTask"
-          ]
-        },
-        {
-          "code": "unknown_load_class",
-          "path": [
-            "unitTypes",
-            0,
-            "standingOrders",
-            "onStepLost",
-            "perStep",
-            "L8"
-          ]
-        },
-        {
-          "code": "unknown_load_class",
-          "path": [
-            "unitTypes",
-            1,
-            "components",
-            "receiving",
-            "accepts",
-            0
-          ]
-        },
-        {
-          "code": "unknown_priority",
-          "path": [
-            "taskTemplates",
-            0,
-            "priority"
-          ]
-        }
+        { "code": "unknown_load_class", "path": ["unitTypes", 0, "components", "carry", "classes", 0] },
+        { "code": "unknown_tag", "path": ["unitTypes", 0, "components", "effector", "targets", 0] },
+        { "code": "unknown_task_template", "path": ["unitTypes", 0, "standingOrders", "onStepLost", "createTask"] },
+        { "code": "unknown_load_class", "path": ["unitTypes", 0, "standingOrders", "onStepLost", "perStep", "L8"] },
+        { "code": "unknown_load_class", "path": ["unitTypes", 1, "components", "receiving", "accepts", 0] },
+        { "code": "unknown_priority", "path": ["taskTemplates", 0, "priority"] }
       ]
     },
     {
@@ -482,251 +107,52 @@
       "config": {
         "unitTypes": [
           {
-            "id": "mover",
-            "label": "Mover",
-            "icon": "circle",
-            "components": {
-              "mobility": {
-                "mode": "road"
-              },
-              "service": {
-                "provides": [
-                  "help"
-                ],
-                "onSceneS": 60
-              }
-            },
+            "id": "mover", "label": "Mover", "icon": "circle",
+            "components": { "mobility": { "mode": "road" }, "service": { "provides": ["help"], "onSceneS": 60 } },
             "properties": [
-              {
-                "id": "load",
-                "label": "Load",
-                "kind": "number",
-                "unit": "kg",
-                "min": 0,
-                "max": 1000,
-                "default": 100
-              },
-              {
-                "id": "lift",
-                "label": "Lift",
-                "kind": "boolean",
-                "default": false
-              },
-              {
-                "id": "grade",
-                "label": "Grade",
-                "kind": "enum",
-                "values": [
-                  {
-                    "id": "low",
-                    "label": "Low"
-                  },
-                  {
-                    "id": "high",
-                    "label": "High"
-                  }
-                ],
-                "default": "low"
-              }
+              { "id": "load", "label": "Load", "kind": "number", "unit": "kg", "min": 0, "max": 1000, "default": 100 },
+              { "id": "lift", "label": "Lift", "kind": "boolean", "default": false },
+              { "id": "grade", "label": "Grade", "kind": "enum", "values": [{ "id": "low", "label": "Low" }, { "id": "high", "label": "High" }], "default": "low" }
             ]
           },
           {
-            "id": "bystander",
-            "label": "Bystander",
-            "icon": "circle",
-            "components": {
-              "mobility": {
-                "mode": "direct",
-                "speedMps": 10
-              }
-            },
-            "properties": [
-              {
-                "id": "reach",
-                "label": "Reach",
-                "kind": "number",
-                "default": 1
-              }
-            ]
+            "id": "bystander", "label": "Bystander", "icon": "circle", "components": { "mobility": { "mode": "direct", "speedMps": 10 } },
+            "properties": [{ "id": "reach", "label": "Reach", "kind": "number", "default": 1 }]
           }
         ],
         "taskTemplates": [
           {
-            "id": "job",
-            "label": "Job",
-            "icon": "flag",
+            "id": "job", "label": "Job", "icon": "flag",
             "requires": [
+              { "provides": "nobody", "count": 1, "label": { "one": "x", "other": "xs" }, "where": [{ "property": "load", "atLeast": 1 }] },
               {
-                "provides": "nobody",
-                "count": 1,
-                "label": {
-                  "one": "x",
-                  "other": "xs"
-                },
+                "provides": "help", "count": 1, "label": { "one": "helper", "other": "helpers" },
                 "where": [
-                  {
-                    "property": "load",
-                    "atLeast": 1
-                  }
-                ]
-              },
-              {
-                "provides": "help",
-                "count": 1,
-                "label": {
-                  "one": "helper",
-                  "other": "helpers"
-                },
-                "where": [
-                  {
-                    "property": "reach",
-                    "atLeast": 1
-                  },
-                  {
-                    "property": "lift",
-                    "atLeast": 1
-                  },
-                  {
-                    "property": "load",
-                    "equals": true
-                  },
-                  {
-                    "property": "grade",
-                    "equals": true
-                  },
-                  {
-                    "property": "load",
-                    "atLeast": 1001
-                  },
-                  {
-                    "property": "load",
-                    "atMost": -1
-                  },
-                  {
-                    "property": "load",
-                    "atLeast": 600,
-                    "atMost": 400
-                  },
-                  {
-                    "property": "grade",
-                    "equals": "top"
-                  }
+                  { "property": "reach", "atLeast": 1 },
+                  { "property": "lift", "atLeast": 1 },
+                  { "property": "load", "equals": true },
+                  { "property": "grade", "equals": true },
+                  { "property": "load", "atLeast": 1001 },
+                  { "property": "load", "atMost": -1 },
+                  { "property": "load", "atLeast": 600, "atMost": 400 },
+                  { "property": "grade", "equals": "top" }
                 ]
               }
             ]
           }
         ],
-        "priorities": [
-          {
-            "id": "routine",
-            "label": "Routine",
-            "code": "R"
-          }
-        ]
+        "priorities": [{ "id": "routine", "label": "Routine", "code": "R" }]
       },
       "issues": [
-        {
-          "code": "unknown_service",
-          "path": [
-            "taskTemplates",
-            0,
-            "requires",
-            0,
-            "provides"
-          ]
-        },
-        {
-          "code": "unknown_property",
-          "path": [
-            "taskTemplates",
-            0,
-            "requires",
-            1,
-            "where",
-            0,
-            "property"
-          ]
-        },
-        {
-          "code": "property_kind_mismatch",
-          "path": [
-            "taskTemplates",
-            0,
-            "requires",
-            1,
-            "where",
-            1
-          ]
-        },
-        {
-          "code": "property_kind_mismatch",
-          "path": [
-            "taskTemplates",
-            0,
-            "requires",
-            1,
-            "where",
-            2
-          ]
-        },
-        {
-          "code": "property_kind_mismatch",
-          "path": [
-            "taskTemplates",
-            0,
-            "requires",
-            1,
-            "where",
-            3
-          ]
-        },
-        {
-          "code": "condition_out_of_range",
-          "path": [
-            "taskTemplates",
-            0,
-            "requires",
-            1,
-            "where",
-            4,
-            "atLeast"
-          ]
-        },
-        {
-          "code": "condition_out_of_range",
-          "path": [
-            "taskTemplates",
-            0,
-            "requires",
-            1,
-            "where",
-            5,
-            "atMost"
-          ]
-        },
-        {
-          "code": "invalid_range",
-          "path": [
-            "taskTemplates",
-            0,
-            "requires",
-            1,
-            "where",
-            6
-          ]
-        },
-        {
-          "code": "unknown_enum_value",
-          "path": [
-            "taskTemplates",
-            0,
-            "requires",
-            1,
-            "where",
-            7,
-            "equals"
-          ]
-        }
+        { "code": "unknown_service", "path": ["taskTemplates", 0, "requires", 0, "provides"] },
+        { "code": "unknown_property", "path": ["taskTemplates", 0, "requires", 1, "where", 0, "property"] },
+        { "code": "property_kind_mismatch", "path": ["taskTemplates", 0, "requires", 1, "where", 1] },
+        { "code": "property_kind_mismatch", "path": ["taskTemplates", 0, "requires", 1, "where", 2] },
+        { "code": "property_kind_mismatch", "path": ["taskTemplates", 0, "requires", 1, "where", 3] },
+        { "code": "condition_out_of_range", "path": ["taskTemplates", 0, "requires", 1, "where", 4, "atLeast"] },
+        { "code": "condition_out_of_range", "path": ["taskTemplates", 0, "requires", 1, "where", 5, "atMost"] },
+        { "code": "invalid_range", "path": ["taskTemplates", 0, "requires", 1, "where", 6] },
+        { "code": "unknown_enum_value", "path": ["taskTemplates", 0, "requires", 1, "where", 7, "equals"] }
       ]
     },
     {
@@ -734,125 +160,25 @@
       "config": {
         "unitTypes": [
           {
-            "id": "holder",
-            "label": "Holder",
-            "icon": "circle",
-            "components": {
-              "mobility": {
-                "mode": "direct",
-                "speedMps": 10
-              }
-            },
+            "id": "holder", "label": "Holder", "icon": "circle", "components": { "mobility": { "mode": "direct", "speedMps": 10 } },
             "properties": [
-              {
-                "id": "a",
-                "label": "A",
-                "kind": "number",
-                "min": 10,
-                "max": 0,
-                "default": 5
-              },
-              {
-                "id": "b",
-                "label": "B",
-                "kind": "number",
-                "min": 0,
-                "max": 10,
-                "default": 11
-              },
-              {
-                "id": "c",
-                "label": "C",
-                "kind": "number",
-                "min": 5,
-                "default": 1
-              },
-              {
-                "id": "d",
-                "label": "D",
-                "kind": "enum",
-                "values": [
-                  {
-                    "id": "x",
-                    "label": "X"
-                  }
-                ],
-                "default": "y"
-              },
-              {
-                "id": "e",
-                "label": "E",
-                "kind": "boolean",
-                "default": true,
-                "show": true
-              },
-              {
-                "id": "f",
-                "label": "F",
-                "kind": "boolean",
-                "default": true,
-                "show": true
-              },
-              {
-                "id": "g",
-                "label": "G",
-                "kind": "boolean",
-                "default": true,
-                "show": true
-              }
+              { "id": "a", "label": "A", "kind": "number", "min": 10, "max": 0, "default": 5 },
+              { "id": "b", "label": "B", "kind": "number", "min": 0, "max": 10, "default": 11 },
+              { "id": "c", "label": "C", "kind": "number", "min": 5, "default": 1 },
+              { "id": "d", "label": "D", "kind": "enum", "values": [{ "id": "x", "label": "X" }], "default": "y" },
+              { "id": "e", "label": "E", "kind": "boolean", "default": true, "show": true },
+              { "id": "f", "label": "F", "kind": "boolean", "default": true, "show": true },
+              { "id": "g", "label": "G", "kind": "boolean", "default": true, "show": true }
             ]
           }
         ]
       },
       "issues": [
-        {
-          "code": "too_many_shown_properties",
-          "path": [
-            "unitTypes",
-            0,
-            "properties"
-          ]
-        },
-        {
-          "code": "invalid_range",
-          "path": [
-            "unitTypes",
-            0,
-            "properties",
-            0,
-            "min"
-          ]
-        },
-        {
-          "code": "default_out_of_range",
-          "path": [
-            "unitTypes",
-            0,
-            "properties",
-            1,
-            "default"
-          ]
-        },
-        {
-          "code": "default_out_of_range",
-          "path": [
-            "unitTypes",
-            0,
-            "properties",
-            2,
-            "default"
-          ]
-        },
-        {
-          "code": "unknown_enum_value",
-          "path": [
-            "unitTypes",
-            0,
-            "properties",
-            3,
-            "default"
-          ]
-        }
+        { "code": "too_many_shown_properties", "path": ["unitTypes", 0, "properties"] },
+        { "code": "invalid_range", "path": ["unitTypes", 0, "properties", 0, "min"] },
+        { "code": "default_out_of_range", "path": ["unitTypes", 0, "properties", 1, "default"] },
+        { "code": "default_out_of_range", "path": ["unitTypes", 0, "properties", 2, "default"] },
+        { "code": "unknown_enum_value", "path": ["unitTypes", 0, "properties", 3, "default"] }
       ]
     },
     {
@@ -860,897 +186,220 @@
       "config": {
         "unitTypes": [
           {
-            "id": "one",
-            "label": "One",
-            "icon": "circle",
-            "components": {
-              "mobility": {
-                "mode": "direct",
-                "speedMps": 10
-              }
-            },
+            "id": "one", "label": "One", "icon": "circle", "components": { "mobility": { "mode": "direct", "speedMps": 10 } },
             "properties": [
-              {
-                "id": "size",
-                "label": "Size",
-                "kind": "number",
-                "unit": "kg",
-                "default": 1
-              },
-              {
-                "id": "flag",
-                "label": "Flag",
-                "kind": "boolean",
-                "default": false
-              }
+              { "id": "size", "label": "Size", "kind": "number", "unit": "kg", "default": 1 },
+              { "id": "flag", "label": "Flag", "kind": "boolean", "default": false }
             ]
           },
           {
-            "id": "two",
-            "label": "Two",
-            "icon": "circle",
-            "components": {
-              "mobility": {
-                "mode": "direct",
-                "speedMps": 10
-              }
-            },
+            "id": "two", "label": "Two", "icon": "circle", "components": { "mobility": { "mode": "direct", "speedMps": 10 } },
             "properties": [
-              {
-                "id": "size",
-                "label": "Size",
-                "kind": "number",
-                "unit": "t",
-                "default": 1
-              },
-              {
-                "id": "flag",
-                "label": "Flag",
-                "kind": "number",
-                "default": 0
-              }
+              { "id": "size", "label": "Size", "kind": "number", "unit": "t", "default": 1 },
+              { "id": "flag", "label": "Flag", "kind": "number", "default": 0 }
             ]
           }
         ]
       },
       "issues": [
-        {
-          "code": "property_conflict",
-          "path": [
-            "unitTypes",
-            1,
-            "properties",
-            0,
-            "unit"
-          ]
-        },
-        {
-          "code": "property_conflict",
-          "path": [
-            "unitTypes",
-            1,
-            "properties",
-            1,
-            "kind"
-          ]
-        }
+        { "code": "property_conflict", "path": ["unitTypes", 1, "properties", 0, "unit"] },
+        { "code": "property_conflict", "path": ["unitTypes", 1, "properties", 1, "kind"] }
       ]
     },
     {
       "name": "refused component combinations",
       "config": {
-        "loadClasses": [
-          {
-            "id": "L1",
-            "label": "First",
-            "code": "A",
-            "noun": {
-              "one": "item",
-              "other": "items"
-            }
-          }
-        ],
+        "loadClasses": [{ "id": "L1", "label": "First", "code": "A", "noun": { "one": "item", "other": "items" } }],
         "unitTypes": [
           {
-            "id": "moving-site",
-            "label": "Moving site",
-            "icon": "circle",
-            "components": {
-              "mobility": {
-                "mode": "road"
-              },
-              "receiving": {
-                "accepts": [
-                  "L1"
-                ],
-                "slots": 1,
-                "handoverS": 0,
-                "accepting": true
-              }
-            }
+            "id": "moving-site", "label": "Moving site", "icon": "circle",
+            "components": { "mobility": { "mode": "road" }, "receiving": { "accepts": ["L1"], "slots": 1, "handoverS": 0, "accepting": true } }
           },
           {
-            "id": "fragile-site",
-            "label": "Fragile site",
-            "icon": "circle",
-            "components": {
-              "receiving": {
-                "accepts": [
-                  "L1"
-                ],
-                "slots": 1,
-                "handoverS": 0,
-                "accepting": true
-              },
-              "durability": {
-                "stepFireS": 10
-              }
-            }
+            "id": "fragile-site", "label": "Fragile site", "icon": "circle",
+            "components": { "receiving": { "accepts": ["L1"], "slots": 1, "handoverS": 0, "accepting": true }, "durability": { "stepFireS": 10 } }
           },
           {
-            "id": "public-active",
-            "label": "Public active",
-            "icon": "circle",
-            "public": true,
-            "tags": [
-              "t"
-            ],
+            "id": "public-active", "label": "Public active", "icon": "circle", "public": true, "tags": ["t"],
             "components": {
-              "mobility": {
-                "mode": "direct",
-                "speedMps": 10
-              },
-              "sensor": {
-                "detectM": 100,
-                "identifyM": 50
-              },
-              "effector": {
-                "rangeM": 100,
-                "targets": [
-                  "t"
-                ]
-              }
+              "mobility": { "mode": "direct", "speedMps": 10 },
+              "sensor": { "detectM": 100, "identifyM": 50 },
+              "effector": { "rangeM": 100, "targets": ["t"] }
             },
-            "standingOrders": {
-              "roe": "hold"
-            }
+            "standingOrders": { "roe": "hold" }
           },
           {
-            "id": "far-sighted",
-            "label": "Far sighted",
-            "icon": "circle",
-            "components": {
-              "sensor": {
-                "detectM": 100,
-                "identifyM": 200
-              }
-            }
+            "id": "far-sighted", "label": "Far sighted", "icon": "circle",
+            "components": { "sensor": { "detectM": 100, "identifyM": 200 } }
           }
         ]
       },
       "issues": [
-        {
-          "code": "refused_combination",
-          "path": [
-            "unitTypes",
-            0,
-            "components",
-            "receiving"
-          ]
-        },
-        {
-          "code": "refused_combination",
-          "path": [
-            "unitTypes",
-            1,
-            "components",
-            "receiving"
-          ]
-        },
-        {
-          "code": "refused_combination",
-          "path": [
-            "unitTypes",
-            2,
-            "public"
-          ]
-        },
-        {
-          "code": "refused_combination",
-          "path": [
-            "unitTypes",
-            2,
-            "public"
-          ]
-        },
-        {
-          "code": "refused_combination",
-          "path": [
-            "unitTypes",
-            2,
-            "public"
-          ]
-        },
-        {
-          "code": "identify_exceeds_detect",
-          "path": [
-            "unitTypes",
-            3,
-            "components",
-            "sensor",
-            "identifyM"
-          ]
-        }
+        { "code": "refused_combination", "path": ["unitTypes", 0, "components", "receiving"] },
+        { "code": "refused_combination", "path": ["unitTypes", 1, "components", "receiving"] },
+        { "code": "refused_combination", "path": ["unitTypes", 2, "public"] },
+        { "code": "refused_combination", "path": ["unitTypes", 2, "public"] },
+        { "code": "refused_combination", "path": ["unitTypes", 2, "public"] },
+        { "code": "identify_exceeds_detect", "path": ["unitTypes", 3, "components", "sensor", "identifyM"] }
       ]
     },
     {
       "name": "standing orders on a unit type without the components they act through",
       "config": {
-        "loadClasses": [
-          {
-            "id": "L1",
-            "label": "First",
-            "code": "A",
-            "noun": {
-              "one": "item",
-              "other": "items"
-            }
-          }
-        ],
+        "loadClasses": [{ "id": "L1", "label": "First", "code": "A", "noun": { "one": "item", "other": "items" } }],
         "unitTypes": [
           {
-            "id": "bare",
-            "label": "Bare",
-            "icon": "circle",
-            "components": {},
+            "id": "bare", "label": "Bare", "icon": "circle", "components": {},
             "standingOrders": {
               "deliver": "nearest-accepting",
-              "return": {
-                "afterIdleS": 10
-              },
+              "return": { "afterIdleS": 10 },
               "roe": "hold",
-              "withdraw": {
-                "whenDamaged": true
-              },
-              "onStepLost": {
-                "createTask": "job",
-                "perStep": {
-                  "L1": 1
-                }
-              }
+              "withdraw": { "whenDamaged": true },
+              "onStepLost": { "createTask": "job", "perStep": { "L1": 1 } }
             }
           }
         ],
-        "taskTemplates": [
-          {
-            "id": "job",
-            "label": "Job",
-            "icon": "flag"
-          }
-        ],
-        "priorities": [
-          {
-            "id": "routine",
-            "label": "Routine",
-            "code": "R"
-          }
-        ]
+        "taskTemplates": [{ "id": "job", "label": "Job", "icon": "flag" }],
+        "priorities": [{ "id": "routine", "label": "Routine", "code": "R" }]
       },
       "issues": [
-        {
-          "code": "order_requires_component",
-          "path": [
-            "unitTypes",
-            0,
-            "standingOrders",
-            "deliver"
-          ]
-        },
-        {
-          "code": "order_requires_component",
-          "path": [
-            "unitTypes",
-            0,
-            "standingOrders",
-            "return"
-          ]
-        },
-        {
-          "code": "order_requires_component",
-          "path": [
-            "unitTypes",
-            0,
-            "standingOrders",
-            "roe"
-          ]
-        },
-        {
-          "code": "order_requires_component",
-          "path": [
-            "unitTypes",
-            0,
-            "standingOrders",
-            "withdraw"
-          ]
-        },
-        {
-          "code": "order_requires_component",
-          "path": [
-            "unitTypes",
-            0,
-            "standingOrders",
-            "onStepLost"
-          ]
-        },
-        {
-          "code": "stationary_type_not_site",
-          "path": [
-            "unitTypes",
-            0,
-            "components"
-          ]
-        }
+        { "code": "order_requires_component", "path": ["unitTypes", 0, "standingOrders", "deliver"] },
+        { "code": "order_requires_component", "path": ["unitTypes", 0, "standingOrders", "return"] },
+        { "code": "order_requires_component", "path": ["unitTypes", 0, "standingOrders", "roe"] },
+        { "code": "order_requires_component", "path": ["unitTypes", 0, "standingOrders", "withdraw"] },
+        { "code": "order_requires_component", "path": ["unitTypes", 0, "standingOrders", "onStepLost"] },
+        { "code": "stationary_type_not_site", "path": ["unitTypes", 0, "components"] }
       ]
     },
     {
       "name": "an effector without rules of engagement",
       "config": {
         "unitTypes": [
-          {
-            "id": "unit",
-            "label": "Unit",
-            "icon": "circle",
-            "tags": [
-              "t"
-            ],
-            "components": {
-              "effector": {
-                "rangeM": 100,
-                "targets": [
-                  "t"
-                ]
-              }
-            }
-          }
+          { "id": "unit", "label": "Unit", "icon": "circle", "tags": ["t"], "components": { "effector": { "rangeM": 100, "targets": ["t"] } } }
         ]
       },
-      "issues": [
-        {
-          "code": "component_requires_order",
-          "path": [
-            "unitTypes",
-            0,
-            "standingOrders",
-            "roe"
-          ]
-        }
-      ]
+      "issues": [{ "code": "component_requires_order", "path": ["unitTypes", 0, "standingOrders", "roe"] }]
     },
     {
       "name": "a side hostile to itself",
-      "config": {
-        "hostility": {
-          "a": [
-            "a",
-            "b"
-          ],
-          "b": [
-            "a"
-          ]
-        }
-      },
-      "issues": [
-        {
-          "code": "self_hostility",
-          "path": [
-            "hostility",
-            "a",
-            0
-          ]
-        }
-      ]
+      "config": { "hostility": { "a": ["a", "b"], "b": ["a"] } },
+      "issues": [{ "code": "self_hostility", "path": ["hostility", "a", 0] }]
     },
     {
       "name": "icons outside the map symbol catalogue",
       "config": {
-        "unitTypes": [
-          {
-            "id": "unit",
-            "label": "Unit",
-            "icon": "no-such-icon",
-            "components": {
-              "mobility": {
-                "mode": "direct",
-                "speedMps": 10
-              }
-            }
-          }
-        ],
-        "taskTemplates": [
-          {
-            "id": "job",
-            "label": "Job",
-            "icon": "nor-this-one"
-          }
-        ],
-        "priorities": [
-          {
-            "id": "routine",
-            "label": "Routine",
-            "code": "R"
-          }
-        ]
+        "unitTypes": [{ "id": "unit", "label": "Unit", "icon": "no-such-icon", "components": { "mobility": { "mode": "direct", "speedMps": 10 } } }],
+        "taskTemplates": [{ "id": "job", "label": "Job", "icon": "nor-this-one" }],
+        "priorities": [{ "id": "routine", "label": "Routine", "code": "R" }]
       },
       "issues": [
-        {
-          "code": "unknown_icon",
-          "path": [
-            "unitTypes",
-            0,
-            "icon"
-          ]
-        },
-        {
-          "code": "unknown_icon",
-          "path": [
-            "taskTemplates",
-            0,
-            "icon"
-          ]
-        }
+        { "code": "unknown_icon", "path": ["unitTypes", 0, "icon"] },
+        { "code": "unknown_icon", "path": ["taskTemplates", 0, "icon"] }
       ]
     },
     {
       "name": "task templates without declared priorities",
-      "config": {
-        "taskTemplates": [
-          {
-            "id": "job",
-            "label": "Job",
-            "icon": "flag"
-          }
-        ]
-      },
-      "issues": [
-        {
-          "code": "priorities_required",
-          "path": [
-            "priorities"
-          ]
-        }
-      ]
+      "config": { "taskTemplates": [{ "id": "job", "label": "Job", "icon": "flag" }] },
+      "issues": [{ "code": "priorities_required", "path": ["priorities"] }]
     },
     {
       "name": "a repeated priority id and code",
       "config": {
         "priorities": [
-          {
-            "id": "p1",
-            "label": "First",
-            "code": "P"
-          },
-          {
-            "id": "p1",
-            "label": "Again",
-            "code": "P"
-          }
+          { "id": "p1", "label": "First", "code": "P" },
+          { "id": "p1", "label": "Again", "code": "P" }
         ]
       },
       "issues": [
-        {
-          "code": "duplicate_id",
-          "path": [
-            "priorities",
-            1,
-            "id"
-          ]
-        },
-        {
-          "code": "duplicate_code",
-          "path": [
-            "priorities",
-            1,
-            "code"
-          ]
-        }
+        { "code": "duplicate_id", "path": ["priorities", 1, "id"] },
+        { "code": "duplicate_code", "path": ["priorities", 1, "code"] }
       ]
     },
     {
       "name": "a type that does not move and is no site",
       "config": {
         "unitTypes": [
-          {
-            "id": "post",
-            "label": "Fixed post",
-            "icon": "circle",
-            "components": {
-              "service": {
-                "provides": [
-                  "help"
-                ],
-                "onSceneS": 10
-              }
-            }
-          },
-          {
-            "id": "shed",
-            "label": "Shed",
-            "icon": "circle",
-            "components": {}
-          },
-          {
-            "id": "landmark",
-            "label": "Landmark",
-            "icon": "flag",
-            "public": true,
-            "components": {}
-          },
-          {
-            "id": "watch",
-            "label": "Watch",
-            "icon": "eye",
-            "components": {
-              "sensor": {
-                "detectM": 1000,
-                "identifyM": 500
-              }
-            }
-          }
+          { "id": "post", "label": "Fixed post", "icon": "circle", "components": { "service": { "provides": ["help"], "onSceneS": 10 } } },
+          { "id": "shed", "label": "Shed", "icon": "circle", "components": {} },
+          { "id": "landmark", "label": "Landmark", "icon": "flag", "public": true, "components": {} },
+          { "id": "watch", "label": "Watch", "icon": "eye", "components": { "sensor": { "detectM": 1000, "identifyM": 500 } } }
         ]
       },
       "issues": [
-        {
-          "code": "stationary_type_not_site",
-          "path": [
-            "unitTypes",
-            0,
-            "components"
-          ]
-        },
-        {
-          "code": "stationary_type_not_site",
-          "path": [
-            "unitTypes",
-            1,
-            "components"
-          ]
-        }
+        { "code": "stationary_type_not_site", "path": ["unitTypes", 0, "components"] },
+        { "code": "stationary_type_not_site", "path": ["unitTypes", 1, "components"] }
       ]
     }
   ],
   "structural": [
     {
       "name": "a component outside the closed set",
-      "config": {
-        "unitTypes": [
-          {
-            "id": "unit",
-            "label": "Unit",
-            "icon": "circle",
-            "components": {
-              "mobility": {
-                "mode": "direct",
-                "speedMps": 10
-              },
-              "teleport": {}
-            }
-          }
-        ]
-      },
-      "issues": [
-        {
-          "code": "unrecognized_keys",
-          "path": [
-            "unitTypes",
-            0,
-            "components"
-          ]
-        }
-      ]
+      "config": { "unitTypes": [{ "id": "unit", "label": "Unit", "icon": "circle", "components": { "mobility": { "mode": "direct", "speedMps": 10 }, "teleport": {} } }] },
+      "issues": [{ "code": "unrecognized_keys", "path": ["unitTypes", 0, "components"] }]
     },
     {
       "name": "a mobility mode outside the closed list",
-      "config": {
-        "unitTypes": [
-          {
-            "id": "unit",
-            "label": "Unit",
-            "icon": "circle",
-            "components": {
-              "mobility": {
-                "mode": "rail"
-              }
-            }
-          }
-        ]
-      },
-      "issues": [
-        {
-          "code": "invalid_union",
-          "path": [
-            "unitTypes",
-            0,
-            "components",
-            "mobility",
-            "mode"
-          ]
-        }
-      ]
+      "config": { "unitTypes": [{ "id": "unit", "label": "Unit", "icon": "circle", "components": { "mobility": { "mode": "rail" } } }] },
+      "issues": [{ "code": "invalid_union", "path": ["unitTypes", 0, "components", "mobility", "mode"] }]
     },
     {
       "name": "a standing order outside the closed five",
-      "config": {
-        "unitTypes": [
-          {
-            "id": "unit",
-            "label": "Unit",
-            "icon": "circle",
-            "components": {
-              "mobility": {
-                "mode": "direct",
-                "speedMps": 10
-              }
-            },
-            "standingOrders": {
-              "wander": {}
-            }
-          }
-        ]
-      },
-      "issues": [
-        {
-          "code": "unrecognized_keys",
-          "path": [
-            "unitTypes",
-            0,
-            "standingOrders"
-          ]
-        }
-      ]
+      "config": { "unitTypes": [{ "id": "unit", "label": "Unit", "icon": "circle", "components": { "mobility": { "mode": "direct", "speedMps": 10 } }, "standingOrders": { "wander": {} } }] },
+      "issues": [{ "code": "unrecognized_keys", "path": ["unitTypes", 0, "standingOrders"] }]
     },
     {
       "name": "a rules-of-engagement mode outside the closed list",
-      "config": {
-        "unitTypes": [
-          {
-            "id": "unit",
-            "label": "Unit",
-            "icon": "circle",
-            "components": {},
-            "standingOrders": {
-              "roe": "sometimes"
-            }
-          }
-        ]
-      },
-      "issues": [
-        {
-          "code": "invalid_value",
-          "path": [
-            "unitTypes",
-            0,
-            "standingOrders",
-            "roe"
-          ]
-        }
-      ]
+      "config": { "unitTypes": [{ "id": "unit", "label": "Unit", "icon": "circle", "components": {}, "standingOrders": { "roe": "sometimes" } }] },
+      "issues": [{ "code": "invalid_value", "path": ["unitTypes", 0, "standingOrders", "roe"] }]
     },
     {
       "name": "a property kind outside number, boolean and enum",
-      "config": {
-        "unitTypes": [
-          {
-            "id": "unit",
-            "label": "Unit",
-            "icon": "circle",
-            "components": {},
-            "properties": [
-              {
-                "id": "p",
-                "label": "P",
-                "kind": "text",
-                "default": ""
-              }
-            ]
-          }
-        ]
-      },
-      "issues": [
-        {
-          "code": "invalid_union",
-          "path": [
-            "unitTypes",
-            0,
-            "properties",
-            0,
-            "kind"
-          ]
-        }
-      ]
+      "config": { "unitTypes": [{ "id": "unit", "label": "Unit", "icon": "circle", "components": {}, "properties": [{ "id": "p", "label": "P", "kind": "text", "default": "" }] }] },
+      "issues": [{ "code": "invalid_union", "path": ["unitTypes", 0, "properties", 0, "kind"] }]
     },
     {
       "name": "bounds on a boolean property",
-      "config": {
-        "unitTypes": [
-          {
-            "id": "unit",
-            "label": "Unit",
-            "icon": "circle",
-            "components": {
-              "mobility": {
-                "mode": "direct",
-                "speedMps": 10
-              }
-            },
-            "properties": [
-              {
-                "id": "p",
-                "label": "P",
-                "kind": "boolean",
-                "min": 0,
-                "default": false
-              }
-            ]
-          }
-        ]
-      },
-      "issues": [
-        {
-          "code": "unrecognized_keys",
-          "path": [
-            "unitTypes",
-            0,
-            "properties",
-            0
-          ]
-        }
-      ]
+      "config": { "unitTypes": [{ "id": "unit", "label": "Unit", "icon": "circle", "components": { "mobility": { "mode": "direct", "speedMps": 10 } }, "properties": [{ "id": "p", "label": "P", "kind": "boolean", "min": 0, "default": false }] }] },
+      "issues": [{ "code": "unrecognized_keys", "path": ["unitTypes", 0, "properties", 0] }]
     },
     {
       "name": "a where comparison mixing a bound and equals",
       "config": {
-        "taskTemplates": [
-          {
-            "id": "job",
-            "label": "Job",
-            "icon": "flag",
-            "requires": [
-              {
-                "provides": "help",
-                "count": 1,
-                "label": {
-                  "one": "x",
-                  "other": "xs"
-                },
-                "where": [
-                  {
-                    "property": "p",
-                    "atLeast": 1,
-                    "equals": true
-                  }
-                ]
-              }
-            ]
-          }
-        ],
-        "priorities": [
-          {
-            "id": "routine",
-            "label": "Routine",
-            "code": "R"
-          }
-        ]
+        "taskTemplates": [{
+          "id": "job", "label": "Job", "icon": "flag",
+          "requires": [{ "provides": "help", "count": 1, "label": { "one": "x", "other": "xs" }, "where": [{ "property": "p", "atLeast": 1, "equals": true }] }]
+        }],
+        "priorities": [{ "id": "routine", "label": "Routine", "code": "R" }]
       },
-      "issues": [
-        {
-          "code": "invalid_union",
-          "path": [
-            "taskTemplates",
-            0,
-            "requires",
-            0,
-            "where",
-            0
-          ]
-        }
-      ]
+      "issues": [{ "code": "invalid_union", "path": ["taskTemplates", 0, "requires", 0, "where", 0] }]
     },
     {
       "name": "lexicon words outside the closed keys",
       "config": {
-        "lexicon": {
-          "greeting": "Hello"
-        },
-        "unitTypes": [
-          {
-            "id": "unit",
-            "label": "Unit",
-            "icon": "circle",
-            "components": {
-              "mobility": {
-                "mode": "direct",
-                "speedMps": 10
-              }
-            },
-            "lexicon": {
-              "workList": "Mine"
-            }
-          }
-        ]
+        "lexicon": { "greeting": "Hello" },
+        "unitTypes": [{ "id": "unit", "label": "Unit", "icon": "circle", "components": { "mobility": { "mode": "direct", "speedMps": 10 } }, "lexicon": { "workList": "Mine" } }]
       },
       "issues": [
-        {
-          "code": "unrecognized_keys",
-          "path": [
-            "lexicon"
-          ]
-        },
-        {
-          "code": "unrecognized_keys",
-          "path": [
-            "unitTypes",
-            0,
-            "lexicon"
-          ]
-        }
+        { "code": "unrecognized_keys", "path": ["lexicon"] },
+        { "code": "unrecognized_keys", "path": ["unitTypes", 0, "lexicon"] }
       ]
     },
     {
       "name": "a receiving site that does not say whether it accepts",
       "config": {
-        "unitTypes": [
-          {
-            "id": "site",
-            "label": "Site",
-            "icon": "circle",
-            "components": {
-              "receiving": {
-                "accepts": [
-                  "L1"
-                ],
-                "slots": 1,
-                "handoverS": 0
-              }
-            }
-          }
-        ]
+        "unitTypes": [{ "id": "site", "label": "Site", "icon": "circle", "components": { "receiving": { "accepts": ["L1"], "slots": 1, "handoverS": 0 } } }]
       },
-      "issues": [
-        {
-          "code": "invalid_type",
-          "path": [
-            "unitTypes",
-            0,
-            "components",
-            "receiving",
-            "accepting"
-          ]
-        }
-      ]
+      "issues": [{ "code": "invalid_type", "path": ["unitTypes", 0, "components", "receiving", "accepting"] }]
     },
     {
       "name": "a key outside the configuration",
-      "config": {
-        "rules": []
-      },
-      "issues": [
-        {
-          "code": "unrecognized_keys",
-          "path": []
-        }
-      ]
+      "config": { "rules": [] },
+      "issues": [{ "code": "unrecognized_keys", "path": [] }]
     },
     {
       "name": "a removed authority section",
-      "config": {
-        "authority": []
-      },
-      "issues": [
-        {
-          "code": "unrecognized_keys",
-          "path": []
-        }
-      ]
+      "config": { "authority": [] },
+      "issues": [{ "code": "unrecognized_keys", "path": [] }]
     }
   ]
 }

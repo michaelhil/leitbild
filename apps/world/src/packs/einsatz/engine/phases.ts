@@ -224,10 +224,3 @@ export const stepUntil = (state: EngineState, targetMs: number): StepResult => {
   }
 }
 
-/** Settles a draft built by an intent: transitions it makes due now, queue starts and coverage. */
-export const settleState = (state: EngineState): { readonly state: EngineState; readonly transitions: ReadonlyArray<Transition> } => {
-  const draft = openDraft(state)
-  settle(draft)
-  return { state: closeDraft(draft), transitions: draft.transitions }
-}
-

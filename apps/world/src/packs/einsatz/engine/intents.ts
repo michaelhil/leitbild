@@ -121,7 +121,6 @@ export const intentSchema = z.discriminatedUnion('kind', [
 ])
 
 export type Intent = z.output<typeof intentSchema>
-export type OrderIntent = z.output<typeof orderIntentSchema>
 export type IntentOf<K extends Intent['kind']> = Extract<Intent, { kind: K }>
 
 /** Who acts. Roles, scenario cues and standing orders all act through this. */
