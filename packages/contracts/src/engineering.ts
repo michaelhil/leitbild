@@ -2,7 +2,7 @@ import { z } from 'zod'
 import { workspaceResourceReferenceSchema } from './resources.ts'
 
 const digest = z.string().regex(/^[a-f0-9]{64}$/)
-export const engineeringProfileSchema = z.enum(['plant-thermal', 'grid-balance'])
+export const engineeringProfileSchema = z.enum(['plant-thermal', 'plant-maintenance', 'grid-balance'])
 export const engineeringProfileRevisionSchema = z.literal('engineering-research-1')
 export const engineeringQuantitySchema = z.object({
   id: z.string().min(1).max(160), label: z.string().min(1).max(160),

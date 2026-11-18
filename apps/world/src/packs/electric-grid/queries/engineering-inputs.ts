@@ -6,6 +6,7 @@ export const gridEngineeringInputsQuery: ElectricGridQuery = {
   capability: engineeringProjectionCapability('world.electric-grid.engineering-basis'),
   answer: (raw, grids, _recording, policy) => {
     const input = engineeringOwnerInputSchema.parse(raw)
+    if (input.profile !== 'grid-balance') unavailableQueryReadScope('This source is outside the shared engineering research profile')
     if (!policy.canInspect(input.subjectId)) unavailableQueryReadScope('This source is outside the shared engineering research profile')
     const grid = gridFor(grids, input.subjectId)
     if (input.purpose === 'qualify') return { allowed: true }

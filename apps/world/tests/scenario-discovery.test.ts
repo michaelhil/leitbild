@@ -22,6 +22,7 @@ describe('bundled scenario discovery', () => {
       'nordic-frequency-event',
       'nordland-corridor-security',
       'norway-situation-monitor',
+      'nuclear-maintenance-planning',
       'rogaland-black-start',
       'supply-run',
       'train-a-work-week',
@@ -31,16 +32,17 @@ describe('bundled scenario discovery', () => {
     }
     expect(builtinScenarioDefinitions.find(source => source.id === 'halden-offsite-power-restoration')?.packs.map(pack => pack.id)).toEqual(['process-plant', 'electric-grid', 'physical-layout'])
     expect(builtinScenarioDefinitions.find(source => source.id === 'halden-station-blackout')?.packs.map(pack => pack.id)).toEqual(['process-plant', 'physical-layout'])
-    for (const id of ['engineering-thermal', 'train-a-work-week']) {
+    for (const id of ['engineering-thermal', 'train-a-work-week', 'nuclear-maintenance-planning']) {
       expect(builtinScenarioDefinitions.find(source => source.id === id)?.packs.map(pack => pack.id)).toEqual(['process-plant'])
     }
     expect(builtinScenarioDefinitions.find(source => source.id === 'engineering-grid')?.packs.map(pack => pack.id)).toEqual(['electric-grid'])
     for (const id of ['nordic-frequency-event', 'nordland-corridor-security', 'rogaland-black-start']) {
       expect(builtinScenarioDefinitions.find(source => source.id === id)?.packs.map(pack => pack.id)).toEqual(['electric-grid'])
     }
-    for (const id of ['halden-border', 'halden-border-human-red', 'halden-delivery-planning', 'halden-emergency', 'supply-run']) {
+    for (const id of ['halden-border', 'halden-border-human-red', 'halden-delivery-planning', 'supply-run']) {
       expect(builtinScenarioDefinitions.find(source => source.id === id)?.packs.map(pack => pack.id)).toEqual(['einsatz'])
     }
+    expect(builtinScenarioDefinitions.find(source => source.id === 'halden-emergency')?.packs.map(pack => pack.id)).toEqual(['einsatz', 'weather'])
     for (const id of ['norway-situation-monitor']) {
       expect(builtinScenarioDefinitions.find(source => source.id === id)?.packs.map(pack => pack.id)).toEqual(['situation-monitor'])
     }

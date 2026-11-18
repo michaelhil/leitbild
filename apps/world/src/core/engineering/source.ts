@@ -5,6 +5,7 @@ import type { PackRuntimeQuery } from '../../simulation/protocol.ts'
 import { scenarioDefinitionSchema } from '../scenarios/definition.ts'
 import thermal from '../../scenarios/engineering-thermal.scenario.json'
 import grid from '../../scenarios/engineering-grid.scenario.json'
+import maintenance from '../../scenarios/nuclear-maintenance-planning.scenario.json'
 import type { SimulationRunRegistry } from '../simulation-runs/registry.ts'
 import type { SimulationRunId } from '../model/ids.ts'
 import type { SimulationRunStateSnapshot } from '../simulation-runs/state-store.ts'
@@ -17,6 +18,7 @@ export const engineeringRefusal = (code = 'engineering_source_unavailable', reas
 }
 const profiles = {
   'plant-thermal': { definition: scenarioDefinitionSchema.parse(thermal), subjectId: 'plant:engineering-thermal', capabilityId: 'world.process-plant.engineering-basis' },
+  'plant-maintenance': { definition: scenarioDefinitionSchema.parse(maintenance), subjectId: 'plant:maintenance', capabilityId: 'world.process-plant.engineering-basis' },
   'grid-balance': { definition: scenarioDefinitionSchema.parse(grid), subjectId: 'grid:engineering', capabilityId: 'world.electric-grid.engineering-basis' },
 } as const
 
@@ -35,7 +37,7 @@ export const engineeringSourceContext = async (registry: SimulationRunRegistry, 
   if (snapshot.objects.length !== compiled.initialObjects.length || snapshot.objects.some(object => !compiled.initialObjects.some(original => original.id === object.id))) return engineeringRefusal()
   const scenarioDigest = compiledScenarioDigest(compiled)
   const readPolicy = runtime.inspectionPolicy({ id: 'actor:engineering' as never, label: 'Engineering research', role: 'ai_agent' })
-  const query = (purpose: 'capture' | 'qualify'): PackRuntimeQuery => ({ capabilityId: selected.capabilityId, input: { subjectId, purpose }, readPolicy })
+  const query = (purpose: 'capture' | 'qualify'): PackRuntimeQuery => ({ capabilityId: selected.capabilityId, input: { profile, subjectId, purpose }, readPolicy })
   return { runtime, epoch, scenarioDigest, revision: restrictions?.revision ?? 0, query, snapshot, compiled }
 }
 

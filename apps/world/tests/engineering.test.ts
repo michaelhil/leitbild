@@ -71,6 +71,26 @@ test('a real coupled Plant/Grid clone is refused rather than silently dropping t
   expect(registry.engineering.busy()).toBe(false)
 }, 60_000)
 
+test('the maintenance profile captures only actual pump flows and retains exact scenario admission', async () => {
+  const { registry } = await setup()
+  const run = await registry.create({ scenarioId: 'nuclear-maintenance-planning' })
+  const selection = { profile: 'plant-maintenance' as const, subjectId: 'plant:maintenance' }
+  const before = run.snapshot().seq
+  const basis = await registry.engineering.capture(run.id, selection)
+  expect(basis.quantities.map(row => [row.id, row.quantity, row.unit, row.value, row.quality])).toEqual([
+    ['componentCoolingWaterPumpA.flowKgPerS', 'mass-flow', 'kg/s', 350, 'good'],
+    ['componentCoolingWaterPumpB.flowKgPerS', 'mass-flow', 'kg/s', 350, 'good'],
+  ])
+  expect(run.snapshot().seq).toBe(before)
+  expect(await registry.engineering.qualify(run.id, qualify(basis))).toEqual({ allowed: true })
+  await expect(registry.engineering.capture(run.id, { ...selection, subjectId: 'plant:train-a' })).rejects.toThrow('shared engineering')
+  await expect(registry.engineering.capture(run.id, { ...selection, profile: 'plant-thermal' })).rejects.toThrow('shared engineering')
+  const trainA = await registry.create({ scenarioId: 'train-a-work-week' })
+  await expect(registry.engineering.capture(trainA.id, { ...selection, subjectId: 'plant:train-a' })).rejects.toThrow('shared engineering')
+  await run.setAgentRestrictions(controller, { operationIds: [], objects: [{ objectId: objectIdSchema.parse(selection.subjectId), deny: ['inspect'] }] }, 0)
+  expect((await registry.engineering.qualify(run.id, qualify(basis))).allowed).toBe(false)
+}, 60_000)
+
 test('active cancellation removes private runtimes; restart returns interrupted receipt for the original key and never resumes', async () => {
   const { registry, config, dataDir } = await setup(), run = await registry.create({ scenarioId: 'engineering-thermal' })
   const request = { ...thermal, horizonSeconds: 600, sampleEverySeconds: 1,

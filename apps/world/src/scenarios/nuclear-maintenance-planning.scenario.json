@@ -1,0 +1,90 @@
+{
+  "id": "nuclear-maintenance-planning",
+  "title": "Nuclear planning: a pump maintenance window",
+  "description": "A fictional reference pressurised-water reactor starts paused at full power. Compare one maintenance crew with an extra crew to finish an A-train work window. Pump B stays protected in the plan. Work durations, qualifications, cost and the 17:00 target are authored assumptions; World supplies current pump readings. The plant has no maintenance or isolation state, and Planning never changes it.",
+  "objectives": [
+    "Compare two checked schedules for the same five jobs.",
+    "See the hours saved and the additional crew cost.",
+    "Ask the Assistant for a heat-transport calculation from current pump flow and explicit assumptions."
+  ],
+  "world": {
+    "startsAt": "2026-11-18T08:00:00.000Z",
+    "environment": {
+      "purpose": "fictional nuclear maintenance planning demonstration"
+    }
+  },
+  "view": {
+    "map": {
+      "center": [
+        11.47,
+        59.086
+      ],
+      "zoom": 14
+    }
+  },
+  "packs": [
+    {
+      "id": "process-plant",
+      "items": [
+        {
+          "type": "plant",
+          "id": "plant:maintenance",
+          "label": "Fictional reference PWR",
+          "location": [
+            11.47,
+            59.086
+          ],
+          "model": {
+            "ref": "process-plant.pwr.reference",
+            "parameters": {
+              "loopCount": 4
+            }
+          },
+          "operatingPoint": {
+            "ref": "process-plant.pwr.full-power"
+          },
+          "automation": {
+            "ref": "process-plant.pwr.standard"
+          }
+        }
+      ]
+    }
+  ],
+  "guide": {
+    "id": "guide:nuclear-maintenance-planning",
+    "title": "Is an extra crew worth it?",
+    "description": "Two separate A-train work sites share one crew. Compare return times with one crew or an extra crew while Pump B is protected in the plan. The pump readings come from this simulation; work duration, cost and target are declared assumptions.",
+    "startPaused": true,
+    "planningDefinitionId": "nuclear-maintenance-planning",
+    "steps": [
+      {
+        "id": "compare",
+        "title": "Is an extra crew worth it?",
+        "instruction": "Choose Compare maintenance schedules to see both checked schedules. Work starts at 09:00 with a 17:00 target. The plan reads the two pumps without changing the plant.",
+        "effects": [
+          {
+            "id": "show-plant",
+            "target": {
+              "kind": "object",
+              "objectId": "plant:maintenance"
+            },
+            "action": {
+              "kind": "reveal"
+            }
+          }
+        ],
+        "completion": {
+          "kind": "acknowledge"
+        }
+      },
+      {
+        "id": "explore",
+        "title": "Inspect the source and ask for a calculation",
+        "instruction": "Open Planning to compare the crews, then ask the Assistant how much heat the current Pump B flow could carry at a declared temperature rise. This is arithmetic with stated assumptions, not a cooling-system assessment.",
+        "completion": {
+          "kind": "acknowledge"
+        }
+      }
+    ]
+  }
+}
