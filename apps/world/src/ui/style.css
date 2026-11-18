@@ -1443,6 +1443,13 @@ body.rail-resizing {
   text-overflow: ellipsis;
 }
 
+.display-window-header a.display-window-back {
+  flex-shrink: 0;
+  font-size: 12px;
+  white-space: nowrap;
+  text-underline-offset: 3px;
+}
+
 .display-window-slider {
   width: 96px;
   accent-color: var(--accent);

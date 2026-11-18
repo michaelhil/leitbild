@@ -30,7 +30,7 @@
   {
     "scenarioId": "nuclear-maintenance-planning",
     "summary": "Compare two nuclear maintenance schedules and see whether an extra crew meets the return-to-service target.",
-    "about": "Two separate work sites share one maintenance crew while Pump B is kept outside the plan’s work scope. Compare computed schedules, inspect the current pump readings and ask the Assistant for a heat-transport calculation with explicit assumptions. It shows Leitbild connecting a fictional plant, work planning and reproducible calculations.",
+    "about": "Two separate work sites share one maintenance crew while Pump B stays outside the plan’s work scope. Compare checked schedules, ask the Assistant whether work can finish by a chosen time and inspect the pump in World. Then try a reproducible heat-transport calculation with explicit assumptions.",
     "tags": [
       "Nuclear plant",
       "Planning + calculation",
@@ -47,11 +47,11 @@
         "height": 1000,
         "sources": [
           {
-            "file": "nuclear-maintenance-planning-960.bc17f4d5.webp",
+            "file": "nuclear-maintenance-planning-960.a855f367.webp",
             "width": 960
           },
           {
-            "file": "nuclear-maintenance-planning-1600.df032af0.webp",
+            "file": "nuclear-maintenance-planning-1600.a93bcb8d.webp",
             "width": 1600
           }
         ]
