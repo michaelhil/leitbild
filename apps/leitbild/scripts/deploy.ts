@@ -268,7 +268,11 @@ export const referencedInspectionEntries = async (
   return additions
 }
 
-const createArtifact = async (root: string, baseCommit: string, branch: string, knowledge: KnowledgeSnapshot) => {
+/** Darwin's tar needs these flags to exclude host metadata; GNU tar uses its normal archive format. */
+export const artifactTarCommand = (archivePath: string, stageRoot: string, platform: NodeJS.Platform = process.platform): string[] =>
+  ['tar', ...(platform === 'darwin' ? ['--no-mac-metadata', '--no-xattrs'] : []), '-czf', archivePath, '-C', stageRoot, '.']
+
+export const createArtifact = async (root: string, baseCommit: string, branch: string, knowledge: KnowledgeSnapshot) => {
   const tempRoot = await mkdtemp(join(tmpdir(), 'leitbild-release-'))
   try {
     const stageRoot = join(tempRoot, 'stage')
@@ -332,7 +336,7 @@ const createArtifact = async (root: string, baseCommit: string, branch: string, 
     await copyEntries(entries, stageRoot)
     await validateKnowledgeSources(knowledge, stageRoot)
     await writeFile(join(stageRoot, 'DEPLOYMENT.json'), `${JSON.stringify(manifest, null, 2)}\n`, { mode: 0o644 })
-    await run('Create immutable Leitbild artifact', ['tar', '--no-mac-metadata', '--no-xattrs', '-czf', archivePath, '-C', stageRoot, '.'])
+    await run('Create immutable Leitbild artifact', artifactTarCommand(archivePath, stageRoot))
     return {
       archivePath,
       archiveChecksum: await sha256File(archivePath),
