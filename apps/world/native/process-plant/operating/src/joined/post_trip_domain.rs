@@ -819,7 +819,9 @@ pub fn admit_hot_standby(
 /// the source domains it selects (the pressure floor and the P1 bounds) and
 /// B1's phase absence. `Ok(false)` when the state stays inside, `Ok(true)`
 /// at an exit (the caller then takes [`admit_hot_standby_accepted`] there,
-/// whose result carries the margin with the exit).
+/// whose result carries the margin with the exit). The bounds read the
+/// nuclear block's feedback output of the same evaluation
+/// (`Nuclear::feedback_output`, R4-FLOOR-UNIT).
 pub fn hot_standby_domain_exit(
     nuclear: &Nuclear,
     phase: &[sf::RegionPhase],
@@ -835,16 +837,16 @@ pub fn hot_standby_domain_exit(
     let original = feedback.domains();
     record.validate(&original)?;
     let at = AcceptedConditions::of(nuclear, travel, t);
-    let mut out = sf::Output::new(
-        feedback.region_count(),
-        feedback.material_count(),
-        feedback.support_count(),
-    );
-    match feedback.validate_accepted_within(
+    // R4-FLOOR-UNIT: the bounds on the feedback output of the evaluation the
+    // conditions were read from, not a second evaluation of the same values.
+    let out = nuclear
+        .feedback_output()
+        .ok_or(Error::Length("the nuclear block's feedback output"))?;
+    match feedback.within_evaluated(
         &at.neutrons,
         at.conditions(),
         additional_reference_exposure_s,
-        &mut out,
+        out,
         record.domains(original),
     ) {
         Ok(()) => Ok(sf::phase_absence(phase).is_err()),

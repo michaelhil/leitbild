@@ -779,6 +779,21 @@ impl Model {
         domains: Domains,
     ) -> Result<(), Error> {
         self.evaluate(neutrons, c, out)?;
+        self.within_evaluated(neutrons, c, additional_reference_exposure_s, out, domains)
+    }
+    /// R4-FLOOR-UNIT: [`Model::validate_accepted_within`]'s bounds alone, on
+    /// `out`, the output [`Model::evaluate`] gave at exactly `(neutrons, c)`
+    /// (its reactivities are read). A caller holding that evaluation (the
+    /// nuclear block's, `Nuclear::feedback_output`) need not evaluate again;
+    /// the verdict is the same function of the same values.
+    pub fn within_evaluated(
+        &self,
+        neutrons: &[Scalar],
+        c: Conditions<'_>,
+        additional_reference_exposure_s: f64,
+        out: &Output,
+        domains: Domains,
+    ) -> Result<(), Error> {
         let within = |v: f64, b: Bounds, name: &'static str, i: usize| {
             if v < b.minimum || v > b.maximum {
                 Err(Error::OutsideDomain(name, i))
