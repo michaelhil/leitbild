@@ -41,6 +41,7 @@ const listedScenarioSourceSchema = z.array(z.object({
   scenarioId: z.string().min(1).max(128),
   summary: z.string(),
   tags: z.array(z.string()),
+  requiresModules: z.array(z.string()).optional(),
 }).strict())
 
 /**
@@ -81,7 +82,8 @@ export const featuredScenarioDefinitionsFor = (config: {
     })),
     listed: listedScenarioSourceSchema.parse(config.listedSource).map(entry => {
       if (featuredIds.has(entry.scenarioId)) throw new Error(`Listed Scenario is also featured: ${entry.scenarioId}`)
-      return { ...bundled('Listed', entry.scenarioId), summary: entry.summary, tags: entry.tags }
+      return { ...bundled('Listed', entry.scenarioId), summary: entry.summary, tags: entry.tags,
+        ...(entry.requiresModules === undefined ? {} : { requiresModules: entry.requiresModules }) }
     }),
   })
 }

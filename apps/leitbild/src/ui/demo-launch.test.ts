@@ -136,6 +136,19 @@ describe('Start demo: the target Workspace', () => {
     expect(paths().some(path => path.startsWith('POST'))).toBe(false)
   })
 
+  test('a listed planning example keeps its module requirements after leaving the carousel', async () => {
+    const { host, memory, ports, paths } = setup()
+    memory.remember(OLD, 'picked')
+    const scenario = { ...listedItem(), requiresModules: [moduleIdSchema.parse('planning')] }
+    host.on('GET', '/api/featured-definitions', json(catalogue([], 'ready', [scenario])))
+    host.on('GET', `/api/workspaces/${OLD}`, json({ workspace: workspaceFixture(OLD) }))
+    host.on('POST', '/api/workspaces', json({ workspace: withPlanning(NEW, 'ready') }, 201))
+    workspaceRoutes(host, NEW, [descriptor(NEW, LISTED_REVISION, scenario.definition.id)])
+    host.on('POST', invokePath(NEW), runOf(NEW))
+    expect(await launchDemo({ demo: SCENARIO_KEY }, ports)).toMatchObject({ workspace: { id: NEW }, created: true })
+    expect(paths()).not.toContain(`POST ${invokePath(OLD)}`)
+  })
+
   test('starts in the remembered Workspace through its own Definition and primary Capability, then remembers it', async () => {
     const { host, memory, ports, steps, paths } = setup()
     memory.remember(OLD, 'picked')

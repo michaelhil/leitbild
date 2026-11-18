@@ -28,12 +28,13 @@
     ]
   },
   {
-    "scenarioId": "halden-delivery-planning",
-    "summary": "Start on the Halden map and compare two delivery schedules for one truck.",
-    "about": "Find the delivery truck and both stops. Open Planning, generate both orders and see how each affects the schedule. This shows how Leitbild uses a running simulation to inform a plan.",
+    "scenarioId": "nuclear-maintenance-planning",
+    "summary": "Compare two nuclear maintenance schedules and see whether an extra crew meets the return-to-service target.",
+    "about": "Two separate work sites share one maintenance crew while Pump B is kept outside the plan’s work scope. Compare computed schedules, inspect the current pump readings and ask the Assistant for a heat-transport calculation with explicit assumptions. It shows Leitbild connecting a fictional plant, work planning and reproducible calculations.",
     "tags": [
-      "Planning",
-      "Map + schedule",
+      "Nuclear plant",
+      "Planning + calculation",
+      "One crew or extra",
       "Desktop"
     ],
     "requiresModules": [
@@ -41,16 +42,16 @@
     ],
     "previews": [
       {
-        "alt": "A delivery truck and two stops on the Halden map, with the guide’s Open planning demo button.",
+        "alt": "Nuclear maintenance planning with two crew options, a five-job Gantt schedule and a visible return-to-service target.",
         "width": 1600,
         "height": 1000,
         "sources": [
           {
-            "file": "halden-delivery-planning-960.0fc5bf10.webp",
+            "file": "nuclear-maintenance-planning-960.bc17f4d5.webp",
             "width": 960
           },
           {
-            "file": "halden-delivery-planning-1600.138c6e66.webp",
+            "file": "nuclear-maintenance-planning-1600.df032af0.webp",
             "width": 1600
           }
         ]

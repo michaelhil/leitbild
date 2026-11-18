@@ -44,7 +44,7 @@ type FetchLike = (input: string, init?: RequestInit) => Promise<Response>
 /** What a launch starts: a featured demo, or a scenario a Module lists beside its demos. */
 export type LaunchNoun = 'demo' | 'scenario'
 /** The part of a featured or listed Definition a launch needs. */
-export type Launchable = Pick<ModuleFeaturedDefinition, 'definition' | 'revisionId' | 'title'>
+export type Launchable = Pick<ModuleFeaturedDefinition, 'definition' | 'revisionId' | 'title' | 'requiresModules'>
 
 const notAvailableText = (noun: LaunchNoun): string => `This ${noun} is not available in this Workspace right now.`
 export const NOT_FEATURED_TEXT = 'This demo is no longer featured.'
@@ -237,14 +237,14 @@ export const launchDemo = async (request: DemoLaunchRequest, ports: DemoLaunchPo
 
     let target = await resolve(request.forceNewWorkspace === true)
     let notice = target.notice
-    const missing = demo?.requiresModules?.find(id => moduleReadiness(target.workspace, id) === 'missing')
+    const missing = featured.requiresModules?.find(id => moduleReadiness(target.workspace, id) === 'missing')
     if (!target.created && missing !== undefined) {
       notice = movedText(target.workspace, noun, missing)
       ports.onstep?.({ kind: 'moving', from: target.workspace, missingModule: missing })
       target = await resolve(true)
     }
     const requireModules = (): void => {
-      const unavailable = demo?.requiresModules?.find(id => moduleReadiness(target.workspace, id) !== 'ready')
+      const unavailable = featured.requiresModules?.find(id => moduleReadiness(target.workspace, id) !== 'ready')
       if (unavailable !== undefined) throw workspaceNotReady(target.workspace, unavailable, target.created)
     }
     requireModules()
