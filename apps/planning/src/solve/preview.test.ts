@@ -88,8 +88,8 @@ describe('preview re-timing repairs the option, never re-solves it', () => {
 
   // Two options of the flagship, two kinds of seal: on day shifts (seed 1, 1,500 evaluations; the longer seal
   // breaks the 72 h span R2, 82 h) and in bought time (lane K's case, the adversary's item 22: Swap, seed 2,
-  // 15,000 evaluations; the repair can move the seal's start later). Select Swap explicitly for the bought
-  // case: this tests its saved schedule's repair, not a comparison with Rebuild. Searching both methods
+  // 15,000 evaluations, where the repair can move the seal's start later). The bought case selects Swap
+  // explicitly to exercise its saved schedule's repair. Searching both methods
   // divides the fixed CPU budget and can end before the bought-seal fixture is found. Only what
   // must hold for any option is asserted: only forced jobs move, nothing earlier; each moved job carries the
   // edit as its cause; the checker's verdict on the previewed rows is the preview's.
