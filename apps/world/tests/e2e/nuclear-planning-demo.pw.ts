@@ -91,7 +91,7 @@ test('the scoped engineering agent produces an inspectable calculation beside th
     await expect(planning.getByRole('button', { name: /^Extra crew\b/ })).toHaveAttribute('aria-pressed', 'true')
     await expect(planning.getByRole('region', { name: 'Maintenance schedule', exact: true }).getByRole('row').last()).toContainText('16:00')
     const agents = page.frameLocator('iframe[title="Agents room"]')
-    const show = agents.getByRole('button', { name: /^Show the live display in this answer:/ }).first()
+    const show = agents.getByRole('button', { name: /^Show the engineering calculation in this answer:/ }).first()
     await expect(show).toBeVisible({ timeout: 240_000 })
     await show.click()
     const result = agents.frameLocator('iframe[src*="/agents/embed/engineering.result"]')
@@ -158,5 +158,88 @@ test('the scoped engineering agent produces an inspectable calculation beside th
     await world.getByRole('link', { name: 'Back to planning demo', exact: true }).click()
     expect(new URL(page.url()).searchParams.get('agents')).toBe(room)
     await expect(page.frameLocator('iframe[title="Agents room"]').locator('body')).toContainText('Cooling-water calculation')
+  })
+})
+
+test('plain deadline questions produce checked success and refusal visualizations', async ({ page }) => {
+  test.skip(process.env.LEITBILD_E2E_ENGINEERING_AGENT !== '1', 'Enable LEITBILD_E2E_ENGINEERING_AGENT=1 with the actual configured provider for agent acceptance.')
+  test.setTimeout(600_000)
+  await withNuclearPlanning(page, async (planning, workspace) => {
+    await planning.getByLabel('Ask about the deadline', { exact: true }).fill('Can we complete maintenance by 18:00? Show me how, or explain why not.')
+    await planning.getByRole('button', { name: 'Ask Assistant', exact: true }).click()
+    await expect.poll(() => new URL(page.url()).searchParams.get('agents')).toBeTruthy()
+    const agents = page.frameLocator('iframe[title="Agents room"]')
+    const displays = agents.getByRole('button', { name: /^(Show|Hide) the planning schedule in this answer:/ })
+
+    const checkedDisplay = async (after: number, deadline: string, status: string) => {
+      await expect.poll(() => displays.count(), { timeout: 240_000 }).toBeGreaterThan(after)
+      await expect(agents.locator('[data-live-view="preparing"]')).toHaveCount(0, { timeout: 30_000 })
+      const count = await displays.count()
+      for (let index = after; index < count; index += 1) {
+        const toggle = displays.nth(index)
+        if (await toggle.getAttribute('aria-expanded') === 'false') await toggle.click()
+        const host = toggle.locator('xpath=ancestor::*[@data-live-view][1]')
+        const frame = host.locator('iframe[src*="/planning/embed/planning.schedule"]')
+        await expect(frame).toBeVisible({ timeout: 30_000 })
+        const fragment = new URLSearchParams(new URL((await frame.getAttribute('src'))!, page.url()).hash.slice(1))
+        const envelope = JSON.parse(fragment.get('view')!)
+        const state = JSON.parse(envelope.state)
+        expect(envelope).toMatchObject({ moduleId: 'planning', viewType: 'planning.schedule', subject: { workspaceId: workspace, type: 'planning.plan', id: state.plan } })
+        const read = await page.request.post(`/api/workspaces/${workspace}/capabilities/planning.plan.display/invoke`, {
+          data: {
+            resource: { workspaceId: workspace, moduleId: 'planning', type: 'planning.plan', id: state.plan },
+            input: { option: state.option, digest: state.digest }, actor: { kind: 'human' },
+          },
+        })
+        expect(read.ok()).toBe(true)
+        const schedule = (await read.json()).result.schedule
+        if (schedule.deadline === null || Date.parse(schedule.deadline.finishBy) !== Date.parse(deadline)
+          || schedule.option.status.word !== status) continue
+        expect(schedule.option.fresh).toBe(true)
+        expect(schedule.deadline.job).toBe('restore')
+        const result = frame.contentFrame()
+        await expect(result.getByRole('region', { name: 'Checked schedule', exact: true })).toBeVisible({ timeout: 30_000 })
+        await expect(result.getByRole('table', { name: 'Checked work schedule', exact: true }).getByRole('rowheader')).toHaveCount(5)
+        return { result, schedule, plan: state.plan }
+      }
+      throw new Error(`The Assistant did not publish a ${status} Planning schedule for ${deadline}.`)
+    }
+
+    const fits = await checkedDisplay(0, '2026-11-18T17:00:00Z', 'validated feasible')
+    expect(Date.parse(fits.schedule.option.finish)).toBe(Date.parse('2026-11-18T15:00:00Z'))
+    expect(fits.schedule.option.cost).toBe(12_000)
+    await expect(fits.result.getByText(/Requested finish by 18:00/)).toBeVisible()
+    await expect(fits.result.getByText('Meets the requested deadline.', { exact: false })).toBeVisible()
+    await expect(fits.result.getByRole('rowheader').last()).toContainText('16:00')
+
+    const previousDisplays = await displays.count()
+    const followup = agents.getByPlaceholder('Type a message... (Shift+Enter for newline)', { exact: true })
+    await expect(followup).toBeEnabled()
+    await followup.fill('What about 15:00? Show why it can or cannot finish by then.')
+    await agents.getByRole('button', { name: 'Send', exact: true }).click()
+    const refuses = await checkedDisplay(previousDisplays, '2026-11-18T14:00:00Z', 'proven infeasible')
+    expect(refuses.plan).toBe(fits.plan)
+    expect(refuses.schedule.certificate).toMatchObject({ kind: 'chain', workHours: 7, availableHours: 6 })
+    expect(refuses.schedule.certificate.jobs).toEqual(expect.arrayContaining(['isolate', 'pump-work', 'inspect', 'restore']))
+    expect(refuses.schedule.reference.fresh).toBe(true)
+    expect(Date.parse(refuses.schedule.reference.finish)).toBe(Date.parse('2026-11-18T15:00:00Z'))
+    await expect(refuses.result.getByText(/Requested finish by 15:00/)).toBeVisible()
+    await expect(refuses.result.getByText('The requested deadline is proven infeasible for this option.', { exact: true })).toBeVisible()
+    await expect(refuses.result.getByText('Highlighted work belongs to the infeasibility proof.', { exact: true })).toBeVisible()
+    await expect(refuses.result.getByRole('rowheader').last()).toContainText('16:00')
+
+    // A question must remain a what-if; the authored return target is unchanged.
+    const jobs = await page.request.post(`/api/workspaces/${workspace}/capabilities/planning.plan.read/invoke`, {
+      data: {
+        resource: { workspaceId: workspace, moduleId: 'planning', type: 'planning.plan', id: fits.plan },
+        input: { section: 'jobs' }, actor: { kind: 'human' },
+      },
+    })
+    expect(jobs.ok()).toBe(true)
+    const section = (await jobs.json()).result.sections.find((entry: { id: string }) => entry.id === 'jobs')
+    const restoration = section.data.items.find((entry: { job?: { key: string } }) => entry.job?.key === 'restore').job
+    expect(Date.parse(restoration.target.finishBy)).toBe(Date.parse('2026-11-18T16:00:00Z'))
+    await page.reload()
+    await expect(page.frameLocator('iframe[title="Planning"]').getByRole('region', { name: 'Compare crew schedules', exact: true }).getByRole('button')).toHaveCount(2, { timeout: 30_000 })
   })
 })
