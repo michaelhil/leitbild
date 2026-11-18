@@ -33,7 +33,7 @@ export const maintenanceFinish = (rows: readonly DatedRow[]): number | null =>
   rows.length === 0 ? null : Math.max(...rows.map(row => Date.parse(row.finish)))
 
 export const maintenanceCost = (model: PlanModel, option: OptionView): number | null => {
-  if (option.status.word !== 'validated feasible') return null
+  if (!option.fresh || option.status.word !== 'validated feasible') return null
   const index = model.inputs.goals.findIndex(goal => goal.metric === 'extra-cost')
   return option.status.goals.find(goal => goal.goal === index)?.value ?? null
 }

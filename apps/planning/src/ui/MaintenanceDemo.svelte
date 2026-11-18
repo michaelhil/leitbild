@@ -27,6 +27,7 @@
   let agentError = $state<string | null>(null)
   let clearPreview = $state(0)
   let controller: AbortController | null = null
+  const noCheckedSchedule = 'No current checked schedule is available. Open the full plan to inspect its inputs, or try calculating the comparison again.'
 
   const time = $derived(createTimeFormat(model?.inputs.settings.timeZone ?? null))
   const options = $derived(model === null ? [] : planOptions(model).toSorted((left, right) =>
@@ -88,7 +89,7 @@
       if (pending.signal.aborted) return
       const shown = model
       if (shown === null || !planOptions(shown).some(option => option.fresh && option.status.word === 'validated feasible')) {
-        throw new Error('No checked schedule is available. Open the full plan to inspect its inputs, or try calculating the comparison again.')
+        throw new Error(noCheckedSchedule)
       }
     } catch (cause) {
       if (!pending.signal.aborted) error = refusalText(cause)
@@ -105,9 +106,12 @@
     loading = true
     error = null
     try {
-      const current = await read(model.id)
+      const before = await read(model.id)
+      await client.refresh(before.id, before.revision)
+      const current = await read(before.id)
       await client.generate(current.id, current.revision, maintenanceVariantsFor(current), pending.signal)
-      await read(current.id)
+      const checked = await read(current.id)
+      if (!planOptions(checked).some(option => option.fresh && option.status.word === 'validated feasible')) throw new Error(noCheckedSchedule)
     } catch (cause) {
       if (!pending.signal.aborted) error = refusalText(cause)
     } finally {
@@ -171,7 +175,7 @@
             <span class="target-result" class:late={targetTime !== null && done > targetTime}>
               {#if targetTime !== null}{spanText(Math.abs(done - targetTime))} {done > targetTime ? 'after' : 'before'} {time.when(targetTime)}{/if}
             </span>
-          {:else}<span>{option.status.word}</span>{/if}
+          {:else}<span>{option.fresh ? option.status.word : 'Needs a current check'}</span>{/if}
           <span class="cost">{cost === null ? 'Cost unavailable' : cost === 0 ? 'No extra booking cost' : `+ ${moneyText(cost, model.inputs.settings.currency)}`}</span>
         </button>
       {/each}
