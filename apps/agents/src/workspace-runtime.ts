@@ -80,6 +80,8 @@ import { dirname, join } from 'node:path'
 import { createComparisons } from './agents/comparisons.ts'
 import { createRunContextFetcher } from './agents/run-context.ts'
 import { displayRequestOffered, requestDisplay, type DisplayRequestDeps } from './agents/display-requests.ts'
+import { requestDiagramRevision } from './agents/diagram-requests.ts'
+import type { DiagramRequestBody, DiagramRequestAccepted } from './core/diagram-request.ts'
 import { createProposalCardReader, proposedOperationsOf, type ProposalCard } from './agents/proposal-cards.ts'
 import { createProposalResumes, type ProposalResumes } from './agents/proposal-resumes.ts'
 import { readRetainedWorkspaceResults, type RetainedWorkspaceResult } from './agents/retained-workspace-call.ts'
@@ -203,6 +205,7 @@ export interface AgentsWorkspaceRuntime {
   readonly requestDisplay: (roomId: string, messageId: string, requesterId: string) => Promise<DisplayRequestAccepted>
   // Whether an Agent's answers in a Room offer that request: its Scope reaches an operation that publishes a display.
   readonly displayRequestOffered: (roomId: string, agentId: string) => Promise<boolean>
+  readonly requestDiagramRevision: (roomId: string, messageId: string, body: DiagramRequestBody) => DiagramRequestAccepted
   // The operations a turn proposed and where World says each stands now (agents/proposal-cards.ts).
   // Throws with a code where the Room, the turn or the Workspace Host is missing.
   readonly readProposalCards: (roomId: string, turnId: string) => Promise<ReadonlyArray<ProposalCard>>
@@ -1121,6 +1124,7 @@ export const createAgentsWorkspaceRuntime = (options: CreateAgentsWorkspaceRunti
       ...(proposalResumes === undefined ? {} : { proposalResumes }),
       ...(procedureResumes === undefined ? {} : { procedureResumes }),
       requestDisplay: (roomId, messageId, requesterId) => requestDisplay(displayRequestDeps, roomId, messageId, requesterId),
+      requestDiagramRevision: (roomId, messageId, body) => requestDiagramRevision(displayRequestDeps, roomId, messageId, body),
       displayRequestOffered: (roomId, agentId) => displayRequestOffered(displayRequestDeps, roomId, agentId),
       setOnMessagePosted: messagePosted.set,
       setOnMessagesRemoved: messagesRemoved.set,
