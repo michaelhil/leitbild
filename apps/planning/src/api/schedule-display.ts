@@ -28,7 +28,7 @@ export const scheduleDisplay = (config: {
         || left.key.localeCompare(right.key))[0]
     : undefined
   const due = option.variant.also?.find(rule => rule.kind === 'due')
-  const digest = createHash('sha256').update(JSON.stringify({ revision: plan.revision, inputs: plan.inputs, option, reference: referenceOption ?? null })).digest('hex')
+  const digest = createHash('sha256').update(JSON.stringify({ revision: plan.revision, inputs: plan.inputs, option, fresh, reference: referenceOption ?? null })).digest('hex')
   if (config.expectedDigest !== undefined && config.expectedDigest !== digest) throw planningError(409, 'schedule_display_changed', 'This published schedule no longer matches its retained evidence. Ask for a new schedule view.')
   const result = scheduleDisplayResultSchema.parse({
     view: { viewType: 'planning.schedule', title: `${option.label}: schedule`.slice(0, 120), height: 650, state: JSON.stringify({ plan: plan.id, option: option.key, digest }) },
