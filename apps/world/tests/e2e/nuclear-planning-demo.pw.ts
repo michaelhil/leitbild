@@ -226,11 +226,7 @@ test('the scoped engineering agent produces an inspectable calculation beside th
     expect(receipt.observationRefs).toEqual(expect.arrayContaining([
       expect.objectContaining({ quantityId: 'componentCoolingWaterPumpB.flowKgPerS' }),
     ]))
-    const numbers = (value: unknown): number[] => typeof value === 'number' ? [value]
-      : Array.isArray(value) ? value.flatMap(numbers)
-      : value !== null && typeof value === 'object' ? Object.values(value).flatMap(numbers) : []
-    expect(numbers(receipt.outcome.output).some(value => Math.abs(value - 14.63) < 1e-6
-      || Math.abs(value - 14_630) < 1e-3 || Math.abs(value - 14_630_000) < 1e-3)).toBe(true)
+    expect(receipt.outcome.output.heatTransportMw).toBeCloseTo(14.63, 6)
 
     // Confirm this is the retained actual tool attempt, not just text in an answer.
     const frame = agents.locator('iframe[src*="/agents/embed/engineering.result"]')
@@ -261,8 +257,7 @@ test('the scoped engineering agent produces an inspectable calculation beside th
     ]))
     expect(changed.inputDigest).not.toBe(receipt.inputDigest)
     expect(changed.sources).toEqual(receipt.sources)
-    expect(numbers(changed.outcome.output).some(value => Math.abs(value - 7.315) < 1e-6
-      || Math.abs(value - 7_315) < 1e-3 || Math.abs(value - 7_315_000) < 1e-3)).toBe(true)
+    expect(changed.outcome.output.heatTransportMw).toBeCloseTo(7.315, 6)
     await expect(result.getByRole('button', { name: 'Return to original result', exact: true })).toBeVisible()
     await saveEvidenceImage('engineering-rerun', path => result.locator('body').screenshot({ path }))
 

@@ -44,7 +44,7 @@
       }
       const state = scheduleDisplayStateSchema.parse(JSON.parse(envelope.state))
       if (envelope.subject.id !== state.plan) throw new Error('The schedule view names a different plan.')
-      const answer = await client.display(state.plan, { option: state.option, digest: state.digest })
+      const answer = await client.display(state.plan, { option: state.option, digest: state.digest, reference: state.reference })
       const schedule = answer.schedule
       const next = await loadPlan(client, state.plan)
       const shownKey = schedule.option.status.word === 'validated feasible' ? schedule.option.key : schedule.reference?.key
@@ -53,7 +53,7 @@
         ? (await client.explain(state.plan, { ask: 'refusal', option: state.option })).lines : []
       // Jobs and rows use Planning's existing paged reads. Recheck the exact
       // publication after reading them so a changed option cannot mix dates.
-      await client.display(state.plan, { option: state.option, digest: state.digest })
+      await client.display(state.plan, { option: state.option, digest: state.digest, reference: state.reference })
       if (sequence !== readSequence) return
       model = next
       rows = dated
