@@ -2438,7 +2438,7 @@
           <button type="button" aria-label="Dismiss scenario cue notice" onclick={() => { dismissedTimelineOutcome = timelineOutcome }}>×</button>
         </div>
       {/if}
-      <WorldStatusLine {clock} execution={executionState} feedback={commandFeedback.line} placementHint={placement.placementText()} connectionProblem={liveUpdatesProblem} mapFocusLabel={focusedMapObjectLabel} planningDemoHref={routeFocus === null ? null : planningDemoHref} />
+      <WorldStatusLine {clock} execution={executionState} feedback={commandFeedback.line} placementHint={placement.placementText()} connectionProblem={liveUpdatesProblem} mapFocusLabel={focusedMapObjectLabel} planningDemoHref={routeFocus === null || displayWindowOpen ? null : planningDemoHref} />
       {#if runRoles && heldRoleIds}
         <RoleBar declaration={runRoles} held={heldRoleIds} switchingTo={pendingRoleIds} request={requestRoleChange} openDialog={() => { roleDialogOpen = true }} />
       {/if}
@@ -2515,6 +2515,7 @@
     openAssistant={runAssistantOffered && simulationRunId !== null ? openRunAssistant : null}
     focusMap={focusMapTarget}
     close={closeDisplayWindow}
+    planningDemoHref={routeFocus === null ? null : planningDemoHref}
   />
 {/if}
 

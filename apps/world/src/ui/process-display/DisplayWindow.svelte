@@ -127,6 +127,7 @@
     readonly focusMap: (target: MapFocusTarget) => void
     readonly onPresentation?: (sequence: number, applied: boolean, reason?: string) => void
     readonly close: () => void
+    readonly planningDemoHref?: string | null
   }
 
   let {
@@ -145,6 +146,7 @@
     focusMap,
     onPresentation = () => {},
     close,
+    planningDemoHref = null,
   }: Props = $props()
 
   type DefaultView =
@@ -840,6 +842,7 @@
     onkeydown={windowKeydown}
   >
     <header class="display-window-header">
+      {#if planningDemoHref}<a class="display-window-back" href={planningDemoHref} target="_top">Back to planning demo</a>{/if}
       <!-- ←/→/Home/End step while focus is on any navigation control. -->
       <!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
       <div class="display-window-nav" role="group" aria-label="Displays" onkeydown={navigationKeydown}>
