@@ -293,17 +293,19 @@ test('plain deadline questions produce checked success and refusal visualization
         const fragment = new URLSearchParams(new URL((await frame.getAttribute('src'))!, page.url()).hash.slice(1))
         const envelope = JSON.parse(fragment.get('view')!)
         const state = JSON.parse(envelope.state)
+        expect(state).toHaveProperty('reference')
         expect(envelope).toMatchObject({ moduleId: 'planning', viewType: 'planning.schedule', subject: { workspaceId: workspace, type: 'planning.plan', id: state.plan } })
         const read = await page.request.post(`/api/workspaces/${workspace}/capabilities/planning.plan.display/invoke`, {
           data: {
             resource: { workspaceId: workspace, moduleId: 'planning', type: 'planning.plan', id: state.plan },
-            input: { option: state.option, digest: state.digest, ...(state.reference === undefined ? {} : { reference: state.reference }) }, actor: { kind: 'human' },
+            input: { option: state.option, digest: state.digest, reference: state.reference }, actor: { kind: 'human' },
           },
         })
         expect(read.ok()).toBe(true)
         const publication = (await read.json()).result
         await saveEvidence(`planning-publication-${after}-${index}`, { envelope, publication })
         const schedule = publication.schedule
+        expect(state.reference).toBe(schedule.reference?.key ?? null)
         if (schedule.deadline === null || Date.parse(schedule.deadline.finishBy) !== Date.parse(deadline)
           || schedule.option.status.word !== status
           || expectedCost !== undefined && schedule.option.cost !== expectedCost) continue
@@ -360,7 +362,7 @@ test('plain deadline questions produce checked success and refusal visualization
       const response = await page.request.post(`/api/workspaces/${workspace}/capabilities/planning.plan.display/invoke`, {
         data: {
           resource: { workspaceId: workspace, moduleId: 'planning', type: 'planning.plan', id: earlier.plan },
-          input: { option: earlier.state.option, digest: earlier.state.digest, ...(earlier.state.reference === undefined ? {} : { reference: earlier.state.reference }) },
+          input: { option: earlier.state.option, digest: earlier.state.digest, reference: earlier.state.reference },
           actor: { kind: 'human' },
         },
       })
