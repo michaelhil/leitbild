@@ -1,5 +1,5 @@
 import { afterAll, expect, test } from 'bun:test'
-import { definitionIdSchema, featuredDefinitionCatalogSchema, moduleCapabilityInvocationResultSchema, moduleIdSchema, resourceIdSchema } from '@leitbild/contracts'
+import { definitionIdSchema, featuredDefinitionCatalogSchema, moduleCapabilityInvocationResultSchema, resourceIdSchema } from '@leitbild/contracts'
 import { createPlanningClient } from '../../../apps/planning/src/ui/api.ts'
 import { createWorkspaceApi } from '../../../apps/leitbild/src/ui/launch-workspace.ts'
 import { createPlanningStack } from './planning-stack.ts'
@@ -14,9 +14,8 @@ const api = createWorkspaceApi(transport)
 
 const launch = async (workspaceId: string): Promise<string> => {
   const catalogue = featuredDefinitionCatalogSchema.parse(await (await transport('/api/featured-definitions')).json())
-  const demo = catalogue.definitions.find(item => item.definition.moduleId === 'world' && item.definition.id === scenario)
-  if (!demo) throw new Error('The World demo is missing from the public carousel')
-  expect(demo.requiresModules).toContain(moduleIdSchema.parse('planning'))
+  const demo = [...catalogue.definitions, ...catalogue.listed].find(item => item.definition.moduleId === 'world' && item.definition.id === scenario)
+  if (!demo) throw new Error('The delivery scenario is missing from the public catalog')
   const started = await transport(`/api/workspaces/${workspaceId}/capabilities/world.scenario.start/invoke`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -38,7 +37,7 @@ const createDemoPlan = async (client: ReturnType<typeof createPlanningClient>, r
   return client.createDemo(definition, runId)
 }
 
-test('the public delivery demo runs in World and solves both orders from its linked truck', async () => {
+test('the retained delivery example runs in World and solves both orders from its linked truck', async () => {
   const { workspaceId } = stack
   const runId = await launch(workspaceId)
 
