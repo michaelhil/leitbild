@@ -196,12 +196,12 @@
           <p>World reports CCW B {backup?.value === true ? 'running' : backup?.value === false ? 'stopped' : 'with running state unavailable'}{flow !== undefined && typeof flow.value === 'number' ? ` at ${quantityText(flow.value, flow.unit ?? 'kg/s')}` : ''}{flow === undefined ? '' : `, read at ${time.when(flow.at)}`}.{serviceBackup === undefined ? '' : ` SW B is ${serviceBackup.value === true ? 'running' : serviceBackup.value === false ? 'stopped' : 'with running state unavailable'}, read at ${time.when(serviceBackup.at)}.`} {bothProtected ? 'Both B pumps are protected from planned work.' : 'Pump B is kept outside this plan’s work scope.'}</p>
           <p>The work durations, qualifications, calendars, {extraBooking === undefined ? 'extra crew cost' : `${moneyText(extraBooking, model.inputs.settings.currency)} extra crew cost`} and target are authored planning assumptions. Each displayed schedule passed the independent constraint checker. Scheduled gates forecast reviews and release handoffs by their responsible roles.</p>
           <p>The forecast assumes parts and access are ready and inspections and tests pass.</p>
-          <a href={plantHref('componentCoolingWaterPumpB')} target="_top">Inspect Pump B in World</a>
+          <a href={plantHref('componentCoolingWaterPumpB')} target="_top">Inspect CCW Pump B in World</a>
         </details>
       </section>
 
       <section class="engineering" aria-labelledby="cooling-calculation-title">
-        <div><h2 id="cooling-calculation-title">Estimate heat transport</h2><p>Ask the agent to read Pump B’s simulated flow and calculate heat transport for an assumed 10 K water-temperature rise.</p></div>
+        <div><h2 id="cooling-calculation-title">Estimate heat transport</h2><p>Ask the agent to read CCW Pump B’s simulated flow and calculate heat transport for an assumed 10 K water-temperature rise.</p></div>
         <button type="button" disabled={asking} onclick={() => void ask(prompt, 'Cooling-water calculation')}>Ask Assistant to calculate</button>
         <details><summary>Review the calculation request</summary><p class="request">{prompt}</p></details>
       </section>
