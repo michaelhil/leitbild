@@ -822,12 +822,23 @@ pub fn consistent_start_exempting<P: Properties + WaterProperties>(
     let mut yp = vec![0.; n];
     let mut residual = rows.clone();
     // R4-CLIMB-START: kept matrices steer the solve; dg/dy y' stays exact,
-    // one directional evaluation at (t, y, 0) along y'.
-    let constraint_rate = |joined: &mut Joined<P>, yp: &[f64]| -> Result<Vec<f64>, Failure> {
+    // one directional evaluation at (t, y, 0) along y'. R4-START-RATE-ONCE:
+    // a pass's closing rate, the next pass's opening one and the check after
+    // the passes are that evaluation at the same y' (the operator's
+    // evaluation keeps no state between calls), so it is made once per y'.
+    let mut evaluated: Option<(Vec<f64>, Vec<f64>)> = None;
+    let mut constraint_rate = |joined: &mut Joined<P>, yp: &[f64]| -> Result<Vec<f64>, Failure> {
         if stale {
+            if let Some((at, rate)) = &evaluated
+                && at.iter().zip(yp).all(|(a, b)| a.to_bits() == b.to_bits())
+            {
+                return Ok(rate.clone());
+            }
             let _cost = leitbild_operating_plant::cost::scope("start-rate");
             joined.evaluate(t, y, &zero, Some(yp), 0., None)?;
-            return Ok(joined.rows().iter().map(|r| r.direction).collect());
+            let rate: Vec<f64> = joined.rows().iter().map(|r| r.direction).collect();
+            evaluated = Some((yp.to_vec(), rate.clone()));
+            return Ok(rate);
         }
         let mut rate = vec![0.; n];
         for j in 0..n {
