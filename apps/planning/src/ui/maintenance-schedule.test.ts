@@ -58,6 +58,7 @@ describe('maintenance schedule interaction boundaries', () => {
     expect(maintenanceEquipmentElement('CCWHXA')).toBe('componentCoolingHeatExchangerA')
     expect(maintenanceEquipmentElement('SWA')).toBe('serviceWaterPumpA')
     expect(maintenanceEquipmentElement('unknown-equipment')).toBeNull()
+    expect(maintenanceEquipmentElement('toString')).toBeNull()
   })
 
   test('inspector dependencies exclude inactive method links even when both tasks are scheduled', () => {

@@ -6,9 +6,10 @@ export const maintenancePlantId = 'plant:maintenance'
 export const extraMaintenanceCrew = 'extra-maintenance-crew'
 
 /** Explicit navigation authored for this demonstration; Planning fact locators remain opaque. */
-export const maintenanceEquipmentElement = (key: string): string | null => ({
-  SWA: 'serviceWaterPumpA', CCWA: 'componentCoolingWaterPumpA', CCWHXA: 'componentCoolingHeatExchangerA',
-} as Readonly<Record<string, string>>)[key] ?? null
+const maintenanceEquipmentElements: ReadonlyMap<string, string> = new Map([
+  ['SWA', 'serviceWaterPumpA'], ['CCWA', 'componentCoolingWaterPumpA'], ['CCWHXA', 'componentCoolingHeatExchangerA'],
+])
+export const maintenanceEquipmentElement = (key: string): string | null => maintenanceEquipmentElements.get(key) ?? null
 
 export const maintenanceVariants: GenerateInput = {
   seconds: 5,
