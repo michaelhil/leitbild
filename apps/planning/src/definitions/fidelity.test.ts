@@ -39,7 +39,7 @@ describe('Definition fidelity', () => {
   })
 
   test('each Definition starts unlinked; the cases name their World Scenario; the revision is 16 hex of its document', async () => {
-    for (const [file, scenario] of [['blank', undefined], ['halden-delivery-planning', 'halden-delivery-planning'], ['train-a-work-week', 'train-a-work-week'], ['supply-run', 'supply-run']] as const) {
+    for (const [file, scenario] of [['blank', undefined], ['nuclear-maintenance-planning', 'nuclear-maintenance-planning'], ['halden-delivery-planning', 'halden-delivery-planning'], ['train-a-work-week', 'train-a-work-week'], ['supply-run', 'supply-run']] as const) {
       const document = await read(`./${file}.plan-definition.json`)
       const definition = bundledPlanDefinitions.find(entry => entry.id === document.id)!
       expect(definition.inputs.settings.run).toBeNull()

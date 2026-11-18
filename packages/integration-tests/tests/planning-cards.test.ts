@@ -13,9 +13,9 @@ const read = async (path: string) => (await fetch(`${stack.hostUrl}/api/workspac
 test('generic plan cards run with no input and the guided plan starts from World', async () => {
   const definitions = workspaceDefinitionCatalogSchema.parse(await read('definitions')).definitions.filter(definition => definition.ref.moduleId === 'planning')
   const capabilities = workspaceCapabilityCatalogSchema.parse(await read('capabilities')).capabilities
-  expect(definitions.map(definition => String(definition.ref.id))).toEqual(['blank', 'halden-delivery-planning', 'train-a-work-week', 'supply-run'])
+  expect(definitions.map(definition => String(definition.ref.id))).toEqual(['blank', 'nuclear-maintenance-planning', 'halden-delivery-planning', 'train-a-work-week', 'supply-run'])
   for (const definition of definitions) {
-    if (definition.ref.id === 'halden-delivery-planning') {
+    if (['halden-delivery-planning', 'nuclear-maintenance-planning'].includes(definition.ref.id)) {
       expect(definition.primaryCapabilityId).toBeUndefined()
       const started = await fetch(`${stack.hostUrl}/api/workspaces/${stack.workspaceId}/capabilities/planning.plan.create/invoke`, {
         method: 'POST', headers: { 'Content-Type': 'application/json' },

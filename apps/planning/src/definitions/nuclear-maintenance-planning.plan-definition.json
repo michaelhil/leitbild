@@ -196,11 +196,7 @@
             "words": "World shows Cooling Water Pump B running at the source read time."
           }
         ],
-        "tags": [],
-        "lock": {
-          "start": "2026-11-18T08:00:00Z",
-          "words": "The authored work window opens at 09:00."
-        }
+        "tags": []
       },
       {
         "key": "pump-work",
