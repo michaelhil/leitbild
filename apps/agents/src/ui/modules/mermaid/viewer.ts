@@ -223,7 +223,7 @@ export const createMermaidViewer = (options: ViewerOptions) => {
     if (!askHandler || !options.messageId || requestInProgress || !instruction.value.trim()) return
     if (editorDraft !== undefined) { announce('Apply or cancel the source draft before asking for another change.', true); return }
     const controller = new AbortController(); askAbort?.abort(); askAbort = controller
-    const baseline = versions.change(), source = versions.current().source
+    const baseline = versions.change(), baselineRender = renderEpoch, source = versions.current().source
     const handler = askHandler
     requestInProgress = true; updateAsk(); announce('Waiting for the Agent. Its reply is also saved in the chat.')
     void (async () => {
@@ -237,7 +237,9 @@ export const createMermaidViewer = (options: ViewerOptions) => {
         const svg = probe.querySelector('svg')
         if (!(svg instanceof SVGSVGElement)) throw new Error('The Agent returned no renderable diagram.')
         svgDiagramSize(svg)
-        const activate = versions.change() === baseline && editorDraft === undefined
+        // A direction/source change can still be rendering when this reply
+        // arrives. Treat that newer intent as a conflict before it commits.
+        const activate = versions.change() === baseline && renderEpoch === baselineRender && editorDraft === undefined
         versions.add(candidate.source, candidate.label ?? 'Agent change', activate)
         if (activate) {
           renderEpoch++; commitRendered(rendered); announce('Agent change applied. Previous versions remain in this view.')
