@@ -3,7 +3,10 @@
 // artifact's binary. LOAD's `inputs.packet` names its fixture: the channels with a value and a rate each
 // (value + rate·(t − t0)), the channel a command sets to 1 from its time on, the times at which it kills
 // itself, refuses an ADVANCE or stops answering (only the child that claims `hangClaimPath`, if named), the time of
-// a named domain end, and a wall delay before each ADVANCE reply (a slow exchange).
+// a named domain end, a wall delay before each ADVANCE reply (a slow exchange), and whether it answers an ADVANCE
+// at the decimal name of the asked instant (`answerDecimal`: 3719.2 for 37192 · 0.1 = 3719.2000000000003), as the
+// unit's driver may stand at an owner event's own time within the instant (water-ffi src/frame.rs, "One instant").
+// Like the unit, it refuses an ADVANCE that names its own instant (frame.rs `same_instant`).
 import { openSync, readFileSync } from 'node:fs'
 
 interface Fixture {
@@ -14,6 +17,7 @@ interface Fixture {
   readonly refuseAdvanceAtS?: number
   readonly endAtS?: number
   readonly advanceDelayMs?: number
+  readonly answerDecimal?: boolean
   readonly hangAdvanceAtS?: number
   readonly hangClaimPath?: string
 }
@@ -75,11 +79,12 @@ const handle = (op: number, payload: Uint8Array): Uint8Array | 'close' => {
   if (ended !== null && (op === 3 || op === 4)) throw new Error(`the unit ended at ${ended} s: solidPzr, the test double's cause`)
   if (op === 3) {
     const asked = new DataView(payload.buffer, payload.byteOffset, payload.byteLength).getFloat64(0, true)
-    if (!(asked > unit.t)) throw new Error(`ADVANCE to ${asked} s is not after the unit's ${unit.t} s`)
+    const sameInstant = Math.abs(asked - unit.t) <= 100 * Number.EPSILON * (Math.abs(asked) + Math.abs(unit.t))
+    if (!(asked > unit.t && !sameInstant)) throw new Error(`ADVANCE to ${asked} s is not after the unit's ${unit.t} s`)
     const exchange = (unit.load.solver as { grid_exchange_s?: number | null }).grid_exchange_s
     if (typeof exchange === 'number' && asked > (Math.floor(unit.t / exchange + 1e-9) + 1) * exchange + 1e-9) throw new Error(`ADVANCE to ${asked} s crosses the Grid exchange`)
     const ending = unit.fixture.endAtS !== undefined && asked >= unit.fixture.endAtS
-    const t1 = ending ? unit.fixture.endAtS! : asked
+    const t1 = ending ? unit.fixture.endAtS! : unit.fixture.answerDecimal === true ? Number(asked.toFixed(9)) : asked
     if (ending) ended = t1
     if (unit.fixture.dieAtS !== undefined && t1 >= unit.fixture.dieAtS) process.kill(process.pid, 'SIGKILL')
     if (unit.fixture.refuseAdvanceAtS !== undefined && t1 >= unit.fixture.refuseAdvanceAtS) {
