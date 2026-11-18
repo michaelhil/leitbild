@@ -72,6 +72,9 @@ describe('Leitbild Assistant skills', () => {
     expect(assistantRoom.room.agents[0]!.skills).toContain('planning-advice')
     const planning = store.get('planning-advice')!
     expect(planning.body.length).toBeLessThanOrEqual(3_600)
+    expect(planning.body.indexOf('planning.sources.refresh')).toBeGreaterThan(0)
+    expect(planning.body.indexOf('planning.sources.refresh')).toBeLessThan(planning.body.indexOf('planning.plan.generate'))
+    expect(planning.body).toContain('Unless the question is explicitly historical')
     expect(planning.body).not.toMatch(/17:00|job:\s*["']restore|extra-maintenance-crew|nuclear-maintenance-planning/)
   })
 })
