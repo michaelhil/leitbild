@@ -144,7 +144,7 @@ test('the scoped engineering agent produces an inspectable calculation beside th
     const result = agents.frameLocator('iframe[src*="/agents/embed/engineering.result"]')
     await expect(result.getByRole('heading', { name: 'Inputs used', exact: true })).toBeVisible({ timeout: 30_000 })
     await expect(result.getByRole('heading', { name: 'Try changed assumptions', exact: true })).toBeVisible()
-    const disclosure = result.locator('details').filter({ has: result.locator('summary', { hasText: 'Full calculation receipt and execution limits' }) })
+    const disclosure = result.getByText('Full calculation receipt and execution limits', { exact: true }).locator('..')
     await disclosure.locator('summary').click()
     const receipt = JSON.parse(await disclosure.locator('pre').innerText())
     expect(receipt).toMatchObject({
