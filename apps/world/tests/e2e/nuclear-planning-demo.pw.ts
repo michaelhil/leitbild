@@ -155,7 +155,7 @@ test('the scoped engineering agent produces an inspectable calculation beside th
     await planning.getByRole('link', { name: /World plant/ }).click()
     expect(new URL(page.url()).searchParams.get('agents')).toBe(room)
     const world = page.frameLocator('iframe[title="World simulations"]')
-    await world.getByRole('link', { name: 'Compare maintenance schedules', exact: true }).click()
+    await world.getByRole('link', { name: 'Back to planning demo', exact: true }).click()
     expect(new URL(page.url()).searchParams.get('agents')).toBe(room)
     await expect(page.frameLocator('iframe[title="Agents room"]').locator('body')).toContainText('Cooling-water calculation')
   })
