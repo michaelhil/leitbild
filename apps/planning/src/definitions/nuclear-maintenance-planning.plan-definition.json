@@ -1,11 +1,11 @@
 {
   "id": "nuclear-maintenance-planning",
   "title": "Plan: A cooling-train maintenance campaign",
-  "description": "Coordinate three A-train assets, specialized crews, independent hold points and a booked inspection window. Compare existing crews with one qualified HX contractor. World supplies equipment basis and current backup-pump observations; work estimates, gates, calendars and deadlines are illustrative assumptions. Planning issues no permits and never operates the plant.",
+  "description": "Coordinate three A-train assets, specialized crews, independent hold points and a booked inspection window. Compare existing crews with one qualified HX contractor. World supplies equipment basis and current backup-pump observations. Work estimates, gates, calendars and deadlines are authored exercise assumptions. Scheduled gates forecast reviews and handoffs by their responsible roles.",
   "inputs": {
     "settings": {
       "title": "A cooling-train maintenance campaign",
-      "purpose": "Return Service Water A, Component Cooling Water A and Heat Exchanger A through declared release, inspection and test gates while protecting both B pumps; compare specialist coordination, finish time and extra crew cost.",
+      "purpose": "Return Service Water A, Component Cooling Water A and Heat Exchanger A through declared release, inspection and test gates while protecting both B pumps. Compare specialist coordination, finish time and extra crew cost.",
       "timeZone": "Europe/Oslo",
       "window": {
         "start": "2026-11-18T06:00:00Z",
@@ -27,7 +27,7 @@
         "supportedBy": [],
         "source": {
           "by": "planner",
-          "note": "Reference model equipment identity. Work scope and functional support relationships are declared for this planning exercise; observed running alone does not establish operability or cooling adequacy."
+          "note": "Equipment identity comes from the reference model. Work scope and support relationships are planner-declared."
         },
         "locator": "process-plant/plant%3Amaintenance/serviceWaterPumpA",
         "function": "service-water"
@@ -40,7 +40,7 @@
         ],
         "source": {
           "by": "planner",
-          "note": "Reference model equipment identity. Work scope and functional support relationships are declared for this planning exercise; observed running alone does not establish operability or cooling adequacy."
+          "note": "Equipment identity comes from the reference model. Work scope and support relationships are planner-declared."
         },
         "locator": "process-plant/plant%3Amaintenance/componentCoolingWaterPumpA",
         "function": "component-cooling"
@@ -53,7 +53,7 @@
         ],
         "source": {
           "by": "planner",
-          "note": "Reference model equipment identity. Work scope and functional support relationships are declared for this planning exercise; observed running alone does not establish operability or cooling adequacy."
+          "note": "Equipment identity comes from the reference model. Work scope and support relationships are planner-declared."
         },
         "locator": "process-plant/plant%3Amaintenance/componentCoolingHeatExchangerA"
       },
@@ -63,7 +63,7 @@
         "supportedBy": [],
         "source": {
           "by": "planner",
-          "note": "Reference model equipment identity. Work scope and functional support relationships are declared for this planning exercise; observed running alone does not establish operability or cooling adequacy."
+          "note": "Equipment identity comes from the reference model. Work scope and support relationships are planner-declared."
         },
         "locator": "process-plant/plant%3Amaintenance/serviceWaterPumpB",
         "function": "service-water"
@@ -74,7 +74,7 @@
         "supportedBy": [],
         "source": {
           "by": "planner",
-          "note": "Reference model equipment identity. Work scope and functional support relationships are declared for this planning exercise; observed running alone does not establish operability or cooling adequacy."
+          "note": "Equipment identity comes from the reference model. Work scope and support relationships are planner-declared."
         },
         "locator": "process-plant/plant%3Amaintenance/componentCoolingWaterPumpB",
         "function": "component-cooling"
@@ -99,7 +99,7 @@
         "except": [],
         "source": {
           "by": "assumption",
-          "note": "Illustrative staffing, work estimates and coordination gates for a fictional maintenance campaign; not a plant procedure, issued permit or confirmed booking."
+          "note": "Authored exercise assumptions for work estimates, staffing, calendars and planned handoffs."
         }
       },
       {
@@ -115,7 +115,7 @@
         "except": [],
         "source": {
           "by": "assumption",
-          "note": "Illustrative staffing, work estimates and coordination gates for a fictional maintenance campaign; not a plant procedure, issued permit or confirmed booking."
+          "note": "Authored exercise assumptions for work estimates, staffing, calendars and planned handoffs."
         }
       },
       {
@@ -135,12 +135,12 @@
         "except": [],
         "source": {
           "by": "assumption",
-          "note": "Illustrative staffing, work estimates and coordination gates for a fictional maintenance campaign; not a plant procedure, issued permit or confirmed booking."
+          "note": "Authored exercise assumptions for work estimates, staffing, calendars and planned handoffs."
         }
       },
       {
         "key": "nde-booking",
-        "label": "NDE team: Wed 13:00–15:00; next Thu 09:00–11:00",
+        "label": "NDE team · Wed 13:00–15:00 and Thu 09:00–11:00",
         "weekly": [],
         "periods": [
           {
@@ -155,18 +155,18 @@
         "except": [],
         "source": {
           "by": "assumption",
-          "note": "Illustrative staffing, work estimates and coordination gates for a fictional maintenance campaign; not a plant procedure, issued permit or confirmed booking."
+          "note": "Authored exercise assumptions for work estimates, staffing, calendars and planned handoffs."
         }
       },
       {
         "key": "unbooked",
-        "label": "Contractor not booked",
+        "label": "Unbooked contractor capacity",
         "weekly": [],
         "periods": [],
         "except": [],
         "source": {
           "by": "assumption",
-          "note": "Illustrative staffing, work estimates and coordination gates for a fictional maintenance campaign; not a plant procedure, issued permit or confirmed booking."
+          "note": "Authored exercise assumptions for work estimates, staffing, calendars and planned handoffs."
         }
       }
     ],
@@ -182,7 +182,7 @@
         "words": "One qualified station mechanical crew for pump seal work, HX opening and closure, tube cleaning and the SW strainer. One job at a time.",
         "source": {
           "by": "assumption",
-          "note": "Illustrative staffing, work estimates and coordination gates for a fictional maintenance campaign; not a plant procedure, issued permit or confirmed booking."
+          "note": "Authored exercise assumptions for work estimates, staffing, calendars and planned handoffs."
         }
       },
       {
@@ -193,10 +193,10 @@
         "crewSize": 2,
         "calendar": "day",
         "attributes": [],
-        "words": "One qualified electrical crew for the isolated motor tasks; no mechanical work or independent QA.",
+        "words": "One qualified electrical crew for the isolated motor tasks.",
         "source": {
           "by": "assumption",
-          "note": "Illustrative staffing, work estimates and coordination gates for a fictional maintenance campaign; not a plant procedure, issued permit or confirmed booking."
+          "note": "Authored exercise assumptions for work estimates, staffing, calendars and planned handoffs."
         }
       },
       {
@@ -207,10 +207,10 @@
         "crewSize": 3,
         "calendar": "unbooked",
         "attributes": [],
-        "words": "May clean HX tubes and service the SW strainer only. Not qualified in this plan for pump seal work, electrical work, isolation, QA or return-to-service tests.",
+        "words": "Qualified in this exercise for HX tube cleaning and SW inlet-strainer service.",
         "source": {
           "by": "assumption",
-          "note": "Illustrative staffing, work estimates and coordination gates for a fictional maintenance campaign; not a plant procedure, issued permit or confirmed booking."
+          "note": "Authored exercise assumptions for work estimates, staffing, calendars and planned handoffs."
         }
       },
       {
@@ -221,10 +221,10 @@
         "crewSize": 1,
         "calendar": "duty",
         "attributes": [],
-        "words": "Qualified operations shift coverage, one work-control activity at a time; not one person on duty for the whole window. Scheduled release and restoration gates are forecasts, not issued permits or recorded authorizations.",
+        "words": "Qualified operations shift teams provide one work-control activity at a time. Scheduled release and restoration tasks forecast their planned handoffs.",
         "source": {
           "by": "assumption",
-          "note": "Illustrative staffing, work estimates and coordination gates for a fictional maintenance campaign; not a plant procedure, issued permit or confirmed booking."
+          "note": "Authored exercise assumptions for work estimates, staffing, calendars and planned handoffs."
         }
       },
       {
@@ -235,10 +235,10 @@
         "crewSize": 1,
         "calendar": "duty",
         "attributes": [],
-        "words": "A separate qualified operations verifier; independent of the operator establishing the isolation.",
+        "words": "A qualified operations verifier who is independent of the operator establishing the isolation.",
         "source": {
           "by": "assumption",
-          "note": "Illustrative staffing, work estimates and coordination gates for a fictional maintenance campaign; not a plant procedure, issued permit or confirmed booking."
+          "note": "Authored exercise assumptions for work estimates, staffing, calendars and planned handoffs."
         }
       },
       {
@@ -249,10 +249,10 @@
         "crewSize": 1,
         "calendar": "qa-duty",
         "attributes": [],
-        "words": "Independent of the maintenance crews; witnesses the seal hold point, accepts NDE results and reviews test readiness.",
+        "words": "An inspector independent of the maintenance crews witnesses the seal hold point, accepts NDE results and reviews test readiness.",
         "source": {
           "by": "assumption",
-          "note": "Illustrative staffing, work estimates and coordination gates for a fictional maintenance campaign; not a plant procedure, issued permit or confirmed booking."
+          "note": "Authored exercise assumptions for work estimates, staffing, calendars and planned handoffs."
         }
       },
       {
@@ -263,10 +263,10 @@
         "crewSize": 2,
         "calendar": "nde-booking",
         "attributes": [],
-        "words": "One specialist team; the two-hour inspection is continuous and must fit wholly in an available appointment.",
+        "words": "One specialist team performs the continuous two-hour inspection within an available appointment.",
         "source": {
           "by": "assumption",
-          "note": "Illustrative staffing, work estimates and coordination gates for a fictional maintenance campaign; not a plant procedure, issued permit or confirmed booking."
+          "note": "Authored exercise assumptions for work estimates, staffing, calendars and planned handoffs."
         }
       },
       {
@@ -277,10 +277,10 @@
         "crewSize": 2,
         "calendar": "duty",
         "attributes": [],
-        "words": "Qualified test-team duty coverage plus the operations work-control shift team, not the same people for the whole window. One continuous test at a time; scope and acceptance are illustrative planning activities, not real test results.",
+        "words": "Qualified test-team duty coverage works with the operations shift team. One continuous test is performed at a time under the authored scope and acceptance allowance.",
         "source": {
           "by": "assumption",
-          "note": "Illustrative staffing, work estimates and coordination gates for a fictional maintenance campaign; not a plant procedure, issued permit or confirmed booking."
+          "note": "Authored exercise assumptions for work estimates, staffing, calendars and planned handoffs."
         }
       }
     ],
@@ -318,7 +318,7 @@
           "calendar": "working",
           "origin": {
             "by": "assumption",
-            "note": "Planned review of work scope, protected-train assumptions and prerequisites. An illustrative scheduled gate, not a completed review or permission."
+            "note": "Planned review of work scope, protected-train assumptions and prerequisites by operations and QA."
           }
         },
         "durationWith": [],
@@ -358,7 +358,7 @@
           "calendar": "working",
           "origin": {
             "by": "assumption",
-            "note": "Illustrative staffing, work estimates and coordination gates for a fictional maintenance campaign; not a plant procedure, issued permit or confirmed booking."
+            "note": "Authored exercise assumptions for work estimates, staffing, calendars and planned handoffs."
           }
         },
         "durationWith": [],
@@ -377,13 +377,13 @@
             "equipment": "CCWB",
             "fact": "plant:maintenance/componentCoolingWaterPumpB/runningState",
             "expect": true,
-            "words": "CCW B is observed running at the World source read time; this is not an operability or future-availability finding."
+            "words": "CCW B is observed running at the World source read time."
           },
           {
             "equipment": "SWB",
             "fact": "plant:maintenance/serviceWaterPumpB/runningState",
             "expect": true,
-            "words": "SW B is observed running at the World source read time; this is not an operability or future-availability finding."
+            "words": "SW B is observed running at the World source read time."
           }
         ],
         "tags": []
@@ -400,7 +400,7 @@
           "calendar": "working",
           "origin": {
             "by": "assumption",
-            "note": "Planned independent verification and work-release gate. No actual isolation, permit or authorization is performed or recorded by Planning."
+            "note": "Forecast independent verification and work-release handoff by the designated verifier."
           }
         },
         "durationWith": [],
@@ -433,7 +433,7 @@
           "calendar": "working",
           "origin": {
             "by": "assumption",
-            "note": "Illustrative staffing, work estimates and coordination gates for a fictional maintenance campaign; not a plant procedure, issued permit or confirmed booking."
+            "note": "Authored exercise assumptions for work estimates, staffing, calendars and planned handoffs."
           }
         },
         "durationWith": [],
@@ -464,7 +464,7 @@
           "calendar": "working",
           "origin": {
             "by": "assumption",
-            "note": "Illustrative staffing, work estimates and coordination gates for a fictional maintenance campaign; not a plant procedure, issued permit or confirmed booking."
+            "note": "Authored exercise assumptions for work estimates, staffing, calendars and planned handoffs."
           },
           "range": {
             "low": 4,
@@ -499,7 +499,7 @@
           "calendar": "working",
           "origin": {
             "by": "assumption",
-            "note": "Illustrative staffing, work estimates and coordination gates for a fictional maintenance campaign; not a plant procedure, issued permit or confirmed booking."
+            "note": "Authored exercise assumptions for work estimates, staffing, calendars and planned handoffs."
           }
         },
         "durationWith": [],
@@ -532,7 +532,7 @@
           "calendar": "working",
           "origin": {
             "by": "assumption",
-            "note": "Illustrative staffing, work estimates and coordination gates for a fictional maintenance campaign; not a plant procedure, issued permit or confirmed booking."
+            "note": "Authored exercise assumptions for work estimates, staffing, calendars and planned handoffs."
           }
         },
         "durationWith": [],
@@ -563,7 +563,7 @@
           "calendar": "working",
           "origin": {
             "by": "assumption",
-            "note": "Illustrative staffing, work estimates and coordination gates for a fictional maintenance campaign; not a plant procedure, issued permit or confirmed booking."
+            "note": "Authored exercise assumptions for work estimates, staffing, calendars and planned handoffs."
           }
         },
         "durationWith": [],
@@ -594,7 +594,7 @@
           "calendar": "working",
           "origin": {
             "by": "assumption",
-            "note": "Illustrative staffing, work estimates and coordination gates for a fictional maintenance campaign; not a plant procedure, issued permit or confirmed booking."
+            "note": "Authored exercise assumptions for work estimates, staffing, calendars and planned handoffs."
           },
           "range": {
             "low": 2,
@@ -630,7 +630,7 @@
           "calendar": "working",
           "origin": {
             "by": "assumption",
-            "note": "Illustrative staffing, work estimates and coordination gates for a fictional maintenance campaign; not a plant procedure, issued permit or confirmed booking."
+            "note": "Authored exercise assumptions for work estimates, staffing, calendars and planned handoffs."
           }
         },
         "durationWith": [],
@@ -670,7 +670,7 @@
           "calendar": "working",
           "origin": {
             "by": "assumption",
-            "note": "Illustrative staffing, work estimates and coordination gates for a fictional maintenance campaign; not a plant procedure, issued permit or confirmed booking."
+            "note": "Authored exercise assumptions for work estimates, staffing, calendars and planned handoffs."
           }
         },
         "durationWith": [],
@@ -701,7 +701,7 @@
           "calendar": "working",
           "origin": {
             "by": "assumption",
-            "note": "Illustrative staffing, work estimates and coordination gates for a fictional maintenance campaign; not a plant procedure, issued permit or confirmed booking."
+            "note": "Authored exercise assumptions for work estimates, staffing, calendars and planned handoffs."
           }
         },
         "durationWith": [],
@@ -733,7 +733,7 @@
           "calendar": "working",
           "origin": {
             "by": "assumption",
-            "note": "Illustrative staffing, work estimates and coordination gates for a fictional maintenance campaign; not a plant procedure, issued permit or confirmed booking."
+            "note": "Authored exercise assumptions for work estimates, staffing, calendars and planned handoffs."
           }
         },
         "durationWith": [],
@@ -764,7 +764,7 @@
           "calendar": "working",
           "origin": {
             "by": "assumption",
-            "note": "Illustrative staffing, work estimates and coordination gates for a fictional maintenance campaign; not a plant procedure, issued permit or confirmed booking."
+            "note": "Authored exercise assumptions for work estimates, staffing, calendars and planned handoffs."
           }
         },
         "durationWith": [],
@@ -790,7 +790,7 @@
         "minimum": {
           "value": 1,
           "unit": "h",
-          "words": "Illustrative minimum test allowance declared by this planner; not derived from a plant procedure. Reducing it requires a person to review the assumption."
+          "words": "Planner-declared test allowance for this exercise. Reducing it requires a person's review."
         }
       },
       {
@@ -805,7 +805,7 @@
           "calendar": "working",
           "origin": {
             "by": "assumption",
-            "note": "Planned review of mechanical, electrical and inspection completion records before controlled testing. This is not an issued operational permission."
+            "note": "Forecast review of mechanical, electrical and inspection completion records before controlled testing."
           }
         },
         "durationWith": [],
@@ -846,7 +846,7 @@
           "calendar": "working",
           "origin": {
             "by": "assumption",
-            "note": "Illustrative staffing, work estimates and coordination gates for a fictional maintenance campaign; not a plant procedure, issued permit or confirmed booking."
+            "note": "Authored exercise assumptions for work estimates, staffing, calendars and planned handoffs."
           }
         },
         "durationWith": [],
@@ -874,11 +874,11 @@
         "minimum": {
           "value": 1.5,
           "unit": "h",
-          "words": "Illustrative minimum test allowance declared by this planner; not derived from a plant procedure. Reducing it requires a person to review the assumption."
+          "words": "Planner-declared test allowance for this exercise. Reducing it requires a person's review."
         },
         "target": {
           "finishBy": "2026-11-18T20:00:00Z",
-          "words": "The planner targets Wednesday 21:00; the separate hard coordination deadline is Thursday 15:00."
+          "words": "The planner targets Wednesday 21:00. The hard coordination deadline is Thursday 15:00."
         }
       }
     ],
@@ -1066,7 +1066,7 @@
         "words": "Both B pumps are protected: no isolation, maintenance or test may touch them in this plan.",
         "source": {
           "by": "planner",
-          "note": "Declared protection for the fictional work package. Observed running does not establish operability, redundancy adequacy or permission to maintain A."
+          "note": "Planner-declared protection for both B pumps during the A-train maintenance exercise."
         }
       },
       {
@@ -1077,7 +1077,7 @@
         "words": "Finish return-to-service work by Thursday 15:00, the authored coordination deadline.",
         "source": {
           "by": "assumption",
-          "note": "An illustrative station work-coordination commitment, not a technical-specification completion time or licence condition."
+          "note": "Planner-declared station coordination commitment for this exercise."
         }
       }
     ],
