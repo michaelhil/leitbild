@@ -104,7 +104,7 @@ test('arbitrary deadlines retain real proofs and publish the exact option with a
     ] })
     for (const [index, prefix] of ['One crew', 'Extra crew'].entries()) {
       const option = generated.options.find(candidate => candidate.label === `${prefix} by ${label}`)!
-      expect(option.status.word).toBe(expected[index])
+      expect(option.status.word).toBe(expected[index]!)
       const published = await display(option.key)
       expect(published.status).toBe(200)
       const { view, schedule } = published.body.result
