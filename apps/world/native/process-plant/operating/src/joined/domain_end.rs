@@ -13,8 +13,8 @@
 //!   Another cell's dryout stays a failure.
 //!
 //! Nothing else is an end. C4 and C4-I do not reach rule I's 8 MPa floor
-//! (no receipt below 10.6 MPa), which the unit does not judge, so it is not
-//! in this table.
+//! (no receipt below 10.6 MPa). The unit judges it as the case observer does
+//! (R4-FLOOR-UNIT) and fails by name there, so it is not in this table.
 //!
 //! The refusals are read from the cause the driver returned, so a refused
 //! trial Newton recovered from names nothing: [`Refused`] is taken only after

@@ -8,7 +8,8 @@
 //! PZR pressure control in class S, the generator page's ACT.B field
 //! controller, and AUTO rod control when the section declares it), stock
 //! IDAS in one-step mode with its quadratures carried.
-//! It reads no environment: LOAD names every input path.
+//! It reads no environment: LOAD names every input path. It sets two for
+//! SUNDIALS's logger, so that SUNDIALS's warnings and errors go to stderr.
 //!
 //! **Frames.** Request `u32 len | u8 op | u32 seq | payload`; reply
 //! `u32 len | u8 status | u32 seq | f64 wall_s | f64 cpu_s | payload`, all
@@ -89,6 +90,15 @@
 //! is refused: 1.0 has no offsite restoration (S3-D10). A load request with
 //! the governor out of LOAD is a result (`accepted: false`), not a refusal.
 //!
+//! **Kinetics domain** (R4-FLOOR-UNIT). The unit judges the domain of the
+//! source feedback as the case observer judges the operable unit's cases:
+//! P1 with B1 (OU-P1), the packet's `hot_standby_kinetics` record, through
+//! `post_trip_domain::hot_standby_domain_exit` (`validate_accepted_within`,
+//! the 8 MPa floor among its bounds, then B1's phase absence) at every
+//! accepted step and every restart's consistent start inside an ADVANCE. The
+//! first state outside it fail-stops the unit with the exit's label, time and
+//! bound; it is not a named end.
+//!
 //! A refusal after the unit's state may have changed (ADVANCE, a restart, a
 //! Grid boundary) fail-stops the unit: every later request but STATUS and
 //! CLOSE is refused with that cause.
@@ -100,8 +110,13 @@ use leitbild_operating_plant::{
         acquisition::Quality,
         packet::{Quantity, SgFlow},
     },
-    joined::block::Command,
+    joined::{
+        block::Command,
+        operator::Joined,
+        post_trip_domain::{self, HotStandby},
+    },
     network::{CellMode, Network, Properties},
+    source_feedback as sf,
     thermal::Scalar,
     turbine::governor::Mode,
 };
@@ -110,7 +125,7 @@ use leitbild_operating_water::{
     electrical::Electrified,
     frame::{
         Action, COUNTER_NAMES, Change, Class, Client, Diagnostic, DriverState, Frame,
-        MatrixRebuild, Stepping, same_instant,
+        MatrixRebuild, Observer, Side, Stepping, same_instant,
     },
     joined::{Discrete, Integrated, JoinedSystem, discrete_restart},
     unit::{
@@ -1058,6 +1073,8 @@ struct Unit {
     exchanges: u64,
     /// R4-GRID: the exchange grid in I&C frames (LOAD's `grid_exchange_s`).
     grid_exchange_frames: Option<u64>,
+    /// R4-FLOOR-UNIT: the kinetics domain judged on accepted states.
+    domain: KineticsDomain,
 }
 
 /// R4-ENDED: a named domain end, at the last accepted step's time.
@@ -1065,6 +1082,118 @@ struct Ended {
     end: DomainEnd,
     t: f64,
     cause: String,
+}
+
+/// R4-FLOOR-UNIT: the kinetics domain the case observer judges on the
+/// operable unit's cases (P1 with B1, OU-P1), judged here at the same points
+/// with the same functions: every accepted stock step, and every restart's
+/// consistent start inside a driven span. Read from the packet at compose;
+/// it holds no state and decides no change.
+struct KineticsDomain {
+    /// The packet's `hot_standby_kinetics` record (`ld01-hot-standby-kinetics`).
+    record: HotStandby,
+    /// The operator's dimension (the electrical slice's coordinates follow).
+    n: usize,
+}
+
+impl KineticsDomain {
+    fn of(packet: &Value, plant: &Plant) -> Result<Self, String> {
+        let record: HotStandby = serde_json::from_value(packet["hot_standby_kinetics"].clone())
+            .map_err(|e| format!("the packet's hot_standby_kinetics section (OU-P1): {e}"))?;
+        let feedback = plant.ida.system().integrated().joined.nuclear().feedback();
+        record
+            .validate(&feedback.domains())
+            .map_err(|e| e.to_string())?;
+        Ok(Self { record, n: plant.n })
+    }
+
+    /// The case observer's P1 exit at the accepted state `(t, y, y')`: its
+    /// evaluation held or made there, then
+    /// [`post_trip_domain::hot_standby_domain_exit`]; at an exit, the
+    /// admission names it, labelled as the case observer labels it.
+    fn judge(
+        &self,
+        joined: &mut Joined<If97>,
+        t: f64,
+        y: &[f64],
+        yp: &[f64],
+    ) -> Result<(), String> {
+        if !joined.holds_value_evaluation(t, y, yp) {
+            joined
+                .evaluate(t, y, yp, None, 0., None)
+                .map_err(|e| format!("kinetics domain: the operator at {t} s: {e:?}"))?;
+        }
+        let phase = joined
+            .region_phases()
+            .map_err(|e| format!("kinetics domain: region phases at {t} s: {e:?}"))?;
+        let exit = post_trip_domain::hot_standby_domain_exit(
+            joined.nuclear(),
+            &phase,
+            &self.record,
+            joined.travel(),
+            t,
+            0.,
+        )
+        .map_err(|e| format!("kinetics domain at {t} s: {e}"))?;
+        if !exit {
+            return Ok(());
+        }
+        match post_trip_domain::admit_hot_standby_accepted(
+            joined.nuclear(),
+            &phase,
+            &self.record,
+            joined.travel(),
+            t,
+            0.,
+        ) {
+            Ok(_) => Ok(()),
+            Err(post_trip_domain::Error::Unsupported {
+                margin_holds, exit, ..
+            }) => {
+                let label = if sf::phase_absence(&phase).err().as_ref() == Some(&exit) {
+                    "B1 phase-absence exit"
+                } else {
+                    "P1 hot-standby domain exit"
+                };
+                Err(format!(
+                    "{label} at {t} s: unsupported: nominal margin holds {margin_holds}, {exit:?}: the first accepted state outside the kinetics domain (R4-FLOOR-UNIT)"
+                ))
+            }
+            Err(e) => Err(format!("kinetics domain at {t} s: {e}")),
+        }
+    }
+}
+
+impl<J: JoinedSystem<Properties = If97>> Observer<Electrified<J>> for KineticsDomain {
+    fn next_after(&self, _t: f64) -> Option<f64> {
+        None
+    }
+    fn sample(
+        &mut self,
+        system: &mut Electrified<J>,
+        t: f64,
+        y: &[f64],
+        yp: &[f64],
+        _q: &[f64],
+        side: Side,
+    ) -> Result<(), String> {
+        if side != Side::AfterRestart {
+            return Ok(());
+        }
+        let n = self.n;
+        self.judge(&mut system.integrated_mut().joined, t, &y[..n], &yp[..n])
+    }
+    fn accepted(
+        &mut self,
+        system: &mut Electrified<J>,
+        t: f64,
+        y: &[f64],
+        yp: &[f64],
+        _q: &[f64],
+    ) -> Result<(), String> {
+        let n = self.n;
+        self.judge(&mut system.integrated_mut().joined, t, &y[..n], &yp[..n])
+    }
 }
 
 /// The cheap identity of a LOAD request: every input file and wiki page it
@@ -1279,6 +1408,7 @@ impl Unit {
         let grid_exchange_frames = grid_exchange_s
             .map(|seconds| exchange_frames(seconds, &plant.frame))
             .transpose()?;
+        let domain = KineticsDomain::of(&inputs.spine.packet_json()?, &plant)?;
         Ok(Self {
             plant,
             inputs,
@@ -1293,6 +1423,7 @@ impl Unit {
             ended: None,
             exchanges: 0,
             grid_exchange_frames,
+            domain,
         })
     }
 
@@ -1596,7 +1727,9 @@ impl Unit {
             }
         }
         let before = self.counters()?;
-        let reached = self.plant.run(self.t, t1, &mut [], None);
+        // R4-FLOOR-UNIT: the kinetics domain judged on the accepted states;
+        // its exit is a driver error, so a failure below, never a named end.
+        let reached = self.plant.run(self.t, t1, &mut [], Some(&mut self.domain));
         let reached = match reached {
             Ok(plant_reached) => plant_reached,
             Err(e) => match self.named_end(&e) {
@@ -2341,6 +2474,17 @@ fn fatal(message: &str) -> ! {
 }
 
 fn main() {
+    // R4-UNIT-STDERR: stdout is the protocol channel. SUNDIALS 7.5.0 builds
+    // every SUNContext's logger from the environment (`SUNLogger_CreateFromEnv`
+    // in `SUNContext_Create`), with warnings to stdout and errors to stderr by
+    // default; IDA's warnings go to that logger. Both name stderr here, before
+    // any context exists, so every context of the process logs there. Nothing
+    // is suppressed.
+    // SAFETY: the first statement of `main`; no other thread exists yet.
+    unsafe {
+        std::env::set_var("SUNLOGGER_WARNING_FILENAME", "stderr");
+        std::env::set_var("SUNLOGGER_ERROR_FILENAME", "stderr");
+    }
     let mut unit: Option<Unit> = None;
     let mut input = BufReader::new(std::io::stdin().lock());
     let mut output = BufWriter::new(std::io::stdout().lock());
