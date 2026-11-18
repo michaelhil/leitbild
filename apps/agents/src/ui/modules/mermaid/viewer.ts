@@ -78,9 +78,12 @@ export const createMermaidViewer = (options: ViewerOptions) => {
   }
   const fit = (): void => {
     if (viewport.clientWidth <= 0) return
-    // Inline fit uses the existing 60vh budget; expanded fit uses its actual canvas.
-    const height = dialog ? viewport.clientHeight : Math.max(80, window.innerHeight * 0.6)
-    updateScale(fitDiagramScale(size, { width: viewport.clientWidth, height }), true)
+    // Inline diagrams fit the chat width and scroll vertically, as before the
+    // viewer. Fitting a tall graph's full height would make its labels tiny.
+    const next = dialog
+      ? fitDiagramScale(size, { width: viewport.clientWidth, height: viewport.clientHeight })
+      : Math.min(1, viewport.clientWidth / size.width)
+    updateScale(next, true)
   }
   const zoom = (factor: number): void => updateScale(boundedZoom(scale * factor))
   const minus = makeButton('−', () => zoom(1 / 1.25)); minus.setAttribute('aria-label', 'Zoom out diagram')
@@ -168,8 +171,16 @@ export const createMermaidViewer = (options: ViewerOptions) => {
     }
   }
   const applyDraft = async (): Promise<void> => {
+    const submittedSource = textarea.value
     apply.disabled = true
-    if (await renderCandidate(textarea.value, 'Source edit')) { editorDraft = undefined; editor.hidden = true; refreshVersions() }
+    if (await renderCandidate(submittedSource, 'Source edit')) {
+      if (textarea.value === submittedSource) { editorDraft = undefined; editor.hidden = true }
+      else {
+        editorDraft = textarea.value; editor.hidden = false
+        announce('The submitted version was applied. Your newer source draft is still open.')
+      }
+      refreshVersions()
+    }
     apply.disabled = false
   }
   const showEditor = (): void => {

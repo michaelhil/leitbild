@@ -86,6 +86,10 @@ export const renderMermaidBlocks = async (container: HTMLElement): Promise<void>
     const id = nextMermaidId('mermaid')
     try {
       const { svg } = await renderQueued(api, id, source)
+      // A Room switch or message deletion can remove the original fence while
+      // it waits in the render queue. Intentionally drop that stale result
+      // before creating a viewer with observers that could never be removed.
+      if (!pre.isConnected) continue
       const marker = (block as HTMLElement).dataset.mermaidIndex
       const sourceIndex = marker !== undefined && /^\d+$/.test(marker) && Number.isSafeInteger(Number(marker)) ? Number(marker) : undefined
       // Only the markdown renderer can establish a source-fence index. Raw HTML
