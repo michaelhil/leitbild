@@ -33,6 +33,8 @@ import {
   methodWords, spanAndCost, statusSentence, timeWords, valueWords, type OptionState, type Section, type SectionContext,
 } from '../plan/summary.ts'
 import type { Grid } from '../time/units.ts'
+import { scheduleDisplay } from './schedule-display.ts'
+import type { scheduleDisplayInputSchema } from './schedule-display-contract.ts'
 import {
   compactLineLength, explainResultSchema, generateResultSchema, resultLimitBytes, sectionDataSchemas, writeResultSchema, type ItemStatus,
   type baselineInputSchema, type createInputSchema, type editInputSchema, type explainInputSchema, type generateInputSchema, type readInputSchema, type StatusOut,
@@ -773,6 +775,13 @@ export const createPlanningOperations = (ports: PlanningOperationsPorts) => {
       const work = generateOnce(workspaceId, planId, input, expectedRevision, access, AbortSignal.any([signal, stopping.signal]))
       generating.set(running, work)
       try { return await work } finally { generating.delete(running) }
+    },
+
+    display: async (workspaceId: WorkspaceId, planId: string, input: z.infer<typeof scheduleDisplayInputSchema>) => {
+      const plan = await store.read(workspaceId, planId)
+      const option = findOption(plan, input.option)
+      return scheduleDisplay({ plan, option, fresh: candidate => !optionState(plan, candidate).stale,
+        status: candidate => statusOut(optionState(plan, candidate).shown), ...(input.digest === undefined ? {} : { expectedDigest: input.digest }) })
     },
 
     explain: async (workspaceId: WorkspaceId, planId: string, input: z.infer<typeof explainInputSchema>): Promise<ExplainResult> => {

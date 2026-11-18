@@ -17,6 +17,7 @@ const table = {
   'planning.plan.read': ['resource', 'query', 'read', ['status', 'overview', 'attention', 'summary', 'rules', 'crews', 'schedule', 'history']],
   'planning.plan.baseline': ['resource', 'command', 'write', ['baseline', 'commit', 'freeze', 'approve', 'choose', 'target']],
   'planning.sources.refresh': ['workspace', 'command', 'write', ['refresh', 'update', 'latest', 'World', 'changed', 'reread', 'sync']],
+  'planning.plan.display': ['resource', 'query', 'read', ['visualize', 'chart', 'gantt', 'show', 'schedule', 'deadline', 'can we finish', 'by a time']],
   'planning.plan.delete': ['resource', 'command', 'destructive', ['delete', 'remove', 'get rid of', 'discard', 'scrap', 'throw away']],
 } as const
 
@@ -32,7 +33,7 @@ const undescribed = (schema: unknown, path = ''): string[] => {
 }
 
 describe('the Planning operations as published (design §5.1)', () => {
-  test('exactly the eight Planning operations, with their scopes, kinds, risks and search terms', () => {
+  test('exactly the published Planning operations, with their scopes, kinds, risks and search terms', () => {
     expect([...byId.keys()].sort()).toEqual(Object.keys(table).sort())
     for (const [id, [scope, kind, risk, terms]] of Object.entries(table)) {
       const descriptor = byId.get(id)!

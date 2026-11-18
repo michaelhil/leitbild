@@ -8,6 +8,7 @@ import {
 } from './contract.ts'
 import { statusOut } from './operations.ts'
 import { optionSchema } from '../plan/schema.ts'
+import { scheduleDisplayInputSchema } from './schedule-display-contract.ts'
 
 const inputs: Record<string, z.ZodType> = {
   'world.simulation-run.planning-facts': planningFactsInputSchema,
@@ -19,6 +20,7 @@ const inputs: Record<string, z.ZodType> = {
   'planning.plan.baseline': baselineInputSchema,
   'planning.sources.refresh': refreshInputSchema,
   'planning.plan.delete': deleteInputSchema,
+  'planning.plan.display': scheduleDisplayInputSchema,
 }
 const large = new Set(['planning.plan.create', 'planning.plan.edit'])
 

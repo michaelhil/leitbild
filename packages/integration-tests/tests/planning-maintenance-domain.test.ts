@@ -79,3 +79,60 @@ test('a stopped backup pump refuses reopening rather than copying a stale runnin
   }
   throw new Error('The stopped backup was still accepted after the World step')
 }, 60_000)
+
+test('arbitrary deadlines retain real proofs and publish the exact option with a checked reference', async () => {
+  const run = await stack.start('world.scenario', 'nuclear-maintenance-planning', 'world.scenario.start')
+  const created = await client.createDemo(definition, run)
+  const planId = created.result.plan.id, revision = created.result.plan.revision
+  await client.generate(planId, revision, { variants: [{ label: 'One crew', buy: [] }, { label: 'Extra crew', buy: ['extra-maintenance-crew'] }] })
+  const display = async (option: string, digest?: string) => {
+    const response = await transport(`/api/workspaces/${stack.workspaceId}/capabilities/planning.plan.display/invoke`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ resource: { workspaceId: stack.workspaceId, moduleId: 'planning', type: 'planning.plan', id: planId }, input: { option, ...(digest === undefined ? {} : { digest }) } }),
+    })
+    return { status: response.status, body: await response.json() as any }
+  }
+  let pinned: { option: string; digest: string } | undefined
+  for (const [label, finishBy, expected] of [
+    ['18:00', '2026-11-18T17:00:00Z', ['unresolved', 'validated feasible']],
+    ['15:00', '2026-11-18T14:00:00Z', ['proven infeasible', 'proven infeasible']],
+    ['19:30', '2026-11-18T18:30:00Z', ['validated feasible', 'validated feasible']],
+  ] as const) {
+    const generated = await client.generate(planId, revision, { keep: true, variants: [
+      { label: `One crew by ${label}`, buy: [], also: [{ kind: 'due', key: `due-${label.replace(':', '-')}`, job: 'restore', finishBy, words: `Requested return by ${label}`, source: { by: 'assumption', note: 'A requested hypothetical deadline, not a change to the authored target.' } }] },
+      { label: `Extra crew by ${label}`, buy: ['extra-maintenance-crew'], also: [{ kind: 'due', key: `due-${label.replace(':', '-')}`, job: 'restore', finishBy, words: `Requested return by ${label}`, source: { by: 'assumption', note: 'A requested hypothetical deadline, not a change to the authored target.' } }] },
+    ] })
+    for (const [index, prefix] of ['One crew', 'Extra crew'].entries()) {
+      const option = generated.options.find(candidate => candidate.label === `${prefix} by ${label}`)!
+      expect(option.status.word).toBe(expected[index])
+      const published = await display(option.key)
+      expect(published.status).toBe(200)
+      const { view, schedule } = published.body.result
+      expect(Buffer.byteLength(JSON.stringify(published.body.result))).toBeLessThanOrEqual(4096)
+      expect(view.viewType).toBe('planning.schedule')
+      expect(JSON.parse(view.state)).toEqual({ plan: planId, option: option.key, digest: schedule.digest })
+      expect(schedule.deadline).toEqual({ job: 'restore', finishBy })
+      expect(schedule.option.fresh).toBe(true)
+      expect(schedule.option.status.word).toBe(expected[index])
+      if (label === '15:00') {
+        expect(schedule.certificate).not.toBeNull()
+        expect(schedule.reference.finish).toBe('2026-11-18T15:00:00.000Z')
+        expect(schedule.reference.fresh).toBe(true)
+        pinned = { option: option.key, digest: schedule.digest }
+      }
+      if (label === '18:00' && index === 1) {
+        expect(schedule.option.finish).toBe('2026-11-18T15:00:00.000Z')
+        expect(schedule.option.cost).toBe(12000)
+      }
+    }
+  }
+  const untouched = await stack.store.read(stack.workspaceId, planId)
+  expect(untouched.revision).toBe(revision)
+  expect(untouched.inputs.jobs.find(job => job.key === 'restore')!.target!.finishBy).toBe('2026-11-18T16:00:00Z')
+  const first = await display(pinned!.option, pinned!.digest)
+  expect(first.status).toBe(200)
+  await client.edit(planId, revision, { edits: [{ edit: 'job', key: 'pump-work', duration: { value: 5, unit: 'h', calendar: 'working', source: { by: 'assumption', note: 'Found work for the publication invalidation check.' } } }] })
+  const stale = await display(pinned!.option, pinned!.digest)
+  expect(stale.status).toBe(409)
+  expect(stale.body.error.code).toBe('schedule_display_changed')
+}, 60_000)

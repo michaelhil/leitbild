@@ -397,12 +397,16 @@ export const subSolve = (deps: SubSolveDeps): SubSolver => async (task, signal, 
       return finish < 0 || finish > activity.deadline ? [{ a, finish: finish < 0 ? problem.horizon : finish }] : []
     })
     if (late.length > 0) {
-      // Not a plan: the best attempt runs past the window. Its lateness is explanation only, not proof.
+      // Not a plan: the best attempt misses a hard due time or the window.
+      // The window diagnostic applies only beyond the window, never as a
+      // negative number when an earlier due time was missed inside it.
       const worst = late.reduce((x, y) => (y.finish > x.finish ? y : x))
       const job = index.jobs[worst.a] ?? problem.activities[worst.a]!.id
       return {
         ...base, variant: stored(variantOut.purchases), rows: [], metrics: [],
-        status: unresolvedStatus(run, { job, wouldFinish: slotInstant(index, worst.finish), pastWindowHours: (worst.finish - index.windowSlots) * index.slotMs / 3_600_000 }),
+        status: unresolvedStatus(run, worst.finish > index.windowSlots
+          ? { job, wouldFinish: slotInstant(index, worst.finish), pastWindowHours: (worst.finish - index.windowSlots) * index.slotMs / 3_600_000 }
+          : undefined),
       }
     }
     const dated = dateSchedule(prep, index, candidate)

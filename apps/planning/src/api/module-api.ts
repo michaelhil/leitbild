@@ -19,6 +19,7 @@ import {
 } from './contract.ts'
 import { planReference, type PlanningOperations } from './operations.ts'
 import type { PlanDefinitionsPort } from '../definitions/index.ts'
+import { scheduleDisplayInputSchema, scheduleDisplayResultSchema } from './schedule-display-contract.ts'
 
 export const planningModuleManifest = workspaceModuleManifestSchema.parse({
   module: { id: 'planning', title: 'Planning', description: 'Plans for maintenance and response work: jobs, crews, calendars and hard rules, schedules that keep them, and why each job starts when it does.' },
@@ -54,6 +55,7 @@ interface Operation<T> {
   readonly title: string
   readonly description: string
   readonly searchTerms: readonly string[]
+  readonly publishes?: ReadonlyArray<'embedded-view'>
   readonly input: z.ZodType<T>
   readonly output: z.ZodType
   readonly invoke: (context: PlanningCallContext, invocation: ModuleCapabilityInvocation, input: T) => Promise<{ readonly result: unknown; readonly created?: unknown }>
@@ -128,6 +130,14 @@ export const planningOperations: ReadonlyArray<Operation<any>> = [
     invoke: async ({ operations, signal }, invocation, input: z.infer<typeof refreshInputSchema>) => ({ result: await operations.refresh(invocation.workspaceId, input.plan, invocation.expectedRevision, invocation.access, signal) }),
   },
   {
+    id: 'planning.plan.display', kind: 'query', scope: 'plan', risk: 'read',
+    title: 'Show a retained schedule',
+    description: 'Publish a schedule chart from one retained option, including an arbitrary-deadline what-if or its proven refusal. The view keeps the exact option, deadline, cost, input revision and freshness. A refusal can compare a fresh checked reference schedule; it never invents rows for an impossible option. It keeps the evidence it was published from: later input changes or replacement options require a new view. Reads only; the existing paged plan sections supply its jobs and dated rows.',
+    searchTerms: ['visualize', 'chart', 'gantt', 'show', 'schedule', 'deadline', 'can we finish', 'by a time'],
+    publishes: ['embedded-view'], input: scheduleDisplayInputSchema, output: scheduleDisplayResultSchema,
+    invoke: async ({ operations }, invocation, input: z.infer<typeof scheduleDisplayInputSchema>) => ({ result: await operations.display(invocation.workspaceId, planIdOf(invocation), input) }),
+  },
+  {
     id: 'planning.plan.delete', kind: 'command', scope: 'plan', risk: 'destructive',
     title: 'Delete a plan',
     description: 'Delete this plan with its options, baselines and change history. This cannot be undone. The World simulation the plan was linked to, and everything else in the Workspace, is not touched. Read the plan first and pass its current revision as the expected revision: the delete is refused if someone changed the plan since you read it, and an Assistant\'s delete without one is refused.',
@@ -164,6 +174,7 @@ const registrationFor = (operation: Operation<unknown>): CapabilityRegistration<
         : { kind: 'resource', resourceType: planType },
     title: operation.title, description: operation.description, searchTerms: [...operation.searchTerms],
     risk: operation.risk, idempotent: operation.kind === 'query',
+    ...(operation.publishes === undefined ? {} : { publishes: [...operation.publishes] }),
     inputSchema: publishedInputSchema(operation.input),
     outputSchema: z.toJSONSchema(operation.output, { unrepresentable: 'any' }) as Record<string, unknown>,
   },
