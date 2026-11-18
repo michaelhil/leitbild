@@ -1110,7 +1110,10 @@ impl KineticsDomain {
     /// The case observer's P1 exit at the accepted state `(t, y, y')`: its
     /// evaluation held or made there, then
     /// [`post_trip_domain::hot_standby_domain_exit`]; at an exit, the
-    /// admission names it, labelled as the case observer labels it.
+    /// admission names it, labelled as the case observer labels it. The check
+    /// reads the nuclear block, the rods' travel and the region water only,
+    /// so a release-root call's evaluation that stopped at the face drives
+    /// serves as well as a whole one (R4-ROOT-DRIVES).
     fn judge(
         &self,
         joined: &mut Joined<If97>,
@@ -1118,7 +1121,7 @@ impl KineticsDomain {
         y: &[f64],
         yp: &[f64],
     ) -> Result<(), String> {
-        if !joined.holds_value_evaluation(t, y, yp) {
+        if !joined.holds_nuclear_evaluation(t, y, yp) {
             joined
                 .evaluate(t, y, yp, None, 0., None)
                 .map_err(|e| format!("kinetics domain: the operator at {t} s: {e:?}"))?;
