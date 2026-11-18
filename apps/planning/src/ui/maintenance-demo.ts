@@ -29,7 +29,7 @@ export const maintenanceQuestion = (model: PlanModel, question: string): string 
 
 export const maintenancePrompt = (model: PlanModel, selected: OptionView): string => [
   'Help me understand the engineering calculation beside this maintenance schedule.',
-  `The focused plan is ${model.title}, revision ${model.revision}. I am viewing its option ${selected.label} (${selected.key}). Read its summary and selected schedule through Planning's published operations, and state its planned finish briefly.`,
+  `The focused plan is ${model.title}, revision ${model.revision}. I am viewing its option ${selected.label} (${selected.key}). Read its summary through Planning's published operation for context. Focus the answer on the heat-transport calculation.`,
   'From the focused nuclear-maintenance-planning World run, use world.engineering.inputs.capture with profile plant-maintenance and subjectId plant:maintenance. Bind the retained componentCoolingWaterPumpB.flowKgPerS observation, including its units, quality and simulation time.',
   'Use engineering_run to calculate heat transported in MW from that pump mass flow multiplied by an assumed water heat capacity of 4.18 kJ/(kg K) and an assumed temperature rise of 10 K, divided by 1000. Use named bindings called pumpFlow, heatCapacity and temperatureRise, with only pumpFlow taken from the retained World capture.',
   'Return a flat output object with heatTransportMw. Show the equation, calculated value and the retained engineering result view so I can inspect the inputs and change the two assumptions. Inspect the execution outcome before reporting success. Keep your explanation brief.',
