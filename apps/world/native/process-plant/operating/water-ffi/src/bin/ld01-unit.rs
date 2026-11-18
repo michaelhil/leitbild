@@ -48,6 +48,10 @@
 //! labelled engineering values), and one declaring rod control composes the
 //! AUTO rod client on the wiki's `ld01-rod-control`; the protection client
 //! refuses a governor or DC mismatch. The pages they read join the identity.
+//! With rod control the unit delivers `LD01.CORE.BANK.HOLD` and the values
+//! the law compares at the last frame, `LD01.CORE.BANK.TAVG` (its lagged
+//! Tavg) and `LD01.CORE.BANK.TREF` (its program at its lagged load), read
+//! from the rod client's own state: observation only.
 //!
 //! **Operator commands** (PROC T4, T5, T11; lane ELEC): `IncomingDevice`
 //! `{bus, source, target}`, `StartConsumer` `{consumer}`, `DcDistribution`
@@ -379,6 +383,9 @@ enum Reading {
     ReliefLiftOpen,
     /// The operator's bank HOLD on the AUTO rod client.
     BankHold,
+    /// The AUTO rod law's lagged Tavg (0) and its program reference (1) at
+    /// the last frame (`RodClient::tavg_and_reference_k`).
+    RodLaw(usize),
     ReleasedPower,
     PzrPressure,
     PzrCollapsedLevel,
@@ -706,6 +713,29 @@ fn channels(plant: &Plant, inputs: &Inputs) -> Result<Vec<Channel>, String> {
             "X4.4 AUTO rod control",
             Reading::BankHold,
         ));
+        // The values the law compares at each frame (soak r2's rod line):
+        // formed every frame, acted on only in AUTO.
+        for (i, (id, quantity)) in [
+            (
+                "LD01.CORE.BANK.TAVG",
+                "AUTO rod control's Tavg: the law's lagged loop-mean input",
+            ),
+            (
+                "LD01.CORE.BANK.TREF",
+                "AUTO rod control's Tref: the Tavg program at the law's lagged turbine load",
+            ),
+        ]
+        .into_iter()
+        .enumerate()
+        {
+            out.push(channel(
+                id,
+                "K",
+                quantity,
+                "X4.4 AUTO rod control",
+                Reading::RodLaw(i),
+            ));
+        }
     }
     let joined = &plant.ida.system().integrated().joined;
     // R4-RELIEF-ISO: the valve's position and the relief's direct lift
@@ -1600,6 +1630,10 @@ impl Unit {
                         flag(y[unit.integrated().joined.offsets().pzr] != 0.)
                     }
                     Reading::BankHold => flag(rods.as_ref().is_some_and(|r| r.hold)),
+                    Reading::RodLaw(i) => rods
+                        .as_ref()
+                        .ok_or("no AUTO rod control")?
+                        .tavg_and_reference_k()[*i],
                     Reading::Latched(f) => divisions.iter().filter(|d| d.latched(f)).count() as f64,
                     Reading::DivisionTrip(d) => flag(divisions[*d].trip.is_some()),
                     Reading::DivisionPowered(d) => flag(divisions[*d].powered),
@@ -2525,5 +2559,117 @@ fn main() {
         if matches!(outcome, Ok(true)) {
             return;
         }
+    }
+}
+
+/// RODOBS7: the rod law's channels are the law's own values. Ignored; run
+/// with the tuple in the environment (unit_host.rs's LOAD),
+/// `LD01_UNIT_ROD_FRAMES` (0.1 s exchanges after t0) and
+/// `LD01_UNIT_ROD_TRIP` (`on`: TurbineTripAcquired at t0 + 1 s, as the
+/// copy gate; `off`: a hold).
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn env(name: &str) -> String {
+        std::env::var(name).unwrap_or_else(|_| panic!("{name} is not set"))
+    }
+
+    /// An ADVANCE reply's observation frame.
+    fn reply_values(out: &[u8]) -> Vec<f64> {
+        let u32_at = |i: usize| u32::from_le_bytes(out[i..i + 4].try_into().unwrap()) as usize;
+        let at = 20 + 8 * u32_at(16);
+        (0..u32_at(at))
+            .map(|j| f64::from_le_bytes(out[at + 4 + 8 * j..at + 12 + 8 * j].try_into().unwrap()))
+            .collect()
+    }
+
+    #[test]
+    #[ignore = "needs the unit's environment (LD01_UNIT_ROD_FRAMES, LD01_UNIT_ROD_TRIP)"]
+    fn the_rod_law_channels_are_the_laws_own_values() {
+        let water = std::env::var("LD01_UNIT_HOST_WATER").unwrap_or_else(|_| "sbtl".into());
+        let load = json!({
+            "inputs": {
+                "packet": env("LD01_OPERATING_HOT_SPINE_PACKET"),
+                "wiki_root": env("LD01_WIKI_ROOT"),
+                "wiki_commit": env("LD01_WIKI_COMMIT"),
+                "wiki_repository": env("LD01_WIKI_REPOSITORY"),
+                "ic": env("LD01_IC_SECTION"),
+                "pzr_control": env("LD01_PZR_CONTROL_SECTION"),
+                "pzr_control_wiki": env("LD01_PZR_CONTROL_WIKI"),
+                "elec": env("ELEC_PACKET"),
+            },
+            "state": env("LD01_S3_STATE"),
+            "solver": {"weights": "stock", "first_step": "declared", "stepping": "free", "water": water,
+                "source_atol": std::env::var("LD01_S3_SOURCE_ATOL").unwrap_or_else(|_| "derived".into()),
+                "grid_exchange_s": null},
+        });
+        let mut unit = Unit::load(&load).expect("LOAD");
+        let index = |id: &str| {
+            unit.channels
+                .iter()
+                .position(|c| c.id == id)
+                .unwrap_or_else(|| panic!("no channel {id}"))
+        };
+        let (tavg, tref) = (index("LD01.CORE.BANK.TAVG"), index("LD01.CORE.BANK.TREF"));
+        // The per-frame record is observation: it decides nothing.
+        unit.plant
+            .rods
+            .as_mut()
+            .expect("AUTO rod control")
+            .recording = true;
+        let frames: u64 = env("LD01_UNIT_ROD_FRAMES").parse().expect("frames");
+        let period = unit.plant.frame.period_s();
+        let k0 = (unit.t / period).round() as u64;
+        match env("LD01_UNIT_ROD_TRIP").as_str() {
+            "on" => {
+                let trip =
+                    json!({"kind": "TurbineTripAcquired", "t_apply": (k0 + 10) as f64 * period});
+                unit.command(&trip).expect("the trip");
+            }
+            "off" => {}
+            other => panic!("LD01_UNIT_ROD_TRIP {other}: on or off"),
+        }
+        let (mut auto, mut not_auto, mut worst_t, mut worst_e) = (0, 0, 0f64, 0f64);
+        for k in 1..=frames {
+            let mut out = Vec::new();
+            unit.advance((k0 + k) as f64 * period, &mut out)
+                .expect("ADVANCE");
+            let values = reply_values(&out);
+            assert_eq!(values.len(), unit.channels.len());
+            let rods = unit.plant.rods.as_ref().expect("AUTO rod control");
+            let last = rods.series.last().expect("a frame record");
+            let at = last["t_s"].as_f64().expect("the frame's instant");
+            assert!(
+                same_instant(at, unit.t),
+                "the last frame at {at} s, the unit at {} s",
+                unit.t
+            );
+            let evidence = &last["evidence"];
+            let delivered = evidence["tavg_k"].as_f64().expect("the delivered Tavg");
+            assert_eq!(
+                values[tavg].to_bits(),
+                delivered.to_bits(),
+                "TAVG at {at} s"
+            );
+            match last["decision"]["tref_k"].as_f64() {
+                Some(tref_k) => {
+                    assert_eq!(values[tref].to_bits(), tref_k.to_bits(), "TREF at {at} s");
+                    auto += 1;
+                    worst_t = worst_t.max((values[tavg] - values[tref]).abs());
+                    worst_e = worst_e.max(last["decision"]["error_k"].as_f64().expect("e").abs());
+                }
+                None => {
+                    let load = evidence["load"].as_f64().expect("the delivered load");
+                    let program = rods.controller.law().tref_k(load);
+                    assert_eq!(values[tref].to_bits(), program.to_bits(), "TREF at {at} s");
+                    not_auto += 1;
+                }
+            }
+        }
+        println!(
+            "rod law channels: {frames} exchanges; {auto} in AUTO (TAVG = the evidence, TREF = the decision's, bitwise), \
+             {not_auto} not deciding (TREF = the program at the delivered load); in AUTO max |TAVG - TREF| {worst_t} K, max |e| {worst_e} K"
+        );
     }
 }
