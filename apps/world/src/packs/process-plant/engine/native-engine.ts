@@ -6,6 +6,7 @@ import type { ProcessPlantVariableHandle } from '../runtime/variable-table.ts'
 import { toCanonicalProcessValue } from '../runtime/units.ts'
 import type { Ld01UnitLoadRequest } from './artifact.ts'
 import { spawnLd01UnitChild, type Ld01UnitChild } from './child.ts'
+import { ld01FrameGrid, type Ld01FrameGrid, type Ld01FramePosition } from './frame-grid.ts'
 import {
   decodeLd01UnitAdvance,
   decodeLd01UnitJson,
@@ -69,8 +70,8 @@ export const nativeProcessPlantCheckpointSchema = z.object({
   /** The artifact the state belongs to (SHA-256 of its manifest); another artifact refuses it. */
   artifactSha256: z.string().regex(/^[a-f0-9]{64}$/u),
   originBits: z.string().regex(/^[0-9a-f]{16}$/u),
-  /** The unit time the Run has asked for: the snapshot's frame plus the remainder short of the next frame. */
-  requestedBits: z.string().regex(/^[0-9a-f]{16}$/u),
+  /** The Run's time asked for on the frame grid: the snapshot's frame plus the whole ms short of the next (frame-grid.ts). */
+  requested: z.object({ frame: z.number().int().nonnegative(), remainderMs: z.number().int().nonnegative() }).strict(),
   snapshot: z.record(z.string(), z.unknown()).nullable(),
   frame: z.object({ tBits: z.string().regex(/^[0-9a-f]{16}$/u), valuesBits: z.string() }).strict(),
 }).strict()
@@ -155,29 +156,22 @@ export const connectNativeProcessPlantEngine = async (config: {
   let ended: NativeEngineEnded | null = null
   let state: { t: number; values: Float64Array } = { t: Number.NaN, values: new Float64Array(0) }
   let originS = Number.NaN
-  let requestedS = Number.NaN
-  let frameS = Number.NaN
+  /**
+   * The unit's I&C frames, named by index (frame-grid.ts): the frame the unit's start stands on, the frame it stands
+   * at now (the one the engine's last ADVANCE asked for) and where the Run's time has reached. The driver stops at
+   * every frame, so an exchange that ends on one adds no stop of its own: however the Run slices its time (wall-paced
+   * ticks, maximum pace), the unit makes the same steps, and a copy continues bit for bit.
+   */
+  let grid: Ld01FrameGrid
+  let originFrame = Number.NaN
+  let frameAt = Number.NaN
+  let requested: Ld01FramePosition = { frame: Number.NaN, remainderMs: 0 }
   let exchangeEvery: number | null = null
   let offsiteLostChannel = -1
   let gridBoundary: NativeGridBoundary | null = null
   /** The load request written since the last exchange, sent at the next one. */
   let loadRequest: { readonly path: VariablePath; readonly value: number; readonly requestW: number } | null = null
   const elapsedMs = (): number => (state.t - originS) * 1_000
-  /**
-   * The I&C frame instants, k · period on the unit's axis, by the same product the driver forms
-   * (operating src/ic/mod.rs `Frame::instant`). The driver stops at every frame, so an exchange that ends on one
-   * adds no stop of its own: however the Run slices its time (wall-paced ticks, maximum pace), the unit makes the
-   * same steps, and a copy continues bit for bit.
-   */
-  const instant = (k: number): number => k * frameS
-  const lastFrameAtOrBefore = (t: number): number => {
-    let k = Math.floor(t / frameS)
-    while (instant(k + 1) <= t) k += 1
-    while (instant(k) > t) k -= 1
-    return k
-  }
-  /** The exchange grid's next instant after a frame `k` (R4-GRID): whole multiples of the interval, in the frames' own product. */
-  const nextExchangeFrame = (k: number, every: number): number => (Math.floor(k / every) + 1) * every
   const fail = (reason: string): NativeEngineFailure => {
     if (failure !== null) return failure
     const at = Number.isFinite(state.t) ? elapsedMs() : 0
@@ -201,17 +195,19 @@ export const connectNativeProcessPlantEngine = async (config: {
     const channels = z.array(ld01ChannelSchema).parse(decodeLd01UnitJson((await child.request(ld01UnitOps.channels, new Uint8Array(0))).payload, 'CHANNELS'))
     if (JSON.stringify(channels) !== JSON.stringify(reply.channels)) throw new Error('CHANNELS differs from the channels LOAD replied')
     binding = bindLd01TagMap(plant.graph, config.tagMap, channels)
+    grid = ld01FrameGrid(reply.frame_s)
     originS = restored === undefined ? reply.t : valuesFromBits(restored.originBits)[0]!
-    frameS = reply.frame_s
+    originFrame = grid.frameOf(originS, 'the unit starts')
     if (config.gridExchangeS !== null) {
-      exchangeEvery = Math.round(config.gridExchangeS / frameS)
+      exchangeEvery = Math.round(config.gridExchangeS / grid.periodS)
       offsiteLostChannel = channels.findIndex(channel => channel.id === 'LD01.GRID.OFFSITE_LOST')
       if (offsiteLostChannel < 0) throw new Error('a Grid-connected unit delivers no LD01.GRID.OFFSITE_LOST channel')
     }
     if (restored === undefined || restored.snapshot === null) {
       // The unit's first observation is its first I&C frame after its start: the driver stops there anyway, so this
       // exchange adds no stop the trajectory would not make. A restored start state reproduces it bit for bit.
-      const advanced = await child.request(ld01UnitOps.advance, encodeLd01UnitAdvance(instant(lastFrameAtOrBefore(reply.t) + 1)))
+      frameAt = grid.frameOf(reply.t, 'LOAD composes the unit') + 1
+      const advanced = await child.request(ld01UnitOps.advance, encodeLd01UnitAdvance(grid.instant(frameAt)))
       connectCost = { wallS: connectCost.wallS + advanced.wallS, cpuS: connectCost.cpuS + advanced.cpuS }
       const first = decodeLd01UnitAdvance(advanced.payload)
       if (first.values.length !== binding.channelCount) throw new Error(`the first frame carries ${first.values.length} values for ${binding.channelCount} channels`)
@@ -219,20 +215,24 @@ export const connectNativeProcessPlantEngine = async (config: {
         throw new Error('the restored start state does not reproduce its saved first frame bit for bit')
       }
       state = { t: first.t, values: first.values }
-      requestedS = restored === undefined ? first.t : valuesFromBits(restored.requestedBits)[0]!
+      requested = restored === undefined ? { frame: frameAt, remainderMs: 0 } : restored.requested
     } else {
       if (reply.t_bits !== restored.frame.tBits) throw new Error(`the snapshot stands at ${reply.t_bits}, its saved frame at ${restored.frame.tBits}`)
       const values = valuesFromBits(restored.frame.valuesBits)
       if (values.length !== binding.channelCount) throw new Error(`the saved frame carries ${values.length} values for ${binding.channelCount} channels`)
       state = { t: reply.t, values }
-      requestedS = valuesFromBits(restored.requestedBits)[0]!
+      requested = restored.requested
+      frameAt = requested.frame
     }
-    if (!(requestedS >= state.t && requestedS < state.t + frameS)) throw new Error(`the requested unit time ${requestedS} s is not within the frame from ${state.t} s`)
+    if (!(requested.frame === frameAt && requested.remainderMs < grid.periodMs)) {
+      throw new Error(`the Run's time (frame ${requested.frame} and ${requested.remainderMs} ms) is not within frame ${frameAt}, where the unit stands`)
+    }
+    if (!grid.within(frameAt, state.t)) throw new Error(`the unit stands at ${state.t} s, outside frame ${frameAt} (${grid.instant(frameAt)} s)`)
     persisted = restored ?? {
       engine: ld01EngineCheckpointFormat,
       artifactSha256: config.artifactSha256,
       originBits: timeBits(originS),
-      requestedBits: timeBits(requestedS),
+      requested,
       snapshot: null,
       frame: { tBits: timeBits(state.t), valuesBits: valuesToBits(state.values) },
     }
@@ -300,7 +300,7 @@ export const connectNativeProcessPlantEngine = async (config: {
     domainEnd: () => ended?.reason ?? null,
     elapsedMs,
     // Plant time asked for in all: the frames exchanged and the remainder short of the next, so Run time minus it is fixed.
-    advancedMs: () => (requestedS - originS) * 1_000,
+    advancedMs: () => (requested.frame - originFrame) * grid.periodMs + requested.remainderMs,
     resolveVariableHandle: resolve,
     readVariable: path => readHandle(resolve(path)),
     readVariableHandle: readHandle,
@@ -341,13 +341,12 @@ export const connectNativeProcessPlantEngine = async (config: {
    * takes none: 1.0 has no restoration, and a re-energised bay stays dead here.
    */
   const exchangeGrid = async (every: number): Promise<void> => {
-    const k = lastFrameAtOrBefore(state.t)
     if (gridBoundary !== null && state.values[offsiteLostChannel] !== 1) {
       const boundary = gridBoundary
       await json(ld01UnitOps.command, {
         kind: 'GridBoundary',
         t_apply: state.t,
-        until: instant(k + every),
+        until: grid.instant(frameAt + every),
         energized: boundary.energized,
         voltage_pu: boundary.energized ? boundary.voltagePu : 0,
         frequency_hz: boundary.energized ? boundary.frequencyHz : 0,
@@ -368,7 +367,7 @@ export const connectNativeProcessPlantEngine = async (config: {
     try {
       const reply = await child.request(ld01UnitOps.snapshot, new Uint8Array(0))
       const taken = z.record(z.string(), z.unknown()).parse(decodeLd01UnitJson(reply.payload, 'SNAPSHOT'))
-      persisted = { ...persisted, requestedBits: timeBits(requestedS), snapshot: taken, frame: { tBits: timeBits(state.t), valuesBits: valuesToBits(state.values) } }
+      persisted = { ...persisted, requested, snapshot: taken, frame: { tBits: timeBits(state.t), valuesBits: valuesToBits(state.values) } }
       return persisted
     } catch (error) {
       throw failed(error)
@@ -379,35 +378,38 @@ export const connectNativeProcessPlantEngine = async (config: {
     kind: 'native',
     runtime,
     advance: (advanceMs: number) => exclusive(async (): Promise<NativeAdvanceReceipt> => {
-      if (!Number.isFinite(advanceMs) || advanceMs <= 0) throw new Error(`LD-01 advance must be a positive number of ms, got ${advanceMs}`)
+      if (!Number.isSafeInteger(advanceMs) || advanceMs <= 0) throw new Error(`LD-01 advance must be a positive whole number of ms, got ${advanceMs}`)
       // R4-ENDED: past a named end the Run's time goes on, the unit does not; reads hold at the last frame.
       if (ended !== null) {
-        requestedS += advanceMs / 1_000
+        requested = grid.reach(requested, advanceMs)
         return { simulatedMs: 0, frame: null, cost: { wallS: 0, cpuS: 0 } }
       }
       try {
-        requestedS += advanceMs / 1_000
-        const t1 = instant(lastFrameAtOrBefore(requestedS))
+        requested = grid.reach(requested, advanceMs)
+        const k1 = requested.frame
         // Short of the next frame: nothing to exchange yet; queued commands wait for the exchange that reaches it.
-        if (!(t1 > state.t)) return { simulatedMs: 0, frame: null, cost: { wallS: 0, cpuS: 0 } }
+        if (!(k1 > frameAt)) return { simulatedMs: 0, frame: null, cost: { wallS: 0, cpuS: 0 } }
         const sending = queued.splice(0)
         for (const command of sending) await json(ld01UnitOps.command, { ...command, t_apply: state.t }, 'COMMAND')
         // R4-GRID: an exchange instant inside the span ends an ADVANCE; the unit stops there and takes the boundary.
         const from = state.t
         const cost = { wallS: 0, cpuS: 0 }
         let frame: Ld01UnitAdvanceFrame | null = null
-        while (state.t < t1 && ended === null) {
+        while (frameAt < k1 && ended === null) {
           const every = exchangeEvery
-          const to = every === null ? t1 : Math.min(t1, instant(nextExchangeFrame(lastFrameAtOrBefore(state.t), every)))
-          const advanced = await child.request(ld01UnitOps.advance, encodeLd01UnitAdvance(to))
+          const kTo = every === null ? k1 : Math.min(k1, grid.nextExchange(frameAt, every))
+          const advanced = await child.request(ld01UnitOps.advance, encodeLd01UnitAdvance(grid.instant(kTo)))
           frame = decodeLd01UnitAdvance(advanced.payload)
           if (frame.values.length !== binding.channelCount) throw new Error(`a frame carries ${frame.values.length} values for ${binding.channelCount} channels`)
           cost.wallS += advanced.wallS
           cost.cpuS += advanced.cpuS
-          state = { t: frame.t, values: frame.values }
           const named = frame.events === null ? undefined : endedEventSchema.parse(frame.events).ended
+          // The unit answers frame kTo at that instant's time, which may be another name of it (frame-grid.ts).
+          if (named === undefined && !grid.within(kTo, frame.t)) throw new Error(`ADVANCE to frame ${kTo} (${grid.instant(kTo)} s) answered at ${frame.t} s, outside that frame`)
+          state = { t: frame.t, values: frame.values }
           if (named !== undefined) ended = { atMs: elapsedMs(), label: named.label, reason: `Simulation domain end: ${named.plain} at t=${(elapsedMs() / 1_000).toFixed(3)} s` }
-          if (every !== null && ended === null && lastFrameAtOrBefore(to) % every === 0) await exchangeGrid(every)
+          else frameAt = kTo
+          if (every !== null && ended === null && kTo % every === 0) await exchangeGrid(every)
         }
         return { simulatedMs: (state.t - from) * 1_000, frame, cost }
       } catch (error) {
