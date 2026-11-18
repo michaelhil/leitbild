@@ -27,7 +27,8 @@
   const start = $derived(reading?.plan.window === null || reading?.plan.window === undefined ? 0 : Date.parse(reading.plan.window.start))
   const end = $derived(reading?.plan.window === null || reading?.plan.window === undefined ? 0 : Date.parse(reading.plan.window.end))
   const ticks = $derived(Array.from({ length: 5 }, (_, index) => start + (end - start) * index / 4))
-  const certificateJobs = $derived(new Set(reading?.certificate !== null && reading?.certificate !== undefined && 'jobs' in reading.certificate ? reading.certificate.jobs : []))
+  const certificateJobs = $derived(new Set(reading?.certificate?.kind === 'temporal' ? reading.certificate.steps.map(step => step.job)
+    : reading?.certificate !== null && reading?.certificate !== undefined && 'jobs' in reading.certificate ? reading.certificate.jobs : []))
   const percent = (at: number): number => end <= start ? 0 : (at - start) / (end - start) * 100
   const rowFor = (key: string): DatedRow | undefined => rows.find(row => row.job === key)
 
@@ -90,13 +91,13 @@
     <header>
       <p class="eyebrow">{reading.plan.title}</p>
       <h1>{reading.option.label}</h1>
-      <p class="date">{time.day(start)} · {time.zone}</p>
+      <p class="date">{reading.plan.window === null ? '' : `${time.day(start)} · `}{time.zoneSet ? time.zone : 'Time zone not set'}</p>
       {#if deadline !== null}<p class="requested">Requested finish by <strong>{time.time(deadline)}</strong>{dueJob === undefined ? '' : ` · ${dueJob.title}`}</p>{/if}
       <p class="verdict" class:checked={reading.option.fresh && reading.option.status.word === 'validated feasible'} class:refused={reading.option.status.word === 'proven infeasible'}>
         {#if !reading.option.fresh}This option needs a new check against the current plan.
         {:else if reading.option.status.word === 'validated feasible'}
           {#if finish !== null}Checked finish <strong>{time.time(finish)}</strong>. {#if deadline !== null && dueFinish !== null}{dueFinish <= deadline ? 'Meets the requested deadline.' : 'Finishes after the requested deadline.'}{/if}{/if}
-        {:else if reading.option.status.word === 'proven infeasible'}The requested deadline is proven infeasible for this option.
+        {:else if reading.option.status.word === 'proven infeasible'}{deadline === null ? 'This option is proven infeasible under the recorded constraints.' : 'The requested deadline is proven infeasible for this option.'}
         {:else}{reading.option.status.word}{/if}
       </p>
       {#if shown?.cost !== null && shown?.cost !== undefined}<p class="cost">Extra cost {moneyText(shown.cost, reading.plan.currency)}</p>{/if}
