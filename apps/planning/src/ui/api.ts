@@ -11,6 +11,7 @@ import {
   type baselineInputSchema, type editInputSchema, type explainInputSchema, type generateInputSchema, type readInputSchema,
 } from '../api/contract.ts'
 import type { Edit } from '../plan/edit-schema.ts'
+import { scheduleDisplayResultSchema, type scheduleDisplayInputSchema } from '../api/schedule-display-contract.ts'
 
 export type WriteResult = z.infer<typeof writeResultSchema>
 export type GenerateResult = z.infer<typeof generateResultSchema>
@@ -86,6 +87,8 @@ export const createPlanningClient = (workspaceId: string, transport: Transport =
       (await invoke('planning.plan.generate', { resource: planRef(id), expectedRevision, input }, generateResultSchema, signal)).result,
     explain: async (id: string, input: ExplainInput): Promise<ExplainResult> =>
       (await invoke('planning.plan.explain', { resource: planRef(id), input }, explainResultSchema)).result,
+    display: async (id: string, input: z.input<typeof scheduleDisplayInputSchema>) =>
+      (await invoke('planning.plan.display', { resource: planRef(id), input }, scheduleDisplayResultSchema)).result,
     baseline: async (id: string, expectedRevision: number, input: BaselineInput): Promise<WriteResult> =>
       (await invoke('planning.plan.baseline', { resource: planRef(id), expectedRevision, input }, writeResultSchema)).result,
     /** Copies the linked Run's current values into the plan. Workspace scope: the plan travels in the input. */
@@ -94,18 +97,18 @@ export const createPlanningClient = (workspaceId: string, transport: Transport =
     /** World's read-only facts query on one Run. */
     facts: async (runId: string, input: PlanningFactsInput): Promise<PlanningFactsOutput> =>
       (await invoke('world.simulation-run.planning-facts', { resource: workspaceResourceReferenceSchema.parse({ workspaceId, moduleId: 'world', type: RUN, id: runId }), input }, planningFactsOutputSchema)).result,
-    askEngineering: async (planId: string, runId: string, prompt: string, signal?: AbortSignal): Promise<WorkspaceResourceReference> => {
+    askAssistant: async (planId: string, runId: string, prompt: string, title: string, signal?: AbortSignal): Promise<WorkspaceResourceReference> => {
       const catalog = workspaceCapabilityCatalogSchema.parse(await request(`${base}/capabilities?moduleId=agents`, signal === undefined ? undefined : { signal }))
       if (!catalog.capabilities.some(capability => capability.id === 'agents.assistance.open')) {
-        throw new Error('The engineering agent is unavailable in this Workspace. Your schedules are saved here.')
+        throw new Error('The Assistant is unavailable in this Workspace. Your schedules are saved here.')
       }
       const run = workspaceResourceReferenceSchema.parse({ workspaceId, moduleId: 'world', type: RUN, id: runId })
       const answer = await invoke('agents.assistance.open', {
-        input: { conversation: 'new', scope: { kind: 'workspace' }, title: 'Cooling-water calculation', prompt, focusedSubjects: [planRef(planId), run] },
+        input: { conversation: 'new', scope: { kind: 'workspace' }, title, prompt, focusedSubjects: [planRef(planId), run] },
       }, z.object({ resource: workspaceResourceReferenceSchema, uiPath: z.string(), reused: z.boolean() }).strict(), signal)
       const room = answer.result.resource
       if (room.workspaceId !== workspaceId || room.moduleId !== 'agents' || room.type !== 'agents.room') {
-        throw new Error('The engineering agent returned a conversation outside this Workspace.')
+        throw new Error('The Assistant returned a conversation outside this Workspace.')
       }
       return room
     },

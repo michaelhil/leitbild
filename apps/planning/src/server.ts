@@ -28,7 +28,7 @@ export const createPlanningServer = (config: {
         if (url.pathname === '/health' && request.method === 'GET') return Response.json({ status: 'ok', moduleId: 'planning' })
         const response = await handle(request, url)
         if (response) return response
-        if (request.method === 'GET' && /^\/workspaces\/[0-9a-f-]+\/planning$/.test(url.pathname)) {
+        if (request.method === 'GET' && /^\/workspaces\/[0-9a-f-]+\/planning(?:\/embed\/planning\.schedule)?$/.test(url.pathname)) {
           const index = Bun.file(`${uiRoot}/index.html`)
           if (!await index.exists()) return Response.json({ error: { code: 'planning_ui_unavailable', message: 'Build the Planning UI before opening it', retryable: false } }, { status: 503 })
           return new Response(index, { headers: { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-store' } })

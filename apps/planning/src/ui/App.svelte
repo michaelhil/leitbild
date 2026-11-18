@@ -7,12 +7,14 @@
   import { maintenanceDefinitionId } from './maintenance-demo.ts'
   import Library from './Library.svelte'
   import PlanScreen from './PlanScreen.svelte'
+  import ScheduleView from './ScheduleView.svelte'
 
   // Planning inside the Workspace page: /workspaces/<id>/planning shows the plans; ?plan=<id> one plan.
   // Moving between them goes through the Workspace URL, so the Host keeps the selection in its own path.
-  const match = location.pathname.match(/^\/workspaces\/([^/]+)\/planning$/)
+  const match = location.pathname.match(/^\/workspaces\/([^/]+)\/planning(?:\/embed\/planning\.schedule)?$/)
   if (!match?.[1]) throw new Error('Planning opens inside a Workspace')
   const workspaceId = decodeURIComponent(match[1])
+  const embeddedSchedule = location.pathname.endsWith('/embed/planning.schedule')
   const query = new URLSearchParams(location.search)
   const planId = query.get('plan')
   const demo = query.get('demo')
@@ -39,7 +41,9 @@
   const go = (href: string): void => { host.location.assign(href) }
 </script>
 
-{#if demo === maintenanceDefinitionId && demoRun.success}
+{#if embeddedSchedule}
+  <ScheduleView {client} {workspaceId} />
+{:else if demo === maintenanceDefinitionId && demoRun.success}
   {@const run = demoRun.data}
   <MaintenanceDemo {client} {run} initialOption={selectedOption.success ? selectedOption.data : null}
     worldHref={(objectId, elementId, option) => worldHref(run, objectId, elementId, option)} planHref={workspaceHref}

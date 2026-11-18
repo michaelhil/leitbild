@@ -5,7 +5,7 @@
   import { createTimeFormat, moneyText, quantityText, spanText } from './format.ts'
   import { planOptions, type DatedRow, type OptionView, type PlanModel } from './model.ts'
   import { loadPlan, loadRows } from './read-plan.ts'
-  import { extraMaintenanceCrew, maintenanceCost, maintenanceDefinitionId, maintenanceFinish, maintenancePlantId, maintenancePrompt, maintenanceVariants } from './maintenance-demo.ts'
+  import { extraMaintenanceCrew, maintenanceCost, maintenanceDefinitionId, maintenanceFinish, maintenancePlantId, maintenancePrompt, maintenanceQuestion, maintenanceVariants } from './maintenance-demo.ts'
 
   let { client, run, initialOption = null, worldHref, planHref, onAgent }: {
     client: PlanningClient
@@ -22,6 +22,7 @@
   let loading = $state(true)
   let error = $state<string | null>(null)
   let asking = $state(false)
+  let question = $state('Can we complete maintenance by 17:00?')
   let agentError = $state<string | null>(null)
   let controller: AbortController | null = null
 
@@ -115,12 +116,12 @@
     }
   }
 
-  const ask = async (): Promise<void> => {
+  const ask = async (request: string, title: string): Promise<void> => {
     if (model === null || selected === undefined || asking) return
     asking = true
     agentError = null
     try {
-      const room = await client.askEngineering(model.id, run, prompt)
+      const room = await client.askAssistant(model.id, run, request, title)
       onAgent(room, selected.key)
     } catch (cause) {
       agentError = refusalText(cause)
@@ -140,8 +141,14 @@
     <a href={plantHref()} target="_top">← World plant</a>
     <p class="eyebrow">Planning and scheduling · fictional nuclear plant</p>
     <h1>Nuclear maintenance planning</h1>
-    <p class="question">{targetTime === null ? 'Can maintenance finish within the shift?' : `Can maintenance finish by ${time.time(targetTime)}?`}</p>
     <p class="brief">Plan maintenance on Train A’s component cooling water pump and heat exchanger.</p>
+    {#if model && !loading}
+      <form class="deadline-question" onsubmit={(event) => { event.preventDefault(); if (model !== null && question.trim() !== '') void ask(maintenanceQuestion(model, question.trim()), 'Maintenance scheduling') }}>
+        <label for="maintenance-question">Ask about the deadline</label>
+        <div class="question-controls"><input id="maintenance-question" bind:value={question} required /><button type="submit" class="primary" disabled={asking || question.trim() === ''}>{asking ? 'Opening Assistant…' : 'Ask Assistant'}</button></div>
+      </form>
+      {#if agentError}<p class="error" role="alert">{agentError}</p>{/if}
+    {/if}
   </header>
 
   {#if loading}<p class="progress" role="status">{model === null ? 'Reading the plant and preparing the work plan…' : 'Calculating and checking both crew schedules…'}</p>{/if}
@@ -209,8 +216,7 @@
 
       <section class="engineering" aria-labelledby="cooling-calculation-title">
         <div><h2 id="cooling-calculation-title">Estimate heat transport</h2><p>Ask the agent to read Pump B’s simulated flow and calculate heat transport for an assumed 10 K water-temperature rise.</p></div>
-        <button type="button" class="primary" disabled={asking} onclick={() => void ask()}>{asking ? 'Opening Assistant…' : 'Ask Assistant to calculate'}</button>
-        {#if agentError}<p class="error" role="alert">{agentError}</p>{/if}
+        <button type="button" disabled={asking} onclick={() => void ask(prompt, 'Cooling-water calculation')}>Ask Assistant to calculate</button>
         <details><summary>Review the calculation request</summary><p class="request">{prompt}</p></details>
       </section>
     {/if}
@@ -225,7 +231,6 @@
   a { color: var(--accent); text-underline-offset: 3px; }
   .eyebrow { margin: 14px 0 5px; }
   h1 { font-size: clamp(24px, 3vw, 32px); }
-  .question { font-size: 20px; font-weight: 600; margin: 8px 0 4px; }
   .brief { color: var(--ink-2); max-width: 76ch; margin-bottom: 16px; }
   .plant-state { color: var(--ink-2); font-size: 12px; margin: 0 0 10px; }
   .progress { padding: 18px; border: 1px solid var(--line); background: var(--card); border-radius: 8px; }
@@ -260,9 +265,14 @@
   summary { cursor: pointer; color: var(--accent); }
   details p { margin: 8px 0; }
   .engineering { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px 20px; margin-top: 18px; padding: 16px 18px; border: 1px solid var(--line); border-radius: 9px; background: var(--card); }
+  .deadline-question { margin: 12px 0 16px; }
+  .deadline-question label { font-size: 14px; }
+  .question-controls { display: flex; gap: 8px; }
+  .question-controls input { flex: 1; }
+  .question-controls button { flex-shrink: 0; }
   .engineering > div { flex: 1 1 340px; }
   .engineering p { color: var(--ink-2); font-size: 13px; margin: 6px 0 0; }
-  .engineering > details, .engineering > .error { flex-basis: 100%; font-size: 12px; }
+  .engineering > details { flex-basis: 100%; font-size: 12px; }
   .request { white-space: pre-line; }
   footer { display: flex; flex-wrap: wrap; gap: 16px; margin-top: 14px; font-size: 12px; }
   @media (max-width: 800px) {
