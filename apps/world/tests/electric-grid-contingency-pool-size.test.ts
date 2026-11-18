@@ -68,6 +68,8 @@ describe('electric grid N-1 worker pool size', () => {
     expect(sized(16, 4, quota('1600000 100000')).size).toBe(4)
     expect(sized(8, 4, { kind: 'cores', why: 'darwin has no cgroups' })).toEqual({ size: 4, reason: '4 workers = min of cores 8 − 1 = 7; cap 4 (default); no CPU quota: darwin has no cgroups' })
     expect(sized(3, 4, { kind: 'cores', why: 'darwin has no cgroups' }).size).toBe(2)
+    // A two-core runner keeps one CPU for the main thread even without a quota.
+    expect(sized(2, 2, quota('max 100000'))).toEqual({ size: 1, reason: '1 worker = min of cores 2 − 1 = 1; cap 2 (default); cgroup v2 /system.slice/leitbild-world.service cpu.max max (no quota)' })
     // No spare core, or a cap of 0, runs no worker whatever the quota.
     expect(sized(1, 4, quota('180000 100000')).size).toBe(0)
     expect(sized(8, 0, quota('180000 100000')).size).toBe(0)
