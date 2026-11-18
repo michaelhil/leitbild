@@ -75,6 +75,7 @@ describe('Leitbild Assistant skills', () => {
     expect(planning.body.indexOf('planning.sources.refresh')).toBeGreaterThan(0)
     expect(planning.body.indexOf('planning.sources.refresh')).toBeLessThan(planning.body.indexOf('planning.plan.generate'))
     expect(planning.body).toContain('Unless the question is explicitly historical')
+    expect(planning.body).toContain('`expectedRevision` beside `input` on each refresh/generate call')
     expect(planning.body).toContain('Use its owner-localized `lines` for reported starts and finishes.')
     expect(planning.body).toContain("ISO timestamps ending `Z` are UTC; convert them to the plan's time zone")
     expect(planning.body).not.toMatch(/17:00|job:\s*["']restore|extra-maintenance-crew|nuclear-maintenance-planning/)
