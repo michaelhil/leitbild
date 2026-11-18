@@ -1,30 +1,31 @@
 {
  "kind": "ld01-tier1-expectation",
  "platform": "macos-aarch64",
- "reason": "The r4t re-pin (lane REPIN, lead 8 Nov) on rt-integ 3468cc9c5, wiki 79964f57: RESTART's final head (the climb, the exhaustion fix, ended, R4-RELIEF-ISO with the valve block now in the packet, R4-ROD-READER, the records stepping as the unit does with no window cap, C4 on block r5, C4-I pinned, R4-L1-PAYMENT-FLASH, R4-PZR-RESIDUE). Packets compiled twice from 79964f57 at the head (solids built there): against r4s they differ only in /pzrMetal/reliefIsolation and provenance; r4s's ungoverned and governed states carried bitwise and proven (C1 and C2 60 s digests, governed 60 s series equal). Instructions against the previous pin (620d6ab28, r4s, 5.374 and 11.477 G): C2@0 5.374 -> 5.306 G (-1.3 %), digest c6957835 unchanged; C2@2.5 11.477 -> 11.176 G (-2.6 %), digest 1ff8c15f -> 5bc91ebd: the trajectory moves through R4-ROD-READER and the cap removal (digest.py f5fd58d1 -> fd22c8f7 on r4s; the packet does not move it). Why the counts moved, one run set, medians of 3 interleaved at load 3-5: C2@0 does not move (the previous pin's binary on r4s 5.273 G, the head on r4s 5.269, on r4t 5.272); C2@2.5 the head's changes -2.0 % (11.410 -> 11.187 G on r4s), the packet -0.1 % (11.170 on r4t). The previous pin's own values were recorded at load 8-45, about 2 % above these quiet readings. Cost against the same binary on r4s, 3 a side, every line keeps: worst 0.5 s C2 0.243, C3 0.196, C5 0.239; worst frames 0.737, 0.489, 0.516; steady (600 s) 0.0040, 0.0039, 0.0026. Control recorded under T1LOCK.",
- "recorded_from": "r4-repin/t1-record-r4t",
- "app": "6a31cf0e3",
+ "reason": "The r4u re-pin (lane REPIN6, lead 18 Nov) on claude/ld01-r4-join 7b0a57588: Grid 62f086c18 (R4-GRID, R4-GRID-AUX), live composition 16972fdf5 (unit/live.rs), rod-seat climb and fat LTO 8eb0ade92 (the arming tightened to seat events by JOIN6, cbc5b4edd), origin/main ff202a8d9; wiki 67265146 (the join wiki a563a634 on 6a5037fe, FRAME's rows, wiki main 76fa64d6, windowInterval_s 0.1 per owner A1 8 Nov). The T1 spans now run the live composition (cvcs-ic-live: governor, DC, AUTO rods, field; the governed state; lead 8 Nov), and the pin environment names the IC section (ic_section_sha256, lead F4). Packets against r4t: provenance only (12 products twice identical; joined-cvcs 5fc0b695 -> 961a4995); states carried bitwise and proven (C1 and C2 60 s digests, governed and live governed 60 s series equal). Instructions against the previous pin (406755d77, r4t; 5.306 and 11.176 G): C2@0 -> 5.392 G (+1.6 %), digest c6957835 -> bb8433fd; C2@2.5 -> 10.105 G (-9.6 %), digest 5bc91ebd -> dd15ddbc. Attribution, medians of 3 interleaved at load 33-59, G at C2@0 / C2@2.5: A the previous control on r4t 5.352 / 11.256 (its digests the pin's; about 0.9 % above the pin, recorded at load 3-5); B0 the head on r4t with r4t's T1 composition 5.160 / 10.539 (the code, climb and LTO: -3.6 % / -6.4 %; C2@2.5 digest.py fd22c8f7 -> 1c31adb8, C2@0 unchanged); B the head on r4t with x4-4's trip composition 5.304 / 11.014 (AUTO rods: +2.8 % / +4.5 %; C2@2.5 -> 024eadb1); C the head on r4u with that composition 5.331 / 11.055 (the tuple: digests equal B's, +0.5 % / +0.4 % within the spread); D the head on r4u live 5.339 / 10.120 (the composition, governor, DC, field and the governed state: +0.2 % / -8.5 %; both spans move, digest.py 140c2b61 / 15861b0a). windowInterval_s is read by nothing at run time. Fat LTO is digest-equal (FRAME, 14 digests). With the Grid absent, digests are equal (GRIDFIN, 16 runs). Cost, the head on r4t live against the head on r4u live, 3 a side: every line keeps (ld01-cost, no rise above 1 %): worst 0.5 s C2 0.195, C3 0.221, C5 0.215; worst frames 0.377, 0.337, 0.431; steady (600 s) 0.0039, 0.0040, 0.0027; B-prod and B-dedicated met on all three. Control recorded under T1LOCK.",
+ "recorded_from": "r4-repin6/t1-record-r4u",
+ "app": "561e2c5ce",
  "environment": {
-  "packet_sha256": "5fc0b695b10b44aea6f30113155ad64ed82849da3885dfaac8f745ea0576fc47",
-  "state_sha256": "ed186e0e87f455c479723a94cb4136aa8b6da387d597524a2ac1e49ccfc10ba2",
-  "elec_packet_sha256": "1e4f579e39d4a3e83f423d2a02229b5eccd7fdb1a2d977fb82c425b3d58b7f84",
-  "wiki_commit": "79964f5",
+  "packet_sha256": "961a499557eeacaea530607c38f69248b45e1b3e9c0f7a30a3a9c31256ae4b77",
+  "state_sha256": "fc7c534afae6286b56522279304820c278358ff41f4aa06b610860242b364f67",
+  "elec_packet_sha256": "3faa25f3beee5a5a66068d1c1ed7a296bce8216719752726062f994baeee44e5",
+  "ic_section_sha256": "5666613c062953b05b5967e25200373c5ef5e6f7814617b49039ef2b1b3c11fe",
+  "wiki_commit": "6726514",
   "water_lib_dir": "../../operating-water-sbtl-repin-dd021f1",
   "sundials_prefix": "../../idas-klu-7.5.0/prefix"
  },
  "instruction_tolerance": 0.01,
  "spans": {
   "C2@0": {
-   "instructions": 5306265489,
-   "digest": "c6957835d3e00894429c6d4f890a39a888b1b9470a9d41e2401d4926363ab819"
+   "instructions": 5391998169,
+   "digest": "bb8433fd36a5d1523c18b8f2c36a548d2e9397fb6adff9bef0510ac154497bef"
   },
   "C2@2.5": {
-   "instructions": 11175601731,
-   "digest": "5bc91ebd71d949d60df2eb7aac5bf37490f93eb32163fbaa9ac0196a75a9a536"
+   "instructions": 10104894596,
+   "digest": "dd15ddbc427abb8406d5090750d9b6525950fe8c161f69b188ae2126b569b9b3"
   }
  },
  "control": {
-  "binary": "r4-repin/t1-record-r4t/control-s3_cases",
-  "sha256": "0b4da1376ac82d9b5cb11672af2126f9dc815f133a132e9794cbb44f67300465"
+  "binary": "r4-repin6/t1-record-r4u/control-s3_cases",
+  "sha256": "2693f29275bda8f33c80688db5c5ffae38041edbc1fbe7e98cb43195024ee9aa"
  }
 }
