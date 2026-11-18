@@ -26,7 +26,8 @@
   let controller: AbortController | null = null
 
   const time = $derived(createTimeFormat(model?.inputs.settings.timeZone ?? null))
-  const options = $derived(model === null ? [] : planOptions(model))
+  const options = $derived(model === null ? [] : planOptions(model).toSorted((left, right) =>
+    Number(left.variant.purchases.includes(extraMaintenanceCrew)) - Number(right.variant.purchases.includes(extraMaintenanceCrew))))
   const selected = $derived(options.find(option => option.key === selectedKey))
   const rows = $derived(selectedKey === null ? [] : schedules[selectedKey] ?? [])
   const finish = $derived(maintenanceFinish(rows))
@@ -140,7 +141,7 @@
     <p class="eyebrow">Planning and scheduling · fictional nuclear plant</p>
     <h1>Nuclear maintenance planning</h1>
     <p class="question">{targetTime === null ? 'Can maintenance finish within the shift?' : `Can maintenance finish by ${time.time(targetTime)}?`}</p>
-    <p class="brief">Inspect the component cooling water pump and heat exchanger on Train A. Compare one crew with an extra crew working on the separate equipment.</p>
+    <p class="brief">Plan maintenance on Train A’s component cooling water pump and heat exchanger.</p>
   </header>
 
   {#if loading}<p class="progress" role="status">{model === null ? 'Reading the plant and preparing the work plan…' : 'Calculating and checking both crew schedules…'}</p>{/if}
