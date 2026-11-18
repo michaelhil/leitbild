@@ -28,6 +28,18 @@ const view = (overrides: Record<string, unknown> = {}, key = 'room/turn/call/key
 const fromHost = (data: unknown) => ({ origin: expected.origin, source: parent, data })
 
 describe('display window messages from the Host', () => {
+  test('Planning schedules retain their precise owner and open as evidence without asset controls', () => {
+    const schedule = embeddedViewListingSchema.parse(view({ moduleId: 'planning', viewType: 'planning.schedule', subject: { workspaceId, moduleId: 'planning', type: 'planning.plan', id: 'plan-1' }, title: 'Finish by 18:00', state: '{"plan":"plan-1","option":"deadline-18"}' }))
+    expect(listingRefusal(schedule.envelope)).toBeNull()
+    expect(readDisplayWindowHostMessage(fromHost({ type: 'leitbild:views', views: [schedule] }), expected)).toEqual({ kind: 'views', views: [schedule], refused: [] })
+    expect(readDisplayWindowHostMessage(fromHost({ type: 'leitbild:view-open', view: schedule }), expected)).toEqual({ kind: 'open', view: schedule })
+    const entry = answerDeckEntry('run-1', schedule)
+    expect(entry).toMatchObject({ refusal: null, otherRun: false, title: 'Finish by 18:00' })
+    expect(deckEntryAsset(entry, [], { state: 'joined' })).toEqual({ ok: false, reason: 'The display names no asset of this Run' })
+    expect(listingRefusal({ ...schedule.envelope, viewType: 'planning.editor' } as never)).not.toBeNull()
+    expect(listingRefusal({ ...schedule.envelope, subject: { ...schedule.envelope.subject, type: 'planning.definition' } } as never)).toBe('a schedule must belong to a Planning Plan')
+    expect(listingRefusal({ ...schedule.envelope, moduleId: 'world' } as never)).toBe('a schedule must belong to a Planning Plan')
+  })
   test('engineering results use the existing display window only under their precise owners', () => {
     const calculation = embeddedViewListingSchema.parse(view({ moduleId: 'agents', viewType: 'engineering.result', subject: { workspaceId, moduleId: 'agents', type: 'agents.room', id: 'room' } }))
     expect(listingRefusal(calculation.envelope)).toBeNull()
