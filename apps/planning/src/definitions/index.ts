@@ -10,9 +10,12 @@ import blank from './blank.plan-definition.json' with { type: 'json' }
 import trainA from './train-a-work-week.plan-definition.json' with { type: 'json' }
 import supplyRun from './supply-run.plan-definition.json' with { type: 'json' }
 import deliveryDemo from './halden-delivery-planning.plan-definition.json' with { type: 'json' }
+import maintenanceDemo from './nuclear-maintenance-planning.plan-definition.json' with { type: 'json' }
 import { deliveryDemoDefinitionId } from './delivery-demo.ts'
+import { maintenanceDemoDefinitionId } from './maintenance-demo.ts'
 
-export { deliveryDemoDefinitionId }
+export { deliveryDemoDefinitionId, maintenanceDemoDefinitionId }
+export const guidedPlanDefinitionIds = new Set([deliveryDemoDefinitionId, maintenanceDemoDefinitionId])
 
 export const planDefinitionType = 'planning.plan-definition'
 
@@ -45,7 +48,7 @@ const load = (raw: unknown): PlanDefinition => {
 }
 
 /** Blank first, then the guided demo and the full cases. */
-export const bundledPlanDefinitions: readonly PlanDefinition[] = [blank, deliveryDemo, trainA, supplyRun].map(load)
+export const bundledPlanDefinitions: readonly PlanDefinition[] = [blank, maintenanceDemo, deliveryDemo, trainA, supplyRun].map(load)
 
 export const createPlanDefinitions = (definitions: readonly PlanDefinition[] = bundledPlanDefinitions): PlanDefinitionsPort => ({ list: () => definitions })
 
@@ -57,5 +60,5 @@ export const definitionDescriptors = (workspaceId: WorkspaceId, definitions: Pla
     category: 'Plans',
     currentRevisionId: definition.revisionId,
     capabilityIds: [...capabilityIds],
-    ...(definition.id === deliveryDemoDefinitionId ? {} : { primaryCapabilityId: 'planning.plan.create' }),
+    ...(guidedPlanDefinitionIds.has(definition.id) ? {} : { primaryCapabilityId: 'planning.plan.create' }),
   })) }).definitions

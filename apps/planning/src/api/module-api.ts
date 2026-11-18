@@ -70,7 +70,7 @@ export const planningOperations: ReadonlyArray<Operation<any>> = [
   {
     id: 'planning.plan.create', kind: 'command', scope: 'definition', risk: 'write',
     title: 'Create a plan',
-    description: 'Start a new plan from a template. The standard start leaves the plan unlinked so you can choose its World simulation later. Optional edits use the same words as changing a plan and are applied as it is made. For the guided Two Halden deliveries demo, pass its current World Run as demoRun to create or reopen that run’s plan with World values already read. Starting a plan only reads World.',
+    description: 'Start a new plan from a template. The standard start leaves the plan unlinked so you can choose its World simulation later. Optional edits use the same words as changing a plan and are applied as it is made. For a guided planning demo, pass its matching World Run as demoRun to create or reopen that run’s plan with World values already read. Starting a plan only reads World.',
     searchTerms: ['new', 'blank', 'empty', 'template', 'example', 'demo', 'start', 'outage', 'maintenance', 'work week'],
     input: createInputSchema, output: writeResultSchema,
     invoke: async ({ operations, signal }, invocation, input: z.infer<typeof createInputSchema>) => {

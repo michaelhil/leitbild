@@ -14,7 +14,7 @@ export const createInputSchema = z.object({
   edits: z.array(editSchema).max(60).optional().describe('Edits applied to the new plan, in order; same vocabulary as planning.plan.edit'),
   // Set once, at create: the edit vocabulary cannot change the grid of a plan with jobs.
   grid: gridSchema.optional().describe('Time step of the plan: 30min for work weeks, 30s for jobs of a few minutes; default 30min'),
-  demoRun: resourceIdSchema.optional().describe('Open the guided delivery plan for this running World simulation, creating it once and reading its facts'),
+  demoRun: resourceIdSchema.optional().describe('Open the matching guided plan for this World simulation, creating it once and reading its facts'),
 }).strict()
 export const editInputSchema = z.object({
   edits: z.array(editSchema).min(1).max(60).describe('Applied together or not at all'),

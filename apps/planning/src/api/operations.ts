@@ -14,7 +14,7 @@ import {
 import { isPlanningError, planningError } from '../errors.ts'
 import { applyEdits, requireAuthority, type ChangeRecord, type EditOutcome, type StoredActor, type Weakening } from '../plan/edits.ts'
 import { definitionRevision, startPlan } from '../definitions/start.ts'
-import { deliveryDemoDefinitionId, type PlanDefinition, type PlanDefinitionsPort } from '../definitions/index.ts'
+import { guidedPlanDefinitionIds, maintenanceDemoDefinitionId, type PlanDefinition, type PlanDefinitionsPort } from '../definitions/index.ts'
 import { outTogether, readiness, worldRefs, worldSubjects, type ReadinessItem } from '../plan/readiness.ts'
 import { buysItems, methodLadders, type FinishCause } from '../plan/buys.ts'
 import { rungStanding } from '../check/buys.ts'
@@ -27,7 +27,7 @@ import {
   type CertifiedSize, type Plan, type PlanInputs, type Status, type WorldFactCopy,
 } from '../plan/schema.ts'
 import type { Edit } from '../plan/edit-schema.ts'
-import { assertRevision, ownOption, type PlanStore, type RevisionGuard } from '../plan/store.ts'
+import { assertRevision, inputsDigest, ownOption, type PlanStore, type RevisionGuard } from '../plan/store.ts'
 import {
   attentionKind, basisWords, buildSection, clip, datedWords, names, jobsPerSolve, sizeBand, sizeCautionWarning, sizeRefusalWords, weakeningWords, byteLength, changeLines, changeSummary, nameOf, optionWarning, readinessText,
   methodWords, spanAndCost, statusSentence, timeWords, valueWords, type OptionState, type Section, type SectionContext,
@@ -422,7 +422,7 @@ export const createPlanningOperations = (ports: PlanningOperationsPorts) => {
     return { facts, observedAt: oldestRead ?? now() }
   }
 
-  const openDeliveryDemo = async (definition: PlanDefinition, run: WorkspaceResourceReference, access: AccessContext, signal: AbortSignal): Promise<{ plan: Plan; created: boolean }> => {
+  const openGuidedDemo = async (definition: PlanDefinition, run: WorkspaceResourceReference, access: AccessContext, signal: AbortSignal): Promise<{ plan: Plan; created: boolean }> => {
     const deadline = AbortSignal.any([signal, AbortSignal.timeout(refreshDeadlineMs)])
     const late = () => planningError(503, 'world_unavailable', 'World is taking longer than expected. Try opening Planning again.')
     if (ports.world.runSource === undefined) throw planningError(503, 'world_unavailable', 'Planning could not check the World simulation.')
@@ -433,7 +433,7 @@ export const createPlanningOperations = (ports: PlanningOperationsPorts) => {
     }
     if (deadline.aborted) throw late()
     if (scenarioId !== definition.inputs.settings.scenario?.id) {
-      throw planningError(409, 'demo_run_mismatch', 'Start the Halden delivery demo in World to open its plan.')
+      throw planningError(409, 'demo_run_mismatch', 'Start this plan’s matching demo in World before opening Planning.')
     }
     const workspaceId = run.workspaceId
     const id = demoPlanId(run, definition.id)
@@ -441,22 +441,38 @@ export const createPlanningOperations = (ports: PlanningOperationsPorts) => {
       if (plan.inputs.settings.run?.id !== run.id) throw planningError(409, 'demo_run_mismatch', 'This plan’s World link was changed in the full editor. Start another demo run to make a new plan.')
       return plan
     }
+    const readDemoInputs = async (plan: Plan): Promise<PlanInputs> => {
+      // Delivery stop locators are map links only. Maintenance reads both
+      // pump locators as well as every input, so its running precheck is real.
+      const subjects = definition.id === maintenanceDemoDefinitionId ? worldSubjects(plan.inputs)
+        : [...new Set(worldRefs(plan.inputs).map(({ ref }) => ref.locator))]
+      const { facts, observedAt } = await readWorld(run, subjects, access, deadline, late)
+      if (deadline.aborted) throw late()
+      const inputs = planInputsSchema.parse({ ...plan.inputs, world: { refreshedAt: observedAt, facts } })
+      if (readinessOf({ ...plan, inputs }, new Map()).some(item => item.blocks
+        || definition.id === maintenanceDemoDefinitionId && (item.code === 'precondition-unmet' || item.code === 'precondition-unread'))) {
+        throw planningError(409, 'demo_world_values_missing', 'The required World readings or running preconditions are unavailable. Return to the World demo and check its source state.')
+      }
+      return inputs
+    }
     try {
-      return { plan: checkLink(await store.read(workspaceId, id)), created: false }
+      const current = checkLink(await store.read(workspaceId, id))
+      if (definition.id !== maintenanceDemoDefinitionId) return { plan: current, created: false }
+      const inputs = await readDemoInputs(current)
+      const at = now(), by = storedActor(access)
+      const plan = await store.update(workspaceId, id, { expectedRevision: current.revision, required: true }, saved => {
+        if (deadline.aborted) throw late()
+        const revision = inputsDigest(saved.inputs) === inputsDigest(inputs) ? saved.revision : saved.revision + 1
+        return { ...saved, inputs, revision, updatedAt: at,
+          ...appendChange(saved, { at, by, revision, summary: 'Read World values when reopening the maintenance plan', kinds: ['refresh'] }) }
+      })
+      return { plan, created: false }
     } catch (error) {
       if (!isPlanningError(error) || error.code !== 'plan_not_found') throw error
     }
 
     const { plan } = startPlan({ definition, workspaceId, id, at: now(), by: storedActor(access), edits: [{ edit: 'plan', run: run.id }] })
-    // The two stop locators let visitors find the jobs on the map. Only the truck's design time is a
-    // solver input here; leaving the stop locators out of this read keeps preparation independent of routing.
-    const subjects = [...new Set(worldRefs(plan.inputs).map(({ ref }) => ref.locator))]
-    const { facts, observedAt } = await readWorld(run, subjects, access, deadline, late)
-    if (deadline.aborted) throw late()
-    const linked = { ...plan, inputs: planInputsSchema.parse({ ...plan.inputs, world: { refreshedAt: observedAt, facts } }) }
-    if (readinessOf(linked, new Map()).some(item => item.blocks)) {
-      throw planningError(409, 'demo_world_values_missing', 'The delivery truck’s unloading time could not be read. Return to the World demo and try again.')
-    }
+    const linked = { ...plan, inputs: await readDemoInputs(plan) }
     try {
       return { plan: await store.create(workspaceId, linked), created: true }
     } catch (error) {
@@ -631,17 +647,17 @@ export const createPlanningOperations = (ports: PlanningOperationsPorts) => {
     create: async (workspaceId: WorkspaceId, definition: { readonly id: string; readonly revisionId: string }, input: z.infer<typeof createInputSchema>, access: AccessContext, signal: AbortSignal = new AbortController().signal): Promise<{ readonly result: WriteResult; readonly created?: WorkspaceResourceReference }> => {
       const found = definitionRevision(ports.definitions, definition)
       if (input.demoRun !== undefined) {
-        if (found.id !== deliveryDemoDefinitionId || input.edits !== undefined || input.grid !== undefined) {
-          throw planningError(400, 'invalid_request', 'demoRun applies only to the guided delivery plan and takes no other inputs.')
+        if (!guidedPlanDefinitionIds.has(found.id) || input.edits !== undefined || input.grid !== undefined) {
+          throw planningError(400, 'invalid_request', 'demoRun applies only to a guided plan and takes no other inputs.')
         }
-        const { plan, created } = await openDeliveryDemo(found, runReference(workspaceId, input.demoRun), access, signal)
+        const { plan, created } = await openGuidedDemo(found, runReference(workspaceId, input.demoRun), access, signal)
         return {
-          result: writeResult(plan, ['Opened the linked delivery plan with its World values']),
+          result: writeResult(plan, ['Opened the linked plan with its World values']),
           ...(created ? { created: planReference(workspaceId, plan.id) } : {}),
         }
       }
-      if (found.id === deliveryDemoDefinitionId) {
-        throw planningError(400, 'demo_run_required', 'Start the Halden delivery demo from Demos, then open its plan from the World guide.')
+      if (guidedPlanDefinitionIds.has(found.id)) {
+        throw planningError(400, 'demo_run_required', 'Start this plan’s demo from Demos, then open its plan from the World guide.')
       }
       const { plan, changes } = startPlan({ definition: found, workspaceId, id: crypto.randomUUID(), at: now(), by: storedActor(access), edits: input.edits ?? [], ...(input.grid === undefined ? {} : { grid: input.grid }) })
       const stored = await store.create(workspaceId, plan)
