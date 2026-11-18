@@ -17,8 +17,8 @@ import {
 
 export const VIEW_FENCE_LANGUAGE = 'leitbild-view'
 
-// Module-wide publications. Agents has one narrower, Room-owned exception
-// below: engineering.result. No other Agents page is embeddable.
+// Module-wide publications. Planning admits its owner schedule view; Agents
+// admits only its narrower Room-owned engineering result below.
 export const EMBEDDABLE_VIEW_MODULES: ReadonlySet<string> = new Set(['world'])
 
 export interface EngineeringViewState {
@@ -108,7 +108,8 @@ export const checkViewEnvelope = (value: unknown, workspaceId: string): ViewEnve
   if (problem !== null) return { kind: 'refused', code: 'view_envelope_invalid', error: problem }
   const envelope = value as EmbeddedViewEnvelope
   const engineering = envelope.moduleId === 'agents' && envelope.viewType === 'engineering.result' && envelope.subject.type === 'agents.room'
-  if (!EMBEDDABLE_VIEW_MODULES.has(envelope.moduleId) && !engineering) return { kind: 'refused', code: 'view_module_not_embeddable', error: `views of Module ${envelope.moduleId} cannot be embedded` }
+  const schedule = envelope.moduleId === 'planning' && envelope.viewType === 'planning.schedule' && envelope.subject.type === 'planning.plan'
+  if (!EMBEDDABLE_VIEW_MODULES.has(envelope.moduleId) && !engineering && !schedule) return { kind: 'refused', code: 'view_module_not_embeddable', error: `views of Module ${envelope.moduleId} cannot be embedded` }
   if (engineering) {
     const state = engineeringViewState(envelope.state)
     if (state === null || state.roomId !== envelope.subject.id) return { kind: 'refused', code: 'view_envelope_invalid', error: 'engineering evidence locator does not match its Room' }

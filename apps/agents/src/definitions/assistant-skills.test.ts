@@ -65,4 +65,13 @@ describe('Leitbild Assistant skills', () => {
     expect(runner.description.length).toBeLessThanOrEqual(DESCRIPTION_MAX_CHARS)
     expect(runner.body.length).toBeLessThanOrEqual(PROCEDURE_RUNNER_BODY_MAX_CHARS)
   })
+
+  test('deadline help is selected, bounded and carries no demo time or job key', async () => {
+    const store = createSkillStore()
+    await loadSkills(join(import.meta.dir, '..', '..', 'skills'), store, createToolRegistry())
+    expect(assistantRoom.room.agents[0]!.skills).toContain('planning-advice')
+    const planning = store.get('planning-advice')!
+    expect(planning.body.length).toBeLessThanOrEqual(3_600)
+    expect(planning.body).not.toMatch(/17:00|job:\s*["']restore|extra-maintenance-crew|nuclear-maintenance-planning/)
+  })
 })

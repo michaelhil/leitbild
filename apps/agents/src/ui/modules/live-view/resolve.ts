@@ -40,7 +40,7 @@ export const resolveViewReference = async (ref: ViewReference, origin: ViewFence
     .find(candidate => candidate.key === ref.key)
   if (entry?.embeddedView === undefined) return { kind: 'refused', code: 'view_evidence_mismatch', message: `no display was composed under "${ref.key}"` }
   const checked = checkViewEnvelope(entry.embeddedView, origin.workspaceId)
-  if (checked.kind === 'view' && checked.envelope.moduleId !== 'world') return { kind: 'refused', code: 'view_evidence_mismatch', message: 'a workspace call cannot publish an Agents calculation' }
+  if (checked.kind === 'view' && checked.envelope.moduleId === 'agents') return { kind: 'refused', code: 'view_evidence_mismatch', message: 'a workspace call cannot publish an Agents calculation' }
   return checked.kind === 'view' ? checked : { kind: 'refused', code: checked.code, message: checked.error }
 }
 

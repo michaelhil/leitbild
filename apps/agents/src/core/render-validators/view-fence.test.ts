@@ -36,6 +36,15 @@ describe('leitbild-view fences', () => {
     expect(checkViewEnvelope({ ...envelope, url: 'https://evil.example' }, workspaceId)).toMatchObject({ kind: 'refused', code: 'view_envelope_invalid' })
   })
 
+  test('admits only the Planning owner schedule on a Plan resource', () => {
+    const subject = { workspaceId, moduleId: 'planning', type: 'planning.plan', id: 'plan-1' }
+    const schedule = { ...publication, moduleId: 'planning', viewType: 'planning.schedule', subject, state: '{"plan":"plan-1","option":"deadline-18"}' }
+    expect(checkViewEnvelope(schedule, workspaceId)).toMatchObject({ kind: 'view', envelope: schedule })
+    expect(checkViewEnvelope({ ...schedule, viewType: 'planning.editor' }, workspaceId)).toMatchObject({ code: 'view_module_not_embeddable' })
+    expect(checkViewEnvelope({ ...schedule, subject: { ...subject, type: 'planning.definition' } }, workspaceId)).toMatchObject({ code: 'view_module_not_embeddable' })
+    expect(checkViewEnvelope(schedule, newWorkspaceId())).toMatchObject({ code: 'view_workspace_mismatch' })
+  })
+
   test('the browser structural check agrees with the contract schema', () => {
     const envelope = { ...publication, moduleId: 'world', subject: run }
     const variants: ReadonlyArray<Record<string, unknown>> = [

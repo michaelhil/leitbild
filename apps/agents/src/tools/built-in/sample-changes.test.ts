@@ -41,7 +41,7 @@ test('default Assistant in a World-only Room exposes its tools and executes calc
   for (const name of ['product_search', 'product_read', 'place_resolve']) {
     deployment.sharedToolRegistry.register({ name, description: name, parameters: { type: 'object' }, execute: async () => ({ success: true }) })
   }
-  for (const name of ['leitbild-assistance', 'operator-displays', 'procedure-runner', 'engineering-advice']) {
+  for (const name of ['leitbild-assistance', 'operator-displays', 'procedure-runner', 'engineering-advice', 'planning-advice']) {
     deployment.sharedSkillStore.register({ name, description: name, body: 'Test fixture.', tools: [], allowedToolNames: [], dirPath: directory })
   }
   const state = createAgentsModuleState()

@@ -40,6 +40,15 @@ describe('resolving leitbild-view references', () => {
     expect(paths).toEqual(['/rooms/room-1/executions/turn-1/calls/call_1_0'])
   })
 
+  test('resolves a published owner schedule from the exact Workspace call evidence', async () => {
+    const plan = { workspaceId, moduleId: 'planning', type: 'planning.plan', id: 'plan-1' }
+    const schedule = { ...envelope, moduleId: 'planning', viewType: 'planning.schedule', subject: plan, title: 'Requested deadline', state: '{"plan":"plan-1","option":"deadline-18"}' }
+    const retained = evidence([{ key: 'display', operationId: 'planning.plan.display', success: true, embeddedView: schedule }])
+    expect(await resolveViewReference(ref, origin, fetching(200, retained).fetchJson)).toEqual({ kind: 'view', envelope: schedule })
+    expect(await resolveViewReference(ref, origin, fetching(200, { ...retained, tool: 'engineering_run' }).fetchJson)).toMatchObject({ code: 'view_evidence_mismatch' })
+    expect(await resolveViewReference(ref, origin, fetching(200, evidence([{ key: 'display', embeddedView: { ...schedule, viewType: 'planning.editor' } }])).fetchJson)).toMatchObject({ code: 'view_module_not_embeddable' })
+  })
+
   test('names why a display cannot be shown', async () => {
     expect(await resolveViewReference(ref, origin, fetching(404, null).fetchJson)).toMatchObject({ code: 'view_evidence_unavailable' })
     expect(await resolveViewReference(ref, origin, fetching(503, null).fetchJson)).toMatchObject({ code: 'view_evidence_unreadable' })
