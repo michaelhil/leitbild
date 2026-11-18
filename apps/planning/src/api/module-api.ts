@@ -131,9 +131,9 @@ export const planningOperations: ReadonlyArray<Operation<any>> = [
   },
   {
     id: 'planning.plan.display', kind: 'query', scope: 'plan', risk: 'read',
-    title: 'Show a retained schedule',
-    description: 'Publish a schedule chart from one retained option, including an arbitrary-deadline what-if or its proven refusal. The view keeps the exact option, deadline, cost, input revision and freshness. A refusal can compare a fresh checked reference schedule; it never invents rows for an impossible option. It keeps the evidence it was published from: later input changes or replacement options require a new view. Reads only; the existing paged plan sections supply its jobs and dated rows.',
-    searchTerms: ['visualize', 'chart', 'gantt', 'show', 'schedule', 'deadline', 'can we finish', 'by a time'],
+    title: 'Retained schedule chart',
+    description: 'Present a retained planning option as a Gantt chart, including a deadline what-if or its proven refusal. The chart identifies the option, requested deadline, cost, input revision and freshness. A refusal may include a checked reference schedule without inventing rows for the refused option. Later input changes or replacement options require a new publication. Read-only; the existing paged plan sections supply its jobs and dated rows.',
+    searchTerms: ['gantt', 'schedule chart', 'deadline schedule'],
     publishes: ['embedded-view'], input: scheduleDisplayInputSchema, output: scheduleDisplayResultSchema,
     invoke: async ({ operations }, invocation, input: z.infer<typeof scheduleDisplayInputSchema>) => ({ result: await operations.display(invocation.workspaceId, planIdOf(invocation), input) }),
   },

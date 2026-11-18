@@ -17,7 +17,7 @@ const table = {
   'planning.plan.read': ['resource', 'query', 'read', ['status', 'overview', 'attention', 'summary', 'rules', 'crews', 'schedule', 'history']],
   'planning.plan.baseline': ['resource', 'command', 'write', ['baseline', 'commit', 'freeze', 'approve', 'choose', 'target']],
   'planning.sources.refresh': ['workspace', 'command', 'write', ['refresh', 'update', 'latest', 'World', 'changed', 'reread', 'sync']],
-  'planning.plan.display': ['resource', 'query', 'read', ['visualize', 'chart', 'gantt', 'show', 'schedule', 'deadline', 'can we finish', 'by a time']],
+  'planning.plan.display': ['resource', 'query', 'read', ['gantt', 'schedule chart', 'deadline schedule']],
   'planning.plan.delete': ['resource', 'command', 'destructive', ['delete', 'remove', 'get rid of', 'discard', 'scrap', 'throw away']],
 } as const
 
