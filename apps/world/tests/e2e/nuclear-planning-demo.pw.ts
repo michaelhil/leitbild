@@ -302,7 +302,7 @@ test('plain deadline questions produce checked success and refusal visualization
         const read = await page.request.post(`/api/workspaces/${workspace}/capabilities/planning.plan.display/invoke`, {
           data: {
             resource: { workspaceId: workspace, moduleId: 'planning', type: 'planning.plan', id: state.plan },
-            input: { option: state.option, digest: state.digest }, actor: { kind: 'human' },
+            input: { option: state.option, digest: state.digest, ...(state.reference === undefined ? {} : { reference: state.reference }) }, actor: { kind: 'human' },
           },
         })
         expect(read.ok()).toBe(true)
@@ -317,7 +317,7 @@ test('plain deadline questions produce checked success and refusal visualization
         const result = frame.contentFrame()
         await expect(result.getByRole('region', { name: 'Checked schedule', exact: true })).toBeVisible({ timeout: 30_000 })
         await expect(result.getByRole('table', { name: 'Checked work schedule', exact: true }).getByRole('rowheader')).toHaveCount(5)
-        return { result, schedule, plan: state.plan }
+        return { result, schedule, state, plan: state.plan }
       }
       throw new Error(`The Assistant did not publish a ${status} Planning schedule for ${deadline}.`)
     }
@@ -358,6 +358,26 @@ test('plain deadline questions produce checked success and refusal visualization
     await expect(existingCrew.result.getByText('Meets the requested deadline.', { exact: false })).toBeVisible()
     await expect(existingCrew.result.getByRole('rowheader').last()).toContainText('19:00')
     await saveEvidenceImage('deadline-19-30-existing-crew', path => existingCrew.result.locator('body').screenshot({ path }))
+
+    // Later current-state reads and new options must not replace the evidence
+    // behind the earlier success/refusal while those options remain retained.
+    for (const [label, earlier] of [['18', fits], ['15', refuses]] as const) {
+      const response = await page.request.post(`/api/workspaces/${workspace}/capabilities/planning.plan.display/invoke`, {
+        data: {
+          resource: { workspaceId: workspace, moduleId: 'planning', type: 'planning.plan', id: earlier.plan },
+          input: { option: earlier.state.option, digest: earlier.state.digest, ...(earlier.state.reference === undefined ? {} : { reference: earlier.state.reference }) },
+          actor: { kind: 'human' },
+        },
+      })
+      const retained = await response.json()
+      await saveEvidence(`planning-retained-${label}`, { status: response.status(), publication: retained })
+      expect(response.ok()).toBe(true)
+      expect(retained.result.schedule.digest).toBe(earlier.state.digest)
+      expect(retained.result.schedule.option.key).toBe(earlier.schedule.option.key)
+      expect(retained.result.schedule.option.status.word).toBe(earlier.schedule.option.status.word)
+      expect(retained.result.schedule.deadline).toEqual(earlier.schedule.deadline)
+      expect(retained.result.schedule.reference?.key ?? null).toBe(earlier.schedule.reference?.key ?? null)
+    }
 
     // A question must remain a what-if; the authored return target is unchanged.
     const jobs = await page.request.post(`/api/workspaces/${workspace}/capabilities/planning.plan.read/invoke`, {
