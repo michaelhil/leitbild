@@ -43,7 +43,7 @@ const withNuclearPlanning = async (page: Page, play: (planning: FrameLocator, wo
 }
 
 const schedules = async (planning: FrameLocator) => {
-  await expect(planning.getByText('Can maintenance finish by 17:00?', { exact: true })).toBeVisible()
+  await expect(planning.getByLabel('Ask about the deadline', { exact: true })).toHaveValue('Can we complete maintenance by 17:00?')
   await expect(planning.getByRole('button', { name: /Generate/ })).toHaveCount(0)
   const one = planning.getByRole('button', { name: /^One crew\b/ })
   const extra = planning.getByRole('button', { name: /^Extra crew\b/ })
