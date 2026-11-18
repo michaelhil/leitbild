@@ -34,7 +34,7 @@
  * - start.json (at connect: each unit's composition read from its delivered channels) and run.json (at the stop).
  * It stops, keeps every receipt and restarts nothing on: a unit's failure (child death, refused exchange, the 10 s
  * ADVANCE limit, time-stopped), a named end, a refused advance, the stop file (checked once per rollup interval),
- * machine protection (free disk under 2 GiB, or memory pressure at warn or above for 60 s), or the span's end.
+ * machine protection (free disk under 2 GiB, or memory pressure critical for 60 s: r2 A1, the Mac), or the span's end.
  * --exchange-rows on keeps the per-exchange rows in run.json as well (off by default with --rollup-s).
  *
  * What it records, per unit per exchange (`exchanges` rows, columns in the receipt): the child's own wall and CPU
@@ -75,8 +75,8 @@ const haldenScenarioId = 'halden-power-complex'
 /** Soak rule r2's data limits and machine protection. */
 const worstKept = 200
 const diskFloorBytes = 2 * 2 ** 30
-const pressureWarnLevel = 2
-const pressureSustainedS = 60
+/** r2 amendment A1 (owner, 18 Nov), the Mac only: memory pressure at critical (level 4), held for 60 s, stops the run. */
+const pressureStop = { sysctl: 'kern.memorystatus_vm_pressure_level', level: 4, name: 'critical', heldS: 60 } as const
 
 interface UnitSpec { readonly text: string; readonly caseName: string | null; readonly atS: number | null }
 interface Config {
@@ -238,7 +238,7 @@ interface LoadSample { readonly tS: number; readonly busy: ReadonlyArray<number>
 /**
  * Per-core busy fraction and the memory pressure level sampled every second (macOS). It keeps every sample only
  * when asked (the per-exchange receipt); a soak keeps the latest, each rollup interval's mean busy, and how long the
- * pressure has stood at warn or above.
+ * pressure has stood at the stop's level (pressureStop) or above.
  */
 const createLoadSampler = (keep: boolean) => {
   const samples: LoadSample[] = []
@@ -264,7 +264,7 @@ const createLoadSampler = (keep: boolean) => {
     if (keep) samples.push(latest)
     intervalBusy += busy.reduce((sum, value) => sum + value, 0) / busy.length
     intervalCount += 1
-    pressureSince = latest.pressure >= pressureWarnLevel ? pressureSince ?? tS : null
+    pressureSince = latest.pressure >= pressureStop.level ? pressureSince ?? tS : null
     last = now
   }
   const timer = setInterval(sample, 1_000)
@@ -278,7 +278,7 @@ const createLoadSampler = (keep: boolean) => {
       intervalCount = 0
       return result
     },
-    /** Seconds the pressure has stood at warn or above, by the samples (0 when it is below). */
+    /** Seconds the pressure has stood at the stop's level or above, by the samples (0 when it is below). */
     pressureHeldS: () => (pressureSince === null || latest === null ? 0 : latest.tS - pressureSince + 1),
     stop: () => clearInterval(timer),
   }
@@ -637,7 +637,7 @@ const createSoakFiles = (config: Config, records: ReadonlyArray<UnitRecord>, loa
   /** Every soak check at the end of tick k: the rollup, the stop file, the disk, the memory pressure. */
   const check = (k: number): Stop | null => {
     const atIso = new Date().toISOString()
-    if (load.pressureHeldS() >= pressureSustainedS) return { kind: 'machine protection', message: `memory pressure at warn or above for ${load.pressureHeldS().toFixed(0)} s (kern.memorystatus_vm_pressure_level ${load.latest()?.pressure})`, atK: k, atIso }
+    if (load.pressureHeldS() >= pressureStop.heldS) return { kind: 'machine protection', message: `memory pressure ${pressureStop.name} for ${load.pressureHeldS().toFixed(0)} s (${pressureStop.sysctl} ${load.latest()?.pressure})`, atK: k, atIso }
     const rollupFrames = Math.round(config.rollupS! / stepS)
     if ((k + 1) % rollupFrames !== 0) return null
     writeRollups(k)
@@ -956,6 +956,7 @@ const main = async (): Promise<void> => {
       format: 'ld01-multi-unit-start', started_iso: startedIso, connected_iso: new Date().toISOString(), ...identity, scenario: connected.scenario,
       units: records.map((record, index) => ({ index, plant: record.plantId, pid: record.pid, spec: record.spec.text, composition: connected.composition[index] })),
       composition_basis: 'each unit\'s delivered channels at connect: the engine refuses at LOAD a tag-map channel the unit does not deliver; ld01-unit delivers LD01.CORE.BANK.HOLD only with AUTO rod control composed (0 = AUTO), LD01.TG.LOAD.* and LD01.TG.ADM.POS only with the governor declared, LD01.DC.* only with the DC groups declared, LD01.TG.GEN.FIELD.INITIATED from the field controller every unit composes',
+      machine_protection: { free_disk_floor_bytes: diskFloorBytes, memory_pressure_stop: pressureStop, rule: 'soak rule r2 with amendment A1 (the Mac)' },
       load_at_start: loadAtStart, memory_at_start: memoryAtStart,
     }, null, 1)}\n`)
   }
