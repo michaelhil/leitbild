@@ -38,6 +38,16 @@ test('the maintenance plan reads both actual pumps and computes the crew trade w
     expect(option.rows.some(row => plan.inputs.jobs.find(job => job.key === row.job)?.equipment.includes('CCWB'))).toBe(false)
   }
   expect(plan.options!.recommended).toBe(options.get('Extra crew')!.key)
+  const displayResponse = await fetch(`${stack.worldUrl}/api/workspaces/${stack.workspaceId}/world/simulation-runs/${run}/displays/default`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ subject: 'plant:maintenance#componentCoolingWaterPumpB' }),
+  })
+  if (!displayResponse.ok) throw new Error(`Equipment default returned ${displayResponse.status}: ${await displayResponse.text()}`)
+  const display = await displayResponse.json() as { result: { view: { title: string; state: string } } }
+  expect(display.result.view.title).toContain('Component Cooling Water Pump B')
+  const state = JSON.parse(display.result.view.state)
+  expect(state.views.some((view: any) => view.kind === 'values' && view.lead?.element === 'componentCoolingWaterPumpB')).toBe(true)
+  expect(state.views.some((view: any) => view.kind === 'topology' && view.request?.around?.includes('componentCoolingWaterPumpB'))).toBe(true)
   const reopened = await client.createDemo(definition, run)
   expect(reopened.result.plan.id).toBe(planId)
   expect(reopened.result.plan.revision).toBe(prepared.revision)

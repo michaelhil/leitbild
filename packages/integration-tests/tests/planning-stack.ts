@@ -169,7 +169,7 @@ export const createPlanningStack = async (options: { readonly realAgents?: boole
     }
   }
   return {
-    hostUrl, workspaceId, store, room, start,
+    hostUrl, worldUrl: `http://127.0.0.1:${world.port}`, workspaceId, store, room, start,
     /** How many events World's own journal holds for a Run of this Workspace. */
     runEvents: (runId: string): number => world.workspaces.getLoaded(workspaceId)!.simulationRuns.get(simulationRunIdSchema.parse(runId))!.events().length,
     close: async () => { for (const step of cleanup.reverse()) await step() },
