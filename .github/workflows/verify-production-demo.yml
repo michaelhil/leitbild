@@ -26,7 +26,7 @@ jobs:
     steps:
       - name: Validate pinned test code
         run: |
-          [[ "$CODE_REVISION" =~ ^[a-f0-9]{40}$ ]]
+          [[ "$CODE_REVISION" =~ ^[a-f0-9]{40}$ ]] || exit 1
           printf 'Test code: %s\nWorkflow: %s\nRun: %s\n' "$CODE_REVISION" "$GITHUB_SHA" "$GITHUB_RUN_ID" > "$RUNNER_TEMP/nuclear-demo-context.txt"
       - uses: actions/checkout@v5
         with:
