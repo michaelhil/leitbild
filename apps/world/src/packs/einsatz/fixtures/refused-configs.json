@@ -21,7 +21,7 @@
               { "id": "p", "label": "P again", "kind": "boolean", "default": true }
             ]
           },
-          { "id": "mover", "label": "Mover again", "icon": "circle", "components": {} },
+          { "id": "mover", "label": "Mover again", "icon": "circle", "components": { "mobility": { "mode": "direct", "speedMps": 10 } } },
           {
             "id": "site", "label": "Site", "icon": "circle",
             "components": { "receiving": { "accepts": ["L1", "L1"], "slots": 1, "handoverS": 0, "accepting": true } }
@@ -43,10 +43,7 @@
           },
           { "id": "job", "label": "Job again", "icon": "flag" }
         ],
-        "authority": [
-          { "roleId": "r", "units": { "types": ["mover", "mover"] }, "taskTemplates": ["job", "job"] },
-          { "roleId": "r", "units": { "tags": ["x", "x"] }, "taskTemplates": [] }
-        ]
+        "priorities": [{ "id": "routine", "label": "Routine", "code": "R" }]
       },
       "issues": [
         { "code": "duplicate_id", "path": ["hostility", "a", 1] },
@@ -60,11 +57,7 @@
         { "code": "duplicate_id", "path": ["unitTypes", 3, "components", "effector", "targets", 1] },
         { "code": "duplicate_id", "path": ["unitTypes", 3, "properties", 0, "values", 1, "id"] },
         { "code": "duplicate_id", "path": ["taskTemplates", 0, "requires", 1, "provides"] },
-        { "code": "duplicate_id", "path": ["taskTemplates", 1, "id"] },
-        { "code": "duplicate_id", "path": ["authority", 0, "units", "types", 1] },
-        { "code": "duplicate_id", "path": ["authority", 0, "taskTemplates", 1] },
-        { "code": "duplicate_id", "path": ["authority", 1, "roleId"] },
-        { "code": "duplicate_id", "path": ["authority", 1, "units", "tags", 1] }
+        { "code": "duplicate_id", "path": ["taskTemplates", 1, "id"] }
       ]
     },
     {
@@ -78,7 +71,7 @@
       "issues": [{ "code": "duplicate_code", "path": ["loadClasses", 1, "code"] }]
     },
     {
-      "name": "references to undeclared load classes, tags, unit types and task templates",
+      "name": "references to undeclared load classes, tags, priorities and task templates",
       "config": {
         "loadClasses": [{ "id": "L1", "label": "First", "code": "A", "noun": { "one": "item", "other": "items" } }],
         "unitTypes": [
@@ -97,11 +90,8 @@
             "components": { "receiving": { "accepts": ["L7"], "slots": 1, "handoverS": 0, "accepting": true } }
           }
         ],
-        "taskTemplates": [{ "id": "job", "label": "Job", "icon": "flag", "priorityClass": "L6" }],
-        "authority": [
-          { "roleId": "r1", "units": { "types": ["ghost-type"] }, "taskTemplates": ["ghost-job"] },
-          { "roleId": "r2", "units": { "tags": ["ghost-tag"] }, "taskTemplates": [] }
-        ]
+        "taskTemplates": [{ "id": "job", "label": "Job", "icon": "flag", "priority": "X6" }],
+        "priorities": [{ "id": "routine", "label": "Routine", "code": "R" }]
       },
       "issues": [
         { "code": "unknown_load_class", "path": ["unitTypes", 0, "components", "carry", "classes", 0] },
@@ -109,10 +99,7 @@
         { "code": "unknown_task_template", "path": ["unitTypes", 0, "standingOrders", "onStepLost", "createTask"] },
         { "code": "unknown_load_class", "path": ["unitTypes", 0, "standingOrders", "onStepLost", "perStep", "L8"] },
         { "code": "unknown_load_class", "path": ["unitTypes", 1, "components", "receiving", "accepts", 0] },
-        { "code": "unknown_load_class", "path": ["taskTemplates", 0, "priorityClass"] },
-        { "code": "unknown_unit_type", "path": ["authority", 0, "units", "types", 0] },
-        { "code": "unknown_task_template", "path": ["authority", 0, "taskTemplates", 0] },
-        { "code": "unknown_tag", "path": ["authority", 1, "units", "tags", 0] }
+        { "code": "unknown_priority", "path": ["taskTemplates", 0, "priority"] }
       ]
     },
     {
@@ -129,7 +116,7 @@
             ]
           },
           {
-            "id": "bystander", "label": "Bystander", "icon": "circle", "components": {},
+            "id": "bystander", "label": "Bystander", "icon": "circle", "components": { "mobility": { "mode": "direct", "speedMps": 10 } },
             "properties": [{ "id": "reach", "label": "Reach", "kind": "number", "default": 1 }]
           }
         ],
@@ -153,7 +140,8 @@
               }
             ]
           }
-        ]
+        ],
+        "priorities": [{ "id": "routine", "label": "Routine", "code": "R" }]
       },
       "issues": [
         { "code": "unknown_service", "path": ["taskTemplates", 0, "requires", 0, "provides"] },
@@ -168,25 +156,25 @@
       ]
     },
     {
-      "name": "property defaults, bounds and board slots that disagree",
+      "name": "property defaults, bounds and shown slots that disagree",
       "config": {
         "unitTypes": [
           {
-            "id": "holder", "label": "Holder", "icon": "circle", "components": {},
+            "id": "holder", "label": "Holder", "icon": "circle", "components": { "mobility": { "mode": "direct", "speedMps": 10 } },
             "properties": [
               { "id": "a", "label": "A", "kind": "number", "min": 10, "max": 0, "default": 5 },
               { "id": "b", "label": "B", "kind": "number", "min": 0, "max": 10, "default": 11 },
               { "id": "c", "label": "C", "kind": "number", "min": 5, "default": 1 },
               { "id": "d", "label": "D", "kind": "enum", "values": [{ "id": "x", "label": "X" }], "default": "y" },
-              { "id": "e", "label": "E", "kind": "boolean", "default": true, "board": true },
-              { "id": "f", "label": "F", "kind": "boolean", "default": true, "board": true },
-              { "id": "g", "label": "G", "kind": "boolean", "default": true, "board": true }
+              { "id": "e", "label": "E", "kind": "boolean", "default": true, "show": true },
+              { "id": "f", "label": "F", "kind": "boolean", "default": true, "show": true },
+              { "id": "g", "label": "G", "kind": "boolean", "default": true, "show": true }
             ]
           }
         ]
       },
       "issues": [
-        { "code": "too_many_board_properties", "path": ["unitTypes", 0, "properties"] },
+        { "code": "too_many_shown_properties", "path": ["unitTypes", 0, "properties"] },
         { "code": "invalid_range", "path": ["unitTypes", 0, "properties", 0, "min"] },
         { "code": "default_out_of_range", "path": ["unitTypes", 0, "properties", 1, "default"] },
         { "code": "default_out_of_range", "path": ["unitTypes", 0, "properties", 2, "default"] },
@@ -198,14 +186,14 @@
       "config": {
         "unitTypes": [
           {
-            "id": "one", "label": "One", "icon": "circle", "components": {},
+            "id": "one", "label": "One", "icon": "circle", "components": { "mobility": { "mode": "direct", "speedMps": 10 } },
             "properties": [
               { "id": "size", "label": "Size", "kind": "number", "unit": "kg", "default": 1 },
               { "id": "flag", "label": "Flag", "kind": "boolean", "default": false }
             ]
           },
           {
-            "id": "two", "label": "Two", "icon": "circle", "components": {},
+            "id": "two", "label": "Two", "icon": "circle", "components": { "mobility": { "mode": "direct", "speedMps": 10 } },
             "properties": [
               { "id": "size", "label": "Size", "kind": "number", "unit": "t", "default": 1 },
               { "id": "flag", "label": "Flag", "kind": "number", "default": 0 }
@@ -271,14 +259,16 @@
             }
           }
         ],
-        "taskTemplates": [{ "id": "job", "label": "Job", "icon": "flag" }]
+        "taskTemplates": [{ "id": "job", "label": "Job", "icon": "flag" }],
+        "priorities": [{ "id": "routine", "label": "Routine", "code": "R" }]
       },
       "issues": [
         { "code": "order_requires_component", "path": ["unitTypes", 0, "standingOrders", "deliver"] },
         { "code": "order_requires_component", "path": ["unitTypes", 0, "standingOrders", "return"] },
         { "code": "order_requires_component", "path": ["unitTypes", 0, "standingOrders", "roe"] },
         { "code": "order_requires_component", "path": ["unitTypes", 0, "standingOrders", "withdraw"] },
-        { "code": "order_requires_component", "path": ["unitTypes", 0, "standingOrders", "onStepLost"] }
+        { "code": "order_requires_component", "path": ["unitTypes", 0, "standingOrders", "onStepLost"] },
+        { "code": "stationary_type_not_site", "path": ["unitTypes", 0, "components"] }
       ]
     },
     {
@@ -291,20 +281,6 @@
       "issues": [{ "code": "component_requires_order", "path": ["unitTypes", 0, "standingOrders", "roe"] }]
     },
     {
-      "name": "a step loss creating a load-less task from a template without a priority floor",
-      "config": {
-        "unitTypes": [
-          {
-            "id": "unit", "label": "Unit", "icon": "circle",
-            "components": { "durability": { "stepFireS": 10 } },
-            "standingOrders": { "onStepLost": { "createTask": "job", "perStep": {} } }
-          }
-        ],
-        "taskTemplates": [{ "id": "job", "label": "Job", "icon": "flag" }]
-      },
-      "issues": [{ "code": "priority_class_required", "path": ["unitTypes", 0, "standingOrders", "onStepLost", "perStep"] }]
-    },
-    {
       "name": "a side hostile to itself",
       "config": { "hostility": { "a": ["a", "b"], "b": ["a"] } },
       "issues": [{ "code": "self_hostility", "path": ["hostility", "a", 0] }]
@@ -312,19 +288,53 @@
     {
       "name": "icons outside the map symbol catalogue",
       "config": {
-        "unitTypes": [{ "id": "unit", "label": "Unit", "icon": "no-such-icon", "components": {} }],
-        "taskTemplates": [{ "id": "job", "label": "Job", "icon": "nor-this-one" }]
+        "unitTypes": [{ "id": "unit", "label": "Unit", "icon": "no-such-icon", "components": { "mobility": { "mode": "direct", "speedMps": 10 } } }],
+        "taskTemplates": [{ "id": "job", "label": "Job", "icon": "nor-this-one" }],
+        "priorities": [{ "id": "routine", "label": "Routine", "code": "R" }]
       },
       "issues": [
         { "code": "unknown_icon", "path": ["unitTypes", 0, "icon"] },
         { "code": "unknown_icon", "path": ["taskTemplates", 0, "icon"] }
+      ]
+    },
+    {
+      "name": "task templates without declared priorities",
+      "config": { "taskTemplates": [{ "id": "job", "label": "Job", "icon": "flag" }] },
+      "issues": [{ "code": "priorities_required", "path": ["priorities"] }]
+    },
+    {
+      "name": "a repeated priority id and code",
+      "config": {
+        "priorities": [
+          { "id": "p1", "label": "First", "code": "P" },
+          { "id": "p1", "label": "Again", "code": "P" }
+        ]
+      },
+      "issues": [
+        { "code": "duplicate_id", "path": ["priorities", 1, "id"] },
+        { "code": "duplicate_code", "path": ["priorities", 1, "code"] }
+      ]
+    },
+    {
+      "name": "a type that does not move and is no site",
+      "config": {
+        "unitTypes": [
+          { "id": "post", "label": "Fixed post", "icon": "circle", "components": { "service": { "provides": ["help"], "onSceneS": 10 } } },
+          { "id": "shed", "label": "Shed", "icon": "circle", "components": {} },
+          { "id": "landmark", "label": "Landmark", "icon": "flag", "public": true, "components": {} },
+          { "id": "watch", "label": "Watch", "icon": "eye", "components": { "sensor": { "detectM": 1000, "identifyM": 500 } } }
+        ]
+      },
+      "issues": [
+        { "code": "stationary_type_not_site", "path": ["unitTypes", 0, "components"] },
+        { "code": "stationary_type_not_site", "path": ["unitTypes", 1, "components"] }
       ]
     }
   ],
   "structural": [
     {
       "name": "a component outside the closed set",
-      "config": { "unitTypes": [{ "id": "unit", "label": "Unit", "icon": "circle", "components": { "teleport": {} } }] },
+      "config": { "unitTypes": [{ "id": "unit", "label": "Unit", "icon": "circle", "components": { "mobility": { "mode": "direct", "speedMps": 10 }, "teleport": {} } }] },
       "issues": [{ "code": "unrecognized_keys", "path": ["unitTypes", 0, "components"] }]
     },
     {
@@ -334,7 +344,7 @@
     },
     {
       "name": "a standing order outside the closed five",
-      "config": { "unitTypes": [{ "id": "unit", "label": "Unit", "icon": "circle", "components": {}, "standingOrders": { "wander": {} } }] },
+      "config": { "unitTypes": [{ "id": "unit", "label": "Unit", "icon": "circle", "components": { "mobility": { "mode": "direct", "speedMps": 10 } }, "standingOrders": { "wander": {} } }] },
       "issues": [{ "code": "unrecognized_keys", "path": ["unitTypes", 0, "standingOrders"] }]
     },
     {
@@ -349,7 +359,7 @@
     },
     {
       "name": "bounds on a boolean property",
-      "config": { "unitTypes": [{ "id": "unit", "label": "Unit", "icon": "circle", "components": {}, "properties": [{ "id": "p", "label": "P", "kind": "boolean", "min": 0, "default": false }] }] },
+      "config": { "unitTypes": [{ "id": "unit", "label": "Unit", "icon": "circle", "components": { "mobility": { "mode": "direct", "speedMps": 10 } }, "properties": [{ "id": "p", "label": "P", "kind": "boolean", "min": 0, "default": false }] }] },
       "issues": [{ "code": "unrecognized_keys", "path": ["unitTypes", 0, "properties", 0] }]
     },
     {
@@ -358,20 +368,16 @@
         "taskTemplates": [{
           "id": "job", "label": "Job", "icon": "flag",
           "requires": [{ "provides": "help", "count": 1, "label": { "one": "x", "other": "xs" }, "where": [{ "property": "p", "atLeast": 1, "equals": true }] }]
-        }]
+        }],
+        "priorities": [{ "id": "routine", "label": "Routine", "code": "R" }]
       },
       "issues": [{ "code": "invalid_union", "path": ["taskTemplates", 0, "requires", 0, "where", 0] }]
-    },
-    {
-      "name": "a units selector by type and tag at once",
-      "config": { "authority": [{ "roleId": "r", "units": { "types": ["a"], "tags": ["b"] }, "taskTemplates": [] }] },
-      "issues": [{ "code": "invalid_union", "path": ["authority", 0, "units"] }]
     },
     {
       "name": "lexicon words outside the closed keys",
       "config": {
         "lexicon": { "greeting": "Hello" },
-        "unitTypes": [{ "id": "unit", "label": "Unit", "icon": "circle", "components": {}, "lexicon": { "workList": "Mine" } }]
+        "unitTypes": [{ "id": "unit", "label": "Unit", "icon": "circle", "components": { "mobility": { "mode": "direct", "speedMps": 10 } }, "lexicon": { "workList": "Mine" } }]
       },
       "issues": [
         { "code": "unrecognized_keys", "path": ["lexicon"] },
@@ -388,6 +394,11 @@
     {
       "name": "a key outside the configuration",
       "config": { "rules": [] },
+      "issues": [{ "code": "unrecognized_keys", "path": [] }]
+    },
+    {
+      "name": "a removed authority section",
+      "config": { "authority": [] },
       "issues": [{ "code": "unrecognized_keys", "path": [] }]
     }
   ]

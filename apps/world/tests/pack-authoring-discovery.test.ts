@@ -36,8 +36,8 @@ test('selected semantic discovery keeps broad tiers compact and reports owner li
   expect(wind.schema.description).toContain('FROM')
   expect(wind.example).toBe(240)
   expect(wind.fields[0].description).toContain('FROM')
-  const ambulance = { ...catalog, packs: catalog.packs.filter(pack => pack.id === 'ambulance'), commands: [] }
-  expect((describeScenarioAuthoring(ambulance, 'semantic', { itemTypeId: 'ambulance', path: ['basePosition', 0] }) as any).packs[0].schema.minimum).toBe(-180)
+  const drone = { ...catalog, packs: catalog.packs.filter(pack => pack.id === 'drone'), commands: [] }
+  expect((describeScenarioAuthoring(drone, 'semantic', { itemTypeId: 'drone', path: ['position', 0] }) as any).packs[0].schema.minimum).toBe(-180)
   expect(() => describeScenarioAuthoring(catalog, 'semantic')).toThrow('exactly one')
   expect(() => describeScenarioAuthoring(plant, 'semantic', { itemTypeId: 'missing' })).toThrow('Unknown authoring item type')
   expect(() => describeScenarioAuthoring(plant, 'semantic', { path: ['missing'] })).toThrow('Unknown authoring schema path')

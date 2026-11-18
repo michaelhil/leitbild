@@ -25,6 +25,26 @@ export const allowedCombinations: ConfigCheck = config => config.unitTypes.flatM
   ]
 })
 
+/** Components that make a stationary type a combat object: one that senses, fires, is seen or takes fire. */
+const combatComponents = ['sensor', 'effector', 'signature', 'durability'] as const
+
+/**
+ * A type that does not move is a site, not a unit: it receives load
+ * (`receiving`). Two kinds of stationary type are not sites and stay
+ * allowed: a combat object (a sensor post, an emplacement, a target), and a
+ * public place without components that units only go to (a depot, an
+ * objective). A sided type that does not move and does nothing else, such
+ * as a stationary service, is refused.
+ */
+export const stationarySites: ConfigCheck = config => config.unitTypes.flatMap((type, index) => {
+  const { mobility, receiving } = type.components
+  if (mobility !== undefined || receiving !== undefined) return []
+  if (combatComponents.some(component => type.components[component] !== undefined)) return []
+  if (type.public && Object.keys(type.components).length === 0) return []
+  return [configIssue(['unitTypes', index, 'components'], 'stationary_type_not_site',
+    `"${type.label}" does not move, so it is a site: give it receiving to take deliveries, or mobility to make it a unit`)]
+})
+
 /** The components a standing order acts through; without them the order could never fire. */
 const orderNeeds: Readonly<Record<keyof StandingOrders, ReadonlyArray<keyof UnitComponents>>> = {
   deliver: ['carry'],

@@ -17,6 +17,7 @@ import {
   runRolesOf,
 } from '../model/index.ts'
 import { createSimulationClock,nowIso } from '../model/time.ts'
+import { createPlanningSourceEpoch, readPlanningSourceEpoch } from './planning-source-epoch.ts'
 import { scenarioPreviewFor,type ScenarioPreview } from '../scenarios/authoring-preview.ts'
 import type { ScenarioAuthoringCatalog } from '../scenarios/authoring.ts'
 import type { ScenarioDefinition } from '../scenarios/definition.ts'
@@ -48,6 +49,9 @@ import { guideAttemptIdSchema, guideAttemptSchema } from '../guides/attempt.ts'
 import { createPresentationDelivery, type PresentationDelivery } from '../guides/presentation.ts'
 import type { GuidePromptEvidenceReader } from '../guides/prompt-evidence.ts'
 import { writeAtomic } from '../storage/atomic-write.ts'
+import type { RunContinuationSeed } from './execution.ts'
+import type { PackRuntimeQuery } from '../../simulation/protocol.ts'
+import { createEngineeringService, type EngineeringService } from '../engineering/service.ts'
 
 const maxRestoredEventHistoryBytes = 8 * 1024 * 1024
 
@@ -113,12 +117,23 @@ interface MaximumPaceController {
   readonly done: Promise<void>
 }
 
+interface CreateSimulationRun {
+  readonly scenarioId: string
+  readonly scenarioRevisionId?: ScenarioRevisionId
+  readonly autoPlay?: boolean
+}
+
 export interface SimulationRunRegistry {
   readonly workspaceId: WorkspaceId
+  readonly engineering: EngineeringService
+  readonly sourceEpoch: (id: SimulationRunId) => Promise<string | null>
+  readonly captureContinuation: (id: SimulationRunId, reads: ReadonlyArray<PackRuntimeQuery>) => Promise<RunContinuationSeed>
+  /** Used by the private worker registry only, rooted outside public Run storage. */
+  readonly restoreContinuation: (seed: RunContinuationSeed) => Promise<SimulationRunRuntime>
   readonly scenarioAuthoringCatalog: ScenarioAuthoringCatalog
   readonly installedCapabilities: ReadonlyArray<ActiveSimulationCapability>
   readonly workspaceCapabilities: ReadonlyArray<PackWorkspaceCapability>
-  readonly create: (config: { readonly scenarioId: string; readonly scenarioRevisionId?: ScenarioRevisionId }) => Promise<SimulationRunRuntime>
+  readonly create: (config: CreateSimulationRun) => Promise<SimulationRunRuntime>
   readonly copy: (sourceId: SimulationRunId, input: { readonly name?: string }) => Promise<SimulationRunRuntime>
   /** Whether this loaded Run advances, including a running maximum-pace job over its paused realtime clock. */
   readonly isAdvancing: (id: SimulationRunId) => boolean
@@ -222,6 +237,7 @@ export const createSimulationRunRegistry = (config: {
   const idleRuntimeCloseDelayMs = config.idleRuntimeCloseDelayMs ?? defaultSimulationRunRuntimePolicy.idleRuntimeCloseDelayMs
   const armIdleRuntimeClose = config.idleRuntimeCloseTimer ?? wallClockIdleRuntimeCloseTimer
   let nextLeaseNumber = 0
+  let engineering: EngineeringService | undefined
   const workspacePaths = worldWorkspacePaths(config.dataDir, config.workspaceId)
   const workspaceRoot = workspacePaths.root
   const storageBudget = config.storageBudget ?? createStorageBudget({ root: config.dataDir })
@@ -560,6 +576,7 @@ export const createSimulationRunRegistry = (config: {
     readonly manifest: SimulationRunManifest
     readonly initialSeq?: number
     readonly scenarioRuntime?: ResolvedScenarioRuntime
+    readonly autoPlay?: boolean
   }): Promise<SimulationRunRuntime> => {
     if (shuttingDown) throw new Error('Workspace runtime is closing')
     await ensureScenarioLibrary()
@@ -670,7 +687,8 @@ export const createSimulationRunRegistry = (config: {
     // A new Run whose players choose roles waits, paused, for the first of them
     // (`screenJoined`). Reloading the Run, after an idle close, keeps the mark;
     // only a choice, a join that started it, or a delete clears it.
-    const awaitsScreen = !restoredSnapshot && scenarioRoles !== null && scenarioRuntime.scenario.guide?.startPaused !== true
+    const guideStartsPaused = !createConfig.autoPlay && scenarioRuntime.scenario.guide?.startPaused === true
+    const awaitsScreen = !restoredSnapshot && scenarioRoles !== null && !guideStartsPaused
     if (awaitsScreen) awaitingFirstScreen.add(id)
     let runtime
     try {
@@ -683,7 +701,7 @@ export const createSimulationRunRegistry = (config: {
         snapshotStore,
         ...(interactionHandlers.length === 0 ? {} : { interactionHandlers }),
         ...(restoredSnapshot ? { restoredSnapshot } : {}),
-        ...(!restoredSnapshot && (awaitsScreen || scenarioRuntime.scenario.guide?.startPaused === true) ? { startPaused: true } : {}),
+        ...(!restoredSnapshot && (awaitsScreen || guideStartsPaused) ? { startPaused: true } : {}),
         ...(restoredEvents.length === 0 ? {} : { restoredEvents }),
         ...(createConfig?.initialSeq === undefined && maxEventSeq === 0 ? {} : { initialSeq: Math.max(createConfig.initialSeq ?? 0, maxEventSeq) }),
         scenario: {
@@ -716,6 +734,11 @@ export const createSimulationRunRegistry = (config: {
       throw new Error('Workspace runtime is closing')
     }
     simulationRuns.set(id, runtime)
+    runtime.subscribe(notification => {
+      if (notification.events.some(event => event.type === 'scenario.agent-restrictions.set' || event.type === 'object.deleted')) {
+        void engineering?.invalidateSource(id, false).catch(error => console.error('Engineering source invalidation failed', id, error))
+      }
+    })
     loadedCompiledScenarios.set(id, scenarioRuntime.scenario)
     const priorExecution = await executionStoreFor(id).load()
     if (priorExecution) executionStates.set(id, priorExecution)
@@ -724,7 +747,7 @@ export const createSimulationRunRegistry = (config: {
     return runtime
   }
 
-  const create = async (createConfig: { readonly scenarioId: string; readonly scenarioRevisionId?: ScenarioRevisionId }): Promise<SimulationRunRuntime> => {
+  const create = async (createConfig: CreateSimulationRun): Promise<SimulationRunRuntime> => {
     if (shuttingDown) throw new Error('Workspace runtime is closing')
     const requestedScenarioId = z.string().min(1).parse(createConfig.scenarioId)
     const id = newSimulationRunId()
@@ -734,8 +757,9 @@ export const createSimulationRunRegistry = (config: {
     const creating = storageBudget.withGrowth(workspaceRoot, 16 * 1024 * 1024, async () => {
       const { manifest, compiledScenario } = await createManifest(id, requestedScenarioId, createConfig?.scenarioRevisionId)
       await manifestStoreFor(id).create(manifest)
+      await createPlanningSourceEpoch(join(simulationRunRoot, id, 'planning-source-epoch.json'))
       await createCompiledScenarioStore(join(simulationRunRoot, id, 'compiled-scenario.json')).create(compiledScenario)
-      return await createRuntime({ manifest })
+      return await createRuntime({ manifest, ...(createConfig.autoPlay ? { autoPlay: true } : {}) })
     }).finally(() => {
       creatingSimulationRuns.delete(id)
       scheduleIdleRuntimeCloseIfUnleased(id)
@@ -1020,6 +1044,7 @@ export const createSimulationRunRegistry = (config: {
       const compiledScenario = await createCompiledScenarioStore(join(simulationRunRoot, sourceId, 'compiled-scenario.json')).load()
       await storageBudget.withGrowth(workspaceRoot, 32 * 1024 * 1024, async () => {
         await manifestStoreFor(id).create(manifest)
+        await createPlanningSourceEpoch(join(simulationRunRoot, id, 'planning-source-epoch.json'))
         await createCompiledScenarioStore(join(simulationRunRoot, id, 'compiled-scenario.json')).create(compiledScenario)
         await createSimulationRunSnapshotStore({ simulationRunId: id, path: join(simulationRunRoot, id, 'snapshot.json') }).save({
           ...checkpoint.snapshot,
@@ -1082,7 +1107,9 @@ export const createSimulationRunRegistry = (config: {
   }
   const close = (id: SimulationRunId): Promise<boolean> => lifecycle.run(id, () => closeLoaded(id))
 
-  const reset = (id: SimulationRunId): Promise<SimulationRunRuntime> => lifecycle.run(id, async () => {
+  const reset = async (id: SimulationRunId): Promise<SimulationRunRuntime> => {
+    await registry.engineering.invalidateSource(id, true, true)
+    try { return await lifecycle.run(id, async () => {
     await assertSimulationRunRecoveryNotRequired(join(simulationRunRoot, id, 'snapshot.json'))
     await settleCompletingMaximumPace(id)
     const leases = leaseSummary(id).leasesByKind
@@ -1098,6 +1125,9 @@ export const createSimulationRunRegistry = (config: {
       : undefined
     await closeLoaded(id)
     const runDir = join(simulationRunRoot, id)
+    // Revoke retained planning qualification before destructive reset writes,
+    // including a crash between removing the old snapshot and starting anew.
+    await createPlanningSourceEpoch(join(runDir, 'planning-source-epoch.json'))
     await Promise.all([
       rm(join(runDir, 'snapshot.json'), { force: true }),
       rm(join(runDir, 'events.jsonl'), { force: true }),
@@ -1112,10 +1142,13 @@ export const createSimulationRunRegistry = (config: {
       manifest, scenarioRuntime,
       ...(resetEvent === undefined ? {} : { initialSeq: resetEvent.seq + 1 }),
     })
-  })
+    }) } finally { registry.engineering.releaseSource(id) }
+  }
 
   // Serialized with execution changes too, so none persists into a deleted Run's directory.
-  const deleteSimulationRun = (id: SimulationRunId): Promise<boolean> => executionOperations.run(id, () => lifecycle.run(id, async () => {
+  const deleteSimulationRun = (id: SimulationRunId): Promise<boolean> => executionOperations.run(id, async () => {
+    await registry.engineering.invalidateSource(id, true, true)
+    return await lifecycle.run(id, async () => {
     awaitingFirstScreen.delete(id)
     const maximumPaceJob = maximumPaceJobs.get(id)
     if (maximumPaceJob) {
@@ -1139,7 +1172,8 @@ export const createSimulationRunRegistry = (config: {
     }
     if (existedOnDisk) await rm(runDir, { recursive: true, force: true })
     return wasLoaded || existedOnDisk
-  }))
+    })
+  })
 
   const listPersistedIds = (): Promise<ReadonlyArray<SimulationRunId>> => listStoredSimulationRunIds(simulationRunRoot)
 
@@ -1313,8 +1347,33 @@ export const createSimulationRunRegistry = (config: {
     leases: leaseSummaries(),
   })
 
-  return {
+  const registry: SimulationRunRegistry = {
     workspaceId: config.workspaceId,
+    get engineering() { return engineering ??= createEngineeringService({ registry, root: join(workspaceRoot, 'engineering'), storageBudget }) },
+    sourceEpoch: id => readPlanningSourceEpoch(join(simulationRunRoot, id, 'planning-source-epoch.json')),
+    captureContinuation: async (id, reads) => {
+      const source = await load(id)
+      const manifest = await manifestStoreFor(id).load()
+      if (!manifest) throw new Error('Continuation source is unavailable')
+      const { revision } = await resolveManifest(manifest)
+      const compiledScenario = await createCompiledScenarioStore(join(simulationRunRoot, id, 'compiled-scenario.json')).load()
+      return { manifest, definition: revision.document, compiledScenario, checkpoint: await source.checkpointForCopy(reads) }
+    },
+    restoreContinuation: async seed => {
+      await ensureScenarioLibrary()
+      await scenarioLibrary.seed([seed.definition])
+      const id = newSimulationRunId()
+      const manifest = simulationRunManifestSchema.parse({ ...seed.manifest, id, workspaceId: config.workspaceId })
+      if (compiledScenarioDigest(seed.compiledScenario) !== manifest.scenario.compiledDigest) throw new Error('Continuation compiled Scenario digest mismatch')
+      await manifestStoreFor(id).create(manifest)
+      await createCompiledScenarioStore(join(simulationRunRoot, id, 'compiled-scenario.json')).create(seed.compiledScenario)
+      await createSimulationRunSnapshotStore({ simulationRunId: id, path: join(simulationRunRoot, id, 'snapshot.json') }).save({
+        ...seed.checkpoint.snapshot, seq: 0, ...(seed.checkpoint.snapshot.clock ? { clock: { ...seed.checkpoint.snapshot.clock, paused: true } } : {}),
+      })
+      for (const [runtimeId, state] of Object.entries(seed.checkpoint.runtimeStates)) await createJsonRuntimeStateStore({ runtimeId, path: join(simulationRunRoot, id, 'runtimes', `${runtimeId}.json`) }).save(state)
+      await createPlanningSourceEpoch(join(simulationRunRoot, id, 'planning-source-epoch.json'))
+      return await createRuntime({ manifest })
+    },
     scenarioAuthoringCatalog: {
       ...config.scenarioAuthoringCatalog,
       commands: installedCapabilities.filter(entry => entry.capability.kind === 'command' && entry.capability.schedulable).map(entry => ({
@@ -1403,6 +1462,7 @@ export const createSimulationRunRegistry = (config: {
     },
     shutdown: async () => {
       shuttingDown = true
+      await engineering?.close()
       for (const job of maximumPaceJobs.values()) job.stopRequested = true
       await Promise.allSettled([...maximumPaceJobs.values()].map(job => job.done))
       await executionOperations.drain()
@@ -1419,7 +1479,7 @@ export const createSimulationRunRegistry = (config: {
     leaseSummary,
     beginClose: () => { closeRequested = true },
     closing: () => closeRequested || shuttingDown,
-    isIdle: () => simulationRuns.size === 0 && creatingSimulationRuns.size === 0 && definitionOperations.activeCount() === 0 && leasesBySimulationRun.size === 0,
+    isIdle: () => simulationRuns.size === 0 && creatingSimulationRuns.size === 0 && definitionOperations.activeCount() === 0 && leasesBySimulationRun.size === 0 && !engineering?.busy(),
     listScenarios: () => definitionOperations.run(async () => {
       await ensureScenarioLibrary()
       return await scenarioLibrary.list()
@@ -1452,4 +1512,5 @@ export const createSimulationRunRegistry = (config: {
     compileScenarioRevision: compileRevision,
     close,
   }
+  return registry
 }

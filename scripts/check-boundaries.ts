@@ -12,12 +12,13 @@ const appImport = (names: string): RegExp => new RegExp(`(?:from\\s*|import\\s*)
 const packageImport = (names: string): RegExp => new RegExp(`(?:from\\s*|import\\s*)[('"\\x60]@leitbild/(?:${names})(?:/|['"\\x60])`)
 
 const boundaries: ReadonlyArray<Boundary> = [
-  { owner: 'Knowledge', root: resolve(repositoryRoot, 'packages/knowledge'), forbidden: [appImport('world|agents|leitbild'), packageImport('world|agents|host|contracts|module-runtime')] },
-  { owner: 'World', root: resolve(repositoryRoot, 'apps/world'), forbidden: [appImport('agents|leitbild'), packageImport('agents|host')] },
-  { owner: 'Agents', root: resolve(repositoryRoot, 'apps/agents'), forbidden: [appImport('world|leitbild'), packageImport('world|host')] },
-  { owner: 'Leitbild Host', root: resolve(repositoryRoot, 'apps/leitbild'), forbidden: [appImport('world|agents'), packageImport('world|agents')] },
-  { owner: 'Contracts', root: resolve(repositoryRoot, 'packages/contracts'), forbidden: [appImport('world|agents|leitbild'), packageImport('world|agents|host')] },
-  { owner: 'Procmd', root: resolve(repositoryRoot, 'packages/procmd'), forbidden: [appImport('world|agents|leitbild'), packageImport('world|agents|host|contracts|module-runtime')] },
+  { owner: 'Knowledge', root: resolve(repositoryRoot, 'packages/knowledge'), forbidden: [appImport('world|agents|leitbild|planning'), packageImport('world|agents|host|planning|contracts|module-runtime')] },
+  { owner: 'World', root: resolve(repositoryRoot, 'apps/world'), forbidden: [appImport('agents|leitbild|planning'), packageImport('agents|host|planning')] },
+  { owner: 'Agents', root: resolve(repositoryRoot, 'apps/agents'), forbidden: [appImport('world|leitbild|planning'), packageImport('world|host|planning')] },
+  { owner: 'Planning', root: resolve(repositoryRoot, 'apps/planning'), forbidden: [appImport('world|agents|leitbild'), packageImport('world|agents|host')] },
+  { owner: 'Leitbild Host', root: resolve(repositoryRoot, 'apps/leitbild'), forbidden: [appImport('world|agents|planning'), packageImport('world|agents|planning')] },
+  { owner: 'Contracts', root: resolve(repositoryRoot, 'packages/contracts'), forbidden: [appImport('world|agents|leitbild|planning'), packageImport('world|agents|host|planning')] },
+  { owner: 'Procmd', root: resolve(repositoryRoot, 'packages/procmd'), forbidden: [appImport('world|agents|leitbild|planning'), packageImport('world|agents|host|planning|contracts|module-runtime')] },
 ]
 
 const sourceGlob = new Bun.Glob('**/*.{ts,tsx,svelte}')

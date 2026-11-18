@@ -9,7 +9,7 @@ import { lexiconSchema, unitLexiconSchema } from './lexicon.ts'
  * the authoritative parser, adding every semantic refusal.
  */
 
-/** Ids the configuration declares and references: types, templates, load classes, properties, tags, services, roles and sides. */
+/** Ids the configuration declares and references: types, templates, load classes, priorities, properties, tags, services, groups and sides. */
 export const configIdSchema = z.string().regex(/^[a-zA-Z0-9][a-zA-Z0-9_-]*$/).max(64)
 const labelSchema = z.string().trim().min(1).max(120)
 const pluralSchema = z.object({ one: labelSchema, other: labelSchema }).strict()
@@ -51,7 +51,8 @@ export const componentsSchema = z.object({
   durability: z.object({ stepFireS: finite.positive().max(86_400) }).strict().optional(),
 }).strict()
 
-const propertyBase = { id: configIdSchema, label: labelSchema, board: z.boolean().default(false) }
+/** `show`: the dispatch surface shows the property's value on the unit's row and card. */
+const propertyBase = { id: configIdSchema, label: labelSchema, show: z.boolean().default(false) }
 /** A typed property of a unit type; instances hold their own values. */
 export const propertySchema = z.discriminatedUnion('kind', [
   z.object({ ...propertyBase, kind: z.literal('number'), unit: z.string().trim().min(1).max(16).optional(), min: finite.optional(), max: finite.optional(), default: finite }).strict(),
@@ -96,33 +97,42 @@ export const requirementSchema = z.object({
   where: z.array(conditionSchema).max(8).default([]),
 }).strict()
 
-/** `priorityClass` is an optional floor on the rank of tasks made from the template. */
+/** `priority` is the priority of tasks made from the template unless the task names its own; without one, a task takes the lowest declared priority. */
 export const taskTemplateSchema = z.object({
   id: configIdSchema,
   label: labelSchema,
   icon: iconSchema,
-  priorityClass: configIdSchema.optional(),
+  priority: configIdSchema.optional(),
   requires: z.array(requirementSchema).max(12).default([]),
 }).strict()
 
-/** Load classes are declared in priority order, highest first. */
+/**
+ * What a carrier picks up, counted per class. Load classes carry no
+ * priority: a task's urgency is its own priority. Coverage and pick-up take
+ * the classes in declared order.
+ */
 export const loadClassSchema = z.object({ id: configIdSchema, label: labelSchema, code: z.string().trim().min(1).max(8), noun: pluralSchema }).strict()
 
-export const unitSelectorSchema = z.union([
-  z.object({ types: idList(100).min(1) }).strict(),
-  z.object({ tags: idList(16).min(1) }).strict(),
-  z.object({ all: z.literal(true) }).strict(),
-])
-/** The units an operator role commands and the task templates in its queue. */
-export const authoritySchema = z.object({ roleId: configIdSchema, units: unitSelectorSchema, taskTemplates: idList(100) }).strict()
+/**
+ * A task priority, declared highest first. `code` is the short form shown
+ * on rows and cards ("P1"). `responseTargetS`, when declared, is how long a
+ * task of this priority may wait before it is overdue.
+ */
+export const prioritySchema = z.object({
+  id: configIdSchema,
+  label: labelSchema,
+  code: z.string().trim().min(1).max(8),
+  responseTargetS: finite.positive().max(86_400).optional(),
+}).strict()
 
 /**
- * A group of units. Once any group is declared, every unit that is not of a
- * public type names exactly one, and each group becomes an operator role
- * (`group:<id>`) commanding exactly its units. `category` is the heading the
- * role picker lists the group under, in the Scenario's own words ("Haulers",
- * "Crews"); `side` is required exactly when the Scenario declares sides.
- * The labels are role labels, so they keep a role label's length.
+ * A group of units: a heading the dispatch surface lists its units under.
+ * Once any group is declared, every unit that is not of a public type names
+ * exactly one. `category` is the heading of related groups, in the
+ * Scenario's own words ("Haulers", "Crews"). Only in a Scenario with sides
+ * does a group also become an operator role (`group:<id>`) commanding
+ * exactly its units; `side` is required exactly then. The labels may become
+ * role labels, so they keep a role label's length.
  */
 export const groupSchema = z.object({
   id: configIdSchema,
@@ -138,7 +148,7 @@ export const einsatzConfigShapeSchema = z.object({
   loadClasses: z.array(loadClassSchema).max(12).default([]),
   unitTypes: z.array(unitTypeSchema).max(100).default([]),
   taskTemplates: z.array(taskTemplateSchema).max(100).default([]),
-  authority: z.array(authoritySchema).max(50).default([]),
+  priorities: z.array(prioritySchema).max(12).default([]),
   groups: z.array(groupSchema).max(100).default([]),
 }).strict()
 
@@ -147,7 +157,7 @@ export type EinsatzConfig = z.output<typeof einsatzConfigShapeSchema>
 /**
  * The `world.einsatz.configuration` answer: the whole configuration in force
  * and its revision. It lives here, beside the structure it carries, so the
- * Board validates the answer in the browser with the schema the Capability
+ * Dispatch panel validates the answer in the browser with the schema the Capability
  * declares, without loading the engine.
  */
 export const configurationOutputSchema = z.object({ revision: z.number().int().nonnegative(), config: einsatzConfigShapeSchema }).strict()
@@ -160,5 +170,5 @@ export type TaskTemplate = z.output<typeof taskTemplateSchema>
 export type Requirement = z.output<typeof requirementSchema>
 export type Condition = z.output<typeof conditionSchema>
 export type LoadClass = z.output<typeof loadClassSchema>
-export type Authority = z.output<typeof authoritySchema>
+export type Priority = z.output<typeof prioritySchema>
 export type Group = z.output<typeof groupSchema>

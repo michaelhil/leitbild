@@ -1,50 +1,137 @@
-import { Popup, type Map as MapLibreMap } from 'maplibre-gl'
+import { Popup, type Map as MapLibreMap, type PositionAnchor } from 'maplibre-gl'
 import type { MapPrompt } from '../surface-panel-interaction.ts'
 
 /**
- * The map's one panel prompt: a button anchored at a point, drawn as a
- * MapLibre popup so it stays on its point while the map moves. A tap on the
- * button confirms; the button is a real control, so it never also counts as
- * a click on the ground beneath it.
+ * The map's one panel prompt: one or two buttons offset from a point, drawn
+ * as a MapLibre popup so they stay by their point while the map moves. The
+ * popup sits above the point by default and beside or below it only where
+ * the map edge leaves no room; it is always offset clear of the point, never
+ * over it. A tap on a button confirms that option; the buttons are real
+ * controls, so a tap on one never also counts as a click on the ground
+ * beneath.
+ *
+ * The operator dismisses the prompt without confirming by a click anywhere
+ * on the map, its × or Esc (`dismiss`, which the map calls for each). A
+ * dismissal is never silent: `onDismiss` hears of each one, once, so the
+ * surface drops the prompt and tells its panel. A prompt the panel replaces
+ * or clears, or the map's teardown, is no dismissal.
+ *
+ * Layout: the × stands first, set apart from the options by a rule, and the
+ * options follow in the order given, so a near-miss on × never lands on the
+ * last option, the one that drops work in a busy prompt. The options sit
+ * side by side while both fit and stack otherwise, each label whole; every
+ * control is at least 44 px and 8 px from the next (`OperationalMap.svelte`).
  */
 
+/** How far the popup stands off its point, per anchor MapLibre picks: clear of a 44 px tap around the point. */
+const clearOfPointPx = 26
+const diagonalPx = Math.round(clearOfPointPx * Math.SQRT1_2)
+export const mapPromptOffsets: Readonly<Record<PositionAnchor, [number, number]>> = {
+  center: [0, -clearOfPointPx],
+  top: [0, clearOfPointPx],
+  bottom: [0, -clearOfPointPx],
+  left: [clearOfPointPx, 0],
+  right: [-clearOfPointPx, 0],
+  'top-left': [diagonalPx, diagonalPx],
+  'top-right': [-diagonalPx, diagonalPx],
+  'bottom-left': [diagonalPx, -diagonalPx],
+  'bottom-right': [-diagonalPx, -diagonalPx],
+}
+
+/** The prompt's widest: room for two options of a few words side by side, never wider than the screen less its gutters. */
+export const mapPromptMaxWidth = 'min(480px, calc(100vw - 32px))'
+
+/** A prompt drawn on the map. */
+export interface MapPromptView {
+  /** Takes the drawn prompt off the map. */
+  readonly remove: () => void
+}
+
+/** Draws a prompt; its × calls `dismiss`. */
+export type MapPromptDraw = (map: MapLibreMap, prompt: MapPrompt, dismiss: () => void) => MapPromptView
+
 export interface MapPromptController {
-  /** Shows the prompt, replacing any other, or clears it with null. */
+  /** Shows the prompt, replacing any other, or clears it with null; the same prompt again changes nothing, dismissed or not. */
   readonly show: (prompt: MapPrompt | null) => void
+  /** The operator dismissed the shown prompt; false when none is shown. */
+  readonly dismiss: () => boolean
   readonly destroy: () => void
 }
 
-export const createMapPromptController = (config: { readonly getMap: () => MapLibreMap | null }): MapPromptController => {
-  let popup: Popup | null = null
+/** The MapLibre popup: the ×, a rule, then the options. */
+const drawPopup: MapPromptDraw = (map, prompt, dismiss) => {
+  const buttons = prompt.options.map(option => {
+    const button = document.createElement('button')
+    button.type = 'button'
+    button.className = option.tone === 'warning' ? 'map-prompt-button map-prompt-button-warning' : 'map-prompt-button'
+    button.textContent = option.label
+    button.addEventListener('click', event => {
+      event.stopPropagation()
+      option.onConfirm()
+    })
+    return button
+  })
+  const close = document.createElement('button')
+  close.type = 'button'
+  close.className = 'map-popup-dismiss'
+  close.setAttribute('aria-label', 'Dismiss map prompt')
+  close.textContent = '×'
+  close.addEventListener('click', event => { event.stopPropagation(); dismiss() })
+  const options = document.createElement('div')
+  options.className = 'map-prompt-options'
+  options.append(...buttons)
+  const content = document.createElement('div')
+  content.className = 'map-prompt-actions'
+  content.append(close, options)
+  const [lon, lat] = prompt.point.coordinates
+  const popup = new Popup({ closeButton: false, closeOnClick: false, offset: { ...mapPromptOffsets }, maxWidth: mapPromptMaxWidth, className: 'map-prompt' })
+    .setLngLat([lon, lat])
+    .setDOMContent(content)
+    .addTo(map)
+  return {
+    remove: () => {
+      const restoreFocus = popup.getElement().contains(document.activeElement)
+      popup.remove()
+      if (restoreFocus) map.getCanvas().focus({ preventScroll: true })
+    },
+  }
+}
+
+export const createMapPromptController = (config: {
+  readonly getMap: () => MapLibreMap | null
+  /** Each prompt the operator dismissed, once. */
+  readonly onDismiss: (prompt: MapPrompt) => void
+  /** How a prompt is drawn; the MapLibre popup unless a test draws it. */
+  readonly draw?: MapPromptDraw
+}): MapPromptController => {
+  const draw = config.draw ?? drawPopup
+  let view: MapPromptView | null = null
+  // The prompt last given; it stays after a dismissal, so the same prompt given again is not drawn again.
   let shown: MapPrompt | null = null
 
-  const clear = (): void => {
-    popup?.remove()
-    popup = null
-    shown = null
+  const remove = (): void => {
+    view?.remove()
+    view = null
+  }
+
+  const dismiss = (): boolean => {
+    const prompt = shown
+    if (view === null || prompt === null) return false
+    remove()
+    config.onDismiss(prompt)
+    return true
   }
 
   return {
     show: prompt => {
-      if (prompt === shown && popup !== null) return
-      clear()
+      if (prompt === shown) return
+      remove()
       const map = config.getMap()
-      if (prompt === null || map === null) return
-      const button = document.createElement('button')
-      button.type = 'button'
-      button.className = 'map-prompt-button'
-      button.textContent = prompt.label
-      button.addEventListener('click', event => {
-        event.stopPropagation()
-        prompt.onConfirm()
-      })
-      const [lon, lat] = prompt.point.coordinates
-      popup = new Popup({ closeButton: false, closeOnClick: false, anchor: 'bottom', offset: 10, className: 'map-prompt' })
-        .setLngLat([lon, lat])
-        .setDOMContent(button)
-        .addTo(map)
+      if (prompt === null || map === null) { shown = null; return }
       shown = prompt
+      view = draw(map, prompt, dismiss)
     },
-    destroy: clear,
+    dismiss,
+    destroy: () => { remove(); shown = null },
   }
 }

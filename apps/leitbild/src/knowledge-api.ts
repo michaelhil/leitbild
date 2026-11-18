@@ -25,6 +25,16 @@ export const knowledgeResponse = async (request: Request, load: () => Promise<Kn
       return Response.json(await readProductSource(path, resolve(import.meta.dir, '../../..')))
     }
     const knowledge = await load()
+    if (url.pathname === '/api/knowledge/image') {
+      const path = url.searchParams.get('path')
+      if (!path) return Response.json({ error: 'path is required' }, { status: 400 })
+      const revision = url.searchParams.get('revision') ?? undefined
+      const image = knowledge.image(path, revision)
+      return new Response(Buffer.from(image.base64, 'base64'), { headers: {
+        'Content-Type': image.mediaType, 'X-Content-Type-Options': 'nosniff',
+        'Cache-Control': revision ? 'public, max-age=31536000, immutable' : 'no-store',
+      } })
+    }
     if (url.pathname === '/api/knowledge/index') return Response.json({ revision: knowledge.revision, documents: knowledge.navigation(), sourceBaseUrl: await codeSource() })
     if (url.pathname === '/api/knowledge/search') {
       const input = searchSchema.parse(Object.fromEntries(url.searchParams))

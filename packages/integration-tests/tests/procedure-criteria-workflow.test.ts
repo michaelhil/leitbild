@@ -323,6 +323,6 @@ describe('guarded procedure workflow through real Host, Agents and World Modules
     expect(calls.filter(call => JSON.stringify(call.result).includes('current step'))).toHaveLength(1)
     for (const call of refused) expect(JSON.stringify(call.result)).toContain('assessment')
     expect(turns.reduce((count, turn) => count + agentsRuntime.executionStore.modelEvidence(room.profile.id, turn.id).models.length, 0)).toBe(requests.length)
-    expect(requests[0]!.systemBlocks!.map(block => block.text).join('\n')).toContain('step.branchAssessments')
+    expect(requests[0]!.systemBlocks!.map(block => block.text).join('\n')).toContain(deployment.sharedSkillStore.get('procedure-runner')!.body.trim())
   }, 60_000)
 })

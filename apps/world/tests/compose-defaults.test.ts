@@ -28,7 +28,7 @@ import { fixtureComposeRun } from './fixtures/compose-runs.ts'
 
 guardPlantTests()
 
-// Architecture A3: the World default of every subject kind, for each of the six Packs of the integrated fixture and the
+// Architecture A3: the World default of every subject kind, for each of the five Packs of the integrated fixture and the
 // fixture Pack, from what they declare: at most four views, each only where its data exists, every number from a read.
 
 const routing = createDirectRoutingAdapter()
@@ -209,7 +209,7 @@ describe('a run-wide alerts view', () => {
     const extra: Readonly<Record<string, ReadonlyArray<AlertState>>> = {
       'weather-probe:halden-complex': [raised('fog', 'warning', { advisory: true })],
       'plant:halden-2': [raised('sg-level', 'caution', { acknowledged: true }), raised('pzr-pressure', 'alarm', { acknowledged: true })],
-      'unit:halden-1': [raised('late', 'caution')],
+      'unit:truck-1': [raised('late', 'caution')],
     }
     const busy: ViewRun = { ...run, objects: run.objects.map(object => ({ ...object, alerts: [...object.alerts, ...extra[object.id] ?? []] })) }
     for (const viewRun of [run, await runOf('halden-normal-operation', 120), busy]) {
@@ -226,7 +226,7 @@ describe('a run-wide alerts view', () => {
       console.log(`run-wide alerts: ${open.length} alerts of ${[...new Set(open.map(row => row.packId))].join(', ')}; heads ${heads.map(row => `${row.packId}:${row.priority}`).join(' ')}`)
     }
     const { sample } = await drawn(busy)
-    expect(sample.alerts.slice(0, 3).map(row => [row.objectId, row.alert.id])).toEqual([['plant:halden-2', 'pzr-pressure'], ['weather-probe:halden-complex', 'fog'], ['unit:halden-1', 'late']])
+    expect(sample.alerts.slice(0, 3).map(row => [row.objectId, row.alert.id])).toEqual([['plant:halden-2', 'pzr-pressure'], ['weather-probe:halden-complex', 'fog'], ['unit:truck-1', 'late']])
   })
 
   test('W9.3 tiles on other Packs: a list of several objects has a tile per object, by its name; one object\'s own alerts in one group have none, its counts heading them', async () => {
@@ -281,7 +281,7 @@ describe('no card drops a row silently (Q15)', () => {
     expect(total).toBeGreaterThan(12)
     const rows = outcome.card.items.filter(item => item.subject !== undefined && 'objectId' in item.subject && !('alertId' in item.subject))
     expect(rows.length + outcome.card.more).toBe(total)
-    expect(outcome.card.adjusted).toContainEqual({ kind: 'layout', text: `${total - rows.length} of ${total} Tasks not shown` })
+    expect(outcome.card.adjusted).toContainEqual({ kind: 'layout', text: `${total - rows.length} of ${total} Calls not shown` })
   })
 
   test('a run-wide alerts card leads with every object\'s worst alert, the reactor trip first out, and counts the rest', async () => {
@@ -343,8 +343,8 @@ describe('World defaults of every subject kind', () => {
     expect(drawn?.kind === 'topology' && Math.ceil(drawn.layout.height) + 1).toBe(view!.rows)
   })
 
-  test('entity-floor objects show their core slots and a map focus (ambulance, drone, Einsatz)', async () => {
-    for (const objectId of ['unit:halden-1', 'drone:halden-search', 'unit:truck-1', 'site:brekke-depot']) {
+  test('entity-floor objects show their core slots and a map focus (drone, Einsatz)', async () => {
+    for (const objectId of ['drone:halden-search', 'unit:truck-1', 'site:brekke-depot']) {
       const { view, card, sample } = await opened(run, objectId)
       expect(kinds(view.sections)).toEqual(['slots', 'alerts', 'map'])
       expect(card.items.length).toBeGreaterThan(0)

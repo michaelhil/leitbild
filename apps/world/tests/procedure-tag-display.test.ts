@@ -83,7 +83,7 @@ describe("a clicked procedure tag's display", () => {
 
 test('a two-state reading names what it says; a number keeps its value and unit', () => {
   expect(procedureTagReadingText({ label: 'Reactor trip breaker A closed', value: false, formatted: 'false boolean' })).toBe('Reactor trip breaker A closed: no')
-  expect(procedureTagReadingText({ label: 'Pressurizer pressure', value: 15.5, formatted: '15.500 MPa' })).toBe('15.500 MPa')
+  expect(procedureTagReadingText({ label: 'Pressurizer pressure', value: 15.5, formatted: '15.500 MPa' })).toBe('15.50 MPa')
 })
 
 describe('the tag dialog hosts its frame as the chat page does', () => {

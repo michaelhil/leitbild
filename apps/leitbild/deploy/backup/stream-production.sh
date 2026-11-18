@@ -17,7 +17,7 @@ backup_temp_root="$(mktemp -d /tmp/leitbild-backup.XXXXXX)"
 backup_metadata_dir="$backup_temp_root/backup-metadata"
 mkdir "$backup_metadata_dir"
 
-backup_services=(leitbild-world.service leitbild-agents.service leitbild-host.service)
+backup_services=(leitbild-world.service leitbild-agents.service leitbild-planning.service leitbild-host.service)
 backup_services_stopped=0
 
 backup_wait_for_health() {
@@ -33,7 +33,7 @@ backup_restart_services() {
   [[ "$backup_services_stopped" -eq 1 ]] || return 0
   local backup_restart_failed=0
   systemctl start "${backup_services[@]}" || backup_restart_failed=1
-  for backup_port in 4177 3000 3100; do
+  for backup_port in 4177 3000 3102 3100; do
     if ! backup_wait_for_health "$backup_port"; then
       echo "Leitbild service on port ${backup_port} did not recover after backup" >&2
       backup_restart_failed=1
@@ -79,6 +79,7 @@ if [[ "$backup_scope" == critical ]]; then
     etc/caddy/managed-sites \
     etc/systemd/system/leitbild-world.service \
     etc/systemd/system/leitbild-agents.service \
+    etc/systemd/system/leitbild-planning.service \
     etc/systemd/system/leitbild-host.service \
     etc/leitbild \
     etc/ssh/sshd_config \

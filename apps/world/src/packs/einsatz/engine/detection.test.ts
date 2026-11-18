@@ -72,7 +72,7 @@ describe('Einsatz detection', () => {
 
   test('no unit or task may take an id the engine gives a track or a track index', async () => {
     const state = await stateWith([])
-    const template = config.taskTemplates.find(entry => entry.priorityClass !== undefined)!
+    const template = config.taskTemplates.find(entry => entry.priority !== undefined)!
     for (const id of [`track:${blue}:1`, `tracks:${blue}`]) {
       await expect(run(state, place(id, types.blueScout, blue, at(0)))).rejects.toThrow('reserved_id: ')
       await expect(run(state, { kind: 'task.create', id, template: template.id, side: blue, at: at(0), label: id })).rejects.toThrow('reserved_id: ')

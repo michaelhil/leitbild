@@ -25,7 +25,7 @@ const scoutTypes = new Set(start.catalog.config.unitTypes.filter(isScout).map(ty
 const screenTask = [...start.tasks.values()].find(task => task.side === blue
   && start.catalog.templates.get(task.template)!.requires.some(requirement => unitTypeOf(start.catalog, start.units.get(scouts[0]!)!).components.service?.provides.includes(requirement.provides)))!
 
-const send = (atS: number, unitId: string, to: unknown): TimedOrder => ({ atS, capabilityId: ids.send, input: { units: [unitId], to } })
+const send = (atS: number, unitId: string, to: unknown): TimedOrder => ({ atS, capabilityId: ids.order, input: { units: [unitId], stops: [to] } })
 const toPoint = (lonLat: readonly [number, number]) => ({ point: pointAt(lonLat) })
 const weaponsFree = (atS: number): TimedOrder[] => guns.map(unitId => ({ atS, capabilityId: ids.setRoe, input: { unitId, roe: 'free' } }))
 
@@ -80,7 +80,6 @@ describe('halden-border plays', () => {
     expect((definition.roles ?? []).map(role => [role.class, role.sees])).toEqual([['controller', 'all']])
     const groups = borderConfig(definition).groups
     expect(groups.every(group => group.side === blue || group.side === red)).toBe(true)
-    expect(borderConfig(definition).authority).toEqual([])
     // Every unit placed or created names one group of its own side.
     const created = timelineOf(definition).filter(order => order.capabilityId === ids.unitCreate).map(order => order.input as { readonly side: string; readonly group: string })
     const units = [...unitsWhere(start, blue, () => true), ...unitsWhere(start, red, () => true)]
@@ -98,7 +97,7 @@ describe('halden-border plays', () => {
     expect(human.rolePresets?.slice(3).map(preset => preset.roles)).toEqual([sideGroups(red)])
     // Human Red gets Red's orders as its own calls, and its reinforcements, instead of the scripted moves; Blue's timeline is the same.
     const redUnits = new Set(unitsWhere(start, red, () => true).map(unit => unit.id))
-    const movesRed = (order: TimedOrder): boolean => order.capabilityId === ids.send && (order.input as { readonly units: ReadonlyArray<string> }).units.every(unitId => redUnits.has(unitId))
+    const movesRed = (order: TimedOrder): boolean => order.capabilityId === ids.order && (order.input as { readonly units: ReadonlyArray<string> }).units.every(unitId => redUnits.has(unitId))
     const redOwn = (order: TimedOrder): boolean => (order.input as { readonly side?: string }).side === red
     expect(timelineOf(human).filter(order => !redOwn(order))).toEqual(timelineOf(definition).filter(order => !movesRed(order)))
     expect(new Set(timelineOf(human).filter(redOwn).map(order => order.capabilityId))).toEqual(new Set([ids.taskCreate, ids.unitCreate]))
@@ -114,7 +113,7 @@ describe('halden-border plays', () => {
     expect(publicItems(human)).toEqual(publicItems(definition))
     const withoutPosition = (items: ReadonlyArray<unknown>) => items.map(item => ({ ...(item as Record<string, unknown>), position: undefined }))
     expect(withoutPosition(sideItems(human, red).filter(item => (item as { readonly type: string }).type === 'unit'))).toEqual(withoutPosition(sideItems(definition, red)))
-    // Each opens on its own Starting View: the scripted one a little wider, so Red's reserve further back is in view too (`ui/board-camera.test.ts`).
+    // Each opens on its own Starting View: the scripted one a little wider, so Red's reserve further back is in view too (`border-demo.test.ts`, the starting camera beside the Dispatch panel).
     // Guide instructions differ by audience; compare shared domain mechanics.
     const { id: _humanId, title: _humanTitle, description: _humanDescription, objectives: _humanObjectives, timeline: _humanTimeline, rolePresets: _humanPresets, view: humanView, packs: humanPacks, ...humanRest } = withoutScenarioGuide(human)
     const { id: _id, title: _title, description: _description, objectives: _objectives, timeline: _timeline, rolePresets: _presets, view: scriptedView, packs, ...scriptedRest } = withoutScenarioGuide(definition)
@@ -150,7 +149,7 @@ describe('halden-border plays', () => {
     expect(best.log.refusals.filter(refusal => !refusal.reason.startsWith('unit_unavailable'))).toEqual([])
   }, 60_000)
 
-  test('passive Blue sees an engagement and a step-loss task between 12 and 16 minutes', async () => {
+  test('passive Blue sees an engagement and a step-loss task between 12 and 16 minutes, ranked top priority', async () => {
     const { log } = await outcomeOf('passive')
     const firstFire = log.transitions.find(transition => transition.kind === 'unit' && transition.record.target !== undefined)
     const firstLoss = [...log.state.tasks.values()].filter(task => task.lastAction?.by === 'standing-order:onStepLost').sort((a, b) => a.createdAtMs - b.createdAtMs)[0]
@@ -161,5 +160,9 @@ describe('halden-border plays', () => {
       expect(minutes(at)).toBeLessThanOrEqual(16)
     }
     expect(firstLoss!.side).toBe(blue)
+    // A step loss is acute: its template ranks it first, so a unit may be diverted to it from any lesser call.
+    const config = borderConfig(definition)
+    const lossTemplate = config.unitTypes.find(type => type.standingOrders?.onStepLost !== undefined)!.standingOrders!.onStepLost!.createTask
+    expect(firstLoss).toMatchObject({ template: lossTemplate, priority: config.priorities[0]!.id })
   }, 60_000)
 })

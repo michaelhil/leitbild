@@ -18,7 +18,6 @@
     PackCreateObjectType,
     PackMapFeature,
     PackMapLayerGroup,
-    PackMapAssignmentHandle,
     PackMapFeatureQuery,
     PackObjectPresentation,
     PackTargetPreview,
@@ -38,14 +37,13 @@
   import { composeSymbolAtlas, loadMapSymbols, rasterizeSymbol } from './map-runtime/map-symbols.ts'
   import { createCatalogueSymbolAtlas } from './map-runtime/catalogue-symbol-atlas.ts'
   import type { Map as MapLibreMap } from 'maplibre-gl'
-  import { startingZoomFor, type CameraInteraction } from './map/map-camera.ts'
-  import { mapClickOutcome } from './map-target-routing.ts'
-  import { noMapCover, type MapPrompt } from './surface-panel-interaction.ts'
+  import { clearCentreFor, panIntoClear, startingZoomFor, type CameraInteraction, type CameraPadding } from './map/map-camera.ts'
+  import { noMapCover, type MapPrompt, type MapTargeting } from './surface-panel-interaction.ts'
   import type { MapCover } from './surface-panel-contract.ts'
   import { createMapPromptController } from './map/map-prompt.ts'
   import { createMapStackChooser } from './map/map-stack-chooser.ts'
-  import { objectsUnder, stackPick } from './map/map-stack.ts'
-  import { disksPickFor, hoverCardsFor, longPressObject, pickingRadiusFor } from './map/map-pointer.ts'
+  import { needsSingleTargetChoice, objectsUnder, stackPick } from './map/map-stack.ts'
+  import { disksPickFor, hoverCardsFor, pickingRadiusFor } from './map/map-pointer.ts'
   import { operationalIconPx } from './map-runtime/symbol-kit.ts'
   import { createReferenceLayerController } from './map-runtime/reference-layer-controller.ts'
   import {
@@ -57,7 +55,10 @@
     MapRuntimeDiagnosticsSnapshot,
     MapFocusRequest,
     MapRuntimeHandle,
-    MapAssignmentInteraction,
+    MapTargetingLine,
+    MapTargetingRender,
+    TargetTagAnchor,
+    Position3,
   } from './map-runtime/types.ts'
 
   interface Props {
@@ -78,8 +79,18 @@
     readonly highlightedObjectIds?: ReadonlyArray<string>
     /** Objects the screen sees but may not order: drawn muted. */
     readonly mutedObjectIds?: ReadonlyArray<string>
-    /** The open map-target panel's one-button prompt at a point, e.g. "Move here". */
+    /** The open map-target panel's prompt of one or two buttons by a point, e.g. "Move here"; any map click dismisses it. */
     readonly prompt?: MapPrompt | null
+    /** The operator dismissed the prompt without confirming: a map click elsewhere, its × or Esc. Once per prompt. */
+    readonly onPromptDismissed: (prompt: MapPrompt) => void
+    /**
+     * The open map-target panel's armed order: halos on its targets, tags on
+     * the nearest, every other object dimmed once the targets are complete,
+     * and a line from its object to a mouse pointer (`MapTargeting`); null
+     * while nothing is armed. A tap on a stack of icons then offers only its
+     * valid targets.
+     */
+    readonly targeting?: MapTargeting | null
     readonly hiddenObjectCategoryIds?: ReadonlyArray<string>
     readonly hasNewInfo: (object: OperationalObject) => boolean
     readonly presentationFor: (object: OperationalObject) => PackObjectPresentation
@@ -124,15 +135,6 @@
     /** A role Run's perspective epoch: a hover card of an earlier one is never left showing. */
     readonly perspectiveEpoch?: number
     readonly onPackFeatureSelected?: (selection: NonNullable<PackMapFeature['selection']>) => void
-    readonly assignmentActive?: boolean
-    readonly assignmentAnchor?: GeoJsonPoint | null
-    readonly assignmentHandles?: ReadonlyArray<PackMapAssignmentHandle>
-    readonly onAssignmentObjectSelected?: (object: OperationalObject, screen: { readonly x: number; readonly y: number }) => void
-    readonly onAssignmentHandleSelected?: (controllerId: string) => void
-    readonly onAssignmentCancelled?: () => void
-    /** A mouse long press on an object `canLongPress` accepts; a press on any other object stays a plain click. */
-    readonly onObjectLongPressed?: (object: OperationalObject) => void
-    readonly canLongPress?: (object: OperationalObject) => boolean
     /** Camera gestures on or off; only an active Pack switches one off. */
     readonly cameraInteraction: CameraInteraction
     /** How far open surface panels reach over the map: the camera centres and fits clear of them, and so do the map's own controls. */
@@ -152,10 +154,11 @@
     /** The order preview a hovered object's card shows, when the selected controller's Pack describes targets. */
     readonly targetPreviewFor?: ((object: OperationalObject) => PackTargetPreview | null) | undefined
     /**
-     * Objects a click opens a display for: a mouse click or hover anywhere on
-     * their coloured disk is theirs on every surface, not only while the
-     * surface picks targets. Every other object's disk picks as before. It
-     * answers by the object alone, so the icons are not drawn again for it.
+     * Objects a click opens a display or a closed map-target panel for: a
+     * mouse click or hover anywhere on their coloured disk is theirs on every
+     * surface, not only while the surface picks targets. Every other object's
+     * disk picks as before. It answers by the object alone, so the icons are
+     * not drawn again for it.
      */
     readonly takesDiskClicks?: (object: OperationalObject) => boolean
   }
@@ -176,6 +179,8 @@
     highlightedObjectIds = [],
     mutedObjectIds = [],
     prompt = null,
+    onPromptDismissed,
+    targeting = null,
     hiddenObjectCategoryIds = [],
     hasNewInfo,
     presentationFor,
@@ -209,14 +214,6 @@
     packDataRevisionKey = '',
     perspectiveEpoch = 0,
     onPackFeatureSelected = () => {},
-    assignmentActive = false,
-    assignmentAnchor = null,
-    assignmentHandles = [],
-    onAssignmentObjectSelected = () => {},
-    onAssignmentHandleSelected = () => {},
-    onAssignmentCancelled = () => {},
-    onObjectLongPressed = () => {},
-    canLongPress = () => false,
     cameraInteraction,
     cameraPadding = noMapCover,
     targetPicking = false,
@@ -236,33 +233,84 @@
   let cameraMoveStarted: { at: number; user: boolean } | null = null
   let pendingFocus: number | null = null
   let appliedCameraKey: string | null = null
-  /** The camera still shows the Starting View: neither the operator nor a focus request has moved it. */
+  /** The camera still shows the Starting View: the operator has neither moved the camera nor clicked the map, nor has a focus request moved it. */
   let startingCamera = true
   let appliedFocusRevision = -1
   let mapReadyNotified = false
   let hoveredObject: OperationalObject | null = null
-  /** The type of the last pointer seen on the canvas; hover cards and the long press are for a mouse only (map-pointer.ts). */
+  /** The type of the last pointer seen on the canvas; hover cards and an armed order's line are for a mouse only (map-pointer.ts). */
   let lastPointerType: string | null = null
   /** How far around a press the map picks, for the last pointer seen: a mouse's 0 until a finger or a pen sets more. */
   let pickingRadius = 0
-  let assignmentPointer = $state<GeoJsonPoint | null>(null)
-  let interactionRevision = $state(0)
+  /** Where the mouse is while an order is armed: the end of its line. */
+  let linePointer = $state<GeoJsonPoint | null>(null)
+  let lineRevision = $state(0)
   let lastPointerScreen = { x: 0, y: 0 }
-  let suppressBackgroundClick = false
-  let longPressConsumedUntil = 0
-  // Set while one map click is handled by an object, a Pack feature or a handle, so it is not also a ground click.
+  // Set while one map click is handled by an object or a Pack feature, so it is not also a ground click.
   let clickHandled = false
   // One click selects one thing: a Pack feature beneath an object's icon (a grid line under a Plant) is selected only when no object took the click.
   let objectTookClick = false
   let featureSelection: NonNullable<PackMapFeature['selection']> | null = null
 
-  const assignmentInteraction = (): MapAssignmentInteraction => ({
-    revision: interactionRevision,
-    active: assignmentActive,
-    anchor: assignmentAnchor ? [assignmentAnchor.coordinates[0], assignmentAnchor.coordinates[1], 0] : null,
-    pointer: assignmentPointer ? [assignmentPointer.coordinates[0], assignmentPointer.coordinates[1], 0] : null,
-    handles: assignmentHandles.map(handle => ({ id: handle.id, controllerId: handle.controllerId, position: [handle.point.coordinates[0], handle.point.coordinates[1], 0] })),
+  /** Which way each tag runs from its target (`TargetTagAnchor`), worked out where the camera rests and when the targeting changes. */
+  let tagAnchors = $state.raw<ReadonlyMap<string, TargetTagAnchor>>(new Map())
+  const targetingRender = $derived<MapTargetingRender | null>(targeting === null ? null : {
+    fromId: targeting.from,
+    complete: targeting.complete,
+    targets: new Map(targeting.targets.map(target => [target.id as string, { tag: target.tag ?? null, anchor: tagAnchors.get(target.id) ?? 'middle', tone: target.tone ?? 'valid' }])),
   })
+  /** About how wide a tag is drawn: 13 px text wrapped at 22 em, with its padding. */
+  const tagWidthPx = (tag: string): number => Math.min(tag.length * 7.5, 22 * 13) + 12
+  /**
+   * A tag centred above its target unless that would take it past the left
+   * or right edge of the map the panels leave clear; then it runs from its
+   * target into the map.
+   */
+  const tagAnchorsNow = (): ReadonlyMap<string, TargetTagAnchor> => {
+    const current = runtime
+    if (targeting === null || current === null) return new Map()
+    const drawn = new Map(operationalRenderController.points().map(point => [point.id, point.position] as const))
+    const left = cameraPadding.left + 4
+    const right = current.map.getCanvas().clientWidth - cameraPadding.right - 4
+    const anchors = new Map<string, TargetTagAnchor>()
+    for (const target of targeting.targets) {
+      if (target.tag === undefined) continue
+      const at = drawn.get(target.id)
+      if (at === undefined) continue
+      const x = current.map.project([at[0]!, at[1]!]).x
+      const half = tagWidthPx(target.tag) / 2
+      anchors.set(target.id, x - half < left ? 'start' : x + half > right ? 'end' : 'middle')
+    }
+    return anchors
+  }
+  const placeTags = (): void => {
+    const next = tagAnchorsNow()
+    if (next.size !== tagAnchors.size || [...next].some(([id, anchor]) => tagAnchors.get(id) !== anchor)) tagAnchors = next
+  }
+  /** The stack chooser offers the valid and assigned targets when targeting is complete. */
+  const stackChoices = (stack: ReadonlyArray<OperationalObject>): ReadonlyArray<OperationalObject> => {
+    if (targeting === null || !targeting.complete) return stack
+    const pickable = new Set(targeting.targets.filter(target => target.tone !== 'refused').map(target => target.id as string))
+    return stack.filter(object => pickable.has(object.id))
+  }
+  /** Whether a line follows the pointer: a panel's armed order while the pointer is a mouse. */
+  const pointerLineWanted = (pointerType: string | null): boolean => targeting !== null && hoverCardsFor(pointerType)
+
+  /** Where the line starts: the armed order's object, where its icon is drawn. */
+  const lineAnchor = (): Position3 | null => {
+    if (targeting === null || !hoverCardsFor(lastPointerType)) return null
+    return operationalRenderController.points().find(point => point.id === targeting.from)?.position ?? null
+  }
+
+  /** The armed order's line to the mouse pointer. */
+  const targetingLine = (): MapTargetingLine => {
+    const anchor = lineAnchor()
+    return {
+      revision: lineRevision,
+      anchor,
+      pointer: anchor !== null && linePointer ? [linePointer.coordinates[0], linePointer.coordinates[1], 0] : null,
+    }
+  }
 
   const createNoopMapInputDebugController = (): MapInputDebugController => ({
     install: () => undefined,
@@ -293,7 +341,7 @@
     mapInputDebugController = createNoopMapInputDebugController()
   }
 
-  const promptController = createMapPromptController({ getMap: () => runtime?.map ?? null })
+  const promptController = createMapPromptController({ getMap: () => runtime?.map ?? null, onDismiss: prompt => onPromptDismissed(prompt) })
   let physicalLayoutInteraction: PhysicalLayoutMapInteraction | null = null
   let detailedLayoutOwnerIds = $state.raw<ReadonlySet<string>>(new Set())
   const physicalMapPresentation = (object: OperationalObject): PackObjectPresentation => {
@@ -306,18 +354,10 @@
   }
   const stackChooser = createMapStackChooser({ getMap: () => runtime?.map ?? null })
 
-  /** An object a click picked, or the one chosen from a stack: an assignment's target, or a selection. */
-  const pickObject = (object: OperationalObject): void => {
-    if (assignmentActive) {
-      suppressBackgroundClick = true
-      onAssignmentObjectSelected(object, lastPointerScreen)
-    } else onObjectSelected(object)
-  }
-
   /** The objects whose icons lie under the last press itself, while the surface picks targets. */
   const stackUnderPointer = (): ReadonlyArray<OperationalObject> => {
     const current = runtime
-    if (!targetPicking || assignmentActive || current === null) return []
+    if (!targetPicking || current === null) return []
     return objectsUnder(operationalRenderController.points(), position => current.map.project([position[0], position[1]]), lastPointerScreen)
   }
 
@@ -325,12 +365,13 @@
     const current = runtime
     if (current === null) return
     const point = current.map.unproject([lastPointerScreen.x, lastPointerScreen.y])
+    const tags = new Map((targeting?.targets ?? []).flatMap(target => target.tag === undefined ? [] : [[target.id as string, target.tag] as const]))
     stackChooser.show(geoPointFromLonLat(point.lng, point.lat), stack.map(object => ({
       id: object.id,
-      label: presentationFor(object).mapLabel ?? object.label,
+      label: [presentationFor(object).mapLabel ?? object.label, ...(tags.has(object.id) ? [tags.get(object.id)!] : [])].join(' · '),
       choose: () => {
         onObjectSeen(object)
-        pickObject(object)
+        onObjectSelected(object)
       },
     })))
   }
@@ -362,13 +403,14 @@
       selectedControllerId,
       highlightedObjectIds,
       mutedObjectIds,
+      targeting: targetingRender,
       alertPalette: theme === 'dark' ? 'dusk' : 'day',
       hiddenObjectCategoryIds,
       placementPoints,
       packFeatures: cachedPackMapFeatures,
       visibleFamilies: visibleFamilies(),
       placementCursorActive: placementCursor !== null,
-      assignmentInteraction: assignmentInteraction(),
+      targetingLine: targetingLine(),
       disksPick: disksPickFor(targetPicking, pickingRadius),
       diskClicks: pickingRadius === 0 ? takesDiskClicks : null,
       presentationKey: `${presentationKey}|physical:${[...detailedLayoutOwnerIds].sort().join(',')}`,
@@ -378,15 +420,17 @@
     onObjectSelected: object => {
       clickHandled = true
       objectTookClick = true
-      if (performance.now() < longPressConsumedUntil) return
-      const stack = stackUnderPointer()
+      const under = stackUnderPointer()
+      // While an order is armed a stack offers its valid targets only; with none, the tap is on the object it landed on, and the panel's server decides.
+      const stack = under.length > 1 ? stackChoices(under) : under
+      if (needsSingleTargetChoice(object, under, stack)) return showStackChooser(stack)
       if (stack.length > 1) {
         const picked = stackPick(stack, controllerHighlighted, isController)
         if (picked === null) return showStackChooser(stack)
         onObjectSeen(picked)
-        return pickObject(picked)
+        return onObjectSelected(picked)
       }
-      pickObject(object)
+      onObjectSelected(object)
     },
     onObjectSeen: object => onObjectSeen(object),
     onObjectHover: object => {
@@ -394,7 +438,6 @@
       if (object && hoverCardsFor(lastPointerType)) popupController.show(object)
       else popupController.hide()
     },
-    onAssignmentHandleSelected: handle => { clickHandled = true; suppressBackgroundClick = true; onAssignmentHandleSelected(handle.controllerId) },
     setCursor: cursor => {
       const canvas = runtime?.map.getCanvas()
       if (canvas) canvas.style.cursor = cursor
@@ -591,6 +634,30 @@
     })
   }
 
+  /** How far inside the clear part of the map the selected object stays when a panel's cover grows over it. */
+  const selectionClearPx = 48
+
+  /**
+   * A panel's cover changed once the operator has taken the camera: the drawn
+   * map stays where it is, so nothing under the pointer moves (plan B.1.3,
+   * HF9), and the camera only pans, just far enough, when the selected object
+   * would end up under the cover. It never re-fits.
+   */
+  const followCover = (current: MapLibreMap, padding: CameraPadding): void => {
+    const applied = current.getPadding()
+    if (applied.top === padding.top && applied.right === padding.right && applied.bottom === padding.bottom && applied.left === padding.left) return
+    const container = current.getContainer()
+    const size = { width: container.clientWidth, height: container.clientHeight }
+    // The new padding centres the camera on what is drawn at the new clear centre now, so every pixel stays put.
+    current.jumpTo({ center: current.unproject([...clearCentreFor(size, padding)]), padding: { ...padding } })
+    const position = selectedControllerId === null ? undefined : operationalRenderController.points().find(point => point.id === selectedControllerId)?.position
+    if (position === undefined) return
+    const drawn = current.project([position[0], position[1]])
+    const [x, y] = panIntoClear([drawn.x, drawn.y], size, padding, selectionClearPx)
+    if (x === 0 && y === 0) return
+    current.panBy([x, y], { duration: window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 0 : 250 })
+  }
+
   const applyScenarioCameraDefault = (): void => {
     const current = runtime?.map
     if (!current) return
@@ -627,29 +694,30 @@
         placementActive: () => placementMode !== null,
         onPlacementPoint,
         onMapClick: point => {
-          // This listener runs first; object, label, Pack feature and handle clicks of the same event follow it
+          // This listener runs first; object, label and Pack feature clicks of the same event follow it
           // synchronously, because the deck overlay picks with pickAsync 'sync' (map-runtime.ts).
           // A double-click's extra object click leaves no mark on the next click.
           clickHandled = false
           objectTookClick = false
           featureSelection = null
+          // After a click the camera stays where the operator saw it: a panel the click opens never re-fits the Starting View.
+          startingCamera = false
           // Any click lets a stack's chooser go; an object click on a stack shows a new one.
           stackChooser.hide()
+          // A click anywhere on the map dismisses the panel's prompt without confirming; its buttons stop their own clicks.
+          promptController.dismiss()
           queueMicrotask(() => {
-            const outcome = mapClickOutcome({ suppressed: suppressBackgroundClick, assignmentActive, handled: clickHandled })
+            const handled = clickHandled
             const feature = objectTookClick ? null : featureSelection
             clickHandled = false
             objectTookClick = false
             featureSelection = null
-            if (outcome === 'handled') physicalLayoutInteraction?.dismiss()
+            if (handled) physicalLayoutInteraction?.dismiss()
             if (feature !== null && !placementMode) onPackFeatureSelected(feature)
-            if (outcome === 'suppressed') suppressBackgroundClick = false
-            else if (outcome === 'assignment-cancel') onAssignmentCancelled()
-            else if (outcome === 'ground') {
-              const captured = placementMode !== null || targetPicking || selectedControllerId !== null
-              if (!captured && physicalLayoutInteraction?.activate(lastPointerScreen)) return
-              onGroundSelected?.(point)
-            }
+            if (handled) return
+            const captured = placementMode !== null || targetPicking || selectedControllerId !== null
+            if (!captured && physicalLayoutInteraction?.activate(lastPointerScreen)) return
+            onGroundSelected?.(point)
           })
         },
         onMoveStart: event => {
@@ -664,6 +732,7 @@
           if (cameraMoveStarted !== null) { mapPerformanceDiagnostics.record('camera', 'moveend', performance.now() - cameraMoveStarted.at, { userGesture: cameraMoveStarted.user }); cameraMoveStarted = null }
           if (pendingFocus !== null) { onFocusResult(pendingFocus, 'applied'); pendingFocus = null }
           if (runtime) onMapView(readMapView(runtime.map))
+          placeTags()
           packOverlayController.setCameraGestureActive(false)
           void packOverlayController.refresh()
         },
@@ -680,9 +749,6 @@
       // Icons that would overlap fan out anew at each zoom step (point-declutter.ts).
       nextRuntime.map.on('zoom', () => operationalRenderController.syncZoom())
       const canvas = nextRuntime.map.getCanvas()
-      let holdTimer: ReturnType<typeof setTimeout> | null = null
-      let holdStart: { x: number; y: number } | null = null
-      const clearHold = () => { if (holdTimer !== null) clearTimeout(holdTimer); holdTimer = null; holdStart = null }
       // A finger picks objects within a 44 px target around the tap; a mouse only under it.
       const trackPointer = (pointerType: string) => {
         lastPointerType = pointerType
@@ -702,41 +768,27 @@
         pointerPoint(event)
         trackPointer(event.pointerType)
         if (!hoverCardsFor(lastPointerType)) popupController.hide()
-        const origin = longPressObject({ pointerType: event.pointerType, button: event.button, hovered: hoveredObject, busy: assignmentActive || placementMode !== null, canLongPress })
-        if (origin === null) return
-        holdStart = { x: event.clientX, y: event.clientY }
-        holdTimer = setTimeout(() => {
-          holdTimer = null
-          holdStart = null
-          assignmentPointer = pointerPoint(event)
-          interactionRevision += 1
-          longPressConsumedUntil = performance.now() + 500
-          suppressBackgroundClick = true
-          popupController.hide()
-          onObjectLongPressed(origin)
-        }, 420)
       }
       const onPointerMove = (event: PointerEvent) => {
         const point = pointerPoint(event)
         trackPointer(event.pointerType)
-        if (holdStart && Math.hypot(event.clientX - holdStart.x, event.clientY - holdStart.y) > 7) clearHold()
-        if (!assignmentActive) return
-        assignmentPointer = point
-        interactionRevision += 1
+        if (!pointerLineWanted(event.pointerType)) return
+        linePointer = point
+        lineRevision += 1
       }
-      const onPointerEnd = () => clearHold()
-      const onKeyDown = (event: KeyboardEvent) => { if (event.key === 'Escape' && assignmentActive) onAssignmentCancelled() }
+      const onKeyDown = (event: KeyboardEvent) => {
+        if (event.key !== 'Escape' || event.defaultPrevented) return
+        if (event.target instanceof Element && event.target.closest('[role="dialog"], dialog, input, textarea, select, [contenteditable="true"]')) return
+        if (stackChooser.shown()) stackChooser.hide()
+        else if (!promptController.dismiss() && !popupController.dismiss()) return
+        event.preventDefault()
+      }
       canvas.addEventListener('pointerdown', onPointerDown)
       canvas.addEventListener('pointermove', onPointerMove)
-      canvas.addEventListener('pointerup', onPointerEnd)
-      canvas.addEventListener('pointercancel', onPointerEnd)
       window.addEventListener('keydown', onKeyDown)
       cleanupMapGestures = () => {
-        clearHold()
         canvas.removeEventListener('pointerdown', onPointerDown)
         canvas.removeEventListener('pointermove', onPointerMove)
-        canvas.removeEventListener('pointerup', onPointerEnd)
-        canvas.removeEventListener('pointercancel', onPointerEnd)
         window.removeEventListener('keydown', onKeyDown)
       }
       onMapView(readMapView(nextRuntime.map))
@@ -788,33 +840,35 @@
     }
   })
 
+  // A new targeting, or a panel reaching further over the map, places the tags anew.
+  $effect(() => {
+    targeting
+    cameraPadding
+    untrack(placeTags)
+  })
+
   $effect(() => {
     objects
     detailedLayoutOwnerIds
     selectedControllerId
     highlightedObjectIds
     mutedObjectIds
+    targetingRender
     routeRevision
     theme
     untrack(() => operationalRenderController.syncObjects())
   })
 
   $effect(() => {
-    assignmentActive
-    assignmentAnchor
-    assignmentHandles
-    interactionRevision
+    targeting
+    lineRevision
     untrack(() => {
       const canvas = runtime?.map.getCanvas()
-      if (!assignmentActive && assignmentPointer) {
-        assignmentPointer = null
-        interactionRevision += 1
+      if (!pointerLineWanted(lastPointerType) && linePointer) {
+        linePointer = null
+        lineRevision += 1
       }
-      if (assignmentActive && !assignmentPointer && assignmentAnchor) {
-        assignmentPointer = assignmentAnchor
-        interactionRevision += 1
-      }
-      if (canvas) canvas.style.cursor = assignmentActive ? 'crosshair' : placementCursor ? 'crosshair' : hoveredObject ? 'pointer' : ''
+      if (canvas) canvas.style.cursor = placementCursor ? 'crosshair' : hoveredObject ? 'pointer' : ''
       operationalRenderController.syncInteraction()
     })
   })
@@ -908,14 +962,12 @@
     const current = runtime?.map
     if (!current) return
     untrack(() => {
-      // Until the operator moves the camera, it shows the whole Starting View clear of the panels.
+      // Until the operator moves the camera or clicks the map, it shows the whole Starting View clear of the panels.
       if (startingCamera) {
         jumpToStartingView(current)
         return
       }
-      const applied = current.getPadding()
-      if (applied.top === top && applied.right === right && applied.bottom === bottom && applied.left === left) return
-      current.easeTo({ padding: { top, right, bottom, left }, duration: 250 })
+      followCover(current, { top, right, bottom, left })
     })
   })
 
@@ -989,7 +1041,48 @@
     left: var(--map-cover-left);
   }
 
-  /* A panel's prompt at a point: one button, large enough to tap. */
+  /* A panel's prompt: the × first, a rule, then the options (map-prompt.ts). */
+  .map :global(.map-prompt-actions) {
+    display: flex;
+    align-items: flex-start;
+    gap: 8px;
+    padding: 8px;
+    border-radius: 10px;
+    background: var(--panel);
+  }
+
+  .map :global(.map-prompt-actions > .map-popup-dismiss) {
+    flex: none;
+  }
+
+  /* Side by side while both options fit, stacked otherwise; a label longer than the prompt wraps, never clips. */
+  .map :global(.map-prompt-options) {
+    display: flex;
+    flex: 1 1 auto;
+    flex-wrap: wrap;
+    gap: 8px;
+    min-width: 0;
+    padding-left: 8px;
+    border-left: 1px solid var(--border);
+  }
+
+  .map :global(.map-popup-dismiss) {
+    justify-self: end;
+    min-width: 44px;
+    min-height: 44px;
+    border: 0;
+    border-radius: 8px;
+    background: var(--panel);
+    color: var(--text);
+    font: inherit;
+    cursor: pointer;
+  }
+
+  .map :global(.map-popup-dismiss:hover) {
+    background: var(--panel-strong);
+  }
+
+  /* A panel's prompt at a point. */
   .map :global(.map-prompt .maplibregl-popup-content) {
     padding: 0;
     border-radius: 10px;
@@ -1008,6 +1101,14 @@
   .map :global(.map-stack-list) {
     display: grid;
     gap: 4px;
+    max-height: min(45dvh, 360px);
+    overflow-y: auto;
+    overscroll-behavior: contain;
+  }
+
+  .map :global(.map-stack-list .map-popup-dismiss) {
+    position: sticky;
+    top: 0;
   }
 
   .map :global(.map-stack-button) {
@@ -1026,6 +1127,10 @@
   }
 
   .map :global(.map-prompt-button) {
+    flex-grow: 1;
+    flex-shrink: 1;
+    flex-basis: max-content;
+    max-width: 100%;
     min-width: 44px;
     min-height: 44px;
     padding: 10px 16px;
@@ -1035,6 +1140,16 @@
     color: white;
     font: inherit;
     font-weight: 650;
+    text-align: center;
+    overflow-wrap: anywhere;
     cursor: pointer;
+  }
+
+  /* An option that drops work, such as "Now (drops C-3 · P3)". */
+  .map :global(.map-prompt-button-warning) {
+    border-color: var(--warning);
+    background: var(--panel);
+    color: var(--text);
+    box-shadow: inset 4px 0 0 var(--warning);
   }
 </style>

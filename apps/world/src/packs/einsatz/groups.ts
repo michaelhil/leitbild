@@ -4,22 +4,25 @@ import { einsatzConfigShapeSchema, type Group } from './config-schema.ts'
 import { groupRoleId } from './ids.ts'
 
 /**
- * Groups as roles. Each declared group becomes one operator role, which core
- * adds to the Scenario's declared roles at compile (`WorldPack.scenarioRoles`):
- * its id is `group:<group id>`, its label the group's label, its category the
- * group's category, and it sees the group's side, or everything in a Scenario
- * without sides. It commands exactly the group's units, and its queue holds
- * the tasks of its picture that those units can serve (`picture.ts`).
+ * Groups as roles, in sided Scenarios only. In a Scenario with sides each
+ * declared group becomes one operator role, which core adds to the
+ * Scenario's declared roles at compile (`WorldPack.scenarioRoles`): its id is
+ * `group:<group id>`, its label the group's label, its category the group's
+ * category, and it sees the group's side. It commands exactly the group's
+ * units, and its queue holds the tasks of its picture that those units can
+ * serve (`picture.ts`). In a Scenario without sides a group is a heading
+ * only: it makes no role, so the Run stays open, with no role gate, and
+ * every caller, an AI agent included, commands every unit.
  */
-export const groupRole = (group: Group, sided: boolean): ScenarioRole => ({
+export const groupRole = (group: Group): ScenarioRole => ({
   id: groupRoleId(group.id),
   label: group.label,
   class: 'operator',
   category: group.category,
   // A sided Scenario's group without a side is refused (`group_side_required`) before its role compiles.
-  ...(sided && group.side !== undefined ? { sees: [group.side] } : {}),
+  ...(group.side === undefined ? {} : { sees: [group.side] }),
 })
 
-/** The roles an Einsatz configuration derives: one per declared group, in declaration order. */
+/** The roles an Einsatz configuration derives: in a sided Scenario one per declared group, in declaration order; none without sides. */
 export const einsatzScenarioRoles = (raw: unknown, context: PackScenarioRolesContext): ReadonlyArray<ScenarioRole> =>
-  einsatzConfigShapeSchema.parse(raw).groups.map(group => groupRole(group, context.sides.length > 0))
+  context.sides.length === 0 ? [] : einsatzConfigShapeSchema.parse(raw).groups.map(groupRole)

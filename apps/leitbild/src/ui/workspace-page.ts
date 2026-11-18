@@ -82,7 +82,7 @@ export const previewSrc = (preview: ModuleFeaturedDefinition['previews'][number]
 
 // ---------- Continue ----------
 
-export type ContinueKind = 'running' | 'paused' | 'unavailable' | 'conversation'
+export type ContinueKind = 'running' | 'paused' | 'unavailable' | 'conversation' | 'plan'
 
 export interface ContinueItem {
   readonly resource: ModuleResourceDescriptor
@@ -97,6 +97,7 @@ export interface ContinueItem {
 
 const RUN = 'world.simulation-run'
 const ROOM = 'agents.room'
+const PLAN = 'planning.plan'
 const summaryOf = (resource: ModuleResourceDescriptor, key: string): ResourceSummaryItem | undefined =>
   resource.summary.find(item => item.key === key)
 const timestampOf = (resource: ModuleResourceDescriptor, ...keys: string[]): string | null => {
@@ -114,7 +115,11 @@ const factsOf = (resource: ModuleResourceDescriptor, keys: ReadonlyArray<string>
 
 const runKind = (status: string): ContinueKind =>
   status === 'Paused' ? 'paused' : status === 'Unavailable' ? 'unavailable' : 'running'
-const order: Readonly<Record<ContinueKind, number>> = { running: 0, paused: 1, unavailable: 2, conversation: 3 }
+const order: Readonly<Record<ContinueKind, number>> = { running: 0, paused: 1, unavailable: 2, plan: 3, conversation: 4 }
+
+/** What a Continue card is, said on the card, so a Run and a plan of the same name read apart. */
+export const continueKindLabel = (kind: ContinueKind): string =>
+  kind === 'plan' ? 'Plan' : kind === 'conversation' ? 'Conversation' : 'Simulation'
 
 /**
  * Runs and conversations a visitor can open from this page: live Runs first,
@@ -129,6 +134,9 @@ export const continueItems = (resources: ReadonlyArray<ModuleResourceDescriptor>
     }
     if (resource.ref.type === ROOM) {
       return [{ resource, kind: 'conversation', status: 'Conversation', at: timestampOf(resource, 'last-activity-at', 'created-at'), facts: factsOf(resource, ['message-count', 'last-activity-at']) }]
+    }
+    if (resource.ref.type === PLAN) {
+      return [{ resource, kind: 'plan', status: String(summaryOf(resource, 'status')?.value ?? 'Plan'), at: timestampOf(resource, 'updated-at'), facts: factsOf(resource, ['option-count', 'updated-at']) }]
     }
     return []
   }).sort((left, right) => order[left.kind] - order[right.kind] || (right.at ?? '').localeCompare(left.at ?? ''))

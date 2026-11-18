@@ -29,6 +29,10 @@ export const stackPick = (
   return controllers.length === 1 ? controllers[0]! : null
 }
 
+/** A single eligible object beneath the hit still needs an explicit choice. */
+export const needsSingleTargetChoice = (hit: OperationalObject, stack: ReadonlyArray<OperationalObject>, eligible: ReadonlyArray<OperationalObject>): boolean =>
+  stack.length > 1 && eligible.length === 1 && eligible[0]!.id !== hit.id
+
 /**
  * The objects whose icons lie under a point on the map's canvas itself, top
  * first (the last drawn): those whose coloured disk, which covers its glyph,

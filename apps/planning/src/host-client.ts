@@ -1,0 +1,59 @@
+import {
+  moduleCapabilityInvocationResultSchema, workspaceCapabilityInvocationRequestSchema, workspaceResourceCatalogSchema,
+  type AccessContext, type WorkspaceCapabilityInvocationRequest, type WorkspaceResourceReference,
+} from '@leitbild/contracts'
+import { planningError } from './errors.ts'
+
+/**
+ * Calls a published Capability through Host as the caller, so the caller's access applies. Only a
+ * configured Host origin is used; caller input never chooses a URL. Planning reads World facts and the
+ * source Scenario of a guided demonstration.
+ */
+export const createPlanningHostClient = (config: { readonly hostUrl: string; readonly fetch?: typeof fetch }) => {
+  const origin = new URL(config.hostUrl)
+  if (!['http:', 'https:'].includes(origin.protocol) || origin.username || origin.password || origin.search || origin.hash) throw new Error('WORKSPACE_HOST_URL must be an HTTP(S) Host URL without credentials, query or fragment')
+  const base = origin.href.replace(/\/$/, '')
+  const transport = config.fetch ?? fetch
+  return {
+    runSource: async (run: WorkspaceResourceReference, signal: AbortSignal): Promise<string | undefined> => {
+      const url = `${base}/api/workspaces/${encodeURIComponent(run.workspaceId)}/resources?moduleId=world`
+      let response: Response
+      try { response = await transport(url, { signal, redirect: 'error' }) } catch {
+        throw planningError(503, 'world_unavailable', 'Could not read the World simulations in this Workspace.')
+      }
+      if (!response.ok) throw planningError(503, 'world_unavailable', 'Could not read the World simulations in this Workspace.')
+      const catalog = workspaceResourceCatalogSchema.parse(await response.json())
+      if (catalog.modules.some(module => module.status === 'failed')) {
+        throw planningError(503, 'world_unavailable', 'World is temporarily unavailable. Try again in a moment.')
+      }
+      const definition = catalog.resources.find(item =>
+        item.ref.workspaceId === run.workspaceId && item.ref.moduleId === run.moduleId
+        && item.ref.type === run.type && item.ref.id === run.id,
+      )?.sourceDefinition
+      return definition?.moduleId === 'world' && definition.type === 'world.scenario' ? definition.id : undefined
+    },
+    /** `signal` ends the call early (a caller's deadline or abort); every call also stops after 30 s, Host's own limit. */
+    call: async (access: AccessContext, capabilityId: string, input: Omit<WorkspaceCapabilityInvocationRequest, 'actor'>, signal?: AbortSignal): Promise<unknown> => {
+      const request = workspaceCapabilityInvocationRequestSchema.parse({ ...input, actor: access.actor })
+      let response: Response
+      try {
+        response = await transport(`${base}/api/workspaces/${encodeURIComponent(access.workspaceId)}/capabilities/${encodeURIComponent(capabilityId)}/invoke`, {
+          method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(request), signal: AbortSignal.any([AbortSignal.timeout(30_000), ...(signal === undefined ? [] : [signal])]), redirect: 'error',
+        })
+      } catch (error) {
+        throw planningError(503, 'world_unavailable', `Could not reach the Workspace Host: ${error instanceof Error ? error.message : String(error)}`)
+      }
+      let body: unknown
+      try { body = await response.json() } catch { throw planningError(502, 'invalid_host_response', 'Workspace Host returned a response that is not JSON') }
+      if (!response.ok) {
+        const error = body !== null && typeof body === 'object' && 'error' in body ? body.error : undefined
+        const detail = error !== null && typeof error === 'object' ? error as Record<string, unknown> : {}
+        const details = detail.details !== null && typeof detail.details === 'object' && !Array.isArray(detail.details) ? detail.details as Record<string, unknown> : undefined
+        throw planningError(response.status, typeof detail.code === 'string' ? detail.code : 'world_unavailable', typeof detail.message === 'string' ? detail.message : `Workspace Host returned HTTP ${response.status}`, details)
+      }
+      return moduleCapabilityInvocationResultSchema.parse(body).result
+    },
+  }
+}
+
+export type PlanningHost = ReturnType<typeof createPlanningHostClient>

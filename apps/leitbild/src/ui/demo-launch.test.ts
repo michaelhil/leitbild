@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test'
-import type { ModuleFeaturedDefinition, ModuleListedDefinition, WorkspaceId } from '@leitbild/contracts'
+import { moduleIdSchema, type ModuleFeaturedDefinition, type ModuleListedDefinition, type WorkspaceId } from '@leitbild/contracts'
 import {
   advanceLaunchSteps, createDemoLauncher, initialLaunchSteps, launchDemo, launchFailureView, launchStatusText, NOT_AVAILABLE_TEXT,
   NOT_FEATURED_TEXT, NOT_LISTED_TEXT, SLOW_AFTER_MS, stoppedText, VERY_SLOW_AFTER_MS, watchSlowLaunch,
@@ -102,6 +102,53 @@ const failure = async (promise: Promise<unknown>): Promise<DemoLaunchError> => {
 }
 
 describe('Start demo: the target Workspace', () => {
+  const withPlanning = (id: string, status: 'ready' | 'provision_failed') => {
+    const workspace = workspaceFixture(id)
+    return { ...workspace, modules: [...workspace.modules, { moduleId: 'planning', status, updatedAt: workspace.updatedAt,
+      ...(status === 'provision_failed' ? { failure: { code: 'module_unavailable', message: 'Planning did not answer', retryable: true } } : {}),
+    }] }
+  }
+
+  test('a demo requiring Planning starts in a new Workspace when the remembered Workspace lacks it', async () => {
+    const { host, memory, ports, paths } = setup()
+    memory.remember(OLD, 'picked')
+    host.on('GET', '/api/featured-definitions', json(catalogue([{ ...featured(), requiresModules: [moduleIdSchema.parse('planning')] }])))
+    host.on('GET', `/api/workspaces/${OLD}`, json({ workspace: workspaceFixture(OLD) }))
+    host.on('POST', '/api/workspaces', json({ workspace: withPlanning(NEW, 'ready') }, 201))
+    workspaceRoutes(host, NEW, [descriptor(NEW)])
+    host.on('POST', invokePath(NEW), runOf(NEW))
+
+    expect(await launchDemo({ demo: KEY }, ports)).toMatchObject({ workspace: { id: NEW }, created: true,
+      notice: 'Grid study has no Planning. Starting this demo in a new Workspace.' })
+    expect(paths()).not.toContain(`POST ${invokePath(OLD)}`)
+  })
+
+  test('a demo requiring Planning waits to start when its provisioning failed', async () => {
+    const { host, memory, ports, paths } = setup()
+    memory.remember(OLD, 'picked')
+    host.on('GET', '/api/featured-definitions', json(catalogue([{ ...featured(), requiresModules: [moduleIdSchema.parse('planning')] }])))
+    host.on('GET', `/api/workspaces/${OLD}`, json({ workspace: withPlanning(OLD, 'provision_failed') }))
+
+    const error = await failure(launchDemo({ demo: KEY }, ports))
+
+    expect(error).toMatchObject({ kind: 'workspace-not-ready', cause: { moduleId: 'planning' }, invoked: false })
+    expect(launchFailureView(error)).toEqual({ text: 'Planning is not ready in Grid study.', actions: ['retry-module', 'open'] })
+    expect(paths().some(path => path.startsWith('POST'))).toBe(false)
+  })
+
+  test('a listed planning example keeps its module requirements after leaving the carousel', async () => {
+    const { host, memory, ports, paths } = setup()
+    memory.remember(OLD, 'picked')
+    const scenario = { ...listedItem(), requiresModules: [moduleIdSchema.parse('planning')] }
+    host.on('GET', '/api/featured-definitions', json(catalogue([], 'ready', [scenario])))
+    host.on('GET', `/api/workspaces/${OLD}`, json({ workspace: workspaceFixture(OLD) }))
+    host.on('POST', '/api/workspaces', json({ workspace: withPlanning(NEW, 'ready') }, 201))
+    workspaceRoutes(host, NEW, [descriptor(NEW, LISTED_REVISION, scenario.definition.id)])
+    host.on('POST', invokePath(NEW), runOf(NEW))
+    expect(await launchDemo({ demo: SCENARIO_KEY }, ports)).toMatchObject({ workspace: { id: NEW }, created: true })
+    expect(paths()).not.toContain(`POST ${invokePath(OLD)}`)
+  })
+
   test('starts in the remembered Workspace through its own Definition and primary Capability, then remembers it', async () => {
     const { host, memory, ports, steps, paths } = setup()
     memory.remember(OLD, 'picked')
@@ -123,7 +170,7 @@ describe('Start demo: the target Workspace', () => {
     ])
     expect(host.calls.at(-1)?.body).toEqual({
       definition: { workspaceId: OLD, moduleId: 'world', type: 'world.scenario', id: 'halden-offsite-power-restoration', revisionId: FEATURED_REVISION },
-      input: {}, actor: { kind: 'human' },
+      input: { playback: 'playing' }, actor: { kind: 'human' },
     })
     expect(steps.map(step => step.kind)).toEqual(['checking', 'using-workspace', 'starting', 'opening'])
     expect(memory.remembered()).toBe(OLD)
@@ -477,7 +524,7 @@ describe('Start a listed scenario (More scenarios): the same flow', () => {
     ])
     expect(host.calls.at(-1)?.body).toEqual({
       definition: { workspaceId: OLD, moduleId: 'world', type: 'world.scenario', id: 'halden-normal-operation', revisionId: LISTED_REVISION },
-      input: {}, actor: { kind: 'human' },
+      input: { playback: 'playing' }, actor: { kind: 'human' },
     })
     expect(steps.map(step => step.kind)).toEqual(['checking', 'using-workspace', 'starting', 'opening'])
     expect(memory.remembered()).toBe(OLD)

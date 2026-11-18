@@ -12,6 +12,7 @@ import {
   workspaceResourceCatalogSchema,
   workspaceSchema,
 } from '@leitbild/contracts'
+import { simulationRunIdSchema } from '../../../apps/world/src/core/model/index.ts'
 import { createServer as createWorldServer } from '../../../apps/world/src/core/api/server.ts'
 import { createWorldModuleState } from '../../../apps/world/src/core/workspaces/module-state.ts'
 import { createWorldWorkspaceRuntimeRegistry } from '../../../apps/world/src/core/workspaces/runtime-registry.ts'
@@ -31,6 +32,7 @@ import { createDeploymentRuntime } from '../../../apps/agents/src/core/deploymen
 import { messageFocus } from '../../../apps/agents/src/core/message-focus.ts'
 import { createGetTimeTool, createPlaceResolveTool, createProductKnowledgeTools, createSampleChangesTool } from '../../../apps/agents/src/tools/built-in/index.ts'
 import { createAgentsModuleState } from '../../../apps/agents/src/core/workspaces/module-state.ts'
+import { loadSkills } from '../../../apps/agents/src/skills/loader.ts'
 import {
   createWorkspaceRuntimeRegistry as createAgentsWorkspaceRuntimeRegistry,
   type WorkspaceRuntimeRegistry as AgentsWorkspaceRuntimeRegistry,
@@ -133,18 +135,7 @@ describe('Workspace Host with real Modules', () => {
     const baseUrl = `http://127.0.0.1:${hostServer.port}`
 
     const deployment = createDeploymentRuntime()
-    deployment.sharedSkillStore.register({
-      name: 'leitbild-assistance', description: 'Test Assistant Skill', body: 'Use Workspace discovery.',
-      tools: [], allowedToolNames: [], dirPath: leitbildHome,
-    })
-    deployment.sharedSkillStore.register({
-      name: 'operator-displays', description: 'Test display Skill', body: 'Compose displays when useful.',
-      tools: [], allowedToolNames: [], dirPath: leitbildHome,
-    })
-    deployment.sharedSkillStore.register({
-      name: 'procedure-runner', description: 'Test procedure Skill', body: 'Step through procedures.',
-      tools: [], allowedToolNames: [], dirPath: leitbildHome,
-    })
+    await loadSkills(join(import.meta.dir, '../../../apps/agents/skills'), deployment.sharedSkillStore, deployment.sharedToolRegistry)
     deployment.sharedToolRegistry.registerAll(createProductKnowledgeTools())
     deployment.sharedToolRegistry.register(createPlaceResolveTool())
     deployment.sharedToolRegistry.register(createSampleChangesTool())
@@ -175,8 +166,10 @@ describe('Workspace Host with real Modules', () => {
     const capabilityIds = new Set((await capabilityCatalogResponse.json() as {
       capabilities: Array<{ id: string }>
     }).capabilities.map(capability => capability.id))
-    expect(BUNDLED_ROOM_DEFINITIONS.map(definition => definition.id)).toEqual(['leitbild-assistant'])
-    expect(BUNDLED_ROOM_DEFINITIONS[0]?.room.agents[0]).not.toHaveProperty('toolGrants')
+    expect(BUNDLED_ROOM_DEFINITIONS.map(definition => definition.id)).toEqual(['engineering-research', 'leitbild-assistant'])
+    for (const definition of BUNDLED_ROOM_DEFINITIONS) {
+      for (const agent of definition.room.agents) expect(agent).not.toHaveProperty('toolGrants')
+    }
     expect(capabilityIds).toContain('agents.assistance.open')
     expect([...capabilityIds].filter(id => id.startsWith('world.perspective.') || id.startsWith('agents.perspective-room.'))).toEqual([])
 
@@ -191,7 +184,7 @@ describe('Workspace Host with real Modules', () => {
     const scenario = (await definitionCatalog.json() as {
       definitions: Array<{ ref: Record<string, string>; currentRevisionId: string }>
     }).definitions.find(
-      (definition) => definition.ref.type === 'world.scenario' && definition.ref.id === 'halden-weather-response',
+      (definition) => definition.ref.type === 'world.scenario' && definition.ref.id === 'halden-power-complex',
     )!
     const createRunResponse = await fetch(
       `${baseUrl}/api/workspaces/${workspace.id}/capabilities/world.scenario.start/invoke`,
@@ -227,8 +220,9 @@ describe('Workspace Host with real Modules', () => {
         actor: { kind: 'human', id: 'operator', displayName: 'Operator' },
       }),
     })
-    expect(assistanceResponse.status).toBe(200)
-    const runAssistantRef = (await assistanceResponse.json() as { result: { resource: { id: string } } }).result.resource
+    const assistanceBody: unknown = await assistanceResponse.json()
+    if (assistanceResponse.status !== 200) throw new Error(`Expected HTTP 200, received ${assistanceResponse.status}: ${JSON.stringify(assistanceBody)}`)
+    const runAssistantRef = (assistanceBody as { result: { resource: { id: string } } }).result.resource
     const runAssistantRoom = agentsRuntime.rooms.getRoom(runAssistantRef.id)!
     const assistant = runAssistantRoom.getParticipantIds().map(id => agentsRuntime.team.getAgent(id)).find(agent => agent?.kind === 'ai')!
     expect(runAssistantRoom.getParticipantIds()).toHaveLength(2)
@@ -244,7 +238,7 @@ describe('Workspace Host with real Modules', () => {
     // without mutating the Room or synchronizing a second family store.
     const copyResponse = await fetch(`${baseUrl}/api/workspaces/${workspace.id}/capabilities/world.simulation-run.copy/invoke`, {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ resource: worldRun.ref, input: { name: 'Weather response · what-if' } }),
+      body: JSON.stringify({ resource: worldRun.ref, input: { name: 'Power complex · what-if' } }),
     })
     expect(copyResponse.status).toBe(200)
     const copyId = (await copyResponse.json() as { result: { id: string } }).result.id
@@ -270,11 +264,11 @@ describe('Workspace Host with real Modules', () => {
     }, runAssistantContext)).toMatchObject({ success: true, data: { results: [{ key: 'copy-context', success: false, error: expect.stringContaining('target_out_of_scope') }] } })
     expect((await setScope({ mode: 'all', except: [] }, 1)).status).toBe(200)
     expect(await agentsRuntime.toolRegistry.get('workspace_call')!.execute({
-      calls: [{ key: 'dispatch', operationId: 'world.ambulance.dispatch-state', target: { kind: 'resource', ref: worldRun.ref }, input: {} }],
-    }, runAssistantContext)).toMatchObject({ success: true, data: { results: [{ key: 'dispatch', success: true }] } })
+      calls: [{ key: 'describe', operationId: 'world.weather.describe', target: { kind: 'resource', ref: worldRun.ref }, input: {} }],
+    }, runAssistantContext)).toMatchObject({ success: true, data: { results: [{ key: 'describe', success: true }] } })
     expect(await agentsRuntime.toolRegistry.get('workspace_call')!.execute({
-      calls: [{ key: 'cancel', operationId: 'world.ambulance.cancel', target: { kind: 'resource', ref: worldRun.ref }, input: { unitId: 'amb:weather-response' } }],
-    }, runAssistantContext)).toMatchObject({ success: true, data: { results: [{ key: 'cancel', success: true }] } })
+      calls: [{ key: 'enable', operationId: 'world.weather.set-enabled', target: { kind: 'resource', ref: worldRun.ref }, input: { objectId: 'weather:halden-complex', enabled: true } }],
+    }, runAssistantContext)).toMatchObject({ success: true, data: { results: [{ key: 'enable', success: true }] } })
 
     const restrictDelete = await fetch(`${baseUrl}/api/workspaces/${workspace.id}/capabilities/world.simulation-run.agent-restrictions.set/invoke`, {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
@@ -312,11 +306,15 @@ describe('Workspace Host with real Modules', () => {
     const generalAssistantAI = asAIAgent(generalAssistant)!
     // A fresh Assistant has no task-total round quota; retained explicit settings are tested by the Module API suite.
     expect(generalAssistantAI.getMaxToolIterations()).toBeUndefined()
+    expect(generalAssistantAI.getSkills()).toEqual(expect.arrayContaining(['engineering-advice', 'planning-advice']))
     expect(effectiveAgentToolSelection(generalAssistantAI.getConfig())).toEqual(expect.arrayContaining([
       'product_search',
       'product_read',
       'place_resolve',
       'sample_changes',
+      'engineering_describe',
+      'engineering_calculate',
+      'engineering_run',
       'workspace_explore',
       'workspace_call',
     ]))
@@ -325,6 +323,9 @@ describe('Workspace Host with real Modules', () => {
     expect(refreshedSurface).not.toHaveProperty('error')
     expect('tools' in refreshedSurface ? refreshedSurface.tools.map(tool => tool.name) : []).toEqual(expect.arrayContaining([
       'sample_changes',
+      'engineering_describe',
+      'engineering_calculate',
+      'engineering_run',
       'workspace_explore',
       'workspace_call',
     ]))
@@ -375,25 +376,8 @@ describe('Workspace Host with real Modules', () => {
     expect(read.success).toBe(true)
     expect((read.data as { id: string }).id).toBe(runId)
 
-    // Real Agent tool → Host broker → World command, without any model call or
-    // stored Run ID in the profile. Discover IDs, check eligibility, act, verify.
-    const initialDispatch = await invokeOne({ operationId: 'world.ambulance.dispatch-state', target: currentRun.target, input: {} })
-    expect(initialDispatch.success).toBe(true)
-    const dispatchState = initialDispatch.data as { units: Array<{ id: string }>; incidents: Array<{ id: string }>; patients: Array<{ id: string; incidentId: string }>; careSites: Array<{ id: string }> }
-    const unitId = dispatchState.units[0]!.id
-    const incidentId = dispatchState.incidents[0]!.id
-    const patientIds = dispatchState.patients.filter(patient => patient.incidentId === incidentId).map(patient => patient.id)
-    const cancel = await invokeOne({ operationId: 'world.ambulance.cancel', target: currentRun.target, input: { unitId } })
-    expect(cancel).toMatchObject({ success: true, data: { ok: true } })
-    const options = await invokeOne({ operationId: 'world.ambulance.dispatch-options', target: currentRun.target, input: { action: 'assign', incidentId, patientIds } })
-    expect(options).toMatchObject({ success: true, data: { candidates: expect.arrayContaining([expect.objectContaining({ id: unitId, eligible: true })]) } })
-    const dispatched = await invokeOne({ operationId: 'world.ambulance.assign', target: currentRun.target, input: { unitId, incidentId, patientIds } })
-    expect(dispatched).toMatchObject({ success: true, data: { ok: true } })
-    const planned = await invokeOne({ operationId: 'world.ambulance.append-stop', target: currentRun.target, input: { kind: 'handover', unitId, careSiteId: dispatchState.careSites[0]!.id, patientIds } })
-    expect(planned).toMatchObject({ success: true, data: { ok: true } })
-    const afterDispatch = await invokeOne({ operationId: 'world.ambulance.dispatch-state', target: currentRun.target, input: {} })
-    expect(afterDispatch).toMatchObject({ success: true, data: { units: expect.arrayContaining([expect.objectContaining({ id: unitId, patientIds, phase: 'mobilizing', stops: expect.arrayContaining([expect.objectContaining({ kind: 'pickup', targetId: incidentId })]) })]) } })
-
+    // Real Agent tool → Host broker → World query and command, without any
+    // model call or stored Run ID in the profile.
     const weatherPoint = { type: 'Point', coordinates: [11.41, 59.13] }
     const weatherRead = await invokeOne(
       { operationId: 'world.weather.sample-at-point', target: currentRun.target, input: { point: weatherPoint } },
@@ -464,17 +448,18 @@ describe('Workspace Host with real Modules', () => {
     expect(taskId).toBeDefined()
     expect(otherTaskId).toBeDefined()
     const recommended = await onSupplyRun('world.einsatz.recommend', { taskId })
-    expect(recommended).toMatchObject({ success: true, data: { taskId, proposal: { covers: true } } })
-    const proposal = (recommended.data as { proposal: { units: Array<{ unitId: string }> } }).proposal.units.map(unit => unit.unitId)
+    expect(recommended).toMatchObject({ success: true, data: { taskId, proposal: { covers: { covered: 1, needed: 1 } } } })
+    const order = (recommended.data as { proposal: { order: { units: string[]; stops: unknown[] } } }).proposal.order
+    const proposal = order.units
     expect(proposal.length).toBeGreaterThan(0)
-    expect(await onSupplyRun('world.einsatz.unit.send', { units: proposal, to: { taskId } })).toMatchObject({ success: true, data: { ok: true } })
-    expect(await onSupplyRun('world.einsatz.recommend', { taskId })).toMatchObject({ success: true, data: { taskId, need: null } })
+    expect(await onSupplyRun('world.einsatz.unit.order', order)).toMatchObject({ success: true, data: { ok: true } })
+    expect(await onSupplyRun('world.einsatz.recommend', { taskId })).toMatchObject({ success: true, data: { taskId, proposal: null } })
     const sentUnit = (await onSupplyRun('world.simulation-run.objects.search', { packId: 'einsatz', text: proposal[0] })).data as { objects: Array<{ id: string; status: string }> }
     const committedUnit = sentUnit.objects.find(object => object.id === proposal[0])
     expect(committedUnit).toBeDefined()
     expect(['mobilizing', 'en-route']).toContain(committedUnit!.status)
-    expect(await onSupplyRun('world.einsatz.unit.send', { units: proposal, to: { taskId: otherTaskId } }))
-      .toMatchObject({ success: false, error: expect.stringContaining('unit_committed:') })
+    expect(await onSupplyRun('world.einsatz.unit.order', { units: proposal, stops: [{ taskId: otherTaskId }] }))
+      .toMatchObject({ success: false, error: expect.stringContaining('when_required:') })
 
     // Human role exercises remain available; the ordinary AI path must still
     // refuse them rather than silently acquiring another side's picture.
@@ -518,7 +503,7 @@ describe('Workspace Host with real Modules', () => {
     expect((await fetch(`${baseUrl}/api/workspaces/${workspace.id}`, { method: 'DELETE' })).status).toBe(204)
     expect(await worldRegistry.list()).toEqual([])
     expect(await leitbildState.has(workspaceIdSchema.parse(workspace.id))).toBe(false)
-  })
+  }, 30_000)
 
   test('starts every featured demo and listed scenario in a new Workspace through that Workspace\'s own Definition and primary Capability', async () => {
     const dataDir = await mkdtemp(join(tmpdir(), 'workspace-featured-world-'))
@@ -624,12 +609,21 @@ describe('Workspace Host with real Modules', () => {
       const invoked = await fetch(`${baseUrl}/api/workspaces/${workspace.id}/capabilities/${primary!.id}/invoke`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ definition: { ...descriptor!.ref, revisionId: featured.revisionId }, input: {}, actor: { kind: 'human' } }),
+        body: JSON.stringify({ definition: { ...descriptor!.ref, revisionId: featured.revisionId }, input: { playback: 'playing' }, actor: { kind: 'human' } }),
       })
       expect(invoked.status).toBe(200)
       const runId = (await invoked.json() as { result: { id: string } }).result.id
 
-      // 5. The Run exists in that Workspace.
+      // 5. The Run plays immediately or as soon as its first player takes a role.
+      const { simulationRuns: registry } = await worldRegistry.getOrLoad(workspace.id)
+      const runtime = await registry.load(simulationRunIdSchema.parse(runId))
+      if (registry.loadedCompiledScenario(runtime.id).roles?.length) {
+        expect(runtime.snapshot().clock?.paused).toBe(true)
+        await registry.screenJoined(runtime.id)
+      }
+      expect(runtime.snapshot().clock?.paused, featured.definition.id).toBe(false)
+
+      // 6. The Run exists in that Workspace.
       const resources = workspaceResourceCatalogSchema.parse(await (await fetch(`${baseUrl}/api/workspaces/${workspace.id}/resources?moduleId=${moduleId}`)).json())
       expect(resources.resources.some(resource => resource.ref.type === 'world.simulation-run' && resource.ref.id === runId)).toBe(true)
     }
@@ -717,7 +711,7 @@ describe('Workspace Host with real Modules', () => {
     // A Run starts through the scenario's own published primary Capability.
     const definitions = workspaceDefinitionCatalogSchema.parse(await (await fetch(`${baseUrl}/api/workspaces/${workspace.id}/definitions?moduleId=world`)).json())
     const capabilities = workspaceCapabilityCatalogSchema.parse(await (await fetch(`${baseUrl}/api/workspaces/${workspace.id}/capabilities?moduleId=world`)).json())
-    const scenario = definitions.definitions.find(definition => definition.ref.type === 'world.scenario' && definition.ref.id === 'halden-weather-response')!
+    const scenario = definitions.definitions.find(definition => definition.ref.type === 'world.scenario' && definition.ref.id === 'supply-run')!
     const start = cardCapability(scenario, 'primary', capabilities.capabilities)!
     const started = await fetch(`${baseUrl}/api/workspaces/${workspace.id}/capabilities/${start.id}/invoke`, {
       method: 'POST',

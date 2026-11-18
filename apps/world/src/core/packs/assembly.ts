@@ -25,7 +25,6 @@ const declaredContributionIds = (pack: WorldPack): ReadonlyArray<string> => [
   'presentation',
   ...(pack.creation ? ['creation'] : []),
   ...(pack.targeting ? ['targeting'] : []),
-  ...(pack.mapAssignment ? ['map-assignment'] : []),
   ...(pack.interactions ? ['interactions'] : []),
   ...(pack.observation ? ['observation'] : []),
 ]

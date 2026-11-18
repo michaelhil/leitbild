@@ -11,6 +11,7 @@ import { handleAgentsModuleApi } from '../../../apps/agents/src/api/workspace-mo
 import { makeStubGateway, makeStubSetup, stubProviderConfig } from '../../../apps/agents/src/api/__fixtures__/stub-gateway.ts'
 import { createDeploymentRuntime } from '../../../apps/agents/src/core/deployment-runtime.ts'
 import { createAgentsModuleState } from '../../../apps/agents/src/core/workspaces/module-state.ts'
+import { loadSkills } from '../../../apps/agents/src/skills/loader.ts'
 import { createPlaceResolveTool, createProductKnowledgeTools, createSampleChangesTool } from '../../../apps/agents/src/tools/built-in/index.ts'
 import { PROPOSAL_RESUME_CAUSE } from '../../../apps/agents/src/core/proposal-resume.ts'
 import type { AIAgent } from '../../../apps/agents/src/core/types/agent.ts'
@@ -30,8 +31,9 @@ afterEach(async () => {
 })
 
 const json = async <T>(response: Response): Promise<T> => {
-  expect(response.status).toBe(200)
-  return await response.json() as T
+  const body: unknown = await response.json()
+  if (response.status !== 200) throw new Error(`Expected HTTP 200, received ${response.status}: ${JSON.stringify(body)}`)
+  return body as T
 }
 
 const until = async <T>(read: () => T | undefined, timeoutMs: number): Promise<T> => {
@@ -117,9 +119,7 @@ describe('an approved proposal resumes the procedure with real Modules', () => {
       },
     }
     const deployment = createDeploymentRuntime({ providerConfig: stubProviderConfig, providerSetup: makeStubSetup(gateway) })
-    for (const name of ['leitbild-assistance', 'operator-displays', 'procedure-runner']) {
-      deployment.sharedSkillStore.register({ name, description: `Test ${name}`, body: 'Test skill.', tools: [], allowedToolNames: [], dirPath: leitbildHome })
-    }
+    await loadSkills(join(import.meta.dir, '../../../apps/agents/skills'), deployment.sharedSkillStore, deployment.sharedToolRegistry)
     deployment.sharedToolRegistry.registerAll(createProductKnowledgeTools())
     deployment.sharedToolRegistry.register(createPlaceResolveTool())
     deployment.sharedToolRegistry.register(createSampleChangesTool())

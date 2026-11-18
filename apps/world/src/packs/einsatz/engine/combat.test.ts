@@ -210,7 +210,7 @@ describe('Einsatz engagement', () => {
       place('r1', types.redGun, red, at(1_000)),
       place('b1', types.blueGun, blue, at(-3_000)),
     ])
-    state = await run(state, { kind: 'send', units: ['b1'], to: { point: at(300) } })
+    state = await run(state, { kind: 'order', units: ['b1'], stops: [{ point: at(300) }] })
     const seen: Transition[] = []
     let damagedAt: number | undefined
     for (let seconds = 2; damagedAt === undefined; seconds += 2) {
@@ -231,7 +231,7 @@ describe('Einsatz engagement', () => {
     expect(created[0]!.record.point).toEqual(lostAt.point)
     // A movement order given after the step loss stands in for withdrawing.
     state = removeRecords(state, new Set(['r1'])).state
-    state = await run(state, { kind: 'send', units: ['b1'], to: { point: at(200) } })
+    state = await run(state, { kind: 'order', units: ['b1'], stops: [{ point: at(200) }] })
     state = (await advanceTo(state, (state.timeMs - start) / 1_000 + 120)).state
     expect(unit(state, 'b1')).toMatchObject({ phase: 'holding', integrity: 'damaged', lastAction: { verb: 'move', by: 'Controller' } })
   })

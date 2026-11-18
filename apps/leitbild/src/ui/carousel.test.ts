@@ -30,7 +30,7 @@ const fakeScheduler = (): CarouselScheduler & { advance(ms: number): void; pendi
   }
 }
 
-const carousel = (options: { count?: number; startStopped?: boolean; initialIndex?: number } = {}) => {
+const carousel = (options: { count?: number; startStopped?: boolean; initialIndex?: number; navigationStops?: boolean } = {}) => {
   const scheduler = fakeScheduler()
   const controller = createCarousel({ count: options.count ?? 6, scheduler, ...options })
   return { scheduler, controller }
@@ -117,6 +117,52 @@ describe('carousel rotation', () => {
     expect(controller.snapshot()).toMatchObject({ index: 1, stopped: true })
     scheduler.advance(20000)
     expect(controller.snapshot().index).toBe(1)
+  })
+
+  test('with navigationStops (the Demos modal), a tap or click on a dot or thumbnail keeps the picked slide until Play', () => {
+    const { scheduler, controller } = carousel({ count: 3, navigationStops: true })
+    scheduler.advance(4000)
+    controller.pick(2, 'pointer')
+    expect(controller.snapshot()).toMatchObject({ index: 2, stopped: true, rotating: false, live: 'polite' })
+    // walkthrough F2: Start tapped 10–14 s after the pick must still find the picked demo
+    scheduler.advance(60000)
+    expect(controller.snapshot().index).toBe(2)
+    expect(scheduler.pending()).toBe(0)
+    controller.pick(0, 'pointer')
+    scheduler.advance(60000)
+    expect(controller.snapshot()).toMatchObject({ index: 0, stopped: true })
+    controller.play()
+    scheduler.advance(5000)
+    expect(controller.snapshot()).toMatchObject({ index: 1, stopped: false })
+  })
+
+  test('with navigationStops, Next or Previous by tap or click (and so a swipe) stops rotation and holds the slide', () => {
+    const { scheduler, controller } = carousel({ count: 3, navigationStops: true })
+    scheduler.advance(4000)
+    controller.next('pointer')
+    expect(controller.snapshot()).toMatchObject({ index: 1, stopped: true, rotating: false, live: 'polite' })
+    // walkthrough F2 on iPad portrait (dots only): Next, Next, read 10 s, Start must find the demo on screen
+    controller.next('pointer')
+    scheduler.advance(60000)
+    expect(controller.snapshot()).toMatchObject({ index: 2, stopped: true })
+    expect(scheduler.pending()).toBe(0)
+    controller.previous('pointer')
+    scheduler.advance(60000)
+    expect(controller.snapshot()).toMatchObject({ index: 1, stopped: true })
+    controller.play()
+    scheduler.advance(5000)
+    expect(controller.snapshot()).toMatchObject({ index: 2, stopped: false })
+  })
+
+  test('without navigationStops, a pointer pick restarts the full 5 s and keeps rotating', () => {
+    const { scheduler, controller } = carousel({ count: 3 })
+    scheduler.advance(4000)
+    controller.pick(2, 'pointer')
+    expect(controller.snapshot()).toMatchObject({ index: 2, stopped: false, rotating: true })
+    scheduler.advance(5000)
+    expect(controller.snapshot().index).toBe(0)
+    controller.pick(1, 'keyboard')
+    expect(controller.snapshot()).toMatchObject({ index: 1, stopped: true })
   })
 
   test('pointer navigation on a stopped carousel leaves it stopped', () => {

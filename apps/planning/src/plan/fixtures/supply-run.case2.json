@@ -1,0 +1,494 @@
+{
+  "settings": {
+    "title": "Supply run",
+    "purpose": "Serve the first urgent and routine requests on target with eligible trucks, keeping one heavy truck free.",
+    "timeZone": "Europe/Oslo",
+    "window": {
+      "start": "2026-09-03T08:00:00Z",
+      "end": "2026-09-03T08:30:00Z"
+    },
+    "dataDate": "2026-09-03T08:00:00Z",
+    "grid": "30s",
+    "currency": "NOK",
+    "run": null,
+    "scenario": {
+      "id": "supply-run",
+      "title": "Supply run"
+    }
+  },
+  "equipment": [],
+  "groups": [],
+  "calendars": [
+    {
+      "key": "exercise",
+      "label": "On duty for the whole exercise",
+      "weekly": [],
+      "periods": [
+        {
+          "start": "2026-09-03T08:00:00Z",
+          "end": "2026-09-03T08:30:00Z"
+        }
+      ],
+      "except": [],
+      "source": {
+        "by": "planner",
+        "note": "Trucks present at the Scenario start are available for the whole 30-minute exercise."
+      }
+    },
+    {
+      "key": "joins-0802",
+      "label": "Joins Thu 10:02 (Truck 2)",
+      "weekly": [],
+      "periods": [
+        {
+          "start": "2026-09-03T08:02:00Z",
+          "end": "2026-09-03T08:30:00Z"
+        }
+      ],
+      "except": [],
+      "source": {
+        "by": "assumption",
+        "note": "Announced in the exercise: a 1,000 kg truck joins at Brekke depot at Thu 10:02."
+      }
+    },
+    {
+      "key": "joins-08053",
+      "label": "Joins Thu 10:05:30 (Truck 5)",
+      "weekly": [],
+      "periods": [
+        {
+          "start": "2026-09-03T08:05:30Z",
+          "end": "2026-09-03T08:30:00Z"
+        }
+      ],
+      "except": [],
+      "source": {
+        "by": "assumption",
+        "note": "Announced in the exercise: a hired 700 kg truck joins at Brekke depot at Thu 10:05:30."
+      }
+    }
+  ],
+  "resources": [
+    {
+      "key": "truck-1",
+      "label": "Truck 1",
+      "kind": "tool",
+      "count": 1,
+      "calendar": "exercise",
+      "maxJobs": 1,
+      "attributes": [
+        {
+          "key": "payloadKg",
+          "label": "Payload",
+          "value": null,
+          "unit": "kg",
+          "changes": [
+            {
+              "at": "2026-09-03T08:03:00Z",
+              "value": 600
+            }
+          ],
+          "origin": {
+            "by": "world",
+            "refs": [
+              {
+                "locator": "einsatz/unit/unit%3Atruck-1",
+                "fact": "unit:truck-1/property/payloadKg"
+              }
+            ]
+          }
+        }
+      ],
+      "words": "At Brekke depot. Upgraded to 600 kg at Thu 10:03 (announced: second axle fitted).",
+      "locator": "einsatz/unit/unit%3Atruck-1",
+      "source": {
+        "by": "planner",
+        "note": "Picked from the World list at the start read; its payload and times come from World."
+      }
+    },
+    {
+      "key": "truck-3",
+      "label": "Truck 3",
+      "kind": "tool",
+      "count": 1,
+      "calendar": "exercise",
+      "maxJobs": 1,
+      "attributes": [
+        {
+          "key": "payloadKg",
+          "label": "Payload",
+          "value": null,
+          "unit": "kg",
+          "changes": [],
+          "origin": {
+            "by": "world",
+            "refs": [
+              {
+                "locator": "einsatz/unit/unit%3Atruck-3",
+                "fact": "unit:truck-3/property/payloadKg"
+              }
+            ]
+          }
+        }
+      ],
+      "words": "At Tosterød depot.",
+      "locator": "einsatz/unit/unit%3Atruck-3",
+      "source": {
+        "by": "planner",
+        "note": "Picked from the World list at the start read; its payload and times come from World."
+      }
+    },
+    {
+      "key": "truck-4",
+      "label": "Truck 4",
+      "kind": "tool",
+      "count": 1,
+      "calendar": "exercise",
+      "maxJobs": 1,
+      "attributes": [
+        {
+          "key": "payloadKg",
+          "label": "Payload",
+          "value": null,
+          "unit": "kg",
+          "changes": [],
+          "origin": {
+            "by": "world",
+            "refs": [
+              {
+                "locator": "einsatz/unit/unit%3Atruck-4",
+                "fact": "unit:truck-4/property/payloadKg"
+              }
+            ]
+          }
+        }
+      ],
+      "words": "At Tosterød depot. One of the two heavy trucks.",
+      "locator": "einsatz/unit/unit%3Atruck-4",
+      "source": {
+        "by": "planner",
+        "note": "Picked from the World list at the start read; its payload and times come from World."
+      }
+    },
+    {
+      "key": "truck-2",
+      "label": "Truck 2",
+      "kind": "tool",
+      "count": 1,
+      "calendar": "joins-0802",
+      "maxJobs": 1,
+      "attributes": [
+        {
+          "key": "payloadKg",
+          "label": "Payload",
+          "value": 1000,
+          "unit": "kg",
+          "changes": [],
+          "origin": {
+            "by": "assumption",
+            "note": "Announced in the Scenario: the joining truck carries 1,000 kg."
+          }
+        }
+      ],
+      "words": "Joins at Brekke depot at Thu 10:02; not in the simulation at the start (Thu 10:00). Its travel times are taken from Truck 1's World estimates: both start at Brekke depot, same truck type.",
+      "source": {
+        "by": "assumption",
+        "note": "Announced join at Thu 10:02."
+      }
+    },
+    {
+      "key": "truck-5",
+      "label": "Truck 5 (hired)",
+      "kind": "tool",
+      "count": 1,
+      "calendar": "joins-08053",
+      "maxJobs": 1,
+      "attributes": [
+        {
+          "key": "payloadKg",
+          "label": "Payload",
+          "value": 700,
+          "unit": "kg",
+          "changes": [],
+          "origin": {
+            "by": "assumption",
+            "note": "Announced in the Scenario: the hired truck carries 700 kg."
+          }
+        }
+      ],
+      "words": "Hired; joins at Brekke depot at Thu 10:05:30; not in the simulation at the start (Thu 10:00). Its travel times are taken from Truck 1's World estimates (same start point, same truck type).",
+      "source": {
+        "by": "assumption",
+        "note": "Announced join at Thu 10:05:30."
+      }
+    }
+  ],
+  "purchases": [],
+  "methods": [],
+  "jobs": [
+    {
+      "key": "U-1",
+      "title": "Serve U-1 Sports hall water tank",
+      "kind": "work",
+      "equipment": [],
+      "isolation": "none",
+      "duration": {
+        "value": null,
+        "unit": "s",
+        "calendar": "elapsed",
+        "origin": {
+          "by": "world",
+          "refs": [
+            {
+              "locator": "einsatz/unit/unit%3Atruck-4",
+              "fact": "unit:truck-4/arrival-seconds/task:sports-hall-tank"
+            },
+            {
+              "locator": "einsatz/unit/unit%3Atruck-4",
+              "fact": "unit:truck-4/service-seconds"
+            }
+          ]
+        }
+      },
+      "durationWith": [
+        {
+          "resource": "truck-4",
+          "refs": [
+            {
+              "locator": "einsatz/unit/unit%3Atruck-4",
+              "fact": "unit:truck-4/arrival-seconds/task:sports-hall-tank"
+            },
+            {
+              "locator": "einsatz/unit/unit%3Atruck-4",
+              "fact": "unit:truck-4/service-seconds"
+            }
+          ]
+        },
+        {
+          "resource": "truck-2",
+          "refs": [
+            {
+              "locator": "einsatz/unit/unit%3Atruck-1",
+              "fact": "unit:truck-1/arrival-seconds/task:sports-hall-tank"
+            },
+            {
+              "locator": "einsatz/unit/unit%3Atruck-1",
+              "fact": "unit:truck-1/service-seconds"
+            }
+          ],
+          "source": {
+            "by": "assumption",
+            "note": "Truck 1's World estimate used: same Brekke start, same truck type."
+          }
+        }
+      ],
+      "needs": [
+        {
+          "anyOf": [
+            "truck-1",
+            "truck-2",
+            "truck-3",
+            "truck-4",
+            "truck-5"
+          ],
+          "amount": 1,
+          "where": {
+            "attribute": "payloadKg",
+            "atLeast": 1000,
+            "unit": "kg"
+          },
+          "handover": false
+        }
+      ],
+      "continuous": true,
+      "target": {
+        "finishBy": "2026-09-03T08:07:00Z",
+        "words": "Reach within 4 minutes of the request, then 3 minutes unloading (World on-scene time): finish by Thu 10:07."
+      },
+      "checks": [],
+      "tags": [
+        "bulk"
+      ],
+      "locator": "einsatz/task/task%3Asports-hall-tank"
+    },
+    {
+      "key": "R-1",
+      "title": "Serve R-1 Field kitchen",
+      "kind": "work",
+      "equipment": [],
+      "isolation": "none",
+      "duration": {
+        "value": null,
+        "unit": "s",
+        "calendar": "elapsed",
+        "origin": {
+          "by": "world",
+          "refs": [
+            {
+              "locator": "einsatz/unit/unit%3Atruck-3",
+              "fact": "unit:truck-3/arrival-seconds/task:field-kitchen"
+            },
+            {
+              "locator": "einsatz/unit/unit%3Atruck-3",
+              "fact": "unit:truck-3/service-seconds"
+            }
+          ]
+        }
+      },
+      "durationWith": [
+        {
+          "resource": "truck-3",
+          "refs": [
+            {
+              "locator": "einsatz/unit/unit%3Atruck-3",
+              "fact": "unit:truck-3/arrival-seconds/task:field-kitchen"
+            },
+            {
+              "locator": "einsatz/unit/unit%3Atruck-3",
+              "fact": "unit:truck-3/service-seconds"
+            }
+          ]
+        },
+        {
+          "resource": "truck-4",
+          "refs": [
+            {
+              "locator": "einsatz/unit/unit%3Atruck-4",
+              "fact": "unit:truck-4/arrival-seconds/task:field-kitchen"
+            },
+            {
+              "locator": "einsatz/unit/unit%3Atruck-4",
+              "fact": "unit:truck-4/service-seconds"
+            }
+          ]
+        },
+        {
+          "resource": "truck-1",
+          "refs": [
+            {
+              "locator": "einsatz/unit/unit%3Atruck-1",
+              "fact": "unit:truck-1/arrival-seconds/task:field-kitchen"
+            },
+            {
+              "locator": "einsatz/unit/unit%3Atruck-1",
+              "fact": "unit:truck-1/service-seconds"
+            }
+          ]
+        },
+        {
+          "resource": "truck-2",
+          "refs": [
+            {
+              "locator": "einsatz/unit/unit%3Atruck-1",
+              "fact": "unit:truck-1/arrival-seconds/task:field-kitchen"
+            },
+            {
+              "locator": "einsatz/unit/unit%3Atruck-1",
+              "fact": "unit:truck-1/service-seconds"
+            }
+          ],
+          "source": {
+            "by": "assumption",
+            "note": "Truck 1's World estimate used: same Brekke start, same truck type."
+          }
+        },
+        {
+          "resource": "truck-5",
+          "refs": [
+            {
+              "locator": "einsatz/unit/unit%3Atruck-1",
+              "fact": "unit:truck-1/arrival-seconds/task:field-kitchen"
+            },
+            {
+              "locator": "einsatz/unit/unit%3Atruck-1",
+              "fact": "unit:truck-1/service-seconds"
+            }
+          ],
+          "source": {
+            "by": "assumption",
+            "note": "Truck 1's World estimate used: same Brekke start, same truck type."
+          }
+        }
+      ],
+      "needs": [
+        {
+          "anyOf": [
+            "truck-1",
+            "truck-2",
+            "truck-3",
+            "truck-4",
+            "truck-5"
+          ],
+          "amount": 1,
+          "where": {
+            "attribute": "payloadKg",
+            "atLeast": 500,
+            "unit": "kg"
+          },
+          "handover": false
+        }
+      ],
+      "continuous": true,
+      "target": {
+        "finishBy": "2026-09-03T08:13:00Z",
+        "words": "A truck arrives within 10 minutes of the request, then 3 minutes unloading (World on-scene time): finish by Thu 10:13."
+      },
+      "checks": [],
+      "tags": [
+        "routine"
+      ],
+      "locator": "einsatz/task/task%3Afield-kitchen"
+    }
+  ],
+  "links": [],
+  "rules": [
+    {
+      "kind": "keep-in-service",
+      "key": "heavy-free",
+      "members": [
+        {
+          "resource": "truck-2"
+        },
+        {
+          "resource": "truck-4"
+        }
+      ],
+      "atLeast": 1,
+      "words": "Keep at least one truck of 1,000 kg or more free at all times.",
+      "source": {
+        "by": "planner",
+        "note": "Dispatcher's coverage rule: keep one heavy truck ready for the next urgent bulk request."
+      }
+    }
+  ],
+  "goals": [
+    {
+      "metric": "lateness",
+      "scope": {
+        "tags": [
+          "bulk"
+        ]
+      },
+      "tolerance": {
+        "value": 0,
+        "unit": "min"
+      }
+    },
+    {
+      "metric": "lateness",
+      "scope": {
+        "tags": [
+          "routine"
+        ]
+      },
+      "tolerance": {
+        "value": 0,
+        "unit": "min"
+      }
+    }
+  ],
+  "world": {
+    "refreshedAt": null,
+    "facts": []
+  }
+}

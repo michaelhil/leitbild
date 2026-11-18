@@ -1,7 +1,7 @@
 import type { GeoJsonPoint } from '../../../core/model/index.ts'
 import { skipSteps } from './chain-steps.ts'
 import { engagementFieldsAtCreate, isTrackId } from './combat-model.ts'
-import { coverageOf, rankOf } from './coverage.ts'
+import { coverageOf, taskPriorityOf } from './coverage.ts'
 import { putUnit, setMotion, stageTask, unitIn, type Draft } from './draft.ts'
 import { actionBy, groupRefusal, notInPicture, refused, sideRefusal, type Refused } from './intent-support.ts'
 import type { EngineActor, IntentOf, Plan } from './intents.ts'
@@ -87,7 +87,7 @@ export const planUnitAdjust = (state: EngineState, intent: IntentOf<'unit.adjust
   })
 }
 
-/** New demand on a side. A task without load ranks by its template's floor, so a load-less task needs one. */
+/** New demand on a side, of the priority it names, else its template's, else the lowest. */
 export const planTaskCreate = (state: EngineState, intent: IntentOf<'task.create'>, actor: EngineActor): Plan => {
   const taken = idTaken(state, intent.id)
   if (taken) return taken
@@ -96,11 +96,9 @@ export const planTaskCreate = (state: EngineState, intent: IntentOf<'task.create
   const sided = sideRefusal(state, intent.side, false, template.label)
   if (sided) return sided
   const loads = intent.loads ?? {}
-  const unknown = Object.keys(loads).find(id => !state.catalog.classRank.has(id))
+  const unknown = Object.keys(loads).find(id => !state.catalog.classIds.includes(id))
   if (unknown !== undefined) return refused('unknown_load_class', `Load class "${unknown}" is not declared`)
-  if (Object.keys(loads).length === 0 && template.priorityClass === undefined) {
-    return refused('priority_class_required', `${template.label} has no priority floor, so the task needs load`)
-  }
+  if (intent.priority !== undefined && !state.catalog.priorityRank.has(intent.priority)) return refused('unknown_priority', `Priority "${intent.priority}" is not declared`)
   return applied(draft => {
     const fields = {
       id: intent.id,
@@ -117,7 +115,7 @@ export const planTaskCreate = (state: EngineState, intent: IntentOf<'task.create
       point: intent.at,
       createdAtMs: draft.timeMs,
       pickedUp: {},
-      rank: rankOf(draft.catalog, fields),
+      priority: taskPriorityOf(draft.catalog, template.id, intent.priority),
       coverage: coverageOf(draft.catalog, fields, []),
       lastAction: actionBy(draft, actor, 'create'),
       alerts: [],

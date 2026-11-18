@@ -35,7 +35,7 @@ interface ServerConfig {
 }
 
 const workspaceIdFromPagePath = (pathname: string): WorkspaceId | null => {
-  const match = pathname.match(/^\/workspaces\/([^/]+)\/agents$/)
+  const match = pathname.match(/^\/workspaces\/([^/]+)\/agents(?:\/embed\/engineering\.result)?$/)
   if (!match) return null
   try {
     const parsed = workspaceIdSchema.safeParse(decodeURIComponent(match[1] ?? ''))
@@ -47,7 +47,8 @@ const workspaceIdFromPagePath = (pathname: string): WorkspaceId | null => {
 
 const serveStatic = async (pathname: string, uiPath: string): Promise<Response | null> => {
   if (workspaceIdFromPagePath(pathname) !== null || pathname === '/index.html') {
-    const file = Bun.file(`${uiPath}/dist/index.html`)
+    const page = pathname.endsWith('/embed/engineering.result') ? 'engineering.html' : 'index.html'
+    const file = Bun.file(`${uiPath}/dist/${page}`)
     if (await file.exists()) return new Response(file, { headers: { 'Content-Type': 'text/html', 'Cache-Control': 'no-cache' } })
     return new Response('<h1>Leitbild</h1><p>UI unavailable.</p>', { headers: { 'Content-Type': 'text/html' } })
   }

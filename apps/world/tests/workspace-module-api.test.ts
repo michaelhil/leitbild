@@ -753,7 +753,12 @@ Action: Inspect «OTHER-STEP».
     )
     // The displays an agent presents with its answer declare it; Agents gate "Show display" on the marker, not on an id.
     expect(moduleCapabilityCollectionSchema.parse(capabilities.body).capabilities.filter(item => item.publishes?.includes('embedded-view')).map(item => String(item.id)).sort())
-      .toEqual(['world.simulation-run.display.compose'])
+      .toEqual([
+        'world.engineering.continuation.cancel',
+        'world.engineering.continuation.inspect',
+        'world.engineering.continuation.submit',
+        'world.simulation-run.display.compose',
+      ])
     const definitions = await call(registry, `/internal/workspaces/${workspaceId}/definitions`)
     const parsedDefinitions = moduleDefinitionCollectionSchema.parse(definitions.body)
     const scenario = parsedDefinitions.definitions.find(definition => definition.ref.id === 'test-response')!

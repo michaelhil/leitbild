@@ -29,9 +29,14 @@ leitbild.app, leitbild.ai {
 		reverse_proxy 127.0.0.1:4177
 	}
 
-	@agents path_regexp agents ^(?:/workspaces/[^/]+/agents|/api/workspaces/[^/]+/agents(?:/.*)?|/api/(?:auth|system/.*)|/assets/agents/.*)$
+	@agents path_regexp agents ^(?:/workspaces/[^/]+/agents(?:/embed/engineering\.result)?|/api/workspaces/[^/]+/agents(?:/.*)?|/api/(?:auth|system/.*)|/assets/agents/.*)$
 	handle @agents {
 		reverse_proxy 127.0.0.1:3000
+	}
+
+	@planning path_regexp planning ^(?:/workspaces/[^/]+/planning(?:/.*)?|/assets/planning/.*)$
+	handle @planning {
+		reverse_proxy 127.0.0.1:3102
 	}
 
 	handle {

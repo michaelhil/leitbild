@@ -25,7 +25,6 @@ export const trackIdentitySchema = z.object({
   side: configIdSchema,
   rangeM: z.number().finite().positive().optional(),
 }).strict()
-export type TrackIdentity = z.output<typeof trackIdentitySchema>
 
 /**
  * A track's `packData`. A contact carries no identity; an identified track

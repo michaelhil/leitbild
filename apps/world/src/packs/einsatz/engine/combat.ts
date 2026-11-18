@@ -154,7 +154,7 @@ const destroy = (draft: Draft, unit: UnitRecord, alerts: RecordAlert[]): UnitRec
   setMotion(draft, unit.id, { progressMs: 0 })
   return patch(unit, {
     integrity: 'destroyed', phase: 'destroyed', phaseSinceMs: draft.timeMs, phaseDueMs: undefined, leg: undefined, taskId: undefined, siteId: undefined,
-    engage: undefined, target: undefined, revealed: undefined, stillSinceMs: undefined, alerts, orders: [], paused: undefined,
+    engage: undefined, target: undefined, revealed: undefined, stillSinceMs: undefined, alerts, orders: [],
   })
 }
 

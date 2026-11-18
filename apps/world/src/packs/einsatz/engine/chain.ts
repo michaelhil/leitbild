@@ -1,27 +1,25 @@
-import { undoCause } from '../ids.ts'
 import { refusalCode } from '../refusal.ts'
-import { maxSteps, stepKindFor, stepTargetId, type Step, type StepKind } from '../steps.ts'
-import { activeStep, clearedByOrder, newStep, skipSteps, targetLabel } from './chain-steps.ts'
+import type { PlanExpectation } from '../order-schema.ts'
+import { maxSteps, stepKindFor, stepTargetId, type Step, type StepKind, type StepTarget } from '../steps.ts'
+import { activeStep, clearedByOrder, newStep, restOf, skipSteps, targetLabel } from './chain-steps.ts'
 import { assignedTo, contributionOf, loadAllocation } from './coverage.ts'
 import { putUnit, setMotion, unitIn, type Draft } from './draft.ts'
 import { engageRefusal } from './engagement-orders.ts'
 import { actionBy, immobile, loadedText, notInPicture, refused, type Refused } from './intent-support.ts'
 import type { EngineActor, IntentOf, Plan } from './intents.ts'
 import { clearAlerts, unitTypeOf, type EngineState, type LastAction, type TaskRecord, type UnitRecord } from './model.ts'
-import { planSend, planStart, resolveTarget, siteRefusal, type Target } from './orders.ts'
+import { planDoNow, planStart, resolveTarget, siteRefusal, type Target } from './orders.ts'
 import { releaseFromTask } from './phases.ts'
 import { hasLoad, linksToTask } from './rules.ts'
 import { countOf, countsOf, patch, total, type Counts } from './values.ts'
-import { loadText, unitWord } from './wording.ts'
+import { loadText } from './wording.ts'
 
 /**
- * Job chains: adding a step at the end, removing one, pausing and resuming,
- * clearing, and the engine starting the next step once the active one is
- * done. Every change is a transition of the unit; motion is not. Only the
- * active step counts towards a task's coverage.
+ * Plans: adding a stop at the end, removing one, and the engine starting the
+ * next stop once the active one is done. Every change is a transition of the
+ * unit; motion is not. Only the active stop counts towards a task's
+ * coverage.
  */
-
-const unchanged = (note: string): Plan => ({ ok: true, routes: [], notes: [note], apply: () => undefined })
 
 const orderOn = (draft: Draft, actor: EngineActor, verb: LastAction['verb'], step?: Step): LastAction => ({
   ...actionBy(draft, actor, verb, step === undefined ? undefined : stepTargetId(step.target)),
@@ -42,7 +40,7 @@ const withPickup = (state: EngineState, unit: UnitRecord, load: Counts, taskId: 
 }
 
 /** A unit whose deliver order takes its load to the nearest accepting site before any other step. */
-const deliversByOrder = (state: EngineState, unit: UnitRecord): boolean => unitTypeOf(state.catalog, unit).standingOrders?.deliver === 'nearest-accepting'
+export const deliversByOrder = (state: EngineState, unit: UnitRecord): boolean => unitTypeOf(state.catalog, unit).standingOrders?.deliver === 'nearest-accepting'
 
 /**
  * What a unit will carry once it has carried out its first `count` steps,
@@ -51,7 +49,7 @@ const deliversByOrder = (state: EngineState, unit: UnitRecord): boolean => unitT
  * capacity with waiting load it can carry. It reads waiting load as it
  * stands now.
  */
-const loadAfter = (state: EngineState, unit: UnitRecord, count = unit.orders.length): Counts => {
+export const loadAfter = (state: EngineState, unit: UnitRecord, count = unit.orders.length): Counts => {
   const delivers = deliversByOrder(state, unit)
   let load: Counts = unit.load
   for (const step of unit.orders.slice(0, count)) {
@@ -82,7 +80,7 @@ const loadLeftFor = (state: EngineState, unit: UnitRecord, task: TaskRecord, tri
 /** Why a step for this target cannot join the end of the unit's chain, judged on what the unit will carry by then and on the task's coverage now. */
 const queueRefusal = (state: EngineState, unit: UnitRecord, target: Target, load: Counts, kind: StepKind): Refused | undefined => {
   if (kind !== 'deliver' && total(load) > 0 && !deliversByOrder(state, unit)) {
-    return refused('unit_loaded', `${unit.label} will have ${loadText(state.catalog, load)} on board by then; queue a delivery first`)
+    return refused('unit_loaded', `${unit.label} will have ${loadText(state.catalog, load)} on board by then; add a delivery stop first`)
   }
   if (target.kind === 'track') return engageRefusal(state, unit, target.track)
   const cannotMove = immobile(state, unit)
@@ -104,28 +102,28 @@ const queueRefusal = (state: EngineState, unit: UnitRecord, target: Target, load
 }
 
 /**
- * Add a step at the end of a unit's chain. A unit holding no step and not
- * paused starts it at once, exactly as a send. Otherwise the step is judged
- * as the unit will stand when it comes up: its load then (a capacity it
- * cannot use before delivering is refused), its side, and the task's
- * coverage now. Queued, it counts towards nothing.
+ * Add a stop at the end of a unit's plan. A unit holding no step starts it
+ * at once, exactly as a do-now order. Otherwise the stop is judged as the
+ * unit will stand when it comes up: its load then (a capacity it cannot use
+ * before delivering is refused), its side, and the task's coverage now.
+ * Queued, it counts towards nothing.
  */
-export const planQueue = (state: EngineState, intent: IntentOf<'queue'>, actor: EngineActor): Plan => {
-  const unit = state.units.get(intent.unitId)
+export const planAppend = (state: EngineState, unitId: string, to: StepTarget, actor: EngineActor): Plan => {
+  const unit = state.units.get(unitId)
   if (unit === undefined) return notInPicture()
-  if (unit.orders.length === 0 && unit.paused !== true) return planSend(state, { kind: 'send', units: [unit.id], to: intent.to }, actor)
-  if (unit.orders.length >= maxSteps) return refused('chain_full', `${unit.label} already holds ${unit.orders.length} steps; remove one first`)
-  const target = resolveTarget(state, intent.to)
+  if (unit.orders.length === 0) return planDoNow(state, to, [{ unit }], actor)
+  if (unit.orders.length >= maxSteps) return refused('chain_full', `${unit.label} already holds ${unit.orders.length} stops; remove one first`)
+  const target = resolveTarget(state, to)
   if ('ok' in target) return target
   const load = loadAfter(state, unit)
   const loaded = total(load) > 0
-  const refusal = queueRefusal(state, unit, target, load, stepKindFor(intent.to, loaded))
+  const refusal = queueRefusal(state, unit, target, load, stepKindFor(to, loaded))
   if (refusal) return refusal
   return {
     ok: true, routes: [], notes: [],
     apply: draft => {
       const current = unitIn(draft, unit.id)
-      const { step, stepSerial } = newStep(current, intent.to, loaded, 'queued', actor.by)
+      const { step, stepSerial } = newStep(current, to, loaded, 'queued', actor)
       putUnit(draft, patch(current, { orders: [...current.orders, step], stepSerial, alerts: clearAlerts(current.alerts, clearedByOrder(actor)), lastAction: orderOn(draft, actor, 'queue', step) }))
     },
   }
@@ -137,7 +135,7 @@ export const planQueue = (state: EngineState, intent: IntentOf<'queue'>, actor: 
  * keeps its first site step; load it will pick up on the way keeps the step
  * unless its deliver order would deliver that load anyway.
  */
-const deliveryRefusal = (state: EngineState, unit: UnitRecord, index: number): Refused | undefined => {
+export const deliveryRefusal = (state: EngineState, unit: UnitRecord, index: number): Refused | undefined => {
   if (!('siteId' in unit.orders[index]!.target)) return undefined
   if (hasLoad(unit) && unit.orders.findIndex(entry => 'siteId' in entry.target) === index) return refused('unit_loaded', loadedText(state, unit))
   const load = loadAfter(state, unit, index)
@@ -145,93 +143,103 @@ const deliveryRefusal = (state: EngineState, unit: UnitRecord, index: number): R
   return refused('unit_loaded', `${unit.label} will have ${loadText(state.catalog, load)} on board by then; that step delivers it`)
 }
 
+export const changedPlan = (unit: UnitRecord, expectedPlan: PlanExpectation): Refused | undefined => {
+  if (unit.orders.length === expectedPlan.length && unit.orders.every((step, index) => {
+    const expected = expectedPlan[index]!
+    return step.id === expected.id && step.state === expected.state
+  })) return undefined
+  return refused('plan_changed', `${unit.label}’s plan changed. Review its current stops and try again`)
+}
+
 /**
- * Remove one step. A queued step simply leaves. The active step is released
+ * Remove one stop. A queued stop simply leaves. The active stop is released
  * as a recall releases it: a task gets its work back, the unit stops where
- * it is and starts its next step, or, with none, its return order applies.
- * A unit keeps the step that delivers the load it carries, or will carry,
- * there (see `deliveryRefusal`). An undo takes back only the step the
- * unit's last order created (else `step_not_undoable`), raises no
- * work-returned alert and records `undo` as the order's cause.
+ * it is and starts its next stop, or, with none, its return order applies.
+ * A unit keeps the stop that delivers the load it carries, or will carry,
+ * there (see `deliveryRefusal`).
  */
-export const planStepRemove = (state: EngineState, intent: IntentOf<'step.remove'>, actor: EngineActor): Plan => {
+export const planStopRemove = (state: EngineState, intent: IntentOf<'stop.remove'>, actor: EngineActor): Plan => {
   const unit = state.units.get(intent.unitId)
   if (unit === undefined) return notInPicture()
-  const index = unit.orders.findIndex(step => step.id === intent.stepId)
-  if (index < 0) return refused('step_not_found', `${unit.label} holds no step ${intent.stepId}`)
-  const step = unit.orders[index]!
-  if (intent.undo === true && unit.lastAction?.stepId !== step.id) return refused('step_not_undoable', `${unit.label}'s last order did not create ${step.id}: it can be removed, not undone`)
+  const changed = intent.expectedPlan === undefined ? undefined : changedPlan(unit, intent.expectedPlan)
+  if (changed) return changed
+  const index = unit.orders.findIndex(step => step.id === intent.stopId)
+  if (index < 0) return refused('step_not_found', `${unit.label} holds no stop ${intent.stopId}`)
   const delivery = deliveryRefusal(state, unit, index)
   if (delivery) return delivery
-  const undone = intent.undo === true
-  return {
-    ok: true, routes: [], notes: [],
-    apply: draft => {
-      const current = unitIn(draft, unit.id)
-      const order = { ...orderOn(draft, actor, 'remove', step), ...(undone ? { cause: undoCause } : {}) }
-      const orders = current.orders.filter(entry => entry.id !== step.id)
-      const alerts = clearAlerts(current.alerts, clearedByOrder(actor))
-      if (step.state !== 'active') {
-        putUnit(draft, patch(current, { orders, alerts, lastAction: order }))
-        return
-      }
-      if ('trackId' in step.target) {
-        putUnit(draft, patch(current, { orders, alerts, lastAction: order, engage: current.engage === step.target.trackId ? undefined : current.engage }))
-        return
-      }
-      const released = releaseFromTask(draft, current, order, undone)
-      setMotion(draft, unit.id, { progressMs: 0 })
-      putUnit(draft, patch(released, { orders, alerts, lastAction: order, leg: undefined, phase: 'available', phaseSinceMs: draft.timeMs, phaseDueMs: undefined }))
-    },
-  }
+  return { ok: true, routes: [], notes: [], apply: draft => removeSteps(draft, actor, unit.id, [unit.orders[index]!], false) }
 }
 
-/**
- * Resume a paused unit: it carries on from the phase it was paused in, as
- * if it had never been. Its next step starts, or, holding none, its deliver
- * and return orders apply as they would have: a unit parked at a point
- * stays there, one stopped on its way home sets off again.
- */
-export const planResume = (state: EngineState, intent: IntentOf<'resume'>, actor: EngineActor): Plan => {
+/** Recheck each proposed stop with the same load and coverage rules as adding a stop. */
+export const planReorder = (state: EngineState, intent: IntentOf<'plan.reorder'>, actor: EngineActor): Plan => {
   const unit = state.units.get(intent.unitId)
   if (unit === undefined) return notInPicture()
-  if (unit.paused !== true) return unchanged(`${unit.label} is not ${unitWord(state.catalog, unit, 'holding')}`)
-  return {
-    ok: true, routes: [], notes: [],
-    apply: draft => {
-      const current = unitIn(draft, unit.id)
-      putUnit(draft, patch(current, { paused: undefined, alerts: clearAlerts(current.alerts, clearedByOrder(actor)), lastAction: orderOn(draft, actor, 'resume') }))
-    },
-  }
-}
+  const changed = changedPlan(unit, intent.expectedPlan)
+  if (changed) return changed
 
-/**
- * Remove every step, releasing the active one as a recall does: the unit
- * stops where it is, available, and its return order applies. A paused
- * unit holding no step is only resumed, in the phase it idles in, so a unit
- * parked at a point stays there. A loaded unit delivers first.
- */
-export const planClear = (state: EngineState, intent: IntentOf<'clear'>, actor: EngineActor): Plan => {
-  const unit = state.units.get(intent.unitId)
-  if (unit === undefined) return notInPicture()
-  if (hasLoad(unit)) return refused('unit_loaded', loadedText(state, unit))
-  if (unit.orders.length === 0 && unit.paused !== true) return unchanged(`${unit.label} holds no steps`)
+  const queued = restOf(unit)
+  const byId = new Map(queued.map(step => [step.id, step]))
+  if (intent.stopIds.length !== queued.length || new Set(intent.stopIds).size !== queued.length || intent.stopIds.some(id => !byId.has(id))) {
+    return refused('invalid_stop_order', 'Name every queued stop once. The active stop stays first')
+  }
+  if (queued.every((step, index) => step.id === intent.stopIds[index])) {
+    return { ok: true, routes: [], notes: ['The queued stops are already in that order'], apply: () => {} }
+  }
+
+  const head = activeStep(unit)
+  const orders: Step[] = head === undefined ? [] : [head]
+  for (const id of intent.stopIds) {
+    const step = byId.get(id)!
+    const target = resolveTarget(state, step.target)
+    if ('ok' in target) return target
+    const preceding = patch(unit, { orders })
+    const load = loadAfter(state, preceding)
+    const kind = stepKindFor(step.target, total(load) > 0)
+    if (step.kind === 'deliver' && kind !== 'deliver') {
+      return refused('invalid_stop_order', `${targetLabel(state, step.target)} must follow the pickup it delivers`)
+    }
+    const refusal = queueRefusal(state, preceding, target, load, kind)
+    if (refusal) return refusal
+    orders.push(patch(step, { kind }))
+  }
   return {
     ok: true, routes: [], notes: [],
     apply: draft => {
       const current = unitIn(draft, unit.id)
-      const order = orderOn(draft, actor, 'clear')
-      const head = activeStep(current)
-      const released = releaseFromTask(draft, current, order)
-      const stops = current.orders.length > 0 && current.phase !== 'available'
-      if (stops) setMotion(draft, unit.id, { progressMs: 0 })
-      putUnit(draft, patch(released, {
-        orders: [], paused: undefined, alerts: clearAlerts(current.alerts, clearedByOrder(actor)), lastAction: order,
-        engage: head !== undefined && 'trackId' in head.target && current.engage === head.target.trackId ? undefined : current.engage,
-        ...(stops ? { leg: undefined, phase: 'available' as const, phaseSinceMs: draft.timeMs, phaseDueMs: undefined } : {}),
+      const command = actor.commandId === undefined ? {} : { lastCommand: { id: actor.commandId } }
+      putUnit(draft, patch(current, {
+        orders, ...command, lastAction: actionBy(draft, actor, 'queue', undefined, 'Reordered queued stops'),
       }))
     },
   }
+}
+
+/**
+ * Removes steps from a unit's plan as one order. A released active step
+ * stops the unit where it is; quietly (an undo) its task's work never left
+ * it, so no work-returned alert is raised and the order records `undo`.
+ */
+export const removeSteps = (draft: Draft, actor: EngineActor, unitId: string, steps: ReadonlyArray<Step>, quietly: boolean): void => {
+  const current = unitIn(draft, unitId)
+  const ids = new Set(steps.map(step => step.id))
+  const order: LastAction = quietly
+    ? actionBy(draft, actor, 'undo')
+    : { ...actionBy(draft, actor, 'remove', stepTargetId(steps[0]!.target)), stepId: steps[0]!.id }
+  const orders = current.orders.filter(entry => !ids.has(entry.id))
+  const alerts = clearAlerts(current.alerts, clearedByOrder(actor))
+  const command = actor.commandId === undefined ? {} : { lastCommand: { id: actor.commandId } }
+  const head = current.orders[0]
+  if (head === undefined || head.state !== 'active' || !ids.has(head.id)) {
+    putUnit(draft, patch(current, { orders, alerts, lastAction: order, ...command }))
+    return
+  }
+  if ('trackId' in head.target) {
+    putUnit(draft, patch(current, { orders, alerts, lastAction: order, ...command, engage: current.engage === head.target.trackId ? undefined : current.engage }))
+    return
+  }
+  const released = releaseFromTask(draft, current, order, quietly)
+  setMotion(draft, unitId, { progressMs: 0 })
+  putUnit(draft, patch(released, { orders, alerts, lastAction: order, ...command, leg: undefined, siteId: undefined, phase: 'available', phaseSinceMs: draft.timeMs, phaseDueMs: undefined }))
 }
 
 /** The message of a refusal, without its code. */
@@ -244,7 +252,7 @@ export const skipHead = (draft: Draft, unitId: string, head: Step, reason: strin
 }
 
 /**
- * Starts an idle unit's queued first step as a send would, keeping its id:
+ * Starts an idle unit's queued first step as a do-now order would, keeping its id:
  * the same checks, then the route. A step that can no longer be carried out
  * (its task covered or closed, its site not accepting, its track no longer
  * engageable, or one the unit cannot take while it carries load) is skipped
@@ -253,7 +261,7 @@ export const skipHead = (draft: Draft, unitId: string, head: Step, reason: strin
 export const planChainNext = (state: EngineState, intent: IntentOf<'chain.next'>, actor: EngineActor): Plan => {
   const unit = unitIn(state, intent.unitId)
   const head = unit.orders[0]
-  if (head === undefined || head.state !== 'queued' || unit.paused === true) throw new Error(`${unit.id}: no queued step to start`)
+  if (head === undefined || head.state !== 'queued') throw new Error(`${unit.id}: no queued step to start`)
   const skip = (reason: string): Plan => ({ ok: true, routes: [], notes: [], apply: draft => skipHead(draft, unit.id, head, reason) })
   if (hasLoad(unit) && !('siteId' in head.target)) return skip(refused('unit_loaded', loadedText(state, unit)).reason)
   const plan = planStart(state, head.target, [{ unit }], [], actor, { kind: 'next', step: head })

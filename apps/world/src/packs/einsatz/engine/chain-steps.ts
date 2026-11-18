@@ -33,10 +33,11 @@ export const activeStep = (unit: UnitRecord): Step | undefined => unit.orders[0]
 /** The steps behind the active one, or all of them while none is active. */
 export const restOf = (unit: UnitRecord): Step[] => activeStep(unit) === undefined ? [...unit.orders] : unit.orders.slice(1)
 
-/** A new step for a unit, numbered after its last one; the verb follows from the target and the load the unit will carry then. */
-export const newStep = (unit: UnitRecord, target: StepTarget, loaded: boolean, state: Step['state'], by: string): { readonly step: Step; readonly stepSerial: number } => {
+/** A new step for a unit, numbered after its last one, naming who gave it and the command it came with; the verb follows from the target and the load the unit will carry then. */
+export const newStep = (unit: UnitRecord, target: StepTarget, loaded: boolean, state: Step['state'], actor: Pick<EngineActor, 'by' | 'commandId'>): { readonly step: Step; readonly stepSerial: number } => {
   const stepSerial = (unit.stepSerial ?? 0) + 1
-  return { step: { id: stepIdOf(stepSerial), kind: stepKindFor(target, loaded), target, state, by }, stepSerial }
+  const step: Step = { id: stepIdOf(stepSerial), kind: stepKindFor(target, loaded), target, state, by: actor.by, ...(actor.commandId === undefined ? {} : { commandId: actor.commandId }) }
+  return { step, stepSerial }
 }
 
 /** A queued step started now: active, with the verb its target gives for the load the unit carries now. */

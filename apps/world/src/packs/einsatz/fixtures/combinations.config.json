@@ -1,6 +1,10 @@
 {
   "hostility": { "north": ["south"], "south": ["north"] },
-  "lexicon": { "tracks": "Sightings", "contact": "Sighting", "hold": "Stop" },
+  "lexicon": { "tracks": "Sightings", "contact": "Sighting" },
+  "priorities": [
+    { "id": "R1", "label": "Urgent", "code": "R1" },
+    { "id": "R2", "label": "Routine", "code": "R2" }
+  ],
   "loadClasses": [
     { "id": "L1", "label": "Critical", "code": "A", "noun": { "one": "person", "other": "people" } },
     { "id": "L2", "label": "Serious", "code": "B", "noun": { "one": "person", "other": "people" } }
@@ -18,7 +22,7 @@
         "signature": { "factor": 0.6 },
         "durability": { "stepFireS": 20 }
       },
-      "lexicon": { "hold": "Halt", "on-task": "Screening" },
+      "lexicon": { "on-task": "Screening" },
       "standingOrders": { "withdraw": { "whenDamaged": true } }
     },
     {
@@ -34,7 +38,7 @@
         "durability": { "stepFireS": 90 }
       },
       "properties": [
-        { "id": "crew", "label": "Crew", "kind": "number", "min": 1, "max": 6, "default": 4, "board": true }
+        { "id": "crew", "label": "Crew", "kind": "number", "min": 1, "max": 6, "default": 4, "show": true }
       ],
       "standingOrders": { "roe": "free", "withdraw": { "whenDamaged": true }, "onStepLost": { "createTask": "aid", "perStep": { "L2": 1 } } }
     },
@@ -90,7 +94,7 @@
         "carry": { "capacity": 2, "classes": ["L1", "L2"] }
       },
       "properties": [
-        { "id": "winch", "label": "Winch", "kind": "boolean", "default": false, "board": true },
+        { "id": "winch", "label": "Winch", "kind": "boolean", "default": false, "show": true },
         { "id": "grade", "label": "Grade", "kind": "enum", "values": [{ "id": "basic", "label": "Basic" }, { "id": "advanced", "label": "Advanced" }], "default": "basic" },
         { "id": "rangeKm", "label": "Range", "kind": "number", "unit": "km", "min": 0, "max": 900, "default": 400 }
       ],
@@ -110,7 +114,7 @@
       "id": "lift",
       "label": "Lift",
       "icon": "cross",
-      "priorityClass": "L2",
+      "priority": "R2",
       "requires": [
         {
           "provides": "aid",
@@ -124,14 +128,9 @@
       "id": "screen",
       "label": "Screen",
       "icon": "flag",
-      "priorityClass": "L2",
+      "priority": "R2",
       "requires": [{ "provides": "screen", "count": 1, "label": { "one": "scout", "other": "scouts" } }]
     },
     { "id": "report", "label": "Report", "icon": "message-square" }
-  ],
-  "authority": [
-    { "roleId": "north-aid", "units": { "types": ["carrier"] }, "taskTemplates": ["aid", "lift"] },
-    { "roleId": "north-command", "units": { "tags": ["heavy", "observer"] }, "taskTemplates": ["screen"] },
-    { "roleId": "north-all", "units": { "all": true }, "taskTemplates": ["aid", "lift", "screen", "report"] }
   ]
 }

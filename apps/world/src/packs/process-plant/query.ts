@@ -12,6 +12,8 @@ import { answerProcessPlantSignalQuery, processPlantSignalQueryKinds } from './q
 import { answerProcessPlantVariableQuery, processPlantVariableQueryKinds } from './queries/variable-query.ts'
 import { answerProcessPlantObservationQuery } from './observation/query.ts'
 import { answerProcessPlantResponseQuery, processPlantResponseQueryKinds } from './queries/response-query.ts'
+import { readProcessPlantPlanningSource } from './planning-source.ts'
+import { readProcessPlantEngineeringInputs } from './engineering-inputs.ts'
 
 export { processPlantCredibilityEvidenceForGraph } from './queries/credibility-query.ts'
 
@@ -41,6 +43,11 @@ export const answerProcessPlantQuery = (config: {
   readonly recordedHistory?: PackRuntimeRecordedHistory
 }): unknown => {
   const policy = config.request.readPolicy
+  if (config.request.capabilityId === 'world.process-plant.engineering-basis') return readProcessPlantEngineeringInputs({ plants: config.plants, policy, input: config.request.input })
+  if (config.request.capabilityId === 'world.process-plant.planning-basis') return readProcessPlantPlanningSource({
+    plants: config.plants, policy, input: config.request.input,
+    ...(config.simulationTime === undefined ? {} : { simulationTime: config.simulationTime }),
+  })
   config = !policy.restricted ? config : { ...config,
     plants: new Map([...config.plants].filter(([id]) => policy.canInspect(id))),
     objects: new Map([...config.objects].filter(([id]) => policy.canInspect(id))),

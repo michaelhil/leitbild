@@ -27,7 +27,7 @@ export const LONG_START_MS = 30_000
 /** The real steps, one per Host call, worded for what the Module starts. */
 export const startSteps = (moduleId: string): ReadonlyArray<StartStep> => [
   { id: 'checking', label: moduleId === 'world' ? 'Checking the scenario' : 'Checking the definition' },
-  { id: 'starting', label: moduleId === 'world' ? 'Starting the simulation' : moduleId === 'agents' ? 'Creating the conversation' : 'Starting' },
+  { id: 'starting', label: moduleId === 'world' ? 'Starting the simulation' : moduleId === 'agents' ? 'Creating the conversation' : moduleId === 'planning' ? 'Creating the plan' : 'Starting' },
   { id: 'opening', label: 'Opening' },
 ]
 
@@ -167,7 +167,8 @@ export const createStartRunner = (ports: StartRunnerPorts): StartRunner => {
     signal.throwIfAborted()
     step(target, 'starting')
     const requiredResource = descriptor.ref.type === 'world.scenario' ? 'world.simulation-run'
-      : descriptor.ref.type === 'agents.room-definition' ? 'agents.room' : undefined
+      : descriptor.ref.type === 'agents.room-definition' ? 'agents.room'
+        : descriptor.ref.type === 'planning.plan-definition' ? 'planning.plan' : undefined
     const receipt = await invokeDefinitionStart({
       workspaceId: target.workspaceId,
       definition: { ...descriptor.ref, revisionId: target.revisionId ?? descriptor.currentRevisionId },
@@ -188,7 +189,8 @@ export const createStartRunner = (ports: StartRunnerPorts): StartRunner => {
     step(target, 'opening')
     const { created } = receipt
     const opens = created.some(resource =>
-      (resource.moduleId === 'world' && resource.type === 'world.simulation-run') || (resource.moduleId === 'agents' && resource.type === 'agents.room'))
+      (resource.moduleId === 'world' && resource.type === 'world.simulation-run') || (resource.moduleId === 'agents' && resource.type === 'agents.room')
+      || (resource.moduleId === 'planning' && resource.type === 'planning.plan'))
     return { destination: opens ? launchDestination(target.workspaceId, created) : null }
   }
 

@@ -4,10 +4,11 @@ import { createActivePackViews } from '../src/core/packs/active-views.ts'
 import type { Component } from 'svelte'
 import { createWorldPackDescriptor, type PackSurfacePanelContribution, type PackUiContribution, type PackWindowToolsProps, type WorldPackView } from '../src/core/packs/protocol.ts'
 import { assertCameraInteractionContract } from '../src/ui/map/map-camera.ts'
+import { createMapPromptController, mapPromptOffsets } from '../src/ui/map/map-prompt.ts'
 import { knownUiPackIds, loadUiPack } from '../src/ui/pack-loader.ts'
 import { geoPointFromLonLat, type IsoTimestamp, type ObjectId, type OperationalObject, type PackId, type SimulationRunId } from '../src/core/model/index.ts'
-import { groundClicksWanted, mapClickOutcome, targetPreviewsWanted } from '../src/ui/map-target-routing.ts'
-import { assertMapCover, assertPanelInteraction, cameraPaddingFor, mapCameraInteractionFor, noMapCover, openPanelDeclaring, railStartsCollapsed, startingControllerId, surfacePanelPackId } from '../src/ui/surface-panel-interaction.ts'
+import { groundClicksWanted, targetPreviewsWanted } from '../src/ui/map-target-routing.ts'
+import { assertMapCover, assertMapPrompt, assertMapTargeting, assertPanelInteraction, cameraPaddingFor, mapCameraInteractionFor, noMapCover, openPanelDeclaring, railStartsCollapsed, startingControllerId, surfacePanelPackId } from '../src/ui/surface-panel-interaction.ts'
 
 const panelOf = (id: string, hooks: Pick<PackSurfacePanelContribution, 'mapTargets' | 'keymap'> = {}): PackSurfacePanelContribution => ({
   id,
@@ -74,12 +75,6 @@ describe('World surface hooks among the built-in Packs', () => {
     expect(active.targeting?.mutedOnMap).toBeUndefined()
     expect(targetPreviewsWanted({ targeting: active.targeting, panel: null })).toBe(false)
     expect(groundClicksWanted({ targeting: active.targeting, panel: null })).toBe(false)
-  })
-
-  test('Ambulance still contributes its hold gesture, and a click while it is armed cancels it and is never open ground', async () => {
-    expect((await loadUiPack('ambulance')).mapAssignment).toBeDefined()
-    for (const handled of [false, true]) expect(mapClickOutcome({ suppressed: false, assignmentActive: true, handled })).toBe('assignment-cancel')
-    expect(mapClickOutcome({ suppressed: true, assignmentActive: true, handled: true })).toBe('suppressed')
   })
 })
 
@@ -182,6 +177,93 @@ describe('camera padding from surface panels', () => {
     const cover = { top: 0, right: 492, bottom: 0, left: 0 }
     expect(assertMapCover('first.board', cover)).toBe(cover)
     expect(() => assertMapCover('first.board', { top: 0, right: -1, bottom: Number.NaN, left: 0 })).toThrow('Surface panel first.board reported a map cover that is no length: right -1, bottom NaN')
+  })
+})
+
+describe('map prompts', () => {
+  const point = geoPointFromLonLat(11.38, 59.12)
+  const option = (label: string) => ({ label, onConfirm: () => undefined })
+
+  test('a prompt has one or two labelled options, and any other is refused naming the panel', () => {
+    const onDismiss = () => undefined
+    const one = { point, options: [option('Move A4 here')], onDismiss }
+    const two = { point, options: [option('After current job'), { ...option('Now (drops C-3 · P3)'), tone: 'warning' as const }], onDismiss }
+    expect(assertMapPrompt('fixture.panel', one)).toBe(one)
+    expect(assertMapPrompt('fixture.panel', two)).toBe(two)
+    expect(() => assertMapPrompt('fixture.panel', { point, options: [], onDismiss })).toThrow('Surface panel fixture.panel showed a map prompt with 0 options; a prompt has one or two')
+    expect(() => assertMapPrompt('fixture.panel', { point, options: [option('a'), option('b'), option('c')], onDismiss })).toThrow('with 3 options')
+    expect(() => assertMapPrompt('fixture.panel', { point, options: [option('a'), option(' ')], onDismiss })).toThrow('option 2 has no label')
+  })
+
+  test('the operator dismissing a prompt takes it off the map and is heard once; a replacement, a clear or teardown is no dismissal', () => {
+    const drawn: string[] = []
+    const removed: string[] = []
+    const dismissed: string[] = []
+    let closeDrawn: () => void = () => { throw new Error('nothing drawn') }
+    const controller = createMapPromptController({
+      getMap: () => ({}) as MapLibreMap,
+      onDismiss: prompt => { dismissed.push(prompt.options[0]!.label) },
+      draw: (_map, prompt, dismiss) => {
+        const label = prompt.options[0]!.label
+        drawn.push(label)
+        closeDrawn = dismiss
+        return { remove: () => { removed.push(label) } }
+      },
+    })
+    const promptOf = (label: string) => ({ point, options: [option(label)], onDismiss: () => undefined })
+    const move = promptOf('Move A4 here')
+    controller.show(move)
+    // A map click elsewhere or Esc.
+    expect(controller.dismiss()).toBe(true)
+    expect(controller.dismiss()).toBe(false)
+    // The same prompt given again stays dismissed; only a new one is drawn.
+    controller.show(move)
+    expect({ drawn, removed, dismissed }).toEqual({ drawn: ['Move A4 here'], removed: ['Move A4 here'], dismissed: ['Move A4 here'] })
+    const busy = promptOf('After current job')
+    controller.show(busy)
+    // Its ×.
+    closeDrawn()
+    expect(dismissed).toEqual(['Move A4 here', 'After current job'])
+    // The panel replacing or clearing its prompt, and the map going, are no dismissal.
+    controller.show(promptOf('Move A4 there'))
+    controller.show(promptOf('Move A4 elsewhere'))
+    controller.show(null)
+    controller.show(promptOf('Move A4 back'))
+    controller.destroy()
+    expect(controller.dismiss()).toBe(false)
+    expect({ drawn, removed, dismissed }).toEqual({
+      drawn: ['Move A4 here', 'After current job', 'Move A4 there', 'Move A4 elsewhere', 'Move A4 back'],
+      removed: ['Move A4 here', 'After current job', 'Move A4 there', 'Move A4 elsewhere', 'Move A4 back'],
+      dismissed: ['Move A4 here', 'After current job'],
+    })
+  })
+
+  test('wherever the map anchors it, the prompt stands clear of a 44 px tap around its point, above it unless an edge leaves no room', () => {
+    for (const [anchor, [x, y]] of Object.entries(mapPromptOffsets)) expect({ anchor, clear: Math.hypot(x, y) >= 22 }).toEqual({ anchor, clear: true })
+    expect(mapPromptOffsets.bottom[1]).toBeLessThan(0)
+    expect(mapPromptOffsets.center[1]).toBeLessThan(0)
+  })
+})
+
+describe('map targeting', () => {
+  const from = 'unit:a4' as ObjectId
+  const target = (id: string, tag = '4 min') => ({ id: id as ObjectId, tag })
+
+  test('an armed order marks every valid target, at most eight of them tagged, none twice or its own object, and any other is refused naming the panel', () => {
+    const eight = { from, complete: true, targets: Array.from({ length: 8 }, (_, index) => target(`task:c-${index}`)) }
+    expect(assertMapTargeting('fixture.panel', eight)).toBe(eight)
+    expect(assertMapTargeting('fixture.panel', { from, complete: false, targets: [] }).targets).toEqual([])
+    // Every valid target is marked: beyond the eight tagged ones, untagged.
+    const twelve = { from, complete: true, targets: [...eight.targets, ...Array.from({ length: 4 }, (_, index) => ({ id: `task:d-${index}` as ObjectId }))] }
+    expect(assertMapTargeting('fixture.panel', twelve)).toBe(twelve)
+    // The target a click was just refused for carries the refusal as its tag.
+    const refused = { from, complete: true, targets: [{ ...target('task:c-1', 'Needs fire suppression'), tone: 'refused' as const }, target('task:c-2')] }
+    expect(assertMapTargeting('fixture.panel', refused)).toBe(refused)
+    expect(() => assertMapTargeting('fixture.panel', { from, complete: true, targets: [...eight.targets, target('task:c-9')] })).toThrow('Surface panel fixture.panel showed a map targeting from unit:a4 with 9 tags; at most 8 are shown')
+    expect(() => assertMapTargeting('fixture.panel', { from, complete: true, targets: [target('unit:a4')] })).toThrow('that targets its own object')
+    expect(() => assertMapTargeting('fixture.panel', { from, complete: true, targets: [target('task:c-1'), target('task:c-1')] })).toThrow('that marks task:c-1 twice')
+    expect(() => assertMapTargeting('fixture.panel', { from, complete: true, targets: [target('task:c-1', '')] })).toThrow('whose target task:c-1 has an empty tag')
+    expect(() => assertMapTargeting('fixture.panel', { from, complete: true, targets: [{ id: 'task:c-1' as ObjectId, tone: 'refused' as const }] })).toThrow('whose refused target task:c-1 has no tag')
   })
 })
 

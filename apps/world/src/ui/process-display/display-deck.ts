@@ -128,7 +128,7 @@ const assetEntry = (simulationRunId: string, asset: DeckAsset): AssetDeckEntry =
 })
 
 export const answerDeckEntry = (simulationRunId: string, listing: EmbeddedViewListing): AnswerDeckEntry => {
-  const otherRun = listing.envelope.subject.id !== simulationRunId
+  const otherRun = listing.envelope.subject.type === 'world.simulation-run' && listing.envelope.subject.id !== simulationRunId
   const refusal = listingRefusal(listing.envelope)
   return {
     source: 'answer',
@@ -367,6 +367,7 @@ const runJoinReason = (join: DeckRunJoin): string | null =>
 
 export const deckEntryAsset = (entry: DeckEntry, assets: ReadonlyArray<DeckAsset>, join: DeckRunJoin): DeckAssetTarget => {
   if (entry.source === 'dashboard') return { ok: false, reason: 'The dashboard is about the whole Run' }
+  if (entry.source === 'answer' && ['engineering.result', 'engineering.continuation'].includes(entry.listing.envelope.viewType)) return { ok: false, reason: 'Engineering evidence has no live asset controls' }
   if (entry.source === 'answer' && entry.refusal !== null) return { ok: false, reason: `Not a display this window shows: ${entry.refusal}` }
   if (entry.source === 'answer' && entry.otherRun) return { ok: false, reason: 'Belongs to another Run' }
   const waiting = runJoinReason(join)
@@ -405,7 +406,7 @@ export type DisplayWindowTarget =
   | { readonly kind: 'dashboard' }
   | { readonly kind: 'asset'; readonly objectId: string; readonly select?: string }
   | { readonly kind: 'listing'; readonly listing: EmbeddedViewListing }
-  | { readonly kind: 'subject'; readonly runId: string; readonly subject: string; readonly title: string }
+  | { readonly kind: 'subject'; readonly runId: string; readonly subject: string; readonly title?: string }
 
 export interface DisplayWindowRequest {
   /** Distinguishes repeated requests for the same target. */

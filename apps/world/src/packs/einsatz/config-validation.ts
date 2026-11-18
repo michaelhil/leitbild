@@ -1,4 +1,4 @@
-import { allowedCombinations, standingOrderComponents } from './config-components.ts'
+import { allowedCombinations, standingOrderComponents, stationarySites } from './config-components.ts'
 import type { ConfigCheck, ConfigIssue } from './config-issues.ts'
 import { consistentProperties, satisfiableRequirements } from './config-properties.ts'
 import { catalogueIcons, hostilityPairs, knownReferences, uniqueIds } from './config-references.ts'
@@ -11,6 +11,7 @@ const checks: ReadonlyArray<ConfigCheck> = [
   consistentProperties,
   satisfiableRequirements,
   allowedCombinations,
+  stationarySites,
   standingOrderComponents,
   catalogueIcons,
   hostilityPairs,

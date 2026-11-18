@@ -14,9 +14,11 @@ import { gridSummaryQuery } from './summary.ts'
 import { gridObservationDeclarationsQuery } from '../observation/declarations.ts'
 import { gridObservationReadQuery } from '../observation/read.ts'
 import { gridObservationTopologyQuery } from '../observation/topology.ts'
+import { gridEngineeringInputsQuery } from './engineering-inputs.ts'
 
 /** Published order of the Electric Grid query Capabilities. */
 const electricGridQueries: ReadonlyArray<ElectricGridQuery> = [
+  gridEngineeringInputsQuery,
   gridCatalogQuery,
   gridSummaryQuery,
   gridIslandsQuery,

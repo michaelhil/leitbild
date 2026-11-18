@@ -61,7 +61,7 @@ export interface SearchMatch {
 }
 export interface SearchResult { readonly matches: ReadonlyArray<SearchMatch>; readonly refused?: { readonly code: string; readonly message: string } }
 
-export const PACKS = ['process-plant', 'electric-grid', 'weather', 'einsatz', 'ambulance', 'drone'] as const
+export const PACKS = ['process-plant', 'electric-grid', 'weather', 'einsatz', 'drone'] as const
 export const pairFile = (pack: string): string => new URL(`../../apps/world/tests/fixtures/retrieval/${pack}-pairs.json`, import.meta.url).pathname
 export const loadPairs = async (): Promise<ReadonlyArray<RetrievalPair>> =>
   (await Promise.all(PACKS.map(async pack => (await Bun.file(pairFile(pack)).json() as { pairs: ReadonlyArray<RetrievalPair> }).pairs))).flat()

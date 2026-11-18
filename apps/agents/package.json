@@ -20,7 +20,16 @@
     "headless": "bun run src/main.ts --headless",
     "health": "bash scripts/health.sh"
   },
-  "keywords": ["agents", "multi-agent", "llm", "ollama", "communication", "rooms", "bun", "typescript"],
+  "keywords": [
+    "agents",
+    "multi-agent",
+    "llm",
+    "ollama",
+    "communication",
+    "rooms",
+    "bun",
+    "typescript"
+  ],
   "license": "MIT",
   "repository": {
     "type": "git",
@@ -32,8 +41,7 @@
     "@types/bun": "1.4.0",
     "dependency-cruiser": "18.2.0",
     "tailwindcss": "^4",
-    "type-coverage": "2.30.1",
-    "typescript": "^6.0.3"
+    "type-coverage": "2.30.1"
   },
   "engines": {
     "bun": "1.4.0"
@@ -47,6 +55,8 @@
     "marked": "^18.0.11",
     "mermaid": "^11.17.2",
     "unpdf": "^1.6.2",
-    "zod": "^3.25 || ^4.0"
+    "zod": "^3.25 || ^4.0",
+    "typescript": "6.0.3",
+    "quickjs-emscripten": "0.32.0"
   }
 }

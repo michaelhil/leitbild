@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'bun:test'
 import { featuredDefinitionCatalogSchema, moduleResourceDescriptorSchema } from '@leitbild/contracts'
 import {
-  CONTINUE_LIMIT, continueItems, featuredStartRevision,
+  CONTINUE_LIMIT, continueItems, continueKindLabel, featuredStartRevision,
   openedFromGuide, previewSrc, previewSrcset, PUBLIC_NOTE, sameDefinition, scenarioRowSummary, summaryHasMore, summaryLead, workspaceDemos,
 } from './workspace-page.ts'
 import { featured, listed, revision, room, run, scenario, WS } from './workspace-page.test-support.ts'
@@ -64,6 +64,23 @@ describe('featured demos on the Workspace page', () => {
 })
 
 describe('Continue', () => {
+  test('saved plans continue through their owned Resource and option summary; retired Studies do not', () => {
+    const plan = moduleResourceDescriptorSchema.parse({
+      ref: { workspaceId: WS, moduleId: 'planning', type: 'planning.plan', id: 'plan' }, title: 'Week 47',
+      uiPath: `/workspaces/${WS}/planning?plan=plan`, capabilityIds: [], observedAt: '2026-11-08T10:00:00.000Z',
+      summary: [{ key: 'option-count', label: 'Options', kind: 'count', value: 2 }, { key: 'updated-at', label: 'Updated', kind: 'timestamp', value: '2026-11-08T10:00:00.000Z' }],
+    })
+    const study = moduleResourceDescriptorSchema.parse({ ...plan, ref: { ...plan.ref, type: 'planning.study', id: 'study' } })
+    const [item, ...rest] = continueItems([plan, study, room('r', '2026-11-08T11:00:00.000Z')])
+    expect(item?.kind).toBe('plan')
+    expect(item?.status).toBe('Plan')
+    // A Run and a plan of the same name read apart: each card says what it is (maint's walk 2, D10-02).
+    expect([continueKindLabel(item!.kind), continueKindLabel('running'), continueKindLabel('paused'), continueKindLabel('conversation')]).toEqual(['Plan', 'Simulation', 'Simulation', 'Conversation'])
+    expect(item?.resource.ref).toEqual(plan.ref)
+    expect(item?.facts.map(fact => fact.key)).toEqual(['option-count', 'updated-at'])
+    expect(rest.map(entry => entry.kind)).toEqual(['conversation'])
+  })
+
   test('live Runs first, then paused Runs, then conversations, newest first; nothing without a page', () => {
     const items = continueItems([
       room('r1', '2026-10-12T21:59:00.000Z'),

@@ -27,9 +27,9 @@
     ScenarioExecutionState,
     SimulationClockState,
   } from '../../core/model/index.ts'
-  import { deleteObjectCommandKind, roleClassForRoleSet, runRolesOf, viewerForRoleSet } from '../../core/model/index.ts'
+  import { deleteObjectCommandKind, idSchema, objectIdSchema, roleClassForRoleSet, runRolesOf, viewerForRoleSet } from '../../core/model/index.ts'
   import { createPackPresentationComposer } from '../../core/packs/presentation-composer.ts'
-  import type { PackCreateObjectType, PackMapAssignmentMode, PackMapAssignmentTarget, PackMapFeatureQuery, PackObjectPresentation, PackObjectPresentationTier, PackObjectStatusPresentation, PackPresentationContribution, PackProcedureContribution, PackSurfacePanelContribution, PackTargetContext, PackTargetPreview } from '../../core/packs/protocol.ts'
+  import type { PackCreateObjectType, PackMapFeatureQuery, PackObjectPresentation, PackObjectPresentationTier, PackObjectStatusPresentation, PackPresentationContribution, PackProcedureContribution, PackSurfacePanelContribution, PackTargetContext, PackTargetPreview } from '../../core/packs/protocol.ts'
   import type { PackLiveMapLayerBinding } from '../map-runtime/pack-live-layer.ts'
   import type { PhysicalLayoutBinding } from '../physical-layout/sources.ts'
   import { physicalExplorerOperationalCapture } from '../physical-layout/explorer-interaction.ts'
@@ -65,8 +65,8 @@
   import { completeControlSurfaceStartupFromSnapshot } from '../app/control-surface-session.ts'
   import { startupScenarioSource } from '../app/startup-scenario.ts'
   import { loadActivePackViews } from '../pack-loader.ts'
-  import { groundClicksWanted, previewObjectTarget, routeGroundClick, routeObjectClick, targetPickingWanted, targetPreviewsWanted, type MapClickContext, type MapClickRoute, type MapTargetPanel } from '../map-target-routing.ts'
-  import { assertMapCover, assertPanelInteraction, cameraPaddingFor, mapCameraInteractionFor, openPanelDeclaring, railStartsCollapsed, startingControllerId, surfacePanelPackId, type MapPrompt, type SurfacePanelInteraction, type SurfacePanelProps } from '../surface-panel-interaction.ts'
+  import { groundClicksWanted, previewObjectTarget, routeGroundClick, routeObjectClick, targetPickingWanted, targetPreviewsWanted, type ClosedMapTargetPanel, type MapClickContext, type MapClickRoute, type MapTargetPanel } from '../map-target-routing.ts'
+  import { assertMapCover, assertMapPrompt, assertMapTargeting, assertPanelInteraction, cameraPaddingFor, mapCameraInteractionFor, openPanelDeclaring, railStartsCollapsed, startingControllerId, surfacePanelIsOpen, surfacePanelPackId, type MapPrompt, type MapTargeting, type SurfacePanelInteraction, type SurfacePanelProps } from '../surface-panel-interaction.ts'
   import type { MapCover } from '../surface-panel-contract.ts'
   import PanelKeyRouter from '../keys/PanelKeyRouter.svelte'
   import type { PanelKey } from '../keys/panel-key.ts'
@@ -164,15 +164,6 @@
     readonly provider: PackProcedureContribution
     readonly index: number
   }
-  interface MapAssignmentState {
-    readonly controllerId: string
-    readonly mode: PackMapAssignmentMode
-  }
-  interface MapAssignmentPicker {
-    readonly target: PackMapAssignmentTarget
-    readonly x: number
-    readonly y: number
-  }
   let activePack = $state<ActivePackViews | null>(null)
   let simulationRunId = $state<SimulationRunId | null>(null)
   let objects = $state<OperationalObject[]>([])
@@ -189,6 +180,8 @@
   let seenRevisions = $state(new Map<string, number>())
   let expectedRealtimeScenarioId = $state<string | null>(null)
   let realtimeAttached = $state(false)
+  /** Said on the status line from a close the screen did not ask for until the reconnected screen has read the Run again. */
+  let liveUpdatesProblem = $state<string | null>(null)
   let routeRevision = $state(0)
   let procedureRevision = $state(0)
   let procedureEvidenceRevision = $state(0)
@@ -273,6 +266,22 @@
   let surfacePanelOpen = $state<Record<string, boolean>>({})
   let guidancePreferences = $state<RunViewPreferences['guidance']>(initialRunViewPreferences().guidance)
   let timedCardRequested = $state(false)
+  const routeFocus = objectIdSchema.safeParse(new URLSearchParams(location.search).get('focus')).data ?? null
+  const routeElement = idSchema.safeParse(new URLSearchParams(location.search).get('element')).data ?? null
+  let focusedMapObjectId = $state<ObjectId | null>(null)
+  let mapFocusRequested = false
+  let planningGuideOpened = false
+  const planningDemoHref = $derived.by(() => {
+    const definition = guidanceScreen.guide?.planningDefinitionId
+    if (!definition || !simulationRunId) return null
+    const params = new URLSearchParams({ planning: 'demo', definition, run: simulationRunId })
+    const current = new URLSearchParams(location.search)
+    for (const key of ['agents', 'option']) {
+      const value = idSchema.safeParse(current.get(key)).data
+      if (value !== undefined) params.set(key, value)
+    }
+    return `/workspaces/${encodeURIComponent(activeWorkspaceId())}?${params}`
+  })
   const structuredGuideVisible = $derived(Boolean(guidanceScreen.guide && !guidanceScreen.explored && (!guidanceScreen.guide.attemptId || guidanceScreen.guide.status === 'active')))
   const guidanceOverlayVisible = $derived(Boolean(scenarioState?.guidance && guidancePreferences.mode === 'running' && guidancePreferences.dismissedId !== scenarioState.guidance.id && (!structuredGuideVisible || timedCardRequested)))
   const guidanceUnread = $derived(Boolean(scenarioState?.guidance && guidancePreferences.presentedId !== scenarioState.guidance.id))
@@ -297,9 +306,6 @@
   let mapFocusRequest = $state<MapFocusRequest | null>(null)
   let mapFocusRevision = 0
   let cancelledMapFocusRevision = $state<number | null>(null)
-  let mapAssignment = $state<MapAssignmentState | null>(null)
-  let mapAssignmentPicker = $state<MapAssignmentPicker | null>(null)
-  let mapAssignmentChoiceIds = $state<ReadonlyArray<string>>([])
   let longTaskMonitor: LongTaskDiagnosticsMonitor | null = null
   let latestDroneMotionFrames: ReadonlyArray<DroneMotionFrame> = []
   const droneMotionFrameConsumers = new Set<DroneMotionFrameConsumer>()
@@ -354,13 +360,13 @@
   let guidanceBottom = $state(0)
   let categoryMapVisibility = $state<Record<string, boolean>>({})
   const surfacePanels = $derived(activePack?.surfacePanels ?? [])
-  const surfacePanelLaunchers = $derived(surfacePanels.map(panel => ({ id: panel.id, label: panel.label, open: surfacePanelOpen[panel.id] ?? false })))
+  const surfacePanelLaunchers = $derived(surfacePanels.map(panel => ({ id: panel.id, label: panel.label, open: surfacePanelIsOpen(panel, surfacePanelOpen) })))
   // Handlers the mounted panels lend the surface; only panels whose contribution declares a hook connect one.
   let panelInteractions = $state.raw<Readonly<Record<string, SurfacePanelInteraction>>>({})
   let panelKeysActive = $state(true)
   // How far each panel last reported reaching over the map; only open panels' reports pad the camera.
   let panelMapCovers = $state.raw<Readonly<Record<string, MapCover>>>({})
-  const isSurfacePanelOpen = (panel: PackSurfacePanelContribution): boolean => surfacePanelOpen[panel.id] ?? false
+  const isSurfacePanelOpen = (panel: PackSurfacePanelContribution): boolean => surfacePanelIsOpen(panel, surfacePanelOpen)
   const mapTargetPanelContribution = $derived(openPanelDeclaring(surfacePanels, isSurfacePanelOpen, 'mapTargets'))
   const mapTargetPanel = $derived<MapTargetPanel | null>(mapTargetPanelContribution && activePack
     ? {
@@ -370,11 +376,26 @@
         previewMapTarget: panelInteractions[mapTargetPanelContribution.id]?.previewMapTarget ?? null,
       }
     : null)
+  // A click on an object of a Pack whose map-target panel is closed opens that panel (`map-target-routing.ts`).
+  const closedMapTargetPanels = $derived.by<ReadonlyArray<ClosedMapTargetPanel>>(() => {
+    const packs = activePack?.packs ?? []
+    return surfacePanels.filter(panel => panel.mapTargets === true && !isSurfacePanelOpen(panel)).map(panel => ({ panelId: panel.id, packId: surfacePanelPackId(packs, panel) }))
+  })
   const keymapPanel = $derived(openPanelDeclaring(surfacePanels, isSurfacePanelOpen, 'keymap'))
   const mapCameraPadding = $derived(cameraPaddingFor(surfacePanels.filter(isSurfacePanelOpen).flatMap(panel => panelMapCovers[panel.id] ?? [])))
   // Each panel's latest map prompt; only the open map-target panel's is drawn.
   let panelMapPrompts = $state.raw<Readonly<Record<string, MapPrompt | null>>>({})
   const mapPrompt = $derived(mapTargetPanelContribution ? panelMapPrompts[mapTargetPanelContribution.id] ?? null : null)
+  // The operator dismissed the drawn prompt: it goes, and its panel is told. One the panel already replaced is past news.
+  const dismissMapPrompt = (prompt: MapPrompt): void => {
+    const panel = mapTargetPanelContribution
+    if (panel === null || panelMapPrompts[panel.id] !== prompt) return
+    panelMapPrompts = { ...panelMapPrompts, [panel.id]: null }
+    prompt.onDismiss()
+  }
+  // Each panel's latest armed order; only the open map-target panel's is drawn.
+  let panelMapTargetings = $state.raw<Readonly<Record<string, MapTargeting | null>>>({})
+  const mapTargeting = $derived(mapTargetPanelContribution ? panelMapTargetings[mapTargetPanelContribution.id] ?? null : null)
   // A panel lending its handlers may change which objects its Pack lets this screen order, so the muted set follows them.
   const mapMutedObjectIds = $derived.by(() => {
     void panelInteractions
@@ -382,8 +403,8 @@
     return mutedOnMap ? objects.filter(object => mutedOnMap(object, targetContext)).map(object => object.id) : emptyStringArray
   })
   const mapCameraInteraction = $derived(mapCameraInteractionFor(activePack?.packs ?? []))
-  const mapClickContext = $derived<MapClickContext>({ controller: selectedControllerObject, targeting: activePack?.targeting, context: targetContext, panel: mapTargetPanel, opensDisplay })
-  const physicalOperationalCapture = $derived(physicalExplorerOperationalCapture({ placement: placementMode !== null, assignment: mapAssignment !== null, targetPicking: targetPickingWanted(mapClickContext), controllerSelected: selectedControllerId !== null }))
+  const mapClickContext = $derived<MapClickContext>({ controller: selectedControllerObject, selectedObjectId: selectedControllerId, targeting: activePack?.targeting, context: targetContext, panel: mapTargetPanel, closedMapTargetPanels, opensDisplay })
+  const physicalOperationalCapture = $derived(physicalExplorerOperationalCapture({ placement: placementMode !== null, targetPicking: targetPickingWanted(mapClickContext), controllerSelected: selectedControllerId !== null }))
   const mapStartupFailed = $derived(startupSteps.find(step => step.id === 'map')?.status === 'failed')
   const displayRunJoin = $derived.by<DeckRunJoin>(() => {
     if (simulationRunId !== null) return { state: 'joined' }
@@ -391,20 +412,16 @@
     return step?.status === 'failed' ? { state: 'failed', reason: step.error ?? `${step.label} failed` } : { state: 'joining' }
   })
   const richOperationalUiReady = $derived(!mapVisible || mapReady || mapStartupFailed)
-  const mapAssignmentController = $derived.by(() => {
-    const controllerId = mapAssignment?.controllerId
-    return controllerId === undefined ? null : objects.find(object => object.id === controllerId) ?? null
-  })
-  const mapAssignmentContribution = $derived(mapAssignmentController && activePack ? activePack.packForObject(mapAssignmentController).mapAssignment ?? null : null)
-  const mapAssignmentAnchor = $derived(mapAssignmentController && mapAssignmentContribution && mapAssignment
-    ? mapAssignmentContribution.anchorFor(mapAssignmentController, mapAssignment.mode, targetContext)
-    : null)
-  const mapAssignmentHandles = $derived(activePack ? activePack.packs.flatMap(pack => pack.mapAssignment?.handles(targetContext) ?? []) : [])
   const debugMapInput = $derived(new URLSearchParams(location.search).get('debugMapInput') === '1')
   const debugStartup = new URLSearchParams(location.search).get('debugStartup') === '1'
   const categoryRows = $derived<ReadonlyArray<CategoryRow>>(categoryRowsForStartingView(allCategoryRows, railConfig))
   const objectById = $derived(new Map(objects.map(object => [object.id, object])))
-  const mapHighlightedObjectIds = $derived([...new Set([...(scenarioState?.highlightedObjectIds ?? emptyStringArray), ...presentationObjectIds])])
+  const focusedMapObject = $derived(focusedMapObjectId === null ? undefined : objectById.get(focusedMapObjectId))
+  const focusedMapObjectLabel = $derived(focusedMapObject?.label ?? null)
+  const mapHighlightedObjectIds = $derived([...new Set([
+    ...(scenarioState?.highlightedObjectIds ?? emptyStringArray), ...presentationObjectIds,
+    ...(focusedMapObject ? [focusedMapObject.id] : []),
+  ])])
   $effect(() => {
     const rows = categoryRows
     untrack(() => {
@@ -479,13 +496,49 @@
   const toggleSurfacePanel = (panelId: string): void => {
     const panel = surfacePanels.find(candidate => candidate.id === panelId)
     if (!panel) return
-    setSurfacePanelOpen(panelId, !(surfacePanelOpen[panelId] ?? false))
+    setSurfacePanelOpen(panelId, !surfacePanelIsOpen(panel, surfacePanelOpen))
   }
 
   const focusMapTarget = (target: MapFocusTarget): void => {
     mapFocusRevision += 1
     mapFocusRequest = { revision: mapFocusRevision, target }
   }
+
+  const focusOnMapObject = (position: GeoJsonPoint['coordinates'], zoom?: number): void => {
+    focusMapTarget({ kind: 'view', center: [position[0], position[1]], zoom: zoom ?? Math.max(9, panelMapView?.zoom ?? 9), bearing: panelMapView?.bearing ?? 0 })
+  }
+
+  $effect(() => {
+    if (routeFocus === null || mapFocusRequested || !startupDismissed || !mapReady || !mapVisible || !activePack) return
+    const object = objectById.get(routeFocus)
+    mapFocusRequested = true
+    untrack(() => {
+      if (!object?.spatial.position) {
+        commandFeedback = noteAction(commandFeedback, 'The requested object is unavailable on this map.')
+        return
+      }
+      setCategoryMapVisibility(presentationFor(object).categoryId, true)
+      focusedMapObjectId = object.id
+      focusOnMapObject(object.spatial.position.point.coordinates)
+      if (routeElement !== null) {
+        if (!observedAssetObjects.some(asset => asset.id === object.id)) {
+          commandFeedback = noteAction(commandFeedback, 'The requested object has no available equipment display.')
+          return
+        }
+        // An element may be absent from the whole asset's overview. Ask the
+        // owner to resolve its default detail and local topology instead of
+        // trying to select it on a drawing that does not contain it.
+        if (simulationRunId === null) throw new Error('Equipment focus requires a joined Simulation Run')
+        requestDisplayWindow({ kind: 'subject', runId: simulationRunId, subject: `${object.id}#${routeElement}` }, false)
+      }
+    })
+  })
+
+  $effect(() => {
+    if (routeFocus !== null || planningGuideOpened || !planningDemoHref || !viewControls || !startupDismissed || foregroundProcedure) return
+    planningGuideOpened = true
+    void viewControls.reveal('guide', false)
+  })
 
   // Pack-rail layer-group visibility. Active pack contributes mapLayerGroups
   // (e.g. electric grid: lines, cables, substations); the rail renders
@@ -561,7 +614,8 @@
 
   const viewPanels = $derived<ReadonlyArray<RunViewChoice>>([
     ...(activePhysicalLayoutBindings.length > 0 ? [{ id: 'layout-controls', label: 'Physical layout controls', visible: layoutControlsVisible }] : []),
-    ...surfacePanels.map(panel => ({ id: `panel:${panel.id}`, label: panel.label, visible: isSurfacePanelOpen(panel), ...(mapTargetPanelContribution?.id === panel.id && (selectedControllerObject?.packId === mapTargetPanel?.packId || panelMapPrompts[panel.id] != null) ? { disabledReason: 'Finish or cancel the current map operation before hiding this panel' } : {}) })),
+    // The open map-target panel stays while it arms an order, which it shows by its targeting (plan B.10: only in SA).
+    ...surfacePanels.map(panel => ({ id: `panel:${panel.id}`, label: panel.label, visible: isSurfacePanelOpen(panel), ...(mapTargetPanelContribution?.id === panel.id && panelMapTargetings[panel.id] != null ? { disabledReason: 'Finish or cancel the armed order before hiding this panel' } : {}) })),
   ])
   const viewLayers = $derived<ReadonlyArray<RunViewChoice>>([
     ...activeMapLayerGroups.map(layer => ({ id: `layer:${layer.id}`, label: layer.label, visible: mapLayerGroupVisibility[layer.id] ?? layer.defaultVisible })),
@@ -724,10 +778,10 @@
     if (action.kind === 'highlight') { presentationOwner = request.id; presentationObjectIds = [object.id]; await tick(); current(); return { status: 'applied' } }
     if (action.kind === 'focus' || action.kind === 'reveal') {
       if (!cameraAllowed) return { status: 'superseded', reason: 'Your map gesture took priority; use Show to request another camera move' }
-      if (viewResetDisabledReason) throw new Error('Finish or cancel the current map operation before a guided camera move')
+      if (viewResetDisabledReason) throw new Error('Finish or cancel the armed order before a guided camera move')
       if (action.kind === 'reveal') { presentationOwner = request.id; presentationObjectIds = [object.id] }
       const position = object.spatial.position.point.coordinates
-      focusMapTarget({ kind: 'view', center: [position[0], position[1]], zoom: (action.kind === 'focus' ? action.zoom : undefined) ?? Math.max(9, panelMapView?.zoom ?? 9), bearing: panelMapView?.bearing ?? 0 })
+      focusOnMapObject(position, action.kind === 'focus' ? action.zoom : undefined)
       return waitForPresentation(request, signal, presentationMapWaiters, mapFocusRevision)
     }
     throw new Error('This object action is unsupported')
@@ -1296,6 +1350,24 @@
   )
   const foregroundProcedure = $derived(Boolean(ProcedureSystemModal && simulationRunId && procedureSession && procedureSystemWindowModels.length))
   const mapGuidanceVisible = $derived(guidanceOverlayVisible && !displayWindowOpen && !foregroundProcedure)
+  const visibleGuidanceBottom = $derived(mapGuidanceVisible ? guidanceBottom : 0)
+  const timelineOutcome = $derived(scenarioState?.timeline?.executions?.filter(cue => cue.status !== 'complete')
+    .map(cue => `${cue.cueId}: ${cue.status}; ${cue.actions.filter(action => action === 'accepted').length}/${cue.actions.length} accepted`).join(' · ') ?? '')
+  let dismissedTimelineOutcome = $state('')
+  const dismissGuidance = (): void => {
+    const guidance = scenarioState?.guidance
+    if (!guidance) return
+    guidancePreferences = { ...guidancePreferences, dismissedId: guidance.id }
+    if (document.activeElement?.closest('.scenario-guidance')) document.getElementById('run-guide-trigger')?.focus({ preventScroll: true })
+  }
+  const dismissMapNotice = (event: KeyboardEvent): void => {
+    if (event.key !== 'Escape' || event.defaultPrevented || foregroundProcedure || displayWindowOpen) return
+    if (event.target instanceof Element && event.target.closest('[role="dialog"], dialog, input, textarea, select, [contenteditable="true"]')) return
+    if (mapGuidanceVisible) dismissGuidance()
+    else if (timelineOutcome && dismissedTimelineOutcome !== timelineOutcome) dismissedTimelineOutcome = timelineOutcome
+    else return
+    event.preventDefault()
+  }
 
   $effect(() => {
     const liveObjectIds = new Set(objects.map(object => object.id))
@@ -1418,6 +1490,7 @@
   const prepareRunStartup = (nextStatus: 'Starting' | 'Resetting'): void => {
     realtimeConnection.disconnect()
     realtimeAttached = false
+    liveUpdatesProblem = null
     resetStartupDebug()
     surfaceLoadGeneration += 1
     postReadyPreloadStarted = false
@@ -1483,6 +1556,20 @@
     clock = clockOrder.published(body.snapshot.clock)
   }
 
+  /** A reconnected channel without a perspective missed what happened while it was down: read the Run again, as joining did. */
+  const resyncAfterReconnect = async (): Promise<void> => {
+    try {
+      await syncSimulationRunSnapshot()
+    } catch (err) {
+      if (realtimeAttached) liveUpdatesProblem = `Live updates are back, but the Run could not be read again: ${err instanceof Error ? err.message : String(err)}`
+      return
+    }
+    routeRevision += 1
+    procedureRevision += 1
+    if (realtimeAttached) liveUpdatesProblem = null
+    await refreshExecution()
+  }
+
   const switchUnderWay = (): boolean => {
     if (pendingRoleIds === null) return false
     commandFeedback = noteAction(commandFeedback, 'Switching roles; issue this again once the switch completes')
@@ -1507,63 +1594,6 @@
     }
     commandFeedback = settleCommand(commandFeedback, issued.actionId, body.result)
     if (body.result.ok) await syncSimulationRunSnapshot()
-  }
-
-  const cancelMapAssignment = (): void => {
-    mapAssignment = null
-    mapAssignmentPicker = null
-    mapAssignmentChoiceIds = []
-  }
-
-  /** A long press starts a map assignment only on an object whose Pack declares one; on any other it stays a plain click. */
-  const canLongPress = (object: OperationalObject): boolean => activePack !== null && activePack.packForObject(object).mapAssignment !== undefined
-
-  const beginMapAssignment = (controller: OperationalObject, mode: PackMapAssignmentMode): void => {
-    if (!activePack) return
-    const contribution = activePack.packForObject(controller).mapAssignment
-    if (!contribution) return
-    if (mode === 'start' && !contribution.canStart(controller, targetContext)) {
-      commandFeedback = noteAction(commandFeedback, `${controller.label} is not available for a new assignment`)
-      return
-    }
-    placement.cancel()
-    mapAssignment = { controllerId: controller.id, mode }
-    mapAssignmentPicker = null
-    mapAssignmentChoiceIds = []
-    commandFeedback = noteAction(commandFeedback, mode === 'start' ? `Choose an incident for ${controller.label}` : `Add a stop to ${controller.label}`)
-  }
-
-  const submitMapAssignmentTarget = async (target: PackMapAssignmentTarget, choiceIds: ReadonlyArray<string>): Promise<void> => {
-    if (choiceIds.length < target.minimumChoices || choiceIds.length > target.maximumChoices) {
-      commandFeedback = noteAction(commandFeedback, `Choose ${target.minimumChoices === target.maximumChoices ? target.minimumChoices : `${target.minimumChoices}–${target.maximumChoices}`} patients`)
-      return
-    }
-    const command = target.buildCommand(choiceIds)
-    cancelMapAssignment()
-    await sendCommand(command.kind, command.payload, `Assigning ${target.label}`)
-  }
-
-  const chooseMapAssignmentTarget = (candidate: OperationalObject, screen: { readonly x: number; readonly y: number }): void => {
-    if (!mapAssignment || !mapAssignmentController || !mapAssignmentContribution) return
-    const target = mapAssignmentContribution.targetFor(mapAssignmentController, candidate, mapAssignment.mode, targetContext)
-    if (!target) {
-      commandFeedback = noteAction(commandFeedback, `${candidate.label} is not a valid next destination`)
-      cancelMapAssignment()
-      return
-    }
-    const available = target.choices.filter(choice => !choice.disabledReason)
-    if (target.choices.length <= 1) {
-      void submitMapAssignmentTarget(target, available.map(choice => choice.id))
-      return
-    }
-    mapAssignmentPicker = { target, x: screen.x, y: screen.y }
-    mapAssignmentChoiceIds = []
-  }
-
-  const toggleMapAssignmentChoice = (id: string): void => {
-    mapAssignmentChoiceIds = mapAssignmentChoiceIds.includes(id)
-      ? mapAssignmentChoiceIds.filter(value => value !== id)
-      : [...mapAssignmentChoiceIds, id]
   }
 
   const sendRealtimeInput = (input: Parameters<typeof realtimeConnection.sendRuntimeInput>[1]): void => {
@@ -1605,8 +1635,8 @@
   /** One path for map clicks: a map-target panel takes every target click; otherwise the Pack's targeting sends. */
   const followMapClick = (route: MapClickRoute): void => {
     if (route.kind === 'display') {
-      // A placement or an assignment takes the map over; a unit chosen or an open map-target panel never routes a display.
-      if (placementMode === null && mapAssignment === null) openDisplayFromPress(route.objectId)
+      // A placement takes the map over; a unit chosen or an open map-target panel never routes a display.
+      if (placementMode === null) openDisplayFromPress(route.objectId)
       return
     }
     if (route.kind === 'none') return
@@ -1617,6 +1647,15 @@
     }
     if (route.kind === 'note') {
       commandFeedback = noteAction(commandFeedback, route.text)
+      return
+    }
+    if (route.kind === 'openPanel') {
+      setSurfacePanelOpen(route.panelId, true)
+      selectObjectById(route.objectId)
+      return
+    }
+    if (route.kind === 'deselect') {
+      selectedControllerId = null
       return
     }
     if (route.kind === 'panel') {
@@ -1641,6 +1680,7 @@
   }
 
   const selectObject = (object: OperationalObject): void => {
+    focusedMapObjectId = null
     markSeen(object)
     requireActivePack()
     followMapClick(routeObjectClick(object, mapClickContext))
@@ -1690,8 +1730,9 @@
       onOpen: () => {
         status = 'Realtime channel open'
       },
-      onClose: () => {
+      onClose: (retry) => {
         realtimeAttached = false
+        liveUpdatesProblem = `Live updates lost · reconnecting${retry.attempt > 1 ? ` (attempt ${retry.attempt})` : ''}`
         if (startupSteps.find(step => step.id === 'realtime')?.status !== 'failed') failStep('realtime', 'Realtime channel disconnected')
         if (pendingRoleIds !== null) failRoleSwitch(pendingRoleIds, 'The realtime channel closed before the Run answered; this screen keeps its roles')
       },
@@ -1702,13 +1743,17 @@
       onInvalidMessage: (message) => {
         status = message
       },
-      onReady: (parsed) => {
+      onReady: (parsed, resumed) => {
+        const refuse = (message: string): void => {
+          failStep('realtime', message)
+          if (resumed) liveUpdatesProblem = message
+        }
         if (parsed.simulationRunId !== id) {
-          failStep('realtime', `Realtime attached to ${parsed.simulationRunId}, expected ${id}`)
+          refuse(`Realtime attached to ${parsed.simulationRunId}, expected ${id}`)
           return
         }
         if (expectedRealtimeScenarioId !== null && parsed.scenarioId !== expectedRealtimeScenarioId) {
-          failStep('realtime', `Realtime attached to scenario ${parsed.scenarioId ?? 'none'}, expected ${expectedRealtimeScenarioId}`)
+          refuse(`Realtime attached to scenario ${parsed.scenarioId ?? 'none'}, expected ${expectedRealtimeScenarioId}`)
           return
         }
         realtimeAttached = true
@@ -1718,6 +1763,11 @@
         status = 'Connected'
         completeStep('realtime')
         completeReadyWhenReady()
+        // A role Run's ready carries the perspective's snapshot, and adoptPerspective has already read it in.
+        if (resumed) {
+          if (parsed.perspective) liveUpdatesProblem = null
+          else void resyncAfterReconnect()
+        }
       },
       onEvent: (parsed) => {
         if (parsed.simulationRunId !== id) return
@@ -1809,7 +1859,6 @@
     packDataRevisions = { ...stores.packDataRevisions }
     packPanelSelections = { ...stores.packPanelSelections }
     commandFeedback = stores.commandFeedback
-    cancelMapAssignment()
     placement.cancel()
     latestDroneMotionFrames = []
     routeRevision += 1
@@ -1919,7 +1968,10 @@
   const simulationRunIdFromPath = (): SimulationRunId => {
     const route = activeRoute()
     if (route.mode !== 'simulation-run') throw new Error('simulation run route expected')
-    if (location.pathname !== route.canonicalPath) history.replaceState(null, '', `${route.canonicalPath}${searchWithRoleSet('', roleSetFromSearch(location.search))}`)
+    if (location.pathname !== route.canonicalPath) {
+      const search = routeFocus === null ? '' : new URLSearchParams({ focus: routeFocus }).toString()
+      history.replaceState(null, '', `${route.canonicalPath}${searchWithRoleSet(search, roleSetFromSearch(location.search))}`)
+    }
     return route.simulationRunId
   }
 
@@ -2094,7 +2146,9 @@
       }
     }
     if (window.self === window.top) {
-      window.location.replace(`/workspaces/${encodeURIComponent(route.workspaceId)}?world=${encodeURIComponent(route.simulationRunId)}`)
+      const search = new URLSearchParams({ world: route.simulationRunId })
+      if (routeFocus !== null) search.set('focus', routeFocus)
+      window.location.replace(`/workspaces/${encodeURIComponent(route.workspaceId)}?${search}`)
       return () => {
         cleanupInternalDiagnosticsGlobal()
         longTaskMonitor?.stop()
@@ -2113,6 +2167,7 @@
     alarmStripVisible = preferences.alarms
     layoutControlsVisible = preferences.layout
     surfacePanelOpen = { ...preferences.panels }
+    dismissedTimelineOutcome = ''
     viewPreferencesKey = key
     const receiveDisplayWindowMessage = (event: MessageEvent): void => {
       const message = readDisplayWindowHostMessage(event, { origin: location.origin, parent: window.parent, workspaceId })
@@ -2177,9 +2232,9 @@
     const key = panels.map(panel => panel.id).join('|')
     if (key === appliedSurfacePanelKey) return
     untrack(() => {
-      const next: Record<string, boolean> = {}
-      for (const panel of panels) next[panel.id] = surfacePanelOpen[panel.id] ?? false
-      surfacePanelOpen = next
+      // Keep only the choices this tab made for panels that still exist; an untouched panel follows its defaultOpen.
+      const ids = new Set(panels.map(panel => panel.id))
+      surfacePanelOpen = Object.fromEntries(Object.entries(surfacePanelOpen).filter(([id]) => ids.has(id)))
       appliedSurfacePanelKey = key
     })
   })
@@ -2187,7 +2242,7 @@
   $effect(() => {
     if (!richOperationalUiReady) return
     for (const panel of surfacePanels) {
-      if (surfacePanelOpen[panel.id] ?? false) void loadSurfacePanel(panel.id)
+      if (surfacePanelIsOpen(panel, surfacePanelOpen)) void loadSurfacePanel(panel.id)
     }
   })
 
@@ -2234,6 +2289,8 @@
   })
 
 </script>
+
+<svelte:window onkeydown={dismissMapNotice} />
 
 {#if !startingView}
   <div class="boot-shell"></div>
@@ -2316,6 +2373,8 @@
           highlightedObjectIds={mapHighlightedObjectIds}
           mutedObjectIds={mapMutedObjectIds}
           prompt={mapPrompt}
+          onPromptDismissed={dismissMapPrompt}
+          targeting={mapTargeting}
           {hiddenObjectCategoryIds}
           {hasNewInfo}
           presentationFor={mapPresentationFor}
@@ -2327,7 +2386,7 @@
           onMapReady={handleMapReady}
           onMapView={view => panelMapView = view}
           onFocusResult={(revision, status) => presentationMapWaiters.get(revision)?.({ status, ...(status === 'superseded' ? { reason: 'Your camera interaction took priority' } : {}) })}
-          onCameraGesture={() => guidanceSession?.manualCamera()}
+          onCameraGesture={() => { focusedMapObjectId = null; guidanceSession?.manualCamera() }}
           onMapError={handleMapError}
           onMapDiagnostic={handleMapDiagnostic}
           {simulationRunId}
@@ -2340,7 +2399,7 @@
           liveMapLayers={activeLiveMapLayers}
           physicalLayoutBindings={activePhysicalLayoutBindings}
           bind:physicalLayoutControlsOpen={layoutControlsVisible}
-          layoutClearTop={alarmStripBottom}
+          layoutClearTop={Math.max(alarmStripVisible ? alarmStripBottom : 0, visibleGuidanceBottom)}
           onPhysicalDisplay={listing => requestDisplayWindow({ kind: 'listing', listing }, true)}
           physicalLayoutSuspended={physicalOperationalCapture}
           {queryLiveMapLayer}
@@ -2349,55 +2408,20 @@
           packFeatureSourcePackIds={activePackFeatureSourcePackIds}
           focusRequest={mapFocusRequest}
           cancelFocusRevision={cancelledMapFocusRevision}
-          assignmentActive={mapAssignment !== null}
-          assignmentAnchor={mapAssignmentAnchor}
-          assignmentHandles={mapAssignmentHandles}
-          onObjectLongPressed={object => beginMapAssignment(object, 'start')}
-          {canLongPress}
-          onAssignmentHandleSelected={controllerId => { const controller = objects.find(object => object.id === controllerId); if (controller) beginMapAssignment(controller, 'append') }}
-          onAssignmentObjectSelected={chooseMapAssignmentTarget}
-          onAssignmentCancelled={cancelMapAssignment}
           cameraInteraction={mapCameraInteraction}
           cameraPadding={mapCameraPadding}
           targetPicking={targetPickingWanted(mapClickContext)}
           onGroundSelected={groundClicksWanted(mapClickContext) ? selectGround : undefined}
           targetPreviewFor={targetPreviewsWanted(mapClickContext) ? previewTarget : undefined}
-          takesDiskClicks={opensDisplay}
+          takesDiskClicks={object => opensDisplay(object) || closedMapTargetPanels.some(panel => panel.packId === object.packId)}
         />
       {:else if mapVisible}
         <div class="map-loading">Starting map...</div>
       {:else}
         <div class="surface-empty"></div>
       {/if}
-      {#if mapAssignmentPicker}
-        <section
-          class="map-assignment-picker"
-          style={`--picker-x:${mapAssignmentPicker.x}px;--picker-y:${mapAssignmentPicker.y}px`}
-          aria-label={`Select patients for ${mapAssignmentPicker.target.label}`}
-        >
-          <div class="map-assignment-picker__header">
-            <div>
-              <strong>{mapAssignmentPicker.target.label}</strong>
-              <span>Select casualties</span>
-            </div>
-            <button type="button" aria-label="Cancel assignment" title="Cancel" onclick={cancelMapAssignment}>×</button>
-          </div>
-          <div class="map-assignment-picker__choices">
-            {#each mapAssignmentPicker.target.choices as choice (choice.id)}
-              <label class:disabled={!!choice.disabledReason} title={choice.disabledReason ?? ''}>
-                <input type="checkbox" disabled={!!choice.disabledReason} checked={mapAssignmentChoiceIds.includes(choice.id)} onchange={() => toggleMapAssignmentChoice(choice.id)} />
-                <span><strong>{choice.label}</strong><small>{choice.summary}</small>{#if choice.disabledReason}<small class="reason">{choice.disabledReason}</small>{/if}</span>
-              </label>
-            {/each}
-          </div>
-          <div class="map-assignment-picker__footer">
-            <span>{mapAssignmentChoiceIds.length}/{mapAssignmentPicker.target.maximumChoices} selected</span>
-            <button type="button" disabled={mapAssignmentChoiceIds.length < mapAssignmentPicker.target.minimumChoices || mapAssignmentChoiceIds.length > mapAssignmentPicker.target.maximumChoices} onclick={() => void submitMapAssignmentTarget(mapAssignmentPicker!.target, mapAssignmentChoiceIds)}>Assign</button>
-          </div>
-        </section>
-      {/if}
       {#if activePack && alarmStripVisible && !foregroundProcedure}
-        <AlertStrip onClose={() => { alarmStripVisible = false; document.getElementById('run-alarms-trigger')?.focus({ preventScroll: true }) }} {objects} categoryOf={object => presentationFor(object).categoryId} openDisplay={openStripDisplay} {theme} raised={displayWindowOpen} onBounds={setAlarmStripBounds} belowRoles={Boolean(runRoles && heldRoleIds)} railWidth={railVisible ? railLayout.width : 0} clear={{ left: mapCameraPadding.left, right: mapCameraPadding.right, top: mapGuidanceVisible ? guidanceBottom : 0 }} />
+        <AlertStrip onClose={() => { alarmStripVisible = false; document.getElementById('run-alarms-trigger')?.focus({ preventScroll: true }) }} {objects} categoryOf={object => presentationFor(object).categoryId} openDisplay={openStripDisplay} {theme} raised={displayWindowOpen} onBounds={setAlarmStripBounds} belowRoles={Boolean(runRoles && heldRoleIds)} railWidth={railVisible ? railLayout.width : 0} clear={{ left: mapCameraPadding.left, right: mapCameraPadding.right, top: visibleGuidanceBottom }} />
       {/if}
       <RunViewControls bind:this={viewControls} camera={viewCamera} layers={viewLayers} panels={viewPanels} act={actOnView} toggle={setViewChoice}
         reset={resetLocalView} resetDisabledReason={viewResetDisabledReason} alarms={viewAlarmCount} alarmsVisible={alarmStripVisible} showAlarms={visible => alarmStripVisible = visible}
@@ -2405,13 +2429,16 @@
         clear={mapCameraPadding} ready={mapReady} raised={displayWindowOpen} onReadUpdate={markGuidancePresented}
         hasGuide={Boolean(guidanceScreen.guide)} {guideBadge} {foregroundProcedure}>
         {#snippet guideContent()}
-          <GuidePanel screen={guidanceScreen} session={guidanceSession} explore={() => { guidanceSession?.explore(); viewControls?.dismiss() }} />
+          <GuidePanel screen={guidanceScreen} session={guidanceSession} {planningDemoHref} explore={() => { guidanceSession?.explore(); viewControls?.dismiss() }} />
         {/snippet}
       </RunViewControls>
-      {#if scenarioState?.timeline?.executions?.some(cue => cue.status !== 'complete')}
-        <div class="timeline-outcome" role="status">Scenario cue actions are incomplete or uncertain. {scenarioState.timeline.executions.filter(cue => cue.status !== 'complete').map(cue => `${cue.cueId}: ${cue.status}; ${cue.actions.filter(action => action === 'accepted').length}/${cue.actions.length} accepted`).join(' · ')}</div>
+      {#if timelineOutcome && dismissedTimelineOutcome !== timelineOutcome && !foregroundProcedure && !displayWindowOpen}
+        <div class="timeline-outcome">
+          <span role="status">Scenario cue actions are incomplete or uncertain. {timelineOutcome}</span>
+          <button type="button" aria-label="Dismiss scenario cue notice" onclick={() => { dismissedTimelineOutcome = timelineOutcome }}>×</button>
+        </div>
       {/if}
-      <WorldStatusLine {clock} execution={executionState} feedback={commandFeedback.line} placementHint={placement.placementText()} />
+      <WorldStatusLine {clock} execution={executionState} feedback={commandFeedback.line} placementHint={placement.placementText()} connectionProblem={liveUpdatesProblem} mapFocusLabel={focusedMapObjectLabel} planningDemoHref={routeFocus === null || displayWindowOpen ? null : planningDemoHref} />
       {#if runRoles && heldRoleIds}
         <RoleBar declaration={runRoles} held={heldRoleIds} switchingTo={pendingRoleIds} request={requestRoleChange} openDialog={() => { roleDialogOpen = true }} />
       {/if}
@@ -2424,8 +2451,8 @@
         {#key perspectiveEpoch}
         {#each surfacePanels as panel (panel.id)}
           {@const Panel = surfacePanelComponents[panel.id]}
-          {#if (surfacePanelOpen[panel.id] ?? false) && Panel}
-            <div id={`world-panel-${panel.id}`} class="presentation-panel-host"><Panel {simulationRunId} {objects} {seenRoleIds} mapView={panelMapView} dataRevision={packDataRevisions[panel.id.split('.')[0]! ] ?? 0} selectedItemId={packPanelSelections[panel.id] ?? null} onSelectItem={(itemId: string | null) => { packPanelSelections = { ...packPanelSelections, [panel.id]: itemId } }} onClose={() => setSurfacePanelOpen(panel.id, false)} onFocusMap={focusMapTarget} currentTime={currentPackTime} selectedObjectId={selectedControllerId} onSelectObject={selectObjectById} connectInteraction={(interaction: SurfacePanelInteraction) => connectPanelInteraction(panel, interaction)} keysActive={panelKeysActive} roleSet={panelRoleSet} onMapCover={(cover: MapCover) => { panelMapCovers = { ...panelMapCovers, [panel.id]: assertMapCover(panel.id, cover) } }} onMapPrompt={(prompt: MapPrompt | null) => { panelMapPrompts = { ...panelMapPrompts, [panel.id]: prompt } }} /></div>
+          {#if surfacePanelIsOpen(panel, surfacePanelOpen) && Panel}
+            <div id={`world-panel-${panel.id}`} class="presentation-panel-host"><Panel {simulationRunId} {objects} {seenRoleIds} mapView={panelMapView} dataRevision={packDataRevisions[panel.id.split('.')[0]! ] ?? 0} selectedItemId={packPanelSelections[panel.id] ?? null} onSelectItem={(itemId: string | null) => { packPanelSelections = { ...packPanelSelections, [panel.id]: itemId } }} onClose={() => setSurfacePanelOpen(panel.id, false)} onFocusMap={focusMapTarget} currentTime={currentPackTime} selectedObjectId={selectedControllerId} onSelectObject={selectObjectById} connectInteraction={(interaction: SurfacePanelInteraction) => connectPanelInteraction(panel, interaction)} keysActive={panelKeysActive} roleSet={panelRoleSet} onMapCover={(cover: MapCover) => { panelMapCovers = { ...panelMapCovers, [panel.id]: assertMapCover(panel.id, cover) } }} onMapPrompt={(prompt: MapPrompt | null) => { panelMapPrompts = { ...panelMapPrompts, [panel.id]: prompt === null ? null : assertMapPrompt(panel.id, prompt) } }} onMapTargeting={(targeting: MapTargeting | null) => { panelMapTargetings = { ...panelMapTargetings, [panel.id]: targeting === null ? null : assertMapTargeting(panel.id, targeting) } }} /></div>
           {/if}
         {/each}
         {/key}
@@ -2438,7 +2465,7 @@
       bind:bottom={guidanceBottom}
       guidance={scenarioState.guidance}
       presented={markGuidancePresented}
-      close={() => { if (scenarioState?.guidance?.dismissible) { guidancePreferences = { ...guidancePreferences, dismissedId: scenarioState.guidance.id }; document.getElementById('run-guide-trigger')?.focus({ preventScroll: true }) } }}
+      close={dismissGuidance}
     />
     {/key}
     {/if}
@@ -2488,6 +2515,7 @@
     openAssistant={runAssistantOffered && simulationRunId !== null ? openRunAssistant : null}
     focusMap={focusMapTarget}
     close={closeDisplayWindow}
+    planningDemoHref={routeFocus === null ? null : planningDemoHref}
   />
 {/if}
 
@@ -2509,7 +2537,8 @@
       session={procedureSession}
       {clock}
       {realtimeAttached}
-      checkEvidenceRevision={`${perspectiveEpoch}:${procedureEvidenceRevision}:${packDataRevisions[windowEntry.object.packId] ?? 0}`}
+      checkPerspective={perspectiveEpoch}
+      checkEvidenceRevision={`${procedureEvidenceRevision}:${packDataRevisions[windowEntry.object.packId] ?? 0}`}
       checkEvidenceObject={windowEntry.object}
       initialProcedureId={windowEntry.initialProcedureId}
       windowOffsetIndex={windowEntry.index}
@@ -2581,7 +2610,8 @@
 {/if}
 
 <style>
-  .timeline-outcome { position: absolute; inset: 8px 12px auto auto; z-index: 27; max-width: min(440px, 80%); padding: 8px; border: 1px solid var(--border); border-radius: 6px; background: var(--panel); font-size: 12px; }
+  .timeline-outcome { position: absolute; inset: 8px 12px auto auto; z-index: 21; display: flex; align-items: start; gap: 8px; max-width: min(440px, 80%); padding: 8px; border: 1px solid var(--border); border-radius: 6px; background: var(--panel); font-size: 12px; pointer-events: none; }
+  .timeline-outcome button { pointer-events: auto; }
   /* Pack panels measure their immediate surface. Keep its real geometry while lending pointer input only to the panel. */
   .presentation-panel-host { position: absolute; inset: 0; pointer-events: none; }
   :global(:where(.presentation-panel-host) > :where(*)) { pointer-events: auto; }

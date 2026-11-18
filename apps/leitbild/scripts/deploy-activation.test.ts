@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { remoteDeploy } from './deploy.ts'
 
-const services = ['leitbild-world.service', 'leitbild-agents.service', 'leitbild-host.service']
+const services = ['leitbild-world.service', 'leitbild-agents.service', 'leitbild-planning.service', 'leitbild-host.service']
 const shellFixtures = `
 flock() {
   if test "$FAULT" = deploy-lock && test "\${@: -1}" = 9; then return 1; fi
@@ -81,7 +81,9 @@ curl() {
   url="\${@: -1}"
   case "$url" in
     https:*) case "$FAULT" in public|rollback-*) return 22 ;; signal) kill -TERM $$; return 1 ;; esac ;;
-    */health) test "$FAULT" != health || return 22 ;;
+    */health)
+      test "$FAULT" != health || return 22
+      if test "$FAULT" = planning-health && test "$url" = http://127.0.0.1:3102/health; then return 22; fi ;;
     */api/workspaces) test "$FAULT" != workspace || return 22 ;;
     */api/knowledge/index)
       if test "$FAULT" = knowledge; then echo '{"revision":"wrong","documents":[]}'
@@ -114,7 +116,7 @@ const fixture = async (fault: string, install = false, fresh = false) => {
   await put('deploy/releases/expired/marker', 'expired release')
   await put('deploy/deps/expired/marker', 'expired dependencies')
   await put('state-data/marker', 'persistent data must survive')
-  for (const path of ['locks', 'env', 'systemd', 'deploy/deps/lock-packages/node_modules', 'deploy/deps/lock-packages/apps/leitbild/node_modules', 'deploy/deps/lock-packages/apps/world/node_modules', 'deploy/deps/lock-packages/apps/agents/node_modules']) await mkdir(join(root, path), { recursive: true })
+  for (const path of ['locks', 'env', 'systemd', 'deploy/deps/lock-packages/node_modules', 'deploy/deps/lock-packages/apps/leitbild/node_modules', 'deploy/deps/lock-packages/apps/world/node_modules', 'deploy/deps/lock-packages/apps/agents/node_modules', 'deploy/deps/lock-packages/apps/planning/node_modules']) await mkdir(join(root, path), { recursive: true })
   await mkdir(join(root, 'deploy/deps/previous/node_modules'))
   await symlink(join(root, 'deploy/deps/previous/node_modules'), join(oldRelease, 'node_modules'))
   if (!fresh) {
@@ -130,10 +132,11 @@ const fixture = async (fault: string, install = false, fresh = false) => {
     if (!fresh) await put(`systemd/${service}`, `previous ${service}\n`)
     await put(`package/apps/leitbild/deploy/${service}`, `next ${service}\n`)
   }
-  for (const module of ['world', 'agents']) await put(`proc/leitbild-${module}/environ`, `WORKSPACE_HOST_URL=${fault === 'routing' ? 'wrong' : 'http://127.0.0.1:3100'}\0`)
+  for (const module of ['world', 'agents', 'planning']) await put(`proc/leitbild-${module}/environ`, `WORKSPACE_HOST_URL=${fault === 'routing' ? 'wrong' : 'http://127.0.0.1:3100'}\0`)
   await put('package/apps/leitbild/deploy/sites/leitbild.caddy', fault === 'unchanged' ? 'previous site\n' : 'next site\n')
   await put('package/apps/world/package.json', '{}')
   await put('package/apps/agents/package.json', '{}')
+  await put('package/apps/planning/package.json', '{}')
   await put('package/DEPLOYMENT.json', JSON.stringify({ app: 'leitbild-platform', releaseId: 'next' }))
   const archive = join(root, 'archive.tgz')
   const tar = Bun.spawn(['tar', '-czf', archive, '-C', join(root, 'package'), '.'], { stdout: 'pipe', stderr: 'pipe' })
@@ -231,6 +234,37 @@ test('failed first installation restores absent files, absent selection and inac
     }
   } finally { await f.dispose() }
 })
+
+for (const fault of ['success', 'planning-health', 'public']) {
+  test(`adding Planning to an existing three-service installation: ${fault}`, async () => {
+    const f = await fixture(fault, true)
+    const planning = 'leitbild-planning.service'
+    try {
+      await rm(join(f.root, `systemd/${planning}`))
+      await f.put(`state/${planning}.active`, 'unknown\n')
+      await f.put(`state/${planning}.enabled`, 'not-found\n')
+      await f.put(`state/${planning}.load`, 'not-found\n')
+      const result = await f.run()
+      expect(result.code, result.stderr).toBe(fault === 'success' ? 0 : fault === 'planning-health' ? 22 : 1)
+      expect(await readlink(join(f.root, 'deploy/current'))).toBe(fault === 'success' ? f.newRelease : f.oldRelease)
+      if (fault === 'success') {
+        expect(await readFile(join(f.root, 'env/platform.env'), 'utf8')).toContain('"moduleId":"planning","internalBaseUrl":"http://127.0.0.1:3102"')
+        expect(await readFile(join(f.root, `systemd/${planning}`), 'utf8')).toBe(`next ${planning}\n`)
+        expect(await readFile(join(f.root, `state/${planning}.active`), 'utf8')).toBe('active\n')
+        expect(await readFile(join(f.root, `state/${planning}.enabled`), 'utf8')).toBe('enabled\n')
+        expect(await realpath(join(f.newRelease, 'apps/planning/node_modules'))).toBe(join(f.root, 'deploy/deps/lock-packages/apps/planning/node_modules'))
+      } else {
+        expect(result.stderr).toContain('Previous activation restored')
+        expect(await Bun.file(join(f.root, `systemd/${planning}`)).exists()).toBe(false)
+        expect(await readFile(join(f.root, `state/${planning}.active`), 'utf8')).toBe('inactive\n')
+        expect(await readFile(join(f.root, `state/${planning}.enabled`), 'utf8')).toBe('disabled\n')
+        expect(await readFile(join(f.root, 'env/platform.env'), 'utf8')).toBe('previous env\n')
+        expect((await readFile(join(f.root, 'state/leitbild-host.service.release'), 'utf8')).trim()).toBe(f.oldRelease)
+      }
+      expect(await readFile(join(f.root, 'state-data/marker'), 'utf8')).toBe('persistent data must survive')
+    } finally { await f.dispose() }
+  })
+}
 
 for (const fault of ['rollback-file', 'rollback-service', 'rollback-caddy']) {
   test(`reports original failure and incomplete rollback: ${fault}`, async () => {

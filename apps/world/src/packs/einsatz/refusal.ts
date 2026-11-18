@@ -1,3 +1,5 @@
+import { z } from 'zod'
+
 /**
  * Einsatz refusal convention: every refusal reads `<code>: <message>`. The
  * code is stable and machine-readable, so tests and callers assert it; the
@@ -9,7 +11,6 @@
 export const configurationRefusalCodes = [
   'duplicate_id',
   'duplicate_code',
-  'unknown_unit_type',
   'unknown_task_template',
   'unknown_load_class',
   'unknown_tag',
@@ -17,40 +18,36 @@ export const configurationRefusalCodes = [
   'unknown_property',
   'unknown_enum_value',
   'unknown_icon',
+  'unknown_priority',
+  'priorities_required',
+  'stationary_type_not_site',
   'property_conflict',
   'property_kind_mismatch',
   'condition_out_of_range',
   'invalid_range',
   'default_out_of_range',
-  'too_many_board_properties',
+  'too_many_shown_properties',
   'refused_combination',
   'identify_exceeds_detect',
   'order_requires_component',
   'component_requires_order',
-  'priority_class_required',
   'self_hostility',
 ] as const
 
 export type ConfigurationRefusalCode = typeof configurationRefusalCodes[number]
 
 /**
- * Refusals of a configuration against the Scenario it runs in: authority
- * needs declared roles and names operator roles only, hostility names
- * declared sides, and the roles' labels fit `lastAction.by` and never read
- * as a standing order there. Groups need declared roles, name a declared
- * side exactly when the Scenario declares sides, and alone hold role ids of
- * the form `group:<id>`. An authority
- * entry naming an undeclared role is `authority_unknown_role`, apart from
- * core's `unknown_role` for a caller asking for an undeclared role.
+ * Refusals of a configuration against the Scenario it runs in: hostility
+ * names declared sides, and the roles' labels fit `lastAction.by` and never
+ * read as a standing order there. In a Scenario with sides, groups become
+ * roles, so they need declared roles and name a declared side; without
+ * sides a group names none. Only a declared group's own role has an id of
+ * the form `group:<id>`.
  */
 export const scenarioConfigRefusalCodes = [
-  'authority_without_roles',
-  'authority_unknown_role',
-  'controller_authority',
   'unknown_side',
   'role_labels_too_long',
   'role_label_reserved',
-  'groups_without_roles',
   'group_side_required',
   'group_side_not_declared',
   'reserved_role_id',
@@ -59,10 +56,11 @@ export type ScenarioConfigRefusalCode = typeof scenarioConfigRefusalCodes[number
 
 /**
  * Refusals of an intent against the current engine state. Intents reuse the
- * configuration codes where the meaning is the same (an unknown type, an
- * undeclared property, a load-less task without a floor, a repeated id).
+ * configuration codes where the meaning is the same (an undeclared template,
+ * load class, priority or property, a repeated id).
  */
 export const engineRefusalCodes = [
+  'unknown_unit_type',
   'not_in_picture',
   'not_a_site',
   'cross_side_reference',
@@ -72,7 +70,7 @@ export const engineRefusalCodes = [
   'unit_committed',
   'unit_loaded',
   'unit_unavailable',
-  'divert_not_lower_priority',
+  'divert_from_higher_priority',
   'divert_after_arrival',
   'requirement_unmet',
   'requirement_covered',
@@ -86,8 +84,13 @@ export const engineRefusalCodes = [
   'track_not_deletable',
   'reserved_id',
   'chain_full',
+  'when_required',
+  'drops_mismatch',
+  'newer_order_exists',
+  'nothing_to_undo',
   'step_not_found',
-  'step_not_undoable',
+  'plan_changed',
+  'invalid_stop_order',
   'group_required',
   'unknown_group',
   'group_not_declared',
@@ -108,14 +111,20 @@ export type AuthorityRefusalCode = typeof authorityRefusalCodes[number]
 /**
  * Refusals of a command the runtime does not run: it is unavailable, does
  * not accept the command kind, the input does not parse, or the Run kept
- * deleting Einsatz records while the command was routing.
+ * deleting Einsatz records while the command was routing. A Run whose saved
+ * Einsatz state does not read as this runtime's state does not restore
+ * (`einsatz_saved_state_invalid`): there is no migration.
  */
-export const runtimeRefusalCodes = ['runtime_unavailable', 'command_not_accepted', 'invalid_input', 'records_changed'] as const
+export const runtimeRefusalCodes = ['runtime_unavailable', 'command_not_accepted', 'invalid_input', 'records_changed', 'einsatz_saved_state_invalid'] as const
 export type RuntimeRefusalCode = typeof runtimeRefusalCodes[number]
 
 export type EinsatzRefusalCode = ConfigurationRefusalCode | ScenarioConfigRefusalCode | EngineRefusalCode | AuthorityRefusalCode | RuntimeRefusalCode
 
-const knownCodes: ReadonlySet<string> = new Set<string>([...configurationRefusalCodes, ...scenarioConfigRefusalCodes, ...engineRefusalCodes, ...authorityRefusalCodes, ...runtimeRefusalCodes])
+export const einsatzRefusalCodes = [...configurationRefusalCodes, ...scenarioConfigRefusalCodes, ...engineRefusalCodes, ...authorityRefusalCodes, ...runtimeRefusalCodes] as const
+/** Every Einsatz refusal code, for wire answers that name one. */
+export const einsatzRefusalCodeSchema = z.enum(einsatzRefusalCodes)
+
+const knownCodes: ReadonlySet<string> = new Set<string>(einsatzRefusalCodes)
 
 export const refusal = (code: EinsatzRefusalCode, message: string): string => `${code}: ${message}`
 

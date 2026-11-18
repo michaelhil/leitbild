@@ -1,12 +1,14 @@
-import type { ActorId, IsoTimestamp, ProcedureRunDriver, ProcedureRunState, ProcedureStep } from '../../core/model/index.ts'
+import { limitMaxAgeSeconds } from '@leitbild/procmd'
+import type { ActorId, IsoTimestamp, ProcedureDocument, ProcedureRunDriver, ProcedureRunState, ProcedureStep } from '../../core/model/index.ts'
+import type { ProcedureBranchAssessment } from '../../core/model/procedure-criteria.ts'
+import { procedureCheckedTagIds, procedureReadingProblem, procedureStepAsksPerson } from './branch-assessment.ts'
 import type { ProcedureTagRead } from './pack-observations.ts'
 
 // Who may work a procedure Run, and how an AI agent decides on it. An AI
 // agent that drives a Run works its current step as the procedure says: it
 // selects any declared branch there (a normal, response-not-obtained or
-// unknown outcome; to a step, another procedure or END) on a stated basis,
-// citing the step's tags World reads now wherever any of them reads. A person
-// takes over by acting. Explicit placekeeping is distinct from an evidence-backed
+// unknown outcome; to a step, another procedure or END) on a stated basis.
+// A person takes over by acting. Explicit placekeeping is distinct from an evidence-backed
 // branch decision; World enforces ownership and document validity at commit.
 
 /** Who issues a procedure command: an AI agent, a person, or the Run itself (its Scenario timeline). */
@@ -39,18 +41,42 @@ export const assertAiDrives = (run: ProcedureRunState, actorId: ActorId): void =
 }
 
 /** A person-readable basis accompanies authoritative World criteria; optional citations are receipts, not proof. */
-export const assertAiDecisionEvidence = (config: {
-  readonly step: ProcedureStep
-  readonly basis?: string
-  readonly reads: ReadonlyArray<ProcedureTagRead>
-}): void => {
-  if (config.basis === undefined) {
+export const assertAiStatesBasis = (basis: string | undefined): void => {
+  if (basis === undefined) {
     throw new Error('An AI agent selects a branch only with a basis: what the step asks, the values read with units and plant time, and what could not be observed (at most 300 characters).')
   }
-  for (const read of config.reads) {
-    if (read.binding === 'missing') throw new Error(`«${read.tagId}» has no binding on this Plant: cite only tags World reads now, and say in the basis what is not observable.`)
-    if (read.value === undefined) throw new Error(`«${read.tagId}» could not be read (${read.unavailable ?? 'no value'}): cite only tags World reads now, and say in the basis what is not observable.`)
+}
+
+const askInstead = 'A person decides it: ask with world.procedure.run.request-input.'
+
+/**
+ * Why World refuses an AI agent this branch, if it does. A document marked
+ * ai-workable lets an AI go on by stated judgement where no limit decides, on
+ * valid readings. It stops the AI to ask at a judgement transfer, at the end,
+ * and on any answer to a question no limit decides when one answer transfers.
+ * Any other document refuses everything its criteria do not support.
+ */
+export const aiBranchRefusal = (config: {
+  readonly document: ProcedureDocument
+  readonly step: ProcedureStep
+  readonly branchIndex: number
+  readonly criterion: ProcedureBranchAssessment
+  readonly reads: ReadonlyArray<ProcedureTagRead>
+  readonly plantId: string
+}): string | undefined => {
+  const { document, step, branchIndex, criterion } = config
+  const branch = step.branches[branchIndex]!
+  const name = `Branch ${branchIndex} of step ${step.label}`
+  const marked = document.annotations?.['ai-workable'] === 'true'
+  if (marked && (branch.targetKind === 'end' || branch.targetKind === 'abort')) return `${name} ends the procedure. ${askInstead}`
+  if (!marked || step.decisions?.some(decision => decision.branchIndex === branchIndex)) {
+    return criterion.status === 'supported' ? undefined : `${name} is ${criterion.status}: ${criterion.reasons.join(' ') || 'the current evidence contradicts its declared criterion'}`
   }
+  if (branch.targetKind === 'procedure') return `${name} transfers on judgement, with no limit stated. ${askInstead}`
+  if (procedureStepAsksPerson(step)) return `${name} answers a question no limit decides, and another answer leaves the procedure. ${askInstead}`
+  const checked = procedureCheckedTagIds(step)
+  const problems = config.reads.filter(read => checked.includes(read.tagId)).flatMap(read => procedureReadingProblem(read, read.tagId, { simulationTime: criterion.simulationTime, plantId: config.plantId, maxAgeSeconds: limitMaxAgeSeconds }) ?? [])
+  return problems.length === 0 ? undefined : `${name} rests on readings that are not valid: ${problems.join(' ')}`
 }
 
 export const procedureDriver = (config: {

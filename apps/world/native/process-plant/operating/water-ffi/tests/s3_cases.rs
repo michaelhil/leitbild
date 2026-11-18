@@ -509,7 +509,7 @@ struct Recorder {
     /// LD01_PERF_PROFILE=1 (with LD01_OU_FRAME_COST=1).
     profile: Option<Vec<ProfileFrame>>,
     /// HOOK (PHYS X1): the protection's observed quantities at each frame
-    /// of a gated run, when LD01_PHYS_OPERATOR_FRAMES=1 (never in `frames`).
+    /// of a run, when LD01_PHYS_OPERATOR_FRAMES=1 (never in `frames`).
     /// The observed quantities and their references ride along once.
     operator: Option<(leitbild_operating_water::ic::Readings, Value, Vec<Value>)>,
     /// HOOK (FEED, plan r4 X4.1): with the packet's feed train, each loop's
@@ -1732,9 +1732,8 @@ fn drive(
         rows: Vec::new(),
         cost: (std::env::var("LD01_OU_FRAME_COST").as_deref() == Ok("1")).then(Vec::new),
         profile: leitbild_operating_plant::cost::active().then(Vec::new),
-        operator: (gate.is_some()
-            && std::env::var("LD01_PHYS_OPERATOR_FRAMES").as_deref() == Ok("1"))
-        .then(|| (protection.readings(), protection.observed(), Vec::new())),
+        operator: (std::env::var("LD01_PHYS_OPERATOR_FRAMES").as_deref() == Ok("1"))
+            .then(|| (protection.readings(), protection.observed(), Vec::new())),
         legs: packet_json["secondary"]["feedTrain"].is_object().then(|| {
             let ids: Vec<String> = packet_json["mechanics"]["regions"]
                 .as_array()
@@ -3580,7 +3579,10 @@ fn s3_case_run() {
     // so C4's `ends` do not apply, and a named end fails C4I.N2.
     let c4i = config.c4i_close_s.map(|close| {
         assert_eq!(case, Case::C4, "C4-I is C4's drive");
-        assert!(config.dc, "C4-I needs an IC section declaring the DC groups");
+        assert!(
+            config.dc,
+            "C4-I needs an IC section declaring the DC groups"
+        );
         let page = std::env::var("LD01_S3_DECLARATION")
             .unwrap_or_else(|_| format!("{}/build-readiness.md", gates::wiki_model()));
         let block = Block::from_page(&page, s3_harness::c4i::FENCE)

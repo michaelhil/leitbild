@@ -350,3 +350,10 @@ export const moduleCapabilityInvocationResultSchema = z.object({
   createdResources: z.array(workspaceResourceReferenceSchema).optional(),
 }).strict()
 export type ModuleCapabilityInvocationResult = z.infer<typeof moduleCapabilityInvocationResultSchema>
+
+// A displayed Module resource may have changed its catalogue metadata after a
+// qualified read. This is only an invalidation hint: the Host re-reads the owner.
+export const resourceCatalogChangedMessageSchema = z.object({
+  type: z.literal('leitbild:resource-catalog-changed'),
+  resource: workspaceResourceReferenceSchema,
+}).strict()

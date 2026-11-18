@@ -1,0 +1,10 @@
+{
+  "id": "engineering-grid",
+  "title": "Engineering lab: Grid alternatives",
+  "description": "An open, paused Norway Grid research case with no future event script. Read actual demand, service and power balance; compare the Grid owner's remedial cases, then calculate explicitly assumed interval energy. Static screening is not a dynamic forecast.",
+  "objectives": ["Read owner-qualified power quantities with their original frame.", "Compare Grid remedial alternatives and the energy consequences of assumed durations."],
+  "world": { "startsAt": "2026-01-12T07:00:00.000Z", "environment": { "purpose": "shared engineering research" } },
+  "view": { "map": { "center": [8.2, 60.4], "zoom": 6 } },
+  "packs": [{ "id": "electric-grid", "items": [{ "type": "grid", "id": "grid:engineering", "label": "Norway engineering research Grid", "location": [15.5, 64.7], "model": { "ref": "electric-grid.norway.transmission" }, "operatingPoint": { "ref": "electric-grid.norway.winter-weekday-peak" }, "automation": { "ref": "electric-grid.frequency.nordic-2025" } }] }],
+  "guide": { "id": "engineering-grid-guide", "title": "Compare power and interval energy", "startPaused": true, "steps": [{ "id": "compare", "title": "Keep power and energy distinct", "instruction": "Read the engineering Grid basis. Use the owner's remedial-action evaluator for network alternatives. Supply an explicit duration to calculate energy; do not present a static screen as a future trajectory.", "completion": { "kind": "acknowledge" } }, { "id": "explore", "title": "Inspect the alternatives", "instruction": "Compare the owner's screening results and inspect the assumptions behind interval energy. Preserve any refused or unchanged alternative in the explanation. This guide is finished. The Run remains available for further research.", "completion": { "kind": "acknowledge" } }] }
+}

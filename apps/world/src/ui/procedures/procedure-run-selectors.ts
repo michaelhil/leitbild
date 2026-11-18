@@ -77,6 +77,26 @@ const progressForStep = (step: ProcedureStep): ProcedureRunStepProgress => ({
   name: procedureStepDisplayName(step),
 })
 
+/** The Run a unit is working to now: its latest active Run, else the latest it is held at. */
+export const procedureRunInEffect = (runs: ReadonlyArray<ProcedureRunState>, scope: ProcedureRunScope): ProcedureRunState | null => {
+  const latest = (status: ProcedureRunState['status']) => runs.filter(run => run.status === status && sameProcedureScope(run.scope, scope))
+    .sort((left, right) => Date.parse(right.startedAt) - Date.parse(left.startedAt))[0]
+  return latest('active') ?? latest('transferred') ?? null
+}
+
+/** Where a transfer lands: the step its branch names, else where an open Run of the target stands, else the target's first step. */
+export const procedureTransferStep = (
+  branch: Pick<ProcedureBranch, 'targetStepId'>,
+  target: ProcedureDocument,
+  targetRun: ProcedureRunState | null,
+) => {
+  if (branch.targetStepId !== undefined) return procedureStepById(target, branch.targetStepId)
+  return targetRun && (targetRun.status === 'active' || targetRun.status === 'transferred')
+    && targetRun.sourceRevision === target.source.revision && targetRun.sourcePath === target.sourcePath
+    ? procedureCurrentStep(targetRun, target)?.step
+    : procedureFirstStep(target)
+}
+
 export const procedureBranchActionText = (config: {
   readonly currentDocument: ProcedureDocument
   readonly branch: ProcedureBranch
@@ -300,9 +320,9 @@ export const procedureDriverView = (run: ProcedureRunState | null): ProcedureDri
 export const procedureDecisionTargetText = (document: ProcedureDocument, decision: ProcedureStepDecision): string =>
   decision.targetKind === 'step' ? procedureStepById(document, decision.target)?.label ?? decision.target : decision.target
 
-/** How a taken branch is coloured: by its declared outcome, or plainly taken where it declares none. */
+/** How a taken branch is coloured: by its declared outcome, or plainly taken where it declares none. A press against a red light is never coloured as normal. */
 export const procedureDecisionTone = (decision: ProcedureStepDecision): 'normal' | 'rno' | 'unknown' | 'taken' =>
-  decision.outcome ?? 'taken'
+  decision.criterion?.status === 'contradicted' ? 'rno' : decision.outcome ?? 'taken'
 
 /**
  * One row of the procedure document. The current step and open steps show in full;

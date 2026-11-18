@@ -11,6 +11,8 @@ import type { RoutingAdapter } from '../../../routing/protocol.ts'
 import { worldCoreCapabilities } from '../../../simulation/core-capabilities.ts'
 import type { PackRuntimeConnection } from '../../../simulation/protocol.ts'
 import { createRuntimeHub } from '../../../simulation/runtime-hub.ts'
+import { weatherPack } from '../../weather/pack.ts'
+import { createLocalWeatherPackRuntimeAdapter } from '../../weather/sim/adapter.ts'
 import { einsatzDataSchema, type TaskData, type UnitData } from '../engine/model.ts'
 import { einsatzPackId, einsatzRuntimeId } from '../ids.ts'
 import { einsatzPack } from '../pack.ts'
@@ -101,7 +103,10 @@ export interface OpenRun {
 /**
  * A Run of the Einsatz engine fixture configuration with these items, or a
  * role Run as declared, or of a whole Scenario Definition: running unless
- * `paused`, or restored from a checkpoint.
+ * `paused`, or restored from a checkpoint. `others` are objects of other
+ * Packs the Run holds beside, with no runtime of their own (a Drone Pack
+ * observer). The Run has the Einsatz interaction handlers, as a Run of a
+ * Scenario with the Einsatz Pack does.
  */
 export const openRun = async (options: ({
   readonly items: ReadonlyArray<UnitItem | TaskItem>
@@ -111,12 +116,15 @@ export const openRun = async (options: ({
   readonly paused?: boolean
   readonly routing?: RoutingAdapter
   readonly restore?: RestorePoint
+  readonly others?: ReadonlyArray<OperationalObject>
 }): Promise<OpenRun> => {
   const direct = createDirectRoutingAdapter()
   const definition = 'definition' in options ? options.definition : definitionOf(options.items, options.timeline, options.declared)
-  const compiled = await compileScenarioDefinition(definition, [einsatzPack], { routing: direct })
+  const compiled = await compileScenarioDefinition(definition, [einsatzPack, weatherPack], { routing: direct })
   const runRoles = runRolesOf(compiled)
   const adapter = createEinsatzPackRuntimeAdapter({ routing: options.routing ?? direct })
+  const weather = compiled.packConfigs.weather === undefined ? null : createLocalWeatherPackRuntimeAdapter()
+  const adapters = weather === null ? [adapter] : [weather, adapter]
   let monotonicMs = 0
   const runClock = createSimulationClock(
     options.restore?.snapshot.clock ?? { currentTime: compiled.world.startsAt, updatedAt: nowIso(), paused: false },
@@ -124,19 +132,23 @@ export const openRun = async (options: ({
   )
   let saved: unknown = options.restore === undefined ? null : structuredClone(options.restore.runtimeState)
   const stateStore = createSimulationRunStateStore()
-  stateStore.hydrate(options.restore?.snapshot ?? { objects: compiled.initialObjects, seq: 0 })
+  const initialObjects = [...compiled.initialObjects, ...options.others ?? []]
+  stateStore.hydrate(options.restore?.snapshot ?? { objects: initialObjects, seq: 0 })
   const simulationRunId = 'run-einsatz-open' as SimulationRunId
-  const connection = await createRuntimeHub([adapter]).connect({
+  const connection = await createRuntimeHub(adapters).connect({
     simulationRunId,
     runClock,
     objectById: stateStore.getObject,
     scenario: {
       scenarioId: compiled.id,
-      runtimeIds: [einsatzRuntimeId],
+      runtimeIds: adapters.map(runtime => runtime.id),
       world: compiled.world,
-      initialObjects: compiled.initialObjects,
+      initialObjects,
       connections: [],
-      runtimeConfigByRuntimeId: { [einsatzRuntimeId]: compiled.packConfigs[einsatzPackId] },
+      runtimeConfigByRuntimeId: {
+        [einsatzRuntimeId]: compiled.packConfigs[einsatzPackId],
+        ...(weather === null ? {} : { [weather.id]: compiled.packConfigs.weather }),
+      },
       runtimeConfig: {},
       ...(compiled.roles === undefined ? {} : { roles: compiled.roles }),
       ...(compiled.sides === undefined ? {} : { sides: compiled.sides }),
@@ -161,8 +173,10 @@ export const openRun = async (options: ({
       ...(compiled.timeline === undefined ? {} : { timeline: compiled.timeline }),
     },
     roleAwarePackIds: [einsatzPackId],
+    interactionHandlers: einsatzPack.interactions?.handlers ?? [],
     runtimeCapabilities: [
       ...adapter.capabilities.map(capability => ({ packId: einsatzPackId, runtimeId: einsatzRuntimeId, capability })),
+      ...(weather === null ? [] : weather.capabilities.map(capability => ({ packId: weatherPack.descriptor.id, runtimeId: weather.id, capability }))),
       ...worldCoreCapabilities.map(capability => ({ packId: 'world', runtimeId: 'world.core', capability })),
     ],
     runtimeStateLoaders: { [einsatzRuntimeId]: async () => saved },

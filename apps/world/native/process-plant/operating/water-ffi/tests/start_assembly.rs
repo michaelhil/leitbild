@@ -67,7 +67,10 @@ fn a_start_assembly_fills_what_the_full_assembly_fills() {
     )
     .expect("full assembly");
     assert!(full.iter().any(|v| *v != 0.));
-    for columns in [Some(algebraic.as_slice()), None] {
+    // R4-CLIMB-SEAT's limited assembly: the rods' columns.
+    let o = joined.offsets();
+    let rods: Vec<bool> = (0..y.len()).map(|j| (o.rods..o.pzr).contains(&j)).collect();
+    for columns in [Some(algebraic.as_slice()), Some(rods.as_slice()), None] {
         joined
             .evaluate(t0, &y, &zero, None, 0., None)
             .expect("the start's evaluation");

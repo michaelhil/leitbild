@@ -4,7 +4,6 @@ import type { WorldPackView } from '../core/packs/protocol.ts'
 type PackLoader = () => Promise<WorldPackView>
 
 const packLoaders = {
-  ambulance: async () => (await import('../packs/ambulance/ui-pack.ts')).ambulancePackView,
   einsatz: async () => (await import('../packs/einsatz/ui-pack.ts')).einsatzPackView,
   weather: async () => (await import('../packs/weather/pack.ts')).weatherPack,
   'situation-monitor': async () => (await import('../packs/situation-monitor/ui-pack.ts')).situationMonitorPackView,

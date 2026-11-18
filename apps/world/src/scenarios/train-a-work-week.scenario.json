@@ -1,0 +1,10 @@
+{
+  "id": "train-a-work-week",
+  "title": "Train A work week",
+  "description": "A fictional four-loop reference pressurised-water reactor held at full power, for planning a maintenance week on its Train A equipment. Planning reads the pumps' design values and running state, each with its read time, and never changes this simulation. The model has no maintenance, isolation or out-of-service state: taking equipment out happens only in the plan.",
+  "objectives": ["Link this simulation to the Train A work week plan, so the plan reads live pump state.", "Compare the plan's assumptions with the plant's design values and running state."],
+  "world": { "startsAt": "2026-11-12T09:00:00.000Z", "environment": { "purpose": "maintenance planning" } },
+  "view": { "map": { "center": [11.47, 59.086], "zoom": 14 } },
+  "packs": [{ "id": "process-plant", "items": [{ "type": "plant", "id": "plant:train-a", "label": "Reference PWR", "location": [11.47, 59.086], "model": { "ref": "process-plant.pwr.reference", "parameters": { "loopCount": 4 } }, "operatingPoint": { "ref": "process-plant.pwr.full-power" }, "automation": { "ref": "process-plant.pwr.standard" } }] }],
+  "guide": { "id": "train-a-work-week-guide", "title": "Link the plan", "startPaused": true, "steps": [{ "id": "link", "title": "Link this simulation to the plan", "instruction": "This simulation starts paused at full power. Open the Train A work week plan in Planning and link this simulation there. The plan then reads the pumps' running state and design values with their read time; reading never changes the plant.", "completion": { "kind": "acknowledge" } }, { "id": "explore", "title": "Inspect the plant", "instruction": "Inspect the pumps the plan names, such as Service Water Pump A and B, and their live readings. Work in the plan is a forecast: the plant model has no maintenance or isolation state, so it shows no equipment taken out.", "completion": { "kind": "acknowledge" } }] }
+}

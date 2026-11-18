@@ -6,8 +6,8 @@ import { lonLat, taskItem, unitItem, type RoleRunDeclaration, type TaskItem, typ
 /**
  * Test-only: a sided role Run of the engine fixture configuration that
  * declares groups. North holds two carrier groups, a guard group and a desk
- * role commanding every North road carrier by authority; South holds one
- * carrier group. A public clinic receives load; North's tasks need carriage,
+ * role beside them, which commands nothing, since only a group's role
+ * commands units; South holds one carrier group. A public clinic receives load; North's tasks need carriage,
  * guarding, and nothing a unit serves. Production code never imports this
  * file.
  */
@@ -17,7 +17,7 @@ export const groupSides: ReadonlyArray<ScenarioSide> = [
   { id: 'south', label: 'South', colour: '#c62828' },
 ]
 
-/** Declared roles: a controller, and one operator role commanding by authority beside the groups. */
+/** Declared roles: a controller, and one operator role beside the groups, commanding no unit. */
 export const groupDeclaredRoles: ReadonlyArray<ScenarioRole> = [
   { id: 'north-desk', label: 'North desk', class: 'operator', sees: ['north'] },
   { id: 'control', label: 'Control', class: 'controller', sees: 'all' },
@@ -33,7 +33,6 @@ export const groups = [
 export const groupConfig = {
   ...fixture,
   hostility: { north: ['south'], south: ['north'] },
-  authority: [{ roleId: 'north-desk', units: { types: [types.roadCarrier] }, taskTemplates: [templates.report] }],
   groups,
 }
 
