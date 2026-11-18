@@ -162,6 +162,7 @@
     </div>
     <button type="button" class="finish-button" aria-pressed={chainOpen} disabled={chainReading} onclick={() => void finish()}>{chainReading ? 'Reading finish chain…' : 'What sets the finish'}</button>
   </div>
+  {#if chainOpen && chain}<p class="finish-summary" role="status" aria-label="Finish explanation">{limiting === null ? 'Highlighted tasks are the finish chain returned by Planning. Other constraints may also bind.' : partsText(limiting.parts)}</p>{/if}
   <p class="chart-help">{view === 'tasks' ? 'Select a task to inspect its dependencies, assigned crew and start constraints.' : 'Crew rows show scheduled use and off-shift periods. Select work in Tasks to inspect its start constraints.'}</p>
   {#if error}<p class="error" role="alert">{error}</p>{/if}
   {#if layout}
@@ -250,8 +251,7 @@
   {#if chainOpen && chain}
     <section class="finish-chain" aria-label="Returned finish chain">
       <h3>What sets the finish</h3>
-      {#if limiting}<p>{partsText(limiting.parts)}</p>{/if}
-      <p class="hint">Highlighted tasks are the finish chain returned by Planning. Other constraints may also bind.</p>
+      {#if limiting}<p class="hint">Highlighted tasks are the finish chain returned by Planning. Other constraints may also bind.</p>{/if}
       <ol>{#each steps as step}<li><button type="button" class="link" onclick={() => void select(step.jobKey)}>{step.job}</button> · {step.when}<small>{step.because}</small></li>{/each}</ol>
     </section>
   {/if}
@@ -264,6 +264,7 @@
   .views button[aria-pressed='true'], .finish-button[aria-pressed='true'] { background: var(--accent-2); border-color: var(--accent); }
   .chart-help, .hint, .legend { color: var(--ink-2); font-size: 11px; }
   .chart-help { margin: 6px 0 10px; }
+  .finish-summary { margin: 8px 0; padding: 9px 11px; border-left: 3px solid var(--accent); background: var(--accent-2); font-size: 12px; }
   .schedule-grid { display: grid; grid-template-columns: minmax(0, 1fr); gap: 14px; }
   .schedule-grid.inspecting { grid-template-columns: minmax(0, 1fr) 290px; }
   .chart-scroll { overflow-x: auto; padding-right: 10px; }
