@@ -125,11 +125,16 @@ const roomProfileSchema = z.object({
   }).strict().optional(),
 }).strict()
 
-const messageCauseSchema = z.object({
+const messageCauseSchema = z.discriminatedUnion('kind', [z.object({
   kind: z.enum(['script', 'trigger', 'biometric', 'resource-event', 'display-request', 'proposal-approved']),
   name: z.string(),
   step: z.number().int().optional(),
-}).strict()
+}).strict(), z.object({
+  kind: z.literal('diagram-request'),
+  name: z.string(),
+  requestId: z.string().uuid(),
+  diagramIndex: z.number().int().nonnegative(),
+}).strict()])
 
 const messageAttachmentSchema = z.object({
   kind: z.literal('image'),

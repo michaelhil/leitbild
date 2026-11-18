@@ -1,20 +1,27 @@
 import { describe, it, expect } from 'bun:test'
-import { normaliseMermaidSource, truncateForDisplay, MAX_MERMAID_SOURCE } from './normalise.ts'
+import { normaliseMermaidSource as normaliseDiagram, truncateForDisplay, MAX_MERMAID_SOURCE } from './normalise.ts'
+
+// Exercise repairs as complete flowcharts, as the chat renderer receives them.
+const normaliseFlowchart = (fragment: string): string => {
+  if (/^\s*(?:flowchart|graph)\b/.test(fragment)) return normaliseDiagram(fragment)
+  const header = 'flowchart LR\n'
+  return normaliseDiagram(header + fragment).slice(header.length)
+}
 
 describe('normaliseMermaidSource — trailing semicolons', () => {
   it('strips trailing ; from each line', () => {
     const src = 'flowchart LR\n    A --> B;\n    B --> C;'
-    const out = normaliseMermaidSource(src)
+    const out = normaliseFlowchart(src)
     expect(out).toBe('flowchart LR\n    A --> B\n    B --> C')
   })
 
   it('preserves semicolons not at line end', () => {
     const src = 'flowchart LR\n    A["foo; bar"] --> B'
-    expect(normaliseMermaidSource(src)).toBe(src)
+    expect(normaliseFlowchart(src)).toBe(src)
   })
 
   it('strips trailing ; even with trailing whitespace', () => {
-    expect(normaliseMermaidSource('A --> B;   ')).toBe('A --> B')
+    expect(normaliseFlowchart('A --> B;   ')).toBe('A --> B')
   })
 })
 
@@ -24,35 +31,35 @@ describe('normaliseMermaidSource — bracket label quoting', () => {
   // rewrite — no character allowlist to maintain.
 
   it('quotes [body] containing /', () => {
-    expect(normaliseMermaidSource('D[Divert / Abort]'))
+    expect(normaliseFlowchart('D[Divert / Abort]'))
       .toBe('D["Divert / Abort"]')
   })
 
   it('quotes {body} containing <', () => {
-    expect(normaliseMermaidSource('C{a < b}'))
+    expect(normaliseFlowchart('C{a < b}'))
       .toBe('C{"a < b"}')
   })
 
   it('quotes (body) containing #', () => {
-    expect(normaliseMermaidSource('E(foo#bar)'))
+    expect(normaliseFlowchart('E(foo#bar)'))
       .toBe('E("foo#bar")')
   })
 
   it('always quotes — even plain bodies (uniform rewrite policy)', () => {
-    expect(normaliseMermaidSource('A[Start]')).toBe('A["Start"]')
-    expect(normaliseMermaidSource('B{Decision}')).toBe('B{"Decision"}')
-    expect(normaliseMermaidSource('C(Process)')).toBe('C("Process")')
+    expect(normaliseFlowchart('A[Start]')).toBe('A["Start"]')
+    expect(normaliseFlowchart('B{Decision}')).toBe('B{"Decision"}')
+    expect(normaliseFlowchart('C(Process)')).toBe('C("Process")')
   })
 
   it('does not double-quote already-quoted bodies', () => {
-    expect(normaliseMermaidSource('D["Divert / Abort"]'))
+    expect(normaliseFlowchart('D["Divert / Abort"]'))
       .toBe('D["Divert / Abort"]')
-    expect(normaliseMermaidSource('A["Already quoted"]'))
+    expect(normaliseFlowchart('A["Already quoted"]'))
       .toBe('A["Already quoted"]')
   })
 
   it('trims whitespace inside the brackets', () => {
-    expect(normaliseMermaidSource('X[ foo/bar ]'))
+    expect(normaliseFlowchart('X[ foo/bar ]'))
       .toBe('X["foo/bar"]')
   })
 })
@@ -60,80 +67,80 @@ describe('normaliseMermaidSource — bracket label quoting', () => {
 describe('normaliseMermaidSource — bare quoted references', () => {
   it('converts a bare quoted ref into a synthetic node definition', () => {
     const src = '"Process / Store" --> Output'
-    const out = normaliseMermaidSource(src)
+    const out = normaliseFlowchart(src)
     expect(out).toBe('n1["Process / Store"] --> Output')
   })
 
   it('reuses the synthetic id on subsequent mentions', () => {
     const src = 'Input --> "Process / Store"\n"Process / Store" --> Output'
-    const out = normaliseMermaidSource(src)
+    const out = normaliseFlowchart(src)
     expect(out).toBe('Input --> n1["Process / Store"]\nn1 --> Output')
   })
 
   it('assigns distinct ids to distinct labels', () => {
     const src = '"A/B" --> "C/D"'
-    const out = normaliseMermaidSource(src)
+    const out = normaliseFlowchart(src)
     expect(out).toBe('n1["A/B"] --> n2["C/D"]')
   })
 
   it('leaves bracketed quoted labels alone (produced by step 2)', () => {
     const src = 'D["Divert / Abort"] --> X'
-    expect(normaliseMermaidSource(src)).toBe('D["Divert / Abort"] --> X')
+    expect(normaliseFlowchart(src)).toBe('D["Divert / Abort"] --> X')
   })
 })
 
 describe('normaliseMermaidSource — edge-label quotes preserved (R3 bug)', () => {
   it('preserves `A -- "label" --> B` — edge label is not a node ref', () => {
     const src = 'A -- "some label" --> B'
-    const out = normaliseMermaidSource(src)
+    const out = normaliseFlowchart(src)
     expect(out).toBe('A -- "some label" --> B')
   })
 
   it('preserves edge label with tighter spacing', () => {
     const src = 'A --"label"--> B'
-    expect(normaliseMermaidSource(src)).toBe('A --"label"--> B')
+    expect(normaliseFlowchart(src)).toBe('A --"label"--> B')
   })
 
   it('preserves edge label even when the label contains /', () => {
     const src = 'A -- "if / else" --> B'
-    expect(normaliseMermaidSource(src)).toBe('A -- "if / else" --> B')
+    expect(normaliseFlowchart(src)).toBe('A -- "if / else" --> B')
   })
 })
 
 describe('normaliseMermaidSource — directives and comments', () => {
   it('leaves classDef declarations untouched', () => {
     const src = 'classDef important fill:#f00,stroke:#000\nA:::important --> B'
-    expect(normaliseMermaidSource(src)).toBe(src)
+    expect(normaliseFlowchart(src)).toBe(src)
   })
 
   it('leaves style declarations untouched', () => {
     const src = 'style A fill:#fff,stroke:#000'
-    expect(normaliseMermaidSource(src)).toBe(src)
+    expect(normaliseFlowchart(src)).toBe(src)
   })
 
   it('leaves %% comments untouched', () => {
     const src = '%% this is a comment with [brackets] and /slashes'
-    expect(normaliseMermaidSource(src)).toBe(src)
+    expect(normaliseFlowchart(src)).toBe(src)
   })
 })
 
 describe('normaliseMermaidSource — edge cases', () => {
   it('empty string returns empty string', () => {
-    expect(normaliseMermaidSource('')).toBe('')
+    expect(normaliseFlowchart('')).toBe('')
   })
 
   it('whitespace-only returns as-is', () => {
-    expect(normaliseMermaidSource('\n\n   \n')).toBe('\n\n   \n')
+    expect(normaliseFlowchart('\n\n   \n')).toBe('\n\n   \n')
   })
 
   it('preserves mermaid arrows of different styles', () => {
-    expect(normaliseMermaidSource('A --> B\nC -.-> D\nE ==> F'))
+    expect(normaliseFlowchart('A --> B\nC -.-> D\nE ==> F'))
       .toBe('A --> B\nC -.-> D\nE ==> F')
   })
 
   it('composable: quoting a bracket with / and then using that node elsewhere', () => {
     const src = 'A[foo/bar] --> B\nB --> A'
-    const out = normaliseMermaidSource(src)
+    const out = normaliseFlowchart(src)
     expect(out).toBe('A["foo/bar"] --> B\nB --> A')
   })
 
@@ -143,7 +150,7 @@ describe('normaliseMermaidSource — edge cases', () => {
   EXT_X["X"]
   A --> EXT_X
   click EXT_X "https://example.com/proc/X" _blank`
-    const out = normaliseMermaidSource(src)
+    const out = normaliseFlowchart(src)
     // The URL must survive intact, not be replaced by a synthetic n1["..."]
     expect(out).toContain('click EXT_X "https://example.com/proc/X" _blank')
     expect(out).not.toMatch(/n\d+\["https/)
@@ -151,7 +158,7 @@ describe('normaliseMermaidSource — edge cases', () => {
 
   it('leaves already-quoted pipe edge labels alone', () => {
     const src = 'A --> B\nA -->|"If x: continue"| B'
-    const out = normaliseMermaidSource(src)
+    const out = normaliseFlowchart(src)
     expect(out).toContain('-->|"If x: continue"|')
     expect(out).not.toMatch(/n\d+\["If x: continue"\]/)
   })
@@ -163,19 +170,19 @@ describe('normaliseMermaidSource — edge cases', () => {
     const src = `flowchart TD
   B -->|PORVs PORV-456A / PORV-456B stuck or unresponsive; PT-455 drifting uncontrollably| C[ECA-3.3]
   D -->|SUB-MARGIN >= 30 degC at lowest cold-leg (and core exit)| E[ECA-3.1]`
-    const out = normaliseMermaidSource(src)
+    const out = normaliseFlowchart(src)
     expect(out).toContain('-->|"PORVs PORV-456A / PORV-456B stuck or unresponsive; PT-455 drifting uncontrollably"|')
     expect(out).toContain('-->|"SUB-MARGIN >= 30 degC at lowest cold-leg (and core exit)"|')
   })
 
   it('always quotes pipe edge labels — even plain text (uniform rewrite policy)', () => {
-    expect(normaliseMermaidSource('A -->|simple label| B'))
+    expect(normaliseFlowchart('A -->|simple label| B'))
       .toBe('A -->|"simple label"| B')
   })
 
   it('does not double-quote already-quoted pipe edge labels', () => {
     const src = 'A -->|"already quoted / with slash"| B'
-    const out = normaliseMermaidSource(src)
+    const out = normaliseFlowchart(src)
     expect(out).toContain('-->|"already quoted / with slash"|')
     expect(out).not.toContain('""')
   })
@@ -190,7 +197,46 @@ describe('truncateForDisplay', () => {
 })
 
 describe('MAX_MERMAID_SOURCE constant', () => {
-  it('matches mermaid default (50 KB)', () => {
+  it('matches the configured UTF-16 source limit', () => {
     expect(MAX_MERMAID_SOURCE).toBe(50_000)
+  })
+})
+
+describe('diagram grammar preservation', () => {
+  it.each([
+    'stateDiagram-v2\n[*] --> Idle\nIdle --> [*]',
+    'pie title Browser share\n"Chrome" : 65\n"Firefox" : 35',
+    'sequenceDiagram\nAlice->>Bob: "Hello (again)"',
+    'classDiagram\nclass Animal {\n+String name\n}',
+    'erDiagram\nCUSTOMER ||--o{ ORDER : "places"',
+    'gantt\ntitle "Sprint (1)"\ndateFormat YYYY-MM-DD\nsection Backend\nAPI :2026-11-18, 3d',
+  ])('preserves non-flowchart syntax: %s', (source) => {
+    expect(normaliseDiagram(source)).toBe(source)
+  })
+
+  it('preserves frontmatter and multiline init configuration', () => {
+    const prefix = '---\nconfig:\n  theme: "neutral"\n---\n%%{init: {\n  "flowchart": { "curve": "linear" }\n}}%%\n%% diagram comment\n'
+    expect(normaliseDiagram(prefix + 'flowchart TD\nA[Start] --> B'))
+      .toBe(prefix + 'flowchart TD\nA["Start"] --> B')
+  })
+
+  it('preserves flowchart class styling and subgraph titles', () => {
+    const source = 'flowchart TD\nsubgraph "Review (team)"\nA[Input] --> B\nend\nclassDef accepted fill:#dcfce7,color:#14532d,font-family:"Arial";\nclass A accepted'
+    expect(normaliseDiagram(source)).toBe(source.replace('A[Input]', 'A["Input"]'))
+  })
+
+  it('preserves modern node metadata and multiline descriptions rather than rewriting their grammar', () => {
+    const source = 'flowchart LR\nA@{ shape: rect, label: "Input (raw)" } --> B@{ shape: diam, label: "Ready?" }'
+    expect(normaliseDiagram(source)).toBe(source)
+    const described = 'flowchart LR\naccDescr {\n  "Input" becomes [output]\n}\nA[Input] --> B[Output]'
+    expect(normaliseDiagram(described)).toBe(described)
+  })
+
+  it('does not merge a synthesized bare reference into an existing node id', () => {
+    const output = normaliseDiagram('flowchart LR\nn1[Existing] --> "New label"\n"New label" --> Output')
+    const synthetic = output.match(/--> (n\d+)\["New label"\]/)?.[1]
+    expect(synthetic).toBeDefined()
+    expect(synthetic).not.toBe('n1')
+    expect(output).toContain(`\n${synthetic} --> Output`)
   })
 })

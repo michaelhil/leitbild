@@ -18,6 +18,8 @@ import { mountRoomActions } from './room-actions.ts'
 import { initMessageHeaderPrefs } from './message-header-prefs.ts'
 import { renderMessage } from './render/render-message.ts'
 import { initPresentationComposer } from './presentation-composer.ts'
+import { setMermaidAskHandler } from './mermaid/index.ts'
+import { requestDiagramChange } from './diagram-request.ts'
 import { initPromptDeck } from './prompt-deck.ts'
 import type {
   UIMessage,
@@ -75,6 +77,8 @@ import {
 } from './stores.ts'
 
 // === DOM refs ===
+
+setMermaidAskHandler(requestDiagramChange)
 
 import { domRefs } from './app-dom.ts'
 import { createThinkingController } from './app-thinking.ts'
@@ -295,6 +299,10 @@ $selectedRoomId.listen((roomId, prevRoomId) => {
   } else {
     // No room selected — show the empty-state. Agent inspector is now a
     // modal, so it doesn't compete with chat-area visibility anymore.
+    // Release diagram viewers and their pending waits when a Room is cleared
+    // or removed, just as switching to another Room releases its message view.
+    messagesDiv.replaceChildren()
+    messagesDiv.removeAttribute('data-room-id')
     noRoomState.classList.remove('hidden')
     roomHeader.classList.add('hidden')
     roomInfoBar.classList.add('hidden')
