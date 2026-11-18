@@ -741,16 +741,6 @@ fn s3_settle_with_the_feed_train() {
         },
     };
     let started = process_cpu_s();
-    // R4-REPIN-GOV-SETTLE (lead 1 Nov): LD01_TURB_GOV on | off, unset off, as
-    // the cases parse it. On, this settle composes the X4.3 governor as the
-    // governed cases do (a governor-declared IC section; the composition
-    // refuses a mismatch), so governed runs start from the governor's own
-    // equilibrium, restored as saved, not from a tracking transfer.
-    let turbine = match std::env::var("LD01_TURB_GOV").as_deref().unwrap_or("off") {
-        "on" => Some(Turbine::from_wiki(&env("LD01_TURB_WIKI")).unwrap_or_else(|e| panic!("{e}"))),
-        "off" => None,
-        v => panic!("LD01_TURB_GOV={v}: on or off"),
-    };
     let gates_path = env("LD01_S2_GATES_SOURCE");
     let gates_text = std::fs::read_to_string(&gates_path).expect("gates source");
     let gates = gates_block(&gates_text);
@@ -778,6 +768,18 @@ fn s3_settle_with_the_feed_train() {
     std::fs::create_dir_all(&dir).unwrap();
     let samples_per_window = (window_s / output_s).round() as usize;
     let inputs = common::inputs();
+    // R4-REPIN-GOV-SETTLE (lead 1 Nov): a section that declares the governor
+    // composes the X4.3 governor, as the governed cases do, so governed runs
+    // start from the governor's own equilibrium, restored as saved, not from
+    // a tracking transfer. The section alone selects it, as the live
+    // composition does (unit/live.rs).
+    let turbine = inputs
+        .ic
+        .governor
+        .declared
+        .then(|| Turbine::from_wiki(&inputs.spine.wiki_root))
+        .transpose()
+        .unwrap_or_else(|e| panic!("{e}"));
     let (packet_path, packet_bytes) = common::packet_bytes();
     let packet_sha256 = leitbild_operating_plant::digest::sha256(&packet_bytes);
     let network_packet: NetworkPacket =
