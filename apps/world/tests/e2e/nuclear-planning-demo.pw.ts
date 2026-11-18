@@ -140,6 +140,7 @@ test('nuclear planning coordinates real crews, task handoffs and an unsaved esti
     await planning.getByRole('button', { name: 'What sets the finish', exact: true }).click()
     const chain = planning.getByRole('region', { name: 'Returned finish chain', exact: true })
     await expect.poll(() => chain.getByRole('listitem').count()).toBeGreaterThan(7)
+    await expect(planning.getByRole('status', { name: 'Finish explanation', exact: true })).toBeVisible()
 
     await planning.getByRole('button', { name: 'Crews and tools', exact: true }).click()
     const crewTable = planning.getByRole('table', { name: 'Crew and tool schedule', exact: true })
