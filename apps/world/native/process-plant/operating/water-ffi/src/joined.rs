@@ -968,6 +968,43 @@ fn every_declared_payment_names_its_cell() {
     assert!(paid_cells(&done[2..]).is_empty());
 }
 
+/// R4-CLIMB-SEAT: whether the transactions seat rods, as the rods' receipt
+/// states it: an event `seat`, which only their transaction at a located
+/// seat root writes (a grip release, a lift-off or a withdrawn drive does not).
+fn seats_rods(done: &[leitbild_operating_plant::joined::block::Transaction]) -> bool {
+    done.iter().any(|t| {
+        t.receipt
+            .get("rods")
+            .and_then(serde_json::Value::as_array)
+            .is_some_and(|events| {
+                events
+                    .iter()
+                    .any(|e| e.get("event") == Some(&"seat".into()))
+            })
+    })
+}
+
+#[test]
+fn only_a_seat_event_seats_rods() {
+    use leitbild_operating_plant::joined::block::Transaction;
+    let tx = |receipt: serde_json::Value| Transaction {
+        deposits: Vec::new(),
+        receipt,
+    };
+    let seat = tx(serde_json::json!({"rods": [{"cluster": "LD01.CR.001", "event": "seat"}]}));
+    let others = [
+        tx(
+            serde_json::json!({"rods": [{"cluster": "LD01.CR.001", "event": "grip release"},
+            {"cluster": "LD01.CR.002", "event": "lift-off"},
+            {"class": "LD01.CR.003", "event": "drive withdrawn (stuck grip, holding open)"}]}),
+        ),
+        tx(serde_json::json!({"owner": "pzr", "event": "seat"})),
+        tx(serde_json::json!({"rods": "bore water prepared"})),
+    ];
+    assert!(seats_rods(std::slice::from_ref(&seat)));
+    assert!(!seats_rods(&others));
+}
+
 /// Each transacting owner's own coordinate range: the SG secondary, the rods,
 /// the PZR block (G6), which follows the rods and is empty while its owner is
 /// not composed, and the CVCS (plan r4 X4.2), empty unless composed.
@@ -1577,6 +1614,8 @@ mod integrated {
             Discrete::TimeEvent => Vec::new(),
             Discrete::Command(c) => joined.command(t, y, c).map_err(message)?,
         };
+        // R4-CLIMB-SEAT: the located roots' own transactions seat rods.
+        let seat = matches!(discrete, Discrete::Roots(_)) && super::seats_rods(&done);
         done.extend(joined.time_events(t, y).map_err(message)?);
         // The vapor presence declared after the transactions (the stocks'
         // for liquid cells, both phases for an equilibrium cell): a changed
@@ -1747,9 +1786,7 @@ mod integrated {
             .network
             .pzr_boundary()
             .is_none_or(|(b, _)| b.relief.as_ref().is_none_or(|r| r.lift.value == 0.));
-        analyses.keep_for_seat(
-            matches!(discrete, Discrete::Roots(_)) && transacted.contains(&"rods") && relief_shut,
-        );
+        analyses.keep_for_seat(seat && relief_shut);
         let matrices = match assembly {
             Assembly::Blocks(structure) => Matrices::Blocks {
                 structure,
