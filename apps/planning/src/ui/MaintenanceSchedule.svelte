@@ -171,7 +171,7 @@
             <span role="columnheader">{view === 'tasks' ? 'Work' : 'Crew / tool'}</span>
             <div class="axis-track" role="columnheader" aria-label="Scheduled date and time">
               {#each axis.days as day}<span class="day" style:left={`${day.left}%`} style:width={`${day.width}%`}>{day.label}</span>{/each}
-              {#each axis.ticks as tick, index}<span class="tick" class:first={index === 0} class:last={index === axis.ticks.length - 1} style:left={`${tick.left}%`}>{tick.label}</span>{/each}
+              {#each axis.ticks as tick, index}<span class="schedule-tick" class:first={index === 0} class:last={index === axis.ticks.length - 1} style:left={`${tick.left}%`}>{tick.label}</span>{/each}
             </div>
           </div>
           {#if view === 'tasks'}
@@ -272,9 +272,9 @@
   .axis > span { padding-bottom: 7px; }
   .axis-track { height: 44px; position: relative; }
   .day { position: absolute; top: 0; border-left: 1px solid var(--line); padding: 2px 5px; background: var(--accent-2); height: 22px; white-space: nowrap; overflow: hidden; }
-  .tick { position: absolute; bottom: 3px; transform: translateX(-50%); font-variant-numeric: tabular-nums; }
-  .tick.first { transform: none; }
-  .tick.last { transform: translateX(-100%); }
+  .schedule-tick { position: absolute; bottom: 3px; transform: translateX(-50%); font-variant-numeric: tabular-nums; }
+  .schedule-tick.first { transform: none; }
+  .schedule-tick.last { transform: translateX(-100%); }
   .group-row { padding: 6px 0 4px; font-size: 11px; font-weight: 650; border-top: 1px solid var(--line); color: var(--ink-2); }
   .group-row > span:first-child { grid-column: 1 / -1; }
   .chart-row { border-top: 1px solid var(--line-2); align-items: center; min-height: 41px; }
