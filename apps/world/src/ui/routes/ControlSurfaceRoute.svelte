@@ -525,7 +525,11 @@
           commandFeedback = noteAction(commandFeedback, 'The requested object has no available equipment display.')
           return
         }
-        requestDisplayWindow({ kind: 'asset', objectId: object.id, select: routeElement }, false)
+        // An element may be absent from the whole asset's overview. Ask the
+        // owner to resolve its default detail and local topology instead of
+        // trying to select it on a drawing that does not contain it.
+        if (simulationRunId === null) throw new Error('Equipment focus requires a joined Simulation Run')
+        requestDisplayWindow({ kind: 'subject', runId: simulationRunId, subject: `${object.id}#${routeElement}` }, false)
       }
     })
   })
