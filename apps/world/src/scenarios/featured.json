@@ -30,7 +30,7 @@
   {
     "scenarioId": "nuclear-maintenance-planning",
     "summary": "Coordinate nuclear maintenance across assets, crews, inspection bookings and work-control gates.",
-    "about": "Coordinate sixteen tasks on three cooling-train assets while protecting Train B. Compare existing crews with a specialist contractor, inspect finish-driving handoffs and crew usage, and preview an estimate change. Ask the Assistant about a deadline, inspect matching World equipment, or calculate heat transport. It shows Leitbild connecting plant observations with checked schedules and reproducible calculations using declared work estimates, qualifications, planned gates and costs.",
+    "about": "Coordinate sixteen tasks on three cooling-train assets, keeping both B pumps outside the work scope. Compare existing crews with a specialist contractor, inspect finish-driving handoffs and crew usage, and preview an estimate change. Ask the Assistant about a deadline, inspect matching World equipment, or calculate heat transport. It shows Leitbild connecting plant observations with checked schedules and reproducible calculations using declared work estimates, qualifications, planned gates and costs.",
     "tags": [
       "Nuclear maintenance",
       "Scheduling + agents",

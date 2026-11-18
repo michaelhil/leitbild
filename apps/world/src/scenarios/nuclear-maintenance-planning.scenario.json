@@ -1,7 +1,7 @@
 {
   "id": "nuclear-maintenance-planning",
   "title": "Nuclear maintenance and outage planning",
-  "description": "Coordinate a planned A-train equipment outage at a fictional reference pressurised-water reactor. Sixteen tasks cover service water, component cooling, electrical work, independent verification, inspection and return-to-service testing. Compare existing crews with a qualified HX contractor against working shifts and a booked inspection window. Train B stays protected. Work scope, durations, qualifications, gates, costs and deadlines are authored exercise assumptions. World supplies the pre-maintenance plant readings.",
+  "description": "Coordinate a planned A-train equipment outage at a fictional reference pressurised-water reactor. Sixteen tasks cover service water, component cooling, electrical work, independent verification, inspection and return-to-service testing. Compare existing crews with a qualified HX contractor against working shifts and a booked inspection window. Both B pumps are protected from planned work. Work scope, durations, qualifications, gates, costs and deadlines are authored exercise assumptions. World supplies the pre-maintenance plant readings.",
   "objectives": [
     "Coordinate sixteen tasks across three A-train assets and qualified crews while protecting Train B.",
     "Compare checked schedules, inspect crew contention and see which handoffs set the finish.",
@@ -81,7 +81,7 @@
       {
         "id": "explore",
         "title": "See the handoffs and test a deadline",
-        "instruction": "Select a task to inspect its crews, predecessors and start-time explanation. Show what sets the finish or switch to Crews and tools. Ask whether the work can finish by 20:00 Wednesday, then try 19:00. An optional estimate preview shows how missing the inspection slot affects the plan. The heat-transport calculation uses retained pump flow and explicit assumptions.",
+        "instruction": "Select a task in Planning to see its crews, prerequisites and start explanation. Ask the Assistant whether work can finish by 20:00 Wednesday, then try 19:00.",
         "completion": {
           "kind": "acknowledge"
         }
