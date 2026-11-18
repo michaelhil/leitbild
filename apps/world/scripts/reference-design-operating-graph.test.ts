@@ -73,10 +73,22 @@ describe('the LD-01 graph compiler', () => {
 test('composes the bank HOLD and its release only where the section declares rod control', () => {
   expect(compiled.tagMap.commands['CORE.bankHold' as never]).toBeUndefined()
   expect(compiled.tagMap.channels['CORE.bankHoldInForce' as never]).toBeUndefined()
+  expect(compiled.tagMap.channels['CORE.bankTavg' as never]).toBeUndefined()
   const declared = compileOperatingGraph({ packet, ic: { ...ic, rod_control: { declared: true, basis: 'test' } }, elec, sha8: 'abcdef12' })
   expect(declared.tagMap.commands['CORE.bankHold' as never]).toEqual({ kind: 'BankHold' })
   expect(declared.tagMap.commands['CORE.bankAuto' as never]).toEqual({ kind: 'BankAuto' })
   expect(declared.tagMap.channels['CORE.bankHoldInForce' as never]).toBe('LD01.CORE.BANK.HOLD')
+  // The law's own Tavg and Tref, read in °C from the unit's K.
+  expect(declared.tagMap.channels['CORE.bankTavg' as never]).toBe('LD01.CORE.BANK.TAVG')
+  expect(declared.tagMap.channels['CORE.bankTref' as never]).toBe('LD01.CORE.BANK.TREF')
+  const graph = compilePlantGraph(declared.graph, processPlantComponentRegistry)
+  const rodUnits: Record<string, string> = { 'LD01.CORE.BANK.HOLD': '1', 'LD01.CORE.BANK.TAVG': 'K', 'LD01.CORE.BANK.TREF': 'K' }
+  const channels = Object.values(declared.tagMap.channels).map(ld01ChannelIdOf).map(id => ({ id, unit: rodUnits[id] ?? unitOf(id), quantity: 'q', source: 's' }))
+  const binding = bindLd01TagMap(graph, declared.tagMap, channels)
+  const tref = binding.byPath.get('CORE.bankTref' as never)!
+  if (tref.kind === 'command') throw new Error('CORE.bankTref is a command')
+  expect(tref.variable.descriptor.unit).toBe('degC')
+  expect(convertLd01Channel(tref, 573.15)).toBeCloseTo(300, 9)
   expect(ld01CommandSchema.parse({ kind: 'BankHold' })).toEqual({ kind: 'BankHold' })
   expect(ld01CommandSchema.parse({ kind: 'BankAuto' })).toEqual({ kind: 'BankAuto' })
 })

@@ -439,9 +439,14 @@ export const compileOperatingGraph = (input: { readonly packet: unknown; readonl
     ...packet.rods.clusters.map(cluster => reading(`rod.${cluster.id}`, `Rod cluster ${cluster.id} travel`, 'state', 'nuclear', 'length', 'm', `LD01.ROD.${cluster.id}.TRAVEL`, 'm')),
     reading('rodTravelMean', 'Rod cluster mean travel', 'state', 'nuclear', 'length', 'm', 'LD01.ROD.TRAVEL.MEAN', 'm'),
   )
-  // AUTO rod control, where the section declares it: the bank HOLD and its release, and whether HOLD is in force.
+  // AUTO rod control, where the section declares it: the bank HOLD and its release, whether HOLD is in force, and the
+  // values the law compares at each frame (its lagged Tavg and the Tavg program at its lagged load, ld01-unit's own).
   if (ic.rod_control.declared) {
-    coreEquipment.readings.push(reading('bankHoldInForce', 'Control bank HOLD in force', 'discrete', 'control', 'boolean', 'boolean', 'LD01.CORE.BANK.HOLD', '1'))
+    coreEquipment.readings.push(
+      reading('bankHoldInForce', 'Control bank HOLD in force', 'discrete', 'control', 'boolean', 'boolean', 'LD01.CORE.BANK.HOLD', '1'),
+      reading('bankTavg', 'Rod control Tavg (its lagged input)', 'derived', 'control', 'temperature', 'degC', 'LD01.CORE.BANK.TAVG', 'K'),
+      reading('bankTref', 'Rod control Tref (the Tavg program at its lagged turbine load)', 'derived', 'control', 'temperature', 'degC', 'LD01.CORE.BANK.TREF', 'K'),
+    )
     coreEquipment.commands.push(
       { path: 'bankHold', label: 'Control bank HOLD', actuation: 'command', command: { kind: 'BankHold' }, momentary: true },
       { path: 'bankAuto', label: 'Control bank release HOLD to AUTO', actuation: 'command', command: { kind: 'BankAuto' }, momentary: true },
