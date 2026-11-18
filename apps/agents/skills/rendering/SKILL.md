@@ -23,21 +23,42 @@ If the user explicitly asked to draw / map / chart / visualize, the fence IS the
 
 ## Mermaid diagrams
 
-Uses Mermaid v11 syntax. Source must be ≤ 50 KB and ideally ≤ 15 nodes for readability.
+Uses the installed Mermaid v11 renderer. The UI accepts at most 50,000 JavaScript UTF-16 string units of source; this is not a 50 KB file-size limit. Mermaid also has a default cap of 500 edges. These are rendering ceilings, not targets or a node-count limit. Do not add initialization directives to raise them.
+
+Choose the diagram type and orientation for the relationships and available space. A long process often reads better top-to-bottom in chat; a broad hierarchy may benefit from left-to-right. Honor an explicitly requested direction. Keep labels concise, use stable node IDs, and quote labels containing punctuation. Write valid source rather than relying on the renderer's repairs.
 
 ```mermaid
 flowchart LR
-  A[Start] --> B{Decision}
-  B -->|yes| C[Path 1]
-  B -->|no| D[Path 2]
+  A["Start"] --> B{"Decision"}
+  B -->|"yes"| C["Path 1"]
+  B -->|"no"| D["Path 2"]
 ```
 
-The renderer auto-corrects common LLM mistakes — you do not need to escape these manually:
-- Trailing semicolons on lines are stripped.
-- Special chars (`/`, `#`, `<`, `>`) inside `[…]`, `(…)`, `{…}` label bodies are auto-quoted.
-- Quoted node references (`"Foo / Bar" --> X`) are converted to synthetic IDs.
+Preserve every requested fact and relationship. For complex diagrams, an overview with separate detail views can improve readability, but make the abstraction explicit and retain a requested complete view. Never silently omit edges or impose an arbitrary node limit. If the complete source exceeds rendering limits, explain the constraint and propose a split with clear cross-view references or a source-only delivery.
 
-So write natural labels (`A[Foo / Bar]`); the renderer handles it.
+For layout-only revisions, preserve node IDs, labels, edges, and their direction; change only the supported layout declaration. Increasing font size alone does not solve a wide graph that the UI shrinks to fit. Prefer a more suitable orientation, shorter labels, and useful grouping before adding detail.
+
+### Color only when it helps
+
+Keep diagrams neutral unless color materially clarifies responsibility, categories, status, or an important path. Use a small, consistent palette and pair it with labels, grouping, shapes, or line styles, so meaning survives monochrome and color-vision differences. Do not give every node a different color.
+
+For flowcharts, use standard Mermaid `classDef` and `class` styling. Set fill, text color, and stroke together for contrast; check the result in both light and dark modes when testing a styled diagram. Bare names such as `:::blue` have no built-in palette in Leitbild. Do not force a global theme to add color.
+
+```mermaid
+flowchart TB
+  Check{"Validation"} -->|"Accepted"| Ready["Ready"]
+  Check -->|"Needs review"| Review["Review required"]
+  class Ready accepted
+  class Review review
+  classDef accepted fill:#dcfce7,color:#14532d,stroke:#15803d
+  classDef review fill:#ffedd5,color:#7c2d12,stroke:#c2410c
+```
+
+### Rendering failures
+
+Distinguish malformed or incomplete source, source/edge limits, unsupported syntax or assets, and unreadable scaling. Use syntax supported by the installed renderer; do not promise that every Mermaid version or diagram type behaves identically. For complex or unfamiliar syntax, test the actual rendering pipeline when available. A successful parse does not establish readable text or preserved relationships.
+
+If the user reports a failure, keep the original source and repair the smallest failing construct. Mermaid fences are not validated or automatically retried by the server-side evaluation loop; the browser reports a rendering failure and retains the source. Do not claim a render was verified unless it was inspected.
 
 ### Other mermaid types — one example each
 
@@ -77,7 +98,7 @@ gantt
   Implementation :after a1, 5d
 ```
 
-Anything outside this list (e.g., timeline, journey, requirementDiagram) — try it; if it fails, the fallback shows the source.
+Other Mermaid v11 diagram types may work, but verify unfamiliar syntax against the installed renderer when possible. Do not rely on showing a failed source block as the intended result.
 
 ## Maps
 
@@ -137,7 +158,7 @@ If the user says "show me X on a map" and you don't have coordinates and have no
 - Use approximate coordinates from your knowledge (and say so in one line below the fence: *"Approximate coordinates — let me know if you want me to look these up precisely."*)
 - OR ask one specific question ("Which city — Oslo or Bergen?") then produce the map next turn.
 
-If the user says "diagram of X" without specifying type, default to `flowchart LR` for processes/decisions, `sequenceDiagram` for interactions over time.
+If the user says "diagram of X" without specifying type, use a flowchart for processes/decisions with a direction suited to readability, or `sequenceDiagram` for interactions over time.
 
 ## Recovery from validation errors
 
