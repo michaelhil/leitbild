@@ -1,6 +1,62 @@
 import { expect, test, type FrameLocator, type Page } from '@playwright/test'
+import { mkdir, writeFile } from 'node:fs/promises'
+import { join, resolve } from 'node:path'
 
 const demo = 'nuclear-maintenance-planning'
+const evidenceRun = new Date().toISOString().replaceAll(':', '-')
+const evidenceDirectory = (): string | null => {
+  const destination = process.env.LEITBILD_E2E_EVIDENCE_DIR
+  return destination === undefined ? null : join(resolve(destination), `${evidenceRun}-${test.info().title.replace(/[^a-zA-Z0-9]+/g, '-').slice(0, 110)}`)
+}
+const saveEvidence = async (name: string, value: unknown): Promise<void> => {
+  const directory = evidenceDirectory()
+  if (directory === null) return
+  await mkdir(directory, { recursive: true })
+  const path = join(directory, `${name}.json`)
+  await writeFile(path, JSON.stringify(value, null, 2))
+  await test.info().attach(name, { path, contentType: 'application/json' })
+}
+const saveEvidenceImage = async (name: string, capture: (path: string) => Promise<unknown>): Promise<void> => {
+  const directory = evidenceDirectory()
+  if (directory === null) return
+  await mkdir(directory, { recursive: true })
+  const path = join(directory, `${name}.png`)
+  await capture(path)
+  await test.info().attach(name, { path, contentType: 'image/png' })
+}
+const captureRoomEvidence = async (page: Page, workspace: string): Promise<void> => {
+  if (evidenceDirectory() === null) return
+  await saveEvidence('test-context', { workspace, url: page.url(), capturedAt: new Date().toISOString(), status: test.info().status })
+  if (!page.isClosed()) await saveEvidenceImage('workspace-final', path => page.screenshot({ path, fullPage: true }))
+  const room = new URL(page.url()).searchParams.get('agents')
+  if (room === null) return
+  const base = `/api/workspaces/${workspace}/agents/rooms/${encodeURIComponent(room)}`
+  const read = async (path: string) => {
+    const response = await page.request.get(path)
+    const body = await response.json()
+    return { status: response.status(), body }
+  }
+  const conversation = await read(`${base}/export`)
+  await saveEvidence('room-export', conversation)
+  expect(conversation.status).toBe(200)
+  const turns: Array<{ id: string; startedAt: number }> = []
+  let next: { id: string; startedAt: number } | undefined
+  do {
+    const query = new URLSearchParams({ limit: '100', ...(next === undefined ? {} : { beforeId: next.id, beforeStartedAt: String(next.startedAt) }) })
+    const index = await read(`${base}/executions?${query}`)
+    expect(index.status).toBe(200)
+    turns.push(...index.body.turns)
+    next = index.body.next
+  } while (next !== undefined)
+  await saveEvidence('execution-index', { room, turns })
+  for (const turn of turns) {
+    const execution = await read(`${base}/executions/${encodeURIComponent(turn.id)}`)
+    expect(execution.status).toBe(200)
+    const calls = await Promise.all(execution.body.calls.map(async (call: { id: string }) => read(`${base}/executions/${encodeURIComponent(turn.id)}/calls/${encodeURIComponent(call.id)}`)))
+    await saveEvidence(`execution-${turn.id}`, { ...execution, calls })
+    expect(calls.every((call: { status: number }) => call.status === 200)).toBe(true)
+  }
+}
 
 // A fresh public Workspace exercises the same launch path as the carousel.
 // Provider work is opt-in for routine smoke runs, but must be run explicitly
@@ -36,9 +92,13 @@ const withNuclearPlanning = async (page: Page, play: (planning: FrameLocator, wo
     await expect(planning.getByRole('button', { name: /^One crew\b/ })).toBeVisible({ timeout: 30_000 })
     await play(planning, workspace.id, run!)
   } finally {
-    if (!page.isClosed()) await page.goto('about:blank')
-    const deleted = await page.request.delete(`/api/workspaces/${encodeURIComponent(workspace.id)}`)
-    expect(deleted.ok()).toBe(true)
+    try {
+      await captureRoomEvidence(page, workspace.id)
+    } finally {
+      if (!page.isClosed()) await page.goto('about:blank')
+      const deleted = await page.request.delete(`/api/workspaces/${encodeURIComponent(workspace.id)}`)
+      expect(deleted.ok()).toBe(true)
+    }
   }
 }
 
@@ -144,9 +204,11 @@ test('the scoped engineering agent produces an inspectable calculation beside th
     const result = agents.frameLocator('iframe[src*="/agents/embed/engineering.result"]')
     await expect(result.getByRole('heading', { name: 'Inputs used', exact: true })).toBeVisible({ timeout: 30_000 })
     await expect(result.getByRole('heading', { name: 'Try changed assumptions', exact: true })).toBeVisible()
+    await saveEvidenceImage('engineering-original', path => result.locator('body').screenshot({ path }))
     const disclosure = result.getByText('Full calculation receipt and execution limits', { exact: true }).locator('..')
     await disclosure.locator('summary').click()
     const receipt = JSON.parse(await disclosure.locator('pre').innerText())
+    await saveEvidence('engineering-original', receipt)
     expect(receipt).toMatchObject({
       kind: 'engineering-calculation', mode: 'exploratory-script', qualification: 'research-only',
       request: { operation: 'run' }, outcome: { status: 'completed' },
@@ -176,7 +238,9 @@ test('the scoped engineering agent produces an inspectable calculation beside th
     const locator = JSON.parse(JSON.parse(fragment.get('view')!).state)
     const attempt = await page.request.get(`/api/workspaces/${workspace}/agents/rooms/${room}/executions/${locator.turnId}/calls/${locator.toolCallId}`)
     expect(attempt.ok()).toBe(true)
-    expect(await attempt.json()).toMatchObject({ tool: 'engineering_run' })
+    const actualAttempt = await attempt.json()
+    await saveEvidence('engineering-tool-attempt', actualAttempt)
+    expect(actualAttempt).toMatchObject({ tool: 'engineering_run' })
 
     const rise = receipt.request.input.bindings.find((binding: { kind: string; value: number }) => binding.kind === 'assumption' && binding.value === 10)
     expect(rise).toBeTruthy()
@@ -187,7 +251,9 @@ test('the scoped engineering agent produces an inspectable calculation beside th
       result.getByRole('button', { name: 'Rerun these inputs', exact: true }).click(),
     ])
     expect(rerun.ok()).toBe(true)
-    const changed = (await rerun.json()).receipt
+    const changedAttempt = await rerun.json()
+    await saveEvidence('engineering-rerun', changedAttempt)
+    const changed = changedAttempt.receipt
     expect(changed).toMatchObject({ mode: 'exploratory-script', outcome: { status: 'completed' } })
     expect(changed.inputs).toEqual(expect.arrayContaining([
       expect.objectContaining({ origin: 'observation', value: 350 }),
@@ -198,6 +264,7 @@ test('the scoped engineering agent produces an inspectable calculation beside th
     expect(numbers(changed.outcome.output).some(value => Math.abs(value - 7.315) < 1e-6
       || Math.abs(value - 7_315) < 1e-3 || Math.abs(value - 7_315_000) < 1e-3)).toBe(true)
     await expect(result.getByRole('button', { name: 'Return to original result', exact: true })).toBeVisible()
+    await saveEvidenceImage('engineering-rerun', path => result.locator('body').screenshot({ path }))
 
     await planning.getByRole('link', { name: /World plant/ }).click()
     expect(new URL(page.url()).searchParams.get('agents')).toBe(room)
@@ -239,7 +306,9 @@ test('plain deadline questions produce checked success and refusal visualization
           },
         })
         expect(read.ok()).toBe(true)
-        const schedule = (await read.json()).result.schedule
+        const publication = (await read.json()).result
+        await saveEvidence(`planning-publication-${after}-${index}`, { envelope, publication })
+        const schedule = publication.schedule
         if (schedule.deadline === null || Date.parse(schedule.deadline.finishBy) !== Date.parse(deadline)
           || schedule.option.status.word !== status) continue
         expect(schedule.option.fresh).toBe(true)
@@ -258,6 +327,7 @@ test('plain deadline questions produce checked success and refusal visualization
     await expect(fits.result.getByText(/Requested finish by 18:00/)).toBeVisible()
     await expect(fits.result.getByText('Meets the requested deadline.', { exact: false })).toBeVisible()
     await expect(fits.result.getByRole('rowheader').last()).toContainText('16:00')
+    await saveEvidenceImage('deadline-18', path => fits.result.locator('body').screenshot({ path }))
 
     const previousDisplays = await displays.count()
     const followup = agents.getByPlaceholder('Type a message... (Shift+Enter for newline)', { exact: true })
@@ -274,6 +344,7 @@ test('plain deadline questions produce checked success and refusal visualization
     await expect(refuses.result.getByText('The requested deadline is proven infeasible for this option.', { exact: true })).toBeVisible()
     await expect(refuses.result.getByText('Highlighted work belongs to the infeasibility proof.', { exact: true })).toBeVisible()
     await expect(refuses.result.getByRole('rowheader').last()).toContainText('16:00')
+    await saveEvidenceImage('deadline-15', path => refuses.result.locator('body').screenshot({ path }))
 
     // A question must remain a what-if; the authored return target is unchanged.
     const jobs = await page.request.post(`/api/workspaces/${workspace}/capabilities/planning.plan.read/invoke`, {
