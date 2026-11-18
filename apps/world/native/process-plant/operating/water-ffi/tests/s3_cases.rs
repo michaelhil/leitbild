@@ -3579,7 +3579,10 @@ fn s3_case_run() {
     // so C4's `ends` do not apply, and a named end fails C4I.N2.
     let c4i = config.c4i_close_s.map(|close| {
         assert_eq!(case, Case::C4, "C4-I is C4's drive");
-        assert!(config.dc, "C4-I needs an IC section declaring the DC groups");
+        assert!(
+            config.dc,
+            "C4-I needs an IC section declaring the DC groups"
+        );
         let page = std::env::var("LD01_S3_DECLARATION")
             .unwrap_or_else(|_| format!("{}/build-readiness.md", gates::wiki_model()));
         let block = Block::from_page(&page, s3_harness::c4i::FENCE)
