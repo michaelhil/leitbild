@@ -3,6 +3,8 @@
   import { deliveryDemoDefinitionId } from '../definitions/delivery-demo.ts'
   import { createPlanningClient } from './api.ts'
   import DeliveryDemo from './DeliveryDemo.svelte'
+  import MaintenanceDemo from './MaintenanceDemo.svelte'
+  import { maintenanceDefinitionId } from './maintenance-demo.ts'
   import Library from './Library.svelte'
   import PlanScreen from './PlanScreen.svelte'
 
@@ -17,24 +19,36 @@
   const demoRun = resourceIdSchema.safeParse(query.get('run'))
   const client = createPlanningClient(workspaceId)
   const host = window.parent === window ? window : window.parent
-  const workspaceHref = (planning?: string) => `/workspaces/${encodeURIComponent(workspaceId)}${planning === undefined ? '' : `?planning=${encodeURIComponent(planning)}`}`
-  const worldHref = (run: string, objectId?: string) => `${workspaceHref()}?${new URLSearchParams({ world: run, ...(objectId === undefined ? {} : { focus: objectId }) })}`
+  const agentsRoom = resourceIdSchema.safeParse(query.get('agents'))
+  const selectedOption = resourceIdSchema.safeParse(query.get('option'))
+  const workspacePath = `/workspaces/${encodeURIComponent(workspaceId)}`
+  const roomSelection = agentsRoom.success ? { agents: agentsRoom.data } : {}
+  const workspaceHref = (planning?: string) => {
+    const selection = new URLSearchParams({ ...roomSelection, ...(planning === undefined ? {} : { planning }) })
+    return `${workspacePath}${selection.size === 0 ? '' : `?${selection}`}`
+  }
+  const worldHref = (run: string, objectId?: string, elementId?: string, option?: string) => `${workspacePath}?${new URLSearchParams({ ...roomSelection, world: run, ...(objectId === undefined ? {} : { focus: objectId }), ...(elementId === undefined ? {} : { element: elementId }), ...(option === undefined ? {} : { option }) })}`
 
-  const changed = (): void => {
-    if (planId === null || window.parent === window) return
+  const changed = (id: string | null = planId): void => {
+    if (id === null || window.parent === window) return
     window.parent.postMessage(resourceCatalogChangedMessageSchema.parse({
       type: 'leitbild:resource-catalog-changed',
-      resource: client.planRef(planId),
+      resource: client.planRef(id),
     }), location.origin)
   }
   const go = (href: string): void => { host.location.assign(href) }
 </script>
 
-{#if demo === deliveryDemoDefinitionId && demoRun.success}
+{#if demo === maintenanceDefinitionId && demoRun.success}
+  {@const run = demoRun.data}
+  <MaintenanceDemo {client} {run} initialOption={selectedOption.success ? selectedOption.data : null}
+    worldHref={(objectId, elementId, option) => worldHref(run, objectId, elementId, option)} planHref={workspaceHref}
+    onAgent={(room, option) => go(`${workspacePath}?${new URLSearchParams({ planning: 'demo', definition: maintenanceDefinitionId, run, agents: room.id, option })}`)} />
+{:else if demo === deliveryDemoDefinitionId && demoRun.success}
   {@const run = demoRun.data}
   <DeliveryDemo {client} {run} mapHref={(objectId) => worldHref(run, objectId)} planHref={workspaceHref} />
 {:else if demo !== null}
-  <p class="loading" role="alert">Open the delivery demo from its World map. <a href={workspaceHref()} target="_top">Open Workspace</a></p>
+  <p class="loading" role="alert">Open this planning demonstration from its World map. <a href={workspaceHref()} target="_top">Open Workspace</a></p>
 {:else if planId === null}
   <Library {client} onOpen={(plan) => go(workspaceHref(plan))} />
 {:else}

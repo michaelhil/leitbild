@@ -76,6 +76,8 @@
   let selectedDemoQuery = $state(planningDemoQuery(initialSelection))
   let selectedWorldRunId = $state(initialSelection.has('planning') ? null : initialSelection.get('world'))
   let selectedWorldFocus = $state(initialSelection.get('focus'))
+  let selectedWorldElement = $state(initialSelection.get('element'))
+  let selectedWorldOption = $state(initialSelection.get('option'))
   let selectedAgentsRoomId = $state(initialSelection.get('agents'))
   let agentsVisible = $state(initialAgentsVisible)
   // A conversation the Getting started guide opened links back to it (plan v2 §2).
@@ -133,8 +135,14 @@
   const planningQuery = $derived(selectedPlanningId === 'demo' ? selectedDemoQuery
     : selectedPlanningId === 'library' ? ''
     : selectedPlanningId === null ? null : new URLSearchParams({ plan: selectedPlanningId }).toString())
-  const planningPath = $derived(workspace && planningQuery !== null
-    ? `/workspaces/${encodeURIComponent(workspace.id)}/planning${planningQuery === '' ? '' : `?${planningQuery}`}` : null)
+  const planningFrameQuery = $derived.by(() => {
+    if (planningQuery === null) return null
+    const selection = new URLSearchParams(planningQuery)
+    if (selectedAgentsRoomId !== null && agentsVisible) selection.set('agents', selectedAgentsRoomId)
+    return selection.toString()
+  })
+  const planningPath = $derived(workspace && planningFrameQuery !== null
+    ? `/workspaces/${encodeURIComponent(workspace.id)}/planning${planningFrameQuery === '' ? '' : `?${planningFrameQuery}`}` : null)
   const selectedRunFamily = $derived(selectedWorldResource?.links.find(link =>
     link.rel === 'member-of' && link.ref.type === 'world.run-family',
   )?.ref)
@@ -176,13 +184,16 @@
     else {
       url.searchParams.delete('world')
       url.searchParams.delete('focus')
+      url.searchParams.delete('element')
       selectedWorldFocus = null
+      selectedWorldElement = null
     }
     if (selectedPlanningId) url.searchParams.set('planning', selectedPlanningId)
     else url.searchParams.delete('planning')
     if (selectedPlanningId !== 'demo') {
       url.searchParams.delete('definition')
       url.searchParams.delete('run')
+      if (selectedWorldRunId === null) url.searchParams.delete('option')
     }
     if (selectedAgentsRoomId && agentsVisible) url.searchParams.set('agents', selectedAgentsRoomId)
     else url.searchParams.delete('agents')
@@ -579,6 +590,8 @@
     selectedPlanningId = null
     selectedWorldRunId = runId
     selectedWorldFocus = null
+    selectedWorldElement = null
+    selectedWorldOption = null
     const nextRun = resources.find(candidate => candidate.ref.type === 'world.simulation-run' && candidate.ref.id === runId)
     if (selectedAgentsResource && nextRun && !roomServesRun(selectedAgentsResource, nextRun)) {
       selectedAgentsRoomId = null
@@ -590,6 +603,8 @@
     url.searchParams.delete('definition')
     url.searchParams.delete('run')
     url.searchParams.delete('focus')
+    url.searchParams.delete('element')
+    url.searchParams.delete('option')
     if (selectedAgentsRoomId) url.searchParams.set('agents', selectedAgentsRoomId)
     else url.searchParams.delete('agents')
     if (replace) history.replaceState(null, '', url)
@@ -626,6 +641,8 @@
     selectedDemoQuery = planningDemoQuery(selection)
     selectedWorldRunId = selection.has('planning') ? null : selection.get('world')
     selectedWorldFocus = selection.get('focus')
+    selectedWorldElement = selection.get('element')
+    selectedWorldOption = selection.get('option')
     selectedAgentsRoomId = selection.get('agents')
     agentsVisible = selectedAgentsRoomId !== null
     // Back to a Run or conversation deleted since is the Workspace page, not a dead view.
@@ -879,7 +896,7 @@
     {#each catalogFailures as outcome (outcome.moduleId)}{#if outcome.status === 'failed'}<p class="notice error" role="alert">{moduleTitle(outcome.moduleId)}: {outcome.failure.message}</p>{/if}{/each}
     {#if refreshError}<p class="notice error" role="alert">Catalog refresh failed: {refreshError}</p>{/if}
     {#if showingComposer}
-    <WorkspaceComposer workspaceId={workspace.id} worldRunId={selectedWorldRunId} worldFocus={selectedWorldFocus} {planningPath} planningResource={selectedPlanningResource?.ref ?? null}
+    <WorkspaceComposer workspaceId={workspace.id} worldRunId={selectedWorldRunId} worldFocus={selectedWorldFocus} worldElement={selectedWorldElement} worldOption={selectedWorldOption} {planningPath} planningResource={selectedPlanningResource?.ref ?? null}
       onResourceCatalogChange={() => { void refreshResources(workspace!.id).catch(cause => { refreshError = String(cause) }) }}
       {focusedSubjects} agentsRoomId={selectedAgentsRoomId} {agentsVisible} onShowAgents={showRunAssistant}
       {runRefusal} onOpenRun={runId => switchWorldRun(runId)} {runAssistantAvailable} onOpenRunAssistant={openRunAssistant}

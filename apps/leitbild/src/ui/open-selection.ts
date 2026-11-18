@@ -19,7 +19,8 @@ export const planningDemoQuery = (selection: URLSearchParams): string | null => 
   const definition = definitionIdSchema.safeParse(selection.get('definition'))
   const run = resourceIdSchema.safeParse(selection.get('run'))
   if (!definition.success || !run.success) return null
-  return new URLSearchParams({ demo: definition.data, run: run.data }).toString()
+  const option = resourceIdSchema.safeParse(selection.get('option'))
+  return new URLSearchParams({ demo: definition.data, run: run.data, ...(option.success ? { option: option.data } : {}) }).toString()
 }
 
 export const keptSelection = (

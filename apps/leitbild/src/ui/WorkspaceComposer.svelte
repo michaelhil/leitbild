@@ -15,6 +15,8 @@
     readonly workspaceId: string
     readonly worldRunId: string | null
     readonly worldFocus?: string | null
+    readonly worldElement?: string | null
+    readonly worldOption?: string | null
     readonly planningPath?: string | null
     readonly planningResource?: WorkspaceResourceReference | null
     readonly onResourceCatalogChange: () => void
@@ -42,7 +44,7 @@
   const minimumOpenShare = 20
 
   let {
-    workspaceId, worldRunId, worldFocus = null, planningPath = null, planningResource = null, onResourceCatalogChange, focusedSubjects, agentsRoomId, agentsVisible, onShowAgents, runRefusal, onOpenRun,
+    workspaceId, worldRunId, worldFocus = null, worldElement = null, worldOption = null, planningPath = null, planningResource = null, onResourceCatalogChange, focusedSubjects, agentsRoomId, agentsVisible, onShowAgents, runRefusal, onOpenRun,
     runAssistantAvailable, onOpenRunAssistant, onError, worldPane = $bindable(null),
   }: Props = $props()
   let splitPercent = $state(initialSplit)
@@ -57,6 +59,12 @@
   let ownedView = $state<EmbeddedViewListing | null>(null)
   let ownedViewOpen = $state(false)
   const primaryOpen = $derived(planningPath !== null || worldRunId !== null)
+  const worldQuery = $derived(worldFocus === null ? '' : new URLSearchParams({
+    focus: worldFocus,
+    ...(worldElement === null ? {} : { element: worldElement }),
+    ...(worldOption === null ? {} : { option: worldOption }),
+    ...(agentsRoomId === null || !agentsVisible ? {} : { agents: agentsRoomId }),
+  }).toString())
   // The process display window asked for the whole area and the chat was collapsed for it.
   let windowMaximised = $state(false)
 
@@ -295,7 +303,7 @@
     <iframe
       bind:this={worldFrame}
       class="module-frame active"
-      src={`/workspaces/${encodeURIComponent(workspaceId)}/world/runs/${encodeURIComponent(worldRunId)}${worldFocus ? `?${new URLSearchParams({ focus: worldFocus })}` : ''}`}
+      src={`/workspaces/${encodeURIComponent(workspaceId)}/world/runs/${encodeURIComponent(worldRunId)}${worldQuery === '' ? '' : `?${worldQuery}`}`}
       title="World simulations"
       onload={worldFrameLoaded}
     ></iframe>

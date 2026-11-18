@@ -59,4 +59,6 @@ test('Planning demo links forward only the Definition and Run for the demo view'
   expect(planningDemoQuery(new URLSearchParams('planning=library&definition=two-deliveries&run=run-1'))).toBeNull()
   expect(planningDemoQuery(new URLSearchParams('planning=demo&definition=two-deliveries'))).toBeNull()
   expect(planningDemoQuery(new URLSearchParams('planning=demo&definition=%2Ffoo&run=run-1'))).toBeNull()
+  expect(planningDemoQuery(new URLSearchParams('planning=demo&definition=nuclear-maintenance-planning&run=run-1&option=option-2&agents=room-1'))).toBe('demo=nuclear-maintenance-planning&run=run-1&option=option-2')
+  expect(planningDemoQuery(new URLSearchParams('planning=demo&definition=nuclear-maintenance-planning&run=run-1&option=%2Finvalid'))).toBe('demo=nuclear-maintenance-planning&run=run-1')
 })
