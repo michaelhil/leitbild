@@ -36,7 +36,7 @@ use super::{
 use crate::{
     network::{
         CellMode, Coupling, CreditedOutput, Failure, Fluid, Network, PZR_PRESSURE, Properties,
-        Receipts, Reuse,
+        Receipts, Reuse, Until,
         packet::Packet as NetworkPacket,
         phase_events::{located, release_roots},
         stratified,
@@ -1126,6 +1126,23 @@ impl<P: Properties + WaterProperties> Joined<P> {
         cj: f64,
         reuse: Option<&mut Reuse<P::Caloric>>,
     ) -> Result<(), Failure> {
+        self.evaluate_until(t, y, yp, seed, cj, reuse, Until::Rows)
+    }
+
+    /// [`Self::evaluate`] as far as `until` ([`Network::evaluate_joined_until`]).
+    /// [`Until::Drives`] leaves the joined rows as they were and counts as an
+    /// evaluation, so no base standing before it is taken for this state.
+    #[allow(clippy::too_many_arguments)] // The stage inputs and the stop.
+    fn evaluate_until(
+        &mut self,
+        t: f64,
+        y: &[f64],
+        yp: &[f64],
+        seed: Option<&[f64]>,
+        cj: f64,
+        reuse: Option<&mut Reuse<P::Caloric>>,
+        until: Until,
+    ) -> Result<(), Failure> {
         let started = Instant::now();
         let o = self.blocks.offsets;
         self.value_state.held = false; // HOOK (COST2)
@@ -1161,7 +1178,7 @@ impl<P: Properties + WaterProperties> Joined<P> {
             cj,
             rows: block_rows,
         };
-        let result = self.network.evaluate_joined(
+        let result = self.network.evaluate_joined_until(
             t,
             &y[..o.nuclear],
             &yp[..o.nuclear],
@@ -1170,12 +1187,15 @@ impl<P: Properties + WaterProperties> Joined<P> {
             reuse,
             Some(&mut coupler),
             &volumes,
+            until,
         );
         if matches!(self.blocks.rods, RodPort::Owner(_)) {
             self.blocks.cell_volumes = volumes;
         }
         result?;
-        network_rows.copy_from_slice(self.network.rows());
+        if until == Until::Rows {
+            network_rows.copy_from_slice(self.network.rows());
+        }
         self.counters.residuals += 1;
         self.counters.residual_wall_s += started.elapsed().as_secs_f64();
         self.counters.coupled_wall_s = self.blocks.coupled_wall_s;
@@ -1476,10 +1496,13 @@ impl<P: Properties + WaterProperties> Joined<P> {
             // state, earlier in this call (nothing since mutates the
             // operator: the spray and phase-mode roots only read), is the
             // one L1's release roots read; it is not repeated.
+            // R4-ROOT-DRIVES: they read only the face drives, current once
+            // the momentum rows are, so the evaluation stops there; the call
+            // then leaves no whole value evaluation (COST2's value state is
+            // not held).
             if release_roots(&roots) && !self.value_state.evaluated {
-                self.evaluate(t, y, yp, None, 0., None)
+                self.evaluate_until(t, y, yp, None, 0., None, Until::Drives)
                     .map_err(|e| fatal(format!("L1 root evaluation: {e:?}")))?;
-                self.value_state.evaluated = true; // HOOK (COST2)
             }
             let mut values = vec![0.; roots.len()];
             self.network
