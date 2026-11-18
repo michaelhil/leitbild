@@ -8,7 +8,8 @@
 //! PZR pressure control in class S, the generator page's ACT.B field
 //! controller, and AUTO rod control when the section declares it), stock
 //! IDAS in one-step mode with its quadratures carried.
-//! It reads no environment: LOAD names every input path.
+//! It reads no environment: LOAD names every input path. It sets two for
+//! SUNDIALS's logger, so that SUNDIALS's warnings and errors go to stderr.
 //!
 //! **Frames.** Request `u32 len | u8 op | u32 seq | payload`; reply
 //! `u32 len | u8 status | u32 seq | f64 wall_s | f64 cpu_s | payload`, all
@@ -2473,6 +2474,17 @@ fn fatal(message: &str) -> ! {
 }
 
 fn main() {
+    // R4-UNIT-STDERR: stdout is the protocol channel. SUNDIALS 7.5.0 builds
+    // every SUNContext's logger from the environment (`SUNLogger_CreateFromEnv`
+    // in `SUNContext_Create`), with warnings to stdout and errors to stderr by
+    // default; IDA's warnings go to that logger. Both name stderr here, before
+    // any context exists, so every context of the process logs there. Nothing
+    // is suppressed.
+    // SAFETY: the first statement of `main`; no other thread exists yet.
+    unsafe {
+        std::env::set_var("SUNLOGGER_WARNING_FILENAME", "stderr");
+        std::env::set_var("SUNLOGGER_ERROR_FILENAME", "stderr");
+    }
     let mut unit: Option<Unit> = None;
     let mut input = BufReader::new(std::io::stdin().lock());
     let mut output = BufWriter::new(std::io::stdout().lock());
