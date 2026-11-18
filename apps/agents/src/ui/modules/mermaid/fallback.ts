@@ -19,6 +19,7 @@ export const showRenderFallback = (
   el: HTMLElement,
   source: string,
   reason: FallbackReason = 'render-failed',
+  error?: unknown,
 ): void => {
   // Clear existing content.
   el.replaceChildren()
@@ -27,8 +28,11 @@ export const showRenderFallback = (
   el.setAttribute('aria-label', 'Diagram rendering failed')
 
   const notice = document.createElement('div')
-  notice.className = 'text-text-muted mb-1'
-  notice.textContent = REASON_TEXT[reason]
+  notice.className = 'text-text-muted whitespace-pre-wrap mb-1'
+  // Actual parser/limit messages help the author repair the source. Keep only
+  // the message, never a stack or HTML, and retain the complete source below.
+  const detail = error instanceof Error ? error.message : typeof error === 'string' ? error : undefined
+  notice.textContent = reason === 'render-failed' && detail ? `${REASON_TEXT[reason]}\n${detail}` : REASON_TEXT[reason]
   el.appendChild(notice)
 
   if (source) {

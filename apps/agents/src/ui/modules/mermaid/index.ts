@@ -96,8 +96,8 @@ export const renderMermaidBlocks = async (container: HTMLElement): Promise<void>
       // code blocks may render, but cannot safely address an Agent modification.
       const messageId = sourceIndex === undefined ? undefined : container.closest<HTMLElement>('[data-msg-id]')?.dataset.msgId ?? container.dataset.diagramMessageId
       pre.replaceWith(buildRenderedWrapper(svg, source, rawSource, messageId, sourceIndex ?? blockIndex))
-    } catch {
-      showRenderFallback(wrapper, rawSource, 'render-failed')
+    } catch (error) {
+      showRenderFallback(wrapper, rawSource, 'render-failed', error)
       pre.replaceWith(wrapper)
     }
   }
