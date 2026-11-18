@@ -1,57 +1,56 @@
 import type { OperationalObject } from '../../../core/model/index.ts'
-import type { Actor } from '../../../core/simulation-runs/actors.ts'
-import { createDirectRoutingAdapter } from '../../../routing/direct-adapter.ts'
-import type { RouteRequest, RouteTableRequest, RoutingAdapter } from '../../../routing/protocol.ts'
-import { einsatzCommandIds as ids, einsatzQueryIds } from '../capabilities.ts'
+import type { RoutingAdapter } from '../../../routing/protocol.ts'
 import type { EinsatzConfig } from '../config-schema.ts'
 import { einsatzConfigSchema } from '../config-validation.ts'
 import type { TaskData, UnitData } from '../engine/model.ts'
+import type { SituationCall, UnitOptions } from '../situation/schema.ts'
 import { einsatzPackId } from '../ids.ts'
-import type { Recommendation } from '../recommendation-schema.ts'
-import { refusalCode } from '../refusal.ts'
-import { roleScreen } from './board-harness.ts'
-import { openRun, operator, type OpenRun } from './run-harness.ts'
+import { isUnserved, slowedRouting } from './border-demo.ts'
+import { openCardScreen, type CardScreen } from './card-harness.ts'
+import { openRun, type OpenRun } from './run-harness.ts'
 
 /**
  * Test-only: plays a demo Scenario Definition headless on a real Run, in
- * fixed steps of Run time, with one dispatcher policy per screen, and logs
- * what the demo's objectives are judged on. A policy acts only as its screen
- * may: it reads the recommendation for each call its screen queues and sends
- * through the Run's Capability path, as the Board does. Calls, units and
- * places are found by the Run's objects, by when a cue created them and
- * where they stand, never by a type or template name. Production code never
- * imports this file.
+ * fixed steps of Run time, by a dispatcher at a Dispatch panel screen
+ * (`card-harness.ts`): every order is given by the panel's own clicks and
+ * counted. The good dispatcher takes each call it should in the list's
+ * order, opens its card and taps its Dispatch, the 2-click path, while the
+ * suggestion holds; at a beat it gives the beat's order by the taps the
+ * beat names. The play logs what the demo's objectives are judged on.
+ * Calls, units and places are found by the Run's objects, by when a cue
+ * created them and where they stand, never by a type or template name.
+ * Production code never imports this file.
  */
 
-/** An order a policy gives: a Capability and its input. */
-export interface Order {
-  readonly capabilityId: string
-  readonly input: unknown
-}
+export { slowedRouting }
 
-/** What a beat's plan reads: the Run as its screen sees it, at the step the beat falls due. */
+/** What a beat's taps read: the Run as the screen sees it, at the step the beat falls due. */
 export interface BeatContext {
   readonly nowS: number
+  readonly run: OpenRun
+  readonly screen: CardScreen
   /** The calls a cue created at this Run second, in the order the Run holds them: the order the cues created them. */
   readonly callsCreatedAt: (atS: number) => ReadonlyArray<OperationalObject>
   readonly units: () => ReadonlyArray<OperationalObject>
-  readonly recommend: (taskId: string) => Promise<Recommendation>
 }
 
-/** A good dispatcher's planned move at a beat: the orders it gives at `atS`, besides following recommendations. */
+/** A good dispatcher's planned move at a beat: the taps it makes at `atS`, besides taking the suggestions. */
 export interface Beat {
   readonly name: string
   readonly atS: number
-  readonly plan: (context: BeatContext) => Promise<ReadonlyArray<Order>>
+  readonly tap: (context: BeatContext) => Promise<void>
 }
 
 export type Policy =
   /** Never acts. */
   | { readonly kind: 'nothing' }
   /**
-   * Accepts the recommendation of each call its screen queues, as it arrives
-   * and until the call is served, leaving a call alone that a unit holds
-   * queued; at each beat it first gives the beat's orders.
+   * Takes the suggestion of each unserved call, in list order, as it
+   * arrives and until the call is served, leaving a call alone that a unit
+   * holds as a queued stop. Where no free unit can help, it diverts the
+   * nearest unit on its way to a call of lower priority that can serve this
+   * one: the suggestions propose free units only, so a divert is always the
+   * dispatcher's own move. At each beat it first makes the beat's taps.
    */
   | { readonly kind: 'recommendations'; readonly beats: ReadonlyArray<Beat> }
 
@@ -59,7 +58,7 @@ export interface CallLog {
   readonly id: string
   readonly label: string
   readonly template: string
-  readonly rank: string
+  readonly priority: string
   readonly createdS: number
   /** When a unit first stood on scene there (on task), to the step. */
   firstOnSceneS?: number
@@ -70,34 +69,23 @@ export interface CallLog {
 
 export interface OrderLog {
   readonly atS: number
-  readonly screen: string
+  /** The move it belongs to: a suggestion taken, a divert, or a beat by its name. */
+  readonly move: 'suggestion' | 'divert' | 'beat'
   readonly beat?: string
   readonly capabilityId: string
   readonly input: unknown
   readonly ok: boolean
+  /** A refusal's code, as the result sets it. */
+  readonly code?: string
   readonly reason?: string
+  /** The clicks of the move it belongs to, every order of it included: a suggestion is the call's row and its Dispatch; a divert that row, then the busy unit's 4 clicks; a beat its taps. */
+  readonly clicks: number
 }
 
 export interface PlayLog {
   readonly calls: ReadonlyArray<CallLog>
   readonly orders: ReadonlyArray<OrderLog>
   readonly run: OpenRun
-}
-
-/** A routing adapter whose travel takes `factor` times as long as the direct model's: road detours and town speeds. */
-export const slowedRouting = (factor: number): RoutingAdapter => {
-  const direct = createDirectRoutingAdapter()
-  return {
-    id: `direct-slowed-${factor}`,
-    route: async (request: RouteRequest) => {
-      const result = await direct.route(request)
-      return { ...result, durationSeconds: result.durationSeconds * factor, provider: `direct-slowed-${factor}` }
-    },
-    table: async (request: RouteTableRequest) => {
-      const result = await direct.table(request)
-      return { ...result, durationsSeconds: result.durationsSeconds.map(row => row.map(seconds => seconds === null ? null : seconds * factor)) }
-    },
-  }
 }
 
 const isTask = (data: unknown): data is TaskData => (data as { readonly type?: unknown }).type === 'task'
@@ -118,22 +106,20 @@ export const lonLatOf = (object: OperationalObject): [number, number] => {
   return [point[0]!, point[1]!]
 }
 
-interface Screen {
-  readonly name: string
-  readonly actor: Actor
-  readonly policy: Policy
-}
+/** The calls the good dispatcher leaves alone: those a unit holds as a queued stop, which the unit takes next. */
+const queuedCalls = (screen: CardScreen): ReadonlySet<string> =>
+  new Set(screen.situation().units.flatMap(unit => unit.plan.flatMap(stop => stop.state === 'queued' && 'taskId' in stop.target ? [stop.target.taskId] : [])))
 
 /**
- * Plays the Definition until `untilS` in `stepS` steps. Each screen names a
- * dispatcher by the roles it holds (none in open mode) and its policy. A
- * dispatcher reacts `reactS` after each call arrives, as a person at an iPad
- * does: it acts on a call, and gives a beat's orders, only once that long
- * has passed since the call or the beat.
+ * Plays the Definition until `untilS` in `stepS` steps by one dispatcher at
+ * a Dispatch panel screen, with its policy. The dispatcher reacts `reactS`
+ * after each call arrives, as a person at an iPad does: it acts on a call,
+ * and makes a beat's taps, only once that long has passed since the call
+ * or the beat.
  */
 export const playDemo = async (options: {
   readonly definition: unknown
-  readonly screens: ReadonlyArray<{ readonly name: string; readonly roleIds?: ReadonlyArray<string>; readonly policy: Policy }>
+  readonly policy: Policy
   readonly untilS: number
   readonly stepS?: number
   readonly reactS?: number
@@ -143,13 +129,7 @@ export const playDemo = async (options: {
   const reactS = options.reactS ?? 0
   const run = await openRun({ definition: options.definition, ...(options.routing === undefined ? {} : { routing: options.routing }) })
   const startMs = run.nowMs()
-  const config = configOf(options.definition)
-  const classOrder = config.loadClasses.map(entry => entry.id)
-  const screens: Screen[] = options.screens.map(screen => ({
-    name: screen.name,
-    actor: screen.roleIds === undefined ? operator : roleScreen(run, ...screen.roleIds),
-    policy: screen.policy,
-  }))
+  const screen = await openCardScreen(run)
   const calls = new Map<string, CallLog>()
   const orders: OrderLog[] = []
   const beatsDone = new Set<string>()
@@ -157,19 +137,74 @@ export const playDemo = async (options: {
   const objects = () => run.run.snapshot().objects.filter(object => object.packId === einsatzPackId)
   const secondsOf = (ms: number) => Math.round((ms - startMs) / 1_000)
 
-  const give = async (screen: Screen, order: Order, beat?: string): Promise<void> => {
-    const result = await run.invoke(order.capabilityId, order.input, screen.actor)
-    orders.push({ atS: nowS(), screen: screen.name, ...(beat === undefined ? {} : { beat }), ...order, ok: result.ok, ...(result.ok ? {} : { reason: result.reason }) })
+  /** Logs the orders a move of the dispatcher gave since it began, each with the move's clicks. */
+  const logMove = (kind: OrderLog['move'], beat: string | undefined, since: { readonly clicks: number; readonly sent: number }): void => {
+    const clicks = screen.actions() - since.clicks
+    const sentBefore = since.sent
+    for (const call of screen.calls.slice(sentBefore)) {
+      orders.push({
+        atS: nowS(),
+        move: kind,
+        ...(beat === undefined ? {} : { beat }),
+        capabilityId: call.capabilityId,
+        input: call.input,
+        ok: call.result.ok,
+        ...(call.result.ok ? {} : { reason: call.result.reason, ...(call.result.code === undefined ? {} : { code: call.result.code }) }),
+        clicks,
+      })
+    }
   }
-  const recommendFor = (screen: Screen) => async (taskId: string): Promise<Recommendation> =>
-    await run.query<Recommendation>(einsatzQueryIds.recommend, { taskId }, screen.actor)
+
+  /** The nearest unit on its way to a call of lower priority whose options take this call; null when there is none. */
+  const divertable = async (call: SituationCall): Promise<string | null> => {
+    const situation = screen.situation()
+    const rankOf = (taskId: string | undefined): number => situation.calls.find(entry => entry.id === taskId)?.priority.rank ?? -1
+    const callObject = run.object(call.id)
+    if (callObject === undefined) return null
+    const candidates = objects().filter(object => isUnit(object.packData) && (object.packData.phase === 'en-route' || object.packData.phase === 'mobilizing') && rankOf(object.packData.taskId) > call.priority.rank)
+      .sort((a, b) => metresBetween(lonLatOf(a), lonLatOf(callObject)) - metresBetween(lonLatOf(b), lonLatOf(callObject)))
+    for (const unit of candidates) {
+      const options = await run.query<UnitOptions>('world.einsatz.unit.options', { unitId: unit.id }, screen.actor)
+      if (options.targets.some(target => 'taskId' in target.target && target.target.taskId === call.id && target.canReplace)) return unit.id
+    }
+    return null
+  }
+
+  /** Each unserved call in list order: its suggestion by its row and its Dispatch, or, where no free unit can help, a divert. */
+  const takeSuggestions = async (): Promise<void> => {
+    const tried = new Set<string>()
+    for (let round = 0; round < 40; round++) {
+      const queued = queuedCalls(screen)
+      const call = screen.situation().calls.find(entry => !tried.has(entry.id) && isUnserved(entry) && !queued.has(entry.id) && entry.waitingS >= reactS)
+      if (call === undefined) return
+      tried.add(call.id)
+      if (screen.selection().kind === 'unit') await screen.press({ kind: 'back' })
+      const since = { clicks: screen.actions(), sent: screen.calls.length }
+      await screen.row({ id: call.id, kind: 'call' })
+      const card = screen.card()
+      if (card?.kind !== 'call') continue
+      if (card.proposal.button.enabled) {
+        await screen.press({ kind: 'dispatch' })
+        logMove('suggestion', undefined, since)
+        continue
+      }
+      const unitId = await divertable(call)
+      if (unitId === null) continue
+      await screen.mapTap(unitId)
+      await screen.mapTap(call.id)
+      const decision = screen.decision()
+      if (decision?.kind !== 'order' || !decision.replace) throw new Error(`No replacement for diverting ${unitId} to ${call.label}: ${screen.feedback() ?? JSON.stringify(screen.card())}`)
+      await screen.decide('replace')
+      logMove('divert', undefined, since)
+    }
+  }
 
   const observe = (): void => {
     const all = objects()
     for (const object of all) {
       const data = object.packData
       if (!isTask(data)) continue
-      const call = calls.get(object.id) ?? { id: object.id, label: object.label, template: data.template, rank: data.rank, createdS: secondsOf(data.createdAtMs), onScene: new Set<string>() }
+      const call = calls.get(object.id) ?? { id: object.id, label: object.label, template: data.template, priority: data.priority, createdS: secondsOf(data.createdAtMs), onScene: new Set<string>() }
       calls.set(object.id, call)
       const here = all.filter(entry => isUnit(entry.packData) && entry.packData.taskId === object.id && entry.packData.phase === 'on-task')
       for (const unit of here) call.onScene.add(unit.id)
@@ -178,41 +213,30 @@ export const playDemo = async (options: {
     }
   }
 
-  const dispatch = async (screen: Screen): Promise<void> => {
-    if (screen.policy.kind === 'nothing') return
+  const dispatch = async (): Promise<void> => {
+    const policy = options.policy
+    if (policy.kind === 'nothing') return
     const context: BeatContext = {
       nowS: nowS(),
+      run,
+      screen,
       callsCreatedAt: atS => objects().filter(object => isTask(object.packData) && secondsOf(object.packData.createdAtMs) === atS),
       units: () => objects().filter(object => isUnit(object.packData)),
-      recommend: recommendFor(screen),
     }
-    for (const beat of screen.policy.beats) {
-      const key = `${screen.name}:${beat.name}`
-      if (beatsDone.has(key) || beat.atS + reactS > nowS()) continue
-      beatsDone.add(key)
-      for (const order of await beat.plan(context)) await give(screen, order, beat.name)
+    for (const beat of policy.beats) {
+      if (beatsDone.has(beat.name) || beat.atS + reactS > nowS()) continue
+      beatsDone.add(beat.name)
+      const since = { clicks: screen.actions(), sent: screen.calls.length }
+      await beat.tap(context)
+      logMove('beat', beat.name, since)
     }
-    const open = objects()
-      .flatMap(object => isTask(object.packData) && object.packData.closedAtMs === undefined && secondsOf(object.packData.createdAtMs) + reactS <= nowS() ? [{ id: object.id, data: object.packData }] : [])
-      .sort((a, b) => classOrder.indexOf(a.data.rank) - classOrder.indexOf(b.data.rank) || a.data.createdAtMs - b.data.createdAtMs || (a.id < b.id ? -1 : 1))
-    for (const task of open) {
-      let answer: Recommendation
-      try {
-        answer = await context.recommend(task.id)
-      } catch (error) {
-        // A call only another desk's units serve is not in this screen's queue.
-        if (refusalCode((error as Error).message) === 'task_not_in_role_queue') continue
-        throw error
-      }
-      if (answer.need === null || answer.next.length > 0 || answer.proposal.units.length === 0) continue
-      const diverts = answer.proposal.units.flatMap(unit => unit.divertFrom === undefined ? [] : [{ unitId: unit.unitId, fromTaskId: unit.divertFrom.taskId }])
-      await give(screen, { capabilityId: ids.send, input: { units: answer.proposal.units.map(unit => unit.unitId), to: { taskId: task.id }, ...(diverts.length === 0 ? {} : { divert: diverts }) } })
-    }
+    await takeSuggestions()
   }
 
   observe()
   while (nowS() < options.untilS) {
-    for (const screen of screens) await dispatch(screen)
+    await screen.sync()
+    await dispatch()
     observe()
     run.forward(stepS * 1_000)
     await run.settle()
@@ -222,41 +246,46 @@ export const playDemo = async (options: {
 }
 
 /**
- * A beat: when a call arrives that a busy unit already at work could serve
- * next, add it to the end of the chain of the nearest such unit instead of
- * sending a free one from further away.
+ * A beat: when a call arrives that a busy unit already on scene could serve
+ * next, give it to the nearest such unit in three clicks: the unit, the
+ * call, then "Add to plan".
  */
-export const addToEndOfNearestBusy = (name: string, atS: number): Beat => ({
+export const afterNearestBusy = (name: string, atS: number): Beat => ({
   name,
   atS,
-  plan: async context => {
-    const [call] = context.callsCreatedAt(atS)
+  tap: async ({ run, screen, callsCreatedAt, units }) => {
+    const [call] = callsCreatedAt(atS)
     if (call === undefined) throw new Error(`${name}: no call arrived at ${atS} s`)
-    const busy = new Set((await context.recommend(call.id)).committed.map(entry => entry.unitId))
-    const nearest = context.units().filter(unit => busy.has(unit.id) && isUnit(unit.packData) && unit.packData.phase === 'on-task')
+    const answer = await run.query<{ readonly whyNot: ReadonlyArray<{ readonly unitId: string }> }>('world.einsatz.recommend', { taskId: call.id }, screen.actor)
+    const able = new Set(answer.whyNot.map(entry => entry.unitId))
+    const nearest = units().filter(unit => able.has(unit.id) && isUnit(unit.packData) && unit.packData.phase === 'on-task')
       .sort((a, b) => metresBetween(lonLatOf(a), lonLatOf(call)) - metresBetween(lonLatOf(b), lonLatOf(call)))[0]
-    if (nearest === undefined) throw new Error(`${name}: no busy unit could serve ${call.label}`)
-    return [{ capabilityId: ids.queue, input: { unitId: nearest.id, to: { taskId: call.id } } }]
+    if (nearest === undefined) throw new Error(`${name}: no busy unit on scene could serve ${call.label}`)
+    await screen.mapTap(nearest.id)
+    await screen.mapTap(call.id)
+    const decision = screen.decision()
+    if (decision?.kind !== 'order' || !decision.add) throw new Error(`${name}: ${nearest.label} cannot add ${call.label}: ${screen.feedback() ?? JSON.stringify(screen.card())}`)
+    await screen.decide('add')
   },
 })
 
 /**
- * A beat: when two calls arrive together, give both to the unit recommended
- * for the first, in one chain, instead of sending a second unit: send it to
- * the first, then add the second to the end of its chain, as the Board's
- * taps do (the unit, the first call, + and the second call).
+ * A beat: when two calls arrive together, give both to the unit suggested
+ * for the first, in one plan. Four clicks: the unit, the first call, the
+ * second call, then "Add to plan".
  */
-export const chainBoth = (name: string, atS: number): Beat => ({
+export const bothToOne = (name: string, atS: number): Beat => ({
   name,
   atS,
-  plan: async context => {
-    const [first, second] = context.callsCreatedAt(atS)
+  tap: async ({ run, screen, callsCreatedAt }) => {
+    const [first, second] = callsCreatedAt(atS)
     if (first === undefined || second === undefined) throw new Error(`${name}: two calls should arrive at ${atS} s`)
-    const unitId = (await context.recommend(first.id)).proposal.units[0]?.unitId
-    if (unitId === undefined) throw new Error(`${name}: no unit is recommended for ${first.label}`)
-    return [
-      { capabilityId: ids.send, input: { units: [unitId], to: { taskId: first.id } } },
-      { capabilityId: ids.queue, input: { unitId, to: { taskId: second.id } } },
-    ]
+    const answer = await run.query<{ readonly proposal: { readonly units: ReadonlyArray<{ readonly unitId: string }> } | null }>('world.einsatz.recommend', { taskId: first.id }, screen.actor)
+    const unitId = answer.proposal?.units[0]?.unitId
+    if (unitId === undefined) throw new Error(`${name}: no unit is suggested for ${first.label}`)
+    await screen.mapTap(unitId)
+    await screen.mapTap(first.id)
+    await screen.mapTap(second.id)
+    await screen.decide('add')
   },
 })

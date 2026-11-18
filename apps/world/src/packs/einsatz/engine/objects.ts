@@ -77,7 +77,7 @@ const assertChain = (unit: UnitRecord): void => {
   if (unit.taskId !== headTask) fail(unit.id, `its task ${unit.taskId ?? 'none'} is not its active step's ${headTask ?? 'none'}`)
   if (unit.siteId !== headSite) fail(unit.id, `its site ${unit.siteId ?? 'none'} is not its active delivery's ${headSite ?? 'none'}`)
   if (head?.kind === 'move' && (unit.phase !== 'en-route' || unit.taskId !== undefined)) fail(unit.id, `an active move needs the unit en route, not ${unit.phase}`)
-  if (unit.integrity === 'destroyed' && (unit.orders.length > 0 || unit.paused === true)) fail(unit.id, 'a destroyed unit holds no steps')
+  if (unit.integrity === 'destroyed' && unit.orders.length > 0) fail(unit.id, 'a destroyed unit holds no steps')
   const serial = unit.stepSerial ?? 0
   for (const step of unit.orders) {
     const number = /^step-([1-9][0-9]*)$/.exec(step.id)?.[1]

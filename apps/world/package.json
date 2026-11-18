@@ -33,7 +33,8 @@
     "process-plant:extended-validation": "bun run scripts/process-plant/extended-validation.ts",
     "process-plant:credibility": "bun run scripts/process-plant/pwr-credibility.ts",
     "process-plant:balance": "bun run scripts/process-plant/feedwater-balance-trace.ts",
-    "test": "bun test --isolate --timeout 120000",
+    "test": "bun run ../../scripts/test-world.ts",
+    "test:e2e": "playwright test --config tests/e2e/playwright.config.ts",
     "health": "bun run check && bun run test && bun run build:ui"
   },
   "dependencies": {
@@ -67,6 +68,7 @@
   "devDependencies": {
     "@oicl/connector-diagram": "1.0.0",
     "@oicl/openbridge-webcomponents": "2.1.0",
+    "@playwright/test": "1.64.1",
     "@types/bun": "1.4.0",
     "ajv": "8.20.0",
     "harfbuzzjs": "1.6.1",

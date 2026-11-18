@@ -576,6 +576,29 @@ describe('Workspace progressive-discovery tools', () => {
     expect(standalone).toMatchObject({ success: true, data: { results: [{ viewError: expect.stringContaining('no execution evidence') }] } })
   })
 
+  test('retains a discovered Planning schedule publication and offers its exact view reference to the model', async () => {
+    const plan = workspaceResourceReferenceSchema.parse({ workspaceId, moduleId: 'planning', type: 'planning.plan', id: 'plan-1' })
+    const operationId = 'planning.plan.display'
+    const view = { viewType: 'planning.schedule', title: 'Finish by 18:00', height: 650, state: '{"plan":"plan-1","option":"deadline-18"}' }
+    const fetchImpl = (async (input: Request | string | URL, init?: RequestInit) => {
+      const request = input instanceof Request ? new Request(input, init) : new Request(String(input), init)
+      const pathname = new URL(request.url).pathname
+      if (pathname.endsWith('/resources')) return Response.json({ workspaceId, modules: [{ moduleId: 'planning', status: 'ready' }], resources: [{ ref: plan, title: 'Maintenance plan', capabilityIds: [operationId], links: [], summary: [], observedAt: now }] })
+      if (pathname.endsWith('/capabilities')) return Response.json({ workspaceId, modules: [{ moduleId: 'planning', status: 'ready' }], capabilities: [{ id: operationId, moduleId: 'planning', kind: 'query', scope: { kind: 'resource', resourceType: plan.type }, title: 'Show schedule', description: 'Show a checked option and requested deadline.', risk: 'read', idempotent: true, publishes: ['embedded-view'], inputSchema: { type: 'object' }, outputSchema: { type: 'object' } }] })
+      if (pathname.endsWith('/invoke')) return Response.json({ result: { view, schedule: { status: 'validated feasible', finish: '2026-11-18T15:00:00.000Z' } } })
+      return catalogFetch([])(input, init)
+    }) as typeof fetch
+    const [, call] = createWorkspaceCapabilityTools({ workspaceId, hostBaseUrl: 'https://host.test', getRoomScope: () => ({ kind: 'resource', resource: plan }), fetchImpl })
+    const recorded = await call!.execute({ calls: [{ key: 'schedule', operationId, input: { option: 'deadline-18' } }] }, { ...context, executionCallId: 'call_2_0' })
+    const refs = new Set<string>()
+    collectViewRefs(refs, 'workspace_call', recorded)
+    expect([...refs]).toEqual(['call_2_0/schedule'])
+    expect(recorded).toMatchObject({ success: true, data: { results: [{ embeddedView: { ...view, moduleId: 'planning', subject: plan }, viewRef: 'call_2_0/schedule' }] } })
+    const shown = workspaceCallResultForModel(recorded, createTurnCards())
+    expect(shown).toMatchObject({ data: { results: [{ viewRef: 'call_2_0/schedule', data: { schedule: { status: 'validated feasible' } } }] } })
+    expect(JSON.stringify(shown)).not.toContain('"state"')
+  })
+
   test('a decision receipt stays actionable while its owner-published evidence locator remains opaque', async () => {
     const source = { sourceId: 'source-1', sourceRevision: 'revision-1', sourcePath: 'procedures/example.md' }
     const locator = { runId: 'procedure-1', ...source, eventId: 'event-7', sequence: 7, commandId: 'command-1' }

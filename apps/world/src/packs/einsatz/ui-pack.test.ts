@@ -6,25 +6,19 @@ import { scenarioDefinitionSchema } from '../../core/scenarios/definition.ts'
 import { compileScenarioDefinition } from '../../core/scenarios/compiler.ts'
 import { createDirectRoutingAdapter } from '../../routing/direct-adapter.ts'
 import { mapCameraInteractionFor, openPanelDeclaring, railStartsCollapsed, surfacePanelPackId } from '../../ui/surface-panel-interaction.ts'
-import { einsatzCommandIds } from './capabilities.ts'
-import { borderWith, civilConfig, civilKinds, civilWith, taskAt, unitAt } from './fixtures/board-harness.ts'
 import { borderDefinitions } from './fixtures/border-harness.ts'
 import { at, blue, config, cycles, place, red, stateWith, types } from './fixtures/combat-harness.ts'
-import { definitionOf, lonLat, openRun, screenOf, taskItem, unitItem } from './fixtures/run-harness.ts'
+import { definitionOf, lonLat, openRun, taskItem, unitItem } from './fixtures/run-harness.ts'
 import { trackDataSchema } from './engine/combat-model.ts'
 import { engineObjects } from './engine/objects.ts'
-import { low, templates, types as engineTypes } from './fixtures/engine-harness.ts'
-import fixture from './fixtures/engine.config.json'
-import { neutralLexicon } from './lexicon.ts'
+import { config as engineConfig, low, templates, types as engineTypes } from './fixtures/engine-harness.ts'
+import { einsatzCommandIds } from './capabilities.ts'
 import { einsatzPack } from './pack.ts'
-import { einsatzBoardPanelId, einsatzPackView } from './ui-pack.ts'
+import { einsatzDispatchPanelId, einsatzPackView } from './ui-pack.ts'
+import { dispatchWords } from './ui/presenters.ts'
 
 const { categories, presentObject } = einsatzPackView.presentation
-const civilKind = civilKinds(civilConfig)
-const civilTypes = civilKind.types
-const civilTemplates = civilKind.templates
-const civilTop = civilKind.classes[0]!
-const civilAt = (eastKm: number): [number, number] => [11.38 + eastKm / 57.12, 59.12]
+const recordType = (object: OperationalObject): unknown => (object.packData as { readonly type?: unknown }).type
 
 /** Every object of an engagement in which one side holds a contact, identified tracks and a track on a unit it saw destroyed. */
 const engagementObjects = async (): Promise<OperationalObject[]> => {
@@ -94,39 +88,42 @@ describe('Einsatz presentation', () => {
 })
 
 describe('Einsatz UI declarations', () => {
-  test('the Board is the Pack\'s one surface panel: open by default, taking map targets and keys, under an id whose first segment is the Pack\'s', () => {
+  test('the Dispatch panel is the Pack\'s one surface panel: open by default, taking map targets, no keymap, under the static label "Dispatch" its header shows too, under an id whose first segment is the Pack\'s', () => {
     const panels = einsatzPackView.ui.surfacePanels
-    expect(panels.map(panel => ({ id: panel.id, label: panel.label, defaultOpen: panel.defaultOpen, mapTargets: panel.mapTargets, keymap: panel.keymap })))
-      .toEqual([{ id: einsatzBoardPanelId, label: neutralLexicon.workList, defaultOpen: true, mapTargets: true, keymap: true }])
-    expect(einsatzBoardPanelId.split('.')[0]).toBe(einsatzPackView.descriptor.id)
+    expect(panels.map(panel => ({ id: panel.id, label: panel.label, defaultOpen: panel.defaultOpen, mapTargets: panel.mapTargets, keymap: 'keymap' in panel })))
+      .toEqual([{ id: einsatzDispatchPanelId, label: dispatchWords.panel, defaultOpen: true, mapTargets: true, keymap: false }])
+    expect(dispatchWords.panel).toBe('Dispatch')
+    expect(einsatzDispatchPanelId).toBe('einsatz.dispatch')
+    expect(einsatzDispatchPanelId.split('.')[0]).toBe(einsatzPackView.descriptor.id)
     const active = createActivePackViews([einsatzPackView])
-    expect(openPanelDeclaring(active.surfacePanels, () => true, 'mapTargets')?.id).toBe(einsatzBoardPanelId)
-    expect(openPanelDeclaring(active.surfacePanels, () => true, 'keymap')?.id).toBe(einsatzBoardPanelId)
+    expect(openPanelDeclaring(active.surfacePanels, () => true, 'mapTargets')?.id).toBe(einsatzDispatchPanelId)
+    expect(openPanelDeclaring(active.surfacePanels, () => true, 'keymap')).toBeNull()
     expect(surfacePanelPackId(active.packs, panels[0]!)).toBe(einsatzPackView.descriptor.id)
   })
 
-  test('the Board\'s Pack is found through a copy of its panel, as the route\'s deep state hands it over a different proxy per path', () => {
+  test('the panel\'s Pack is found through a copy of its panel, as the route\'s deep state hands it over a different proxy per path', () => {
     const active = createActivePackViews([einsatzPackView])
     const proxied = new Proxy(active.surfacePanels[0]!, {})
     expect(proxied).not.toBe(einsatzPackView.ui.surfacePanels[0])
     expect(surfacePanelPackId(active.packs, proxied)).toBe(einsatzPackView.descriptor.id)
     expect(surfacePanelPackId(active.packs, { ...einsatzPackView.ui.surfacePanels[0]! })).toBe(einsatzPackView.descriptor.id)
-    expect(() => surfacePanelPackId(active.packs, { ...einsatzPackView.ui.surfacePanels[0]!, id: 'other.board' })).toThrow('Surface panel other.board belongs to no active Pack')
+    expect(() => surfacePanelPackId(active.packs, { ...einsatzPackView.ui.surfacePanels[0]!, id: 'other.dispatch' })).toThrow('Surface panel other.dispatch belongs to no active Pack')
   })
 
-  test('the Pack switches off the map gestures its keys and clicks would collide with, and starts the surface with the rail collapsed', () => {
-    expect(mapCameraInteractionFor([einsatzPackView])).toEqual({ doubleClickZoom: false, keyboard: false, boxZoom: false })
+  test('the Pack switches off double-click zoom only, so a double-click acts as one click; keyboard pan and box zoom stay; the rail starts collapsed', () => {
+    expect(einsatzPackView.ui.mapInteraction).toEqual({ doubleClickZoom: false })
+    expect(mapCameraInteractionFor([einsatzPackView])).toEqual({ doubleClickZoom: false, keyboard: true, boxZoom: true })
     expect(railStartsCollapsed([einsatzPackView])).toBe(true)
   })
 
-  test('the descriptor declares every contribution the Pack makes, targeting and its wiki page included, so registering it is not refused', () => {
-    expect(einsatzPackView.descriptor.contributions.map(contribution => contribution.kind).sort()).toEqual(['knowledge', 'presentation', 'runtime', 'scenario', 'targeting'])
+  test('the descriptor declares every contribution the Pack makes, targeting, its interaction handlers and its wiki page included, so registering it is not refused', () => {
+    expect(einsatzPackView.descriptor.contributions.map(contribution => contribution.kind).sort()).toEqual(['interactions', 'knowledge', 'presentation', 'runtime', 'scenario', 'targeting'])
     expect(() => assertContributionDescriptor(einsatzPack)).not.toThrow()
   })
 
-  test('no Einsatz category takes a rail section: the Board is the only unit and task list', async () => {
+  test('no Einsatz category takes a rail section: the Dispatch panel is the only list', async () => {
     expect(categories.map(category => category.rail)).toEqual(categories.map(() => false))
-    const definition = scenarioDefinitionSchema.parse(civilWith([unitAt('u1', 'U1', civilTypes.carrier, civilAt(0)), taskAt('t1', 'T1', civilTemplates.load, civilAt(1), { [civilTop]: 1 })]))
+    const definition = scenarioDefinitionSchema.parse(definitionOf([unitItem('u1', engineTypes.roadCarrier, lonLat(0)), taskItem('t1', templates.load, lonLat(0.01), { [low]: 1 })]))
     const compiled = await compileScenarioDefinition(definition, [einsatzPack], { routing: createDirectRoutingAdapter() })
     expect(compiled.view.rail.sections).toEqual([])
     // A Starting View may still name one.
@@ -134,34 +131,55 @@ describe('Einsatz UI declarations', () => {
     expect(named.view.rail.sections.map(section => section.categoryId)).toEqual([categories[0]!.id])
   })
 
-  test('the generic map path never sends an Einsatz order: the Board takes them all', async () => {
+  test('the generic map path never sends an Einsatz order; units that move are map controllers, so their clicks reach the panel; sites, tasks and tracks never are', async () => {
     const objects = await engagementObjects()
-    const unitObject = objects.find(object => (object.packData as { readonly type?: unknown }).type === 'unit')!
+    const unitObject = objects.find(object => recordType(object) === 'unit')!
     const { targeting } = einsatzPackView
     expect(targeting.isTarget()).toBe(false)
-    expect(() => targeting.buildSetTargetCommand(unitObject)).toThrow('Einsatz map orders go through the Board')
-    expect(() => targeting.buildCancelTargetCommand(unitObject)).toThrow('Einsatz map orders go through the Board')
-    // Without a connected Board, no unit is a map controller.
-    expect(objects.filter(object => targeting.isController(object, { objects }))).toEqual([])
+    expect(() => targeting.buildSetTargetCommand(unitObject)).toThrow('Einsatz map orders go through the Dispatch panel')
+    expect(() => targeting.buildCancelTargetCommand(unitObject)).toThrow('Einsatz map orders go through the Dispatch panel')
+    expect('mutedOnMap' in targeting).toBe(false)
+    for (const object of objects) expect(targeting.isController(object)).toBe(recordType(object) === 'unit' && object.kind === 'mobile_entity')
+    expect(objects.some(object => targeting.isController(object))).toBe(true)
+
+    const run = await openRun({ items: [unitItem('u1', engineTypes.roadCarrier, lonLat(0)), unitItem('u2', engineTypes.roadCarrier, lonLat(0.001)), unitItem('h1', engineTypes.publicSite, lonLat(0.02)), taskItem('t1', templates.load, lonLat(0.01), { [low]: 2 })], paused: true })
+    try {
+      const listed = run.run.snapshot().objects
+      expect(['u1', 'h1', 't1'].map(id => targeting.isController(listed.find(object => object.id === id)!))).toEqual([true, false, false])
+    } finally {
+      await run.close()
+    }
   })
 
-  test('units are labelled with callsign, phase code and damage and toned free, committed or out of action; sites, tasks and tracks carry their labels; every object draws its catalogue icon', async () => {
-    const run = await openRun({ definition: civilWith([unitAt('u1', 'U1', civilTypes.carrier, civilAt(0)), unitAt('h1', 'H1', civilTypes.site, civilAt(2)), taskAt('t1', 'T1', civilTemplates.load, civilAt(1), { [civilTop]: 1 })]) })
+  test('the map fades committed units and fully covered calls and keeps completed calls as history dots', async () => {
+    const run = await openRun({ items: [unitItem('u1', engineTypes.roadCarrier, lonLat(0)), unitItem('u2', engineTypes.roadCarrier, lonLat(0.001)), unitItem('h1', engineTypes.publicSite, lonLat(0.02)), taskItem('t1', templates.load, lonLat(0.01), { [low]: 2 })], paused: true })
     try {
-      const present = (id: string) => {
-        const objects = run.run.snapshot().objects
-        return presentObject(objects.find(object => object.id === id)!, { objects })
-      }
-      expect(present('u1')).toMatchObject({ mapLabel: 'U1 · AV', status: { tone: 'ready' }, icon: civilConfig.unitTypes.find(type => type.id === civilTypes.carrier)!.icon })
-      expect(present('h1')).toMatchObject({ mapLabel: 'H1', icon: civilConfig.unitTypes.find(type => type.id === civilTypes.site)!.icon })
-      expect(present('h1').status).toBeUndefined()
-      expect(present('t1')).toMatchObject({ mapLabel: 'T1', icon: civilConfig.taskTemplates.find(template => template.id === civilTemplates.load)!.icon })
-      const sent = await run.invoke(einsatzCommandIds.send, { units: ['u1'], to: { taskId: 't1' } })
-      expect(sent.ok).toBe(true)
-      expect(present('u1')).toMatchObject({ mapLabel: expect.stringMatching(/^U1 · (MOB|ER)$/), status: { tone: 'working' } })
-      const closed = await run.invoke(einsatzCommandIds.siteSet, { siteId: 'h1', accepting: false })
-      expect(closed.ok).toBe(true)
-      expect(present('h1').mapLabel).toBe('H1 · closed')
+      const objects = run.run.snapshot().objects
+      const objectOf = (id: string) => objects.find(object => object.id === id)!
+      const present = (object: OperationalObject) => presentObject(object, { objects })
+      const iconOf = (typeId: string) => engineConfig.unitTypes.find(type => type.id === typeId)!.icon
+      expect(present(objectOf('u1'))).toMatchObject({ mapLabel: 'U1 · AV', status: { tone: 'ready' }, icon: iconOf(engineTypes.roadCarrier) })
+      expect(present(objectOf('u1')).mapMarker).toBeUndefined()
+      expect(present(objectOf('h1'))).toMatchObject({ mapLabel: 'H1', icon: iconOf(engineTypes.publicSite) })
+      expect(present(objectOf('h1')).status).toBeUndefined()
+      expect(present(objectOf('t1'))).toMatchObject({ mapLabel: 'T1', icon: engineConfig.taskTemplates.find(template => template.id === templates.load)!.icon })
+      // Every unit is drawn: no screen-side filter hides one.
+      for (const object of objects) expect(present(object).mapIconVisible).not.toBe(false)
+      const current = (id: string) => presentObject(run.object(id)!, { objects: run.run.snapshot().objects })
+      const closed = { ...objectOf('h1'), packData: { ...(objectOf('h1').packData as object), accepting: false } } as OperationalObject
+      expect(present(closed)).toMatchObject({ mapLabel: 'H1 · closed', mapMarker: 'muted' })
+      expect(present(objectOf('t1')).status).toEqual({ tone: 'idle', label: 'open', indicator: { shape: 'dot', pulse: true } })
+      expect((await run.invoke(einsatzCommandIds.order, { units: ['u1'], stops: [{ taskId: 't1' }] })).ok).toBe(true)
+      expect(current('u1')).toMatchObject({ mapMarker: 'muted', status: { tone: 'working' } })
+      expect(current('t1').mapMarker).toBeUndefined()
+      expect(current('t1').status?.indicator.pulse).toBe(true)
+      expect((await run.invoke(einsatzCommandIds.order, { units: ['u2'], stops: [{ taskId: 't1' }] })).ok).toBe(true)
+      expect(current('t1')).toMatchObject({ mapMarker: 'muted', glance: [expect.any(String), 'All needs covered'] })
+      expect(current('t1').status).toBeUndefined()
+
+      const history = presentObject({ ...objectOf('t1'), lifecycle: 'resolved' }, { objects })
+      expect(history).toMatchObject({ mapMarker: 'dot', muted: true, color: '#b46e50', glance: [expect.any(String), 'Completed'] })
+      expect(history.mapLabel).toBeUndefined()
     } finally {
       await run.close()
     }
@@ -182,55 +200,17 @@ describe('Einsatz UI declarations', () => {
     }
   })
 
-  test('a place that never moves, an objective or a post, is labelled with its name alone: no phase such as "AV", and no free or committed dot', async () => {
-    const run = await openRun({ definition: borderWith([
-      unitAt('site:objective', 'Objective', 'objective', [11.4605, 59.1345]),
-      unitAt('unit:post', 'Post', 'observation-post', [11.51, 59.175], { side: blue }),
-    ]) })
+  test('a place that never moves is labelled with its name alone: no phase such as "AV", and no free or committed dot', async () => {
+    const run = await openRun({ definition: borderDefinitions.scripted, paused: true })
     try {
       const objects = run.run.snapshot().objects
-      for (const id of ['site:objective', 'unit:post']) {
-        const object = objects.find(entry => entry.id === id)!
-        expect(object.kind).toBe('facility')
+      const places = objects.filter(object => recordType(object) === 'unit' && object.kind === 'facility')
+      expect(places.length).toBeGreaterThan(0)
+      for (const object of places) {
         const presentation = presentObject(object, { objects })
-        expect([presentation.mapLabel, presentation.status]).toEqual([object.label, undefined])
+        expect(presentation.status).toBeUndefined()
+        expect(presentation.mapLabel === object.label || presentation.mapLabel === `${object.label} · closed`).toBe(true)
       }
-    } finally {
-      await run.close()
-    }
-  })
-
-  test('a unit of a group whose role the screen does not see is not drawn, nor is its planned path; without a See choice, and for other objects, nothing changes', async () => {
-    const declared = {
-      roles: [{ id: 'control', label: 'Control', class: 'controller' as const }],
-      config: { ...fixture, groups: [{ id: 'near', label: 'Near', category: 'Crews' }, { id: 'far', label: 'Far', category: 'Crews' }] },
-    }
-    const run = await openRun({
-      definition: definitionOf([
-        { ...unitItem('n1', engineTypes.roadCarrier, lonLat(0)), group: 'near' },
-        { ...unitItem('f1', engineTypes.roadCarrier, lonLat(0.001)), group: 'far' },
-        unitItem('clinic', engineTypes.publicSite, lonLat(0.002)),
-        taskItem('t1', templates.load, lonLat(0.003), { [low]: 1 }),
-      ], undefined, declared),
-      paused: true,
-    })
-    try {
-      const seen = (seenRoleIds?: ReadonlyArray<string>) => seenRoleIds === undefined ? {} : { seenRoleIds }
-      const drawn = (seenRoleIds?: ReadonlyArray<string>) =>
-        ['n1', 'f1', 'clinic', 't1'].filter(id => presentObject(run.object(id)!, { objects: [run.object(id)!], ...seen(seenRoleIds) }).mapIconVisible !== false)
-      expect(drawn()).toEqual(['n1', 'f1', 'clinic', 't1'])
-      expect(drawn(['control', 'group:near', 'group:far'])).toEqual(['n1', 'f1', 'clinic', 't1'])
-      expect(drawn(['control', 'group:near'])).toEqual(['n1', 'clinic', 't1'])
-      expect(drawn([])).toEqual(['clinic', 't1'])
-
-      const control = screenOf(declared, 'control')
-      expect((await run.invoke(einsatzCommandIds.send, { units: ['n1'], to: { point: { type: 'Point', coordinates: lonLat(0.004) } } }, control)).ok).toBe(true)
-      expect((await run.invoke(einsatzCommandIds.queue, { unitId: 'n1', to: { taskId: 't1' } }, control)).ok).toBe(true)
-      const paths = (seenRoleIds?: ReadonlyArray<string>) =>
-        einsatzPackView.presentation.mapFeatures({ objects: run.run.snapshot().objects, ...seen(seenRoleIds) }).map(feature => feature.id)
-      expect(paths()).toEqual([expect.stringMatching(/^einsatz-plan:n1:step-/)])
-      expect(paths(['control', 'group:near'])).toEqual(paths())
-      expect(paths(['control', 'group:far'])).toEqual([])
     } finally {
       await run.close()
     }

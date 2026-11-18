@@ -1,0 +1,220 @@
+// The exact edit vocabulary; the boundary validates with it. Field-level: a given field replaces that
+// field, null clears an optional field, an omitted field is kept. A new key needs every required field.
+// A list of edits applies all or nothing. Weakening edits need authority. The published schema is this
+// one passed through stripForPublication; every field keeps its description.
+import { z } from 'zod'
+import { planningLocatorSchema } from '@leitbild/contracts'
+import {
+  amountSchema, goalMetricSchema, goalUnitIssue, instantSchema, keySchema, labelSchema, localTimeSchema, sourceSchema, timeUnitSchema, timeZoneSchema, weekdaySchema, wordsSchema,
+} from './schema.ts'
+
+type Issues = z.core.$RefinementCtx
+const issue = (context: Issues, path: Array<string | number>, message: string) => context.addIssue({ code: 'custom', path, message })
+/** A value given by a person, or World facts to sum: never both. */
+const oneValue = (given: { readonly value?: number | undefined; readonly fromWorld?: unknown; readonly source?: unknown }, context: Issues, required: boolean) => {
+  const world = given.fromWorld !== undefined && given.fromWorld !== null
+  if (world && given.value !== undefined) issue(context, ['fromWorld'], 'Give a value or World values, not both')
+  if (world && given.source !== undefined) issue(context, ['source'], 'World values carry their own basis; a source is for a value you give')
+  if (required && !world && given.value === undefined) issue(context, ['value'], 'Give a value or World values')
+}
+
+const key = keySchema.describe('Plan-local key')
+const keys = z.array(keySchema).max(64)
+const time = instantSchema.describe('Time with offset')
+const period = z.object({ start: instantSchema.describe('Start'), end: instantSchema.describe('End') }).strict().describe('A period')
+const worldRef = z.object({ locator: planningLocatorSchema.describe('World item'), fact: z.string().max(512).describe('World fact id') }).strict()
+/** Who says so, as an operation input gives it: sourceSchema with every field described. */
+export const sourceInputSchema = z.object({
+  by: sourceSchema.shape.by.describe('assumption: unconfirmed, flagged; reference: a standard'),
+  note: wordsSchema.optional().describe('Where it comes from; names the reference'),
+}).strict().refine(given => given.by !== 'reference' || given.note !== undefined, { message: 'A reference source names its reference in the note', path: ['note'] }).describe('Who says so')
+const weekly = z.object({
+  days: z.array(weekdaySchema).min(1).max(7).describe('Weekdays, mon to sun'),
+  from: localTimeSchema.describe('Local start HH:MM'),
+  to: localTimeSchema.describe('Local end HH:MM; to<=from ends next day'),
+}).strict()
+const goal = z.object({
+  metric: goalMetricSchema.describe('span-over, finish, extra-cost, unavailable-hours or lateness'),
+  scope: z.object({
+    groups: z.array(keySchema).max(16).optional().describe('Function groups'),
+    tags: z.array(keySchema).max(8).optional().describe('Job tags'),
+  }).strict().optional().describe('Which part of the plan'),
+  threshold: z.object({ value: z.number().nonnegative().describe('Value'), unit: z.string().max(8).describe('h, min or s; extra-cost: currency') }).strict().optional().describe('Only the excess above it counts'),
+  tolerance: z.object({ value: z.number().nonnegative().describe('Value'), unit: z.string().max(8).describe('h, min or s; extra-cost: currency') }).strict().describe('Differences smaller than this step count as equal'),
+}).strict().superRefine((given, context) => {
+  for (const field of ['threshold', 'tolerance'] as const) {
+    const unit = given[field]?.unit
+    const problem = unit === undefined ? undefined : goalUnitIssue(given.metric, unit)
+    if (problem !== undefined) issue(context, [field, 'unit'], problem)
+  }
+})
+const duration = z.object({
+  value: z.number().nonnegative().optional().describe('Most-likely value'),
+  unit: timeUnitSchema.optional().describe('s, min or h; d only for elapsed time'),
+  calendar: z.enum(['working', 'elapsed']).optional().describe('working: crew hours only; elapsed: clock time'),
+  range: z.object({ low: z.number().nonnegative().describe('Optimistic'), high: z.number().positive().describe('Pessimistic') }).strict().nullable().optional().describe('Estimate range'),
+  source: sourceInputSchema.optional(),
+  fromWorld: z.array(worldRef).max(4).nullable().optional().describe('Use these World values, summed, instead of value'),
+}).strict().superRefine((given, context) => {
+  oneValue(given, context, false)
+  if (given.unit === 'd' && given.calendar === 'working') issue(context, ['unit'], 'Working time is given in s, min or h; d is for elapsed time')
+})
+const choice = z.object({ choice: keySchema.describe('Method key'), option: keySchema.describe('Option key') }).strict()
+const caveat = z.object({
+  label: labelSchema.describe('What, e.g. Weeks without a ready spare'),
+  value: z.number().optional().describe('How much'),
+  unit: z.string().min(1).max(16).optional().describe('Its unit'),
+  words: wordsSchema.describe('Why it is not priced'),
+  agreement: labelSchema.optional().describe('Who must agree'),
+}).strict().refine(given => (given.value === undefined) === (given.unit === undefined), { message: 'A caveat value comes with its unit', path: ['unit'] })
+
+export const editSchema = z.discriminatedUnion('edit', [
+  z.object({
+    edit: z.literal('plan'),
+    title: labelSchema.optional().describe('Plan name'),
+    purpose: wordsSchema.nullable().optional().describe('What the plan must achieve'),
+    timeZone: timeZoneSchema.optional().describe('Site time zone, e.g. Europe/Oslo'),
+    window: period.optional().describe('The work or outage window'),
+    dataDate: time.optional().describe('The plan\'s "now"'),
+    run: z.string().max(128).nullable().optional().describe('World Run to link; null unlinks'),
+  }).strict(),
+  z.object({
+    edit: z.literal('equipment'), key,
+    label: labelSchema.optional().describe('Name shown to people'),
+    group: keySchema.nullable().optional().describe('Function group, for outage limits'),
+    groupLabel: labelSchema.optional().describe('Name of that group'),
+    supportedBy: keys.optional().describe('Items whose outage makes this one unavailable'),
+    locator: planningLocatorSchema.nullable().optional().describe('World item from planning-facts; values copied at refresh'),
+    function: keySchema.nullable().optional().describe("Items that back each other up share one function key, for example MFW A and MFW B both 'main-feedwater'. Items of one train in series, such as a cooling chain, do not share a key."),
+    source: sourceInputSchema.optional(),
+  }).strict(),
+  z.object({
+    edit: z.literal('calendar'), key,
+    label: labelSchema.optional().describe('Name, e.g. Day shift'),
+    weekly: z.array(weekly).optional().describe('Working time by weekday'),
+    periods: z.array(period).optional().describe('One-off working periods'),
+    except: z.array(period).optional().describe('Holidays and other non-working periods'),
+    source: sourceInputSchema.optional(),
+  }).strict(),
+  z.object({
+    edit: z.literal('resource'), key,
+    label: labelSchema.optional().describe('Name, e.g. Station mechanical crew'),
+    kind: z.enum(['crew', 'tool']).optional().describe('crew: people; tool: crane, truck'),
+    count: z.number().int().min(1).optional().describe('How many crews or tools'),
+    crewSize: z.number().int().min(1).nullable().optional().describe('Persons per crew, for per-person prices'),
+    calendar: keySchema.optional().describe('Calendar key'),
+    attributes: z.array(z.object({
+      key,
+      label: labelSchema.describe('Name'),
+      value: z.number().optional().describe('Value, unless taken from World'),
+      unit: z.string().max(32).describe('Unit'),
+      changes: z.array(z.object({ at: time, value: z.number().describe('New value') }).strict()).optional().describe('Announced changes'),
+      source: sourceInputSchema.optional(),
+      fromWorld: worldRef.optional().describe('Take the value from World'),
+    }).strict().superRefine((given, context) => oneValue(given, context, true))).optional().describe('Properties used by "where" needs'),
+    maxJobs: z.number().int().min(1).nullable().optional().describe('Plan at most this many jobs ahead for it'),
+    locator: planningLocatorSchema.nullable().optional().describe('World item for this crew or tool'),
+    source: sourceInputSchema.optional(),
+  }).strict(),
+  z.object({
+    edit: z.literal('purchase'), key,
+    label: labelSchema.optional().describe('Name, e.g. Overtime to 19:00'),
+    resource: keySchema.optional().describe('Crew or tool it adds time to'),
+    calendar: keySchema.nullable().optional().describe('Added weekly time'),
+    periods: z.array(period).nullable().optional().describe('Added one-off periods'),
+    replaces: z.array(period).optional().describe('Booked time it gives up (a rebooking)'),
+    perPersonHour: amountSchema.nullable().optional().describe('Price per person-hour used'),
+    perPeriodUsed: amountSchema.nullable().optional().describe('Price per period used, paid in full'),
+    once: amountSchema.nullable().optional().describe('One-off price if any of it is used'),
+    orderBy: time.nullable().optional().describe('Order deadline'),
+    ordered: z.boolean().optional().describe('Already ordered: paid whether used or not'),
+    allowed: z.boolean().optional().describe('Generate may buy it'),
+  }).strict(),
+  z.object({
+    edit: z.literal('method'), key,
+    label: labelSchema.optional().describe('What is being chosen'),
+    options: z.array(z.object({
+      key, label: labelSchema.describe('Option name'), fixedCost: amountSchema.describe('Parts or fixed cost'),
+      caveats: z.array(caveat).min(1).max(4).nullable().optional().describe('What it leaves unpriced; omitted keeps, null clears'),
+    }).strict()).min(2).max(4).optional().describe('Real alternatives'),
+  }).strict(),
+  z.object({
+    edit: z.literal('job'), key,
+    title: labelSchema.optional().describe('What is done'),
+    kind: z.enum(['tag-out', 'work', 'test']).optional().describe('tag-out, work, or restore-and-test'),
+    equipment: keys.optional().describe('Equipment it isolates, works on or tests'),
+    isolation: z.enum(['inside', 'none']).optional().describe('inside: needs the item tagged out'),
+    duration: duration.optional().describe('How long'),
+    minimum: z.object({ value: z.number().positive().describe('Value'), unit: timeUnitSchema.describe('Unit'), words: wordsSchema.describe('Why') }).strict().nullable().optional().describe('Tests only: shortest allowed'),
+    needs: z.array(z.object({
+      anyOf: keys.describe('Any one of these crews or tools'),
+      amount: z.number().int().min(1).optional().describe('How many, default 1'),
+      where: z.object({ attribute: keySchema.describe('Attribute key'), atLeast: z.number().describe('Minimum'), unit: z.string().max(32).describe('Unit') }).strict().optional().describe('Only units meeting this'),
+      handover: z.boolean().optional().describe('Paused work may continue with another one'),
+    }).strict()).max(4).optional().describe('Who or what does it'),
+    durationWith: z.array(z.object({
+      resource: keySchema.describe('Crew or tool'),
+      value: z.number().nonnegative().optional().describe('Its duration, in the job\'s unit'),
+      fromWorld: z.array(worldRef).max(4).optional().describe('Or these World values, summed'),
+      source: sourceInputSchema.optional(),
+    }).strict().superRefine((given, context) => {
+      const world = given.fromWorld !== undefined
+      if (world === (given.value !== undefined)) issue(context, ['value'], 'Give exactly one of value and World values')
+    })).max(16).nullable().optional().describe('A different duration per crew or tool'),
+    continuous: z.boolean().optional().describe('Never paused over a break, e.g. a lift'),
+    method: choice.nullable().optional().describe('Exists only if that option is chosen'),
+    notBefore: z.object({ at: time, words: wordsSchema.describe('Why'), source: sourceInputSchema }).strict().nullable().optional().describe('Cannot start earlier'),
+    target: z.object({ finishBy: time, words: wordsSchema.describe('Why') }).strict().nullable().optional().describe('Wanted finish (a goal, not a rule)'),
+    checks: z.array(z.object({
+      equipment: keySchema.describe('Equipment key'),
+      fact: z.string().max(512).describe('World fact id'),
+      expect: z.union([z.boolean(), z.string(), z.number()]).describe('Expected value'),
+      words: wordsSchema.describe('In words'),
+    }).strict()).max(4).optional().describe('World preconditions at read time'),
+    lock: time.nullable().optional().describe('Fix its start; null unlocks'),
+    tags: keys.optional().describe('Groupings, e.g. request class'),
+    locator: planningLocatorSchema.nullable().optional().describe('World item the job serves, e.g. a request'),
+  }).strict(),
+  z.object({
+    edit: z.literal('link'),
+    from: keySchema.describe('Earlier job'),
+    to: keySchema.describe('Later job'),
+    type: z.enum(['FS', 'SS', 'FF']).describe('finish-start, start-start or finish-finish'),
+    lag: z.object({ value: z.number().nonnegative().describe('Value'), unit: timeUnitSchema.describe('Unit') }).strict().optional().describe('FS: clock time after the earlier job finishes. SS: the later job may start once the earlier one has worked this long. FF: at least this much of the later job\'s work comes after the earlier one finishes'),
+    method: choice.nullable().optional().describe('Exists only with that option'),
+  }).strict(),
+  z.object({
+    edit: z.literal('rule'), key,
+    kind: z.enum(['protected', 'keep-in-service', 'span-limit', 'due']).optional().describe('Rule kind'),
+    words: wordsSchema.optional().describe('The rule in plain words'),
+    source: sourceInputSchema.optional(),
+    equipment: keys.optional().describe('protected: equipment never touched'),
+    members: keys.optional().describe('keep-in-service: equipment or crews'),
+    atLeast: z.number().int().min(1).optional().describe('keep-in-service: how many'),
+    during: period.nullable().optional().describe('keep-in-service: when; default always'),
+    group: keySchema.optional().describe('span-limit: function group'),
+    limit: z.object({ value: z.number().positive().describe('Value'), unit: timeUnitSchema.describe('Unit') }).strict().optional().describe('span-limit: longest outage'),
+    singleEntry: z.boolean().optional().describe('span-limit: one continuous outage'),
+    job: keySchema.optional().describe('due: the job that must finish'),
+    finishBy: time.optional().describe('due: latest finish, inside the window'),
+  }).strict(),
+  z.object({ edit: z.literal('goals'), goals: z.array(goal).min(1).max(6).describe('In priority order') }).strict(),
+  z.object({
+    edit: z.literal('remove'),
+    what: z.enum(['equipment', 'group', 'calendar', 'resource', 'purchase', 'method', 'job', 'link', 'rule']).describe('What to remove'),
+    key: keySchema.optional().describe('Its key'),
+    from: keySchema.optional().describe('link: earlier job'),
+    to: keySchema.optional().describe('link: later job'),
+    type: z.enum(['FS', 'SS', 'FF']).optional().describe('link: type'),
+  }).strict().superRefine((given, context) => {
+    const link = [given.from, given.to, given.type]
+    if (given.what === 'link') {
+      if (link.some(part => part === undefined)) issue(context, ['from'], 'A link is named by from, to and type')
+      if (given.key !== undefined) issue(context, ['key'], 'A link has no key; name it by from, to and type')
+    } else {
+      if (given.key === undefined) issue(context, ['key'], `Name the ${given.what} to remove by its key`)
+      if (link.some(part => part !== undefined)) issue(context, ['from'], 'from, to and type name a link only')
+    }
+  }),
+])
+export type Edit = z.infer<typeof editSchema>

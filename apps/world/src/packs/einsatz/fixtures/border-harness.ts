@@ -120,12 +120,6 @@ const groupViewer = (definition: ScenarioDefinition, side: string, holds: (typeI
   return { class: 'operator', sees: role.sees ?? 'all', roles: [role] }
 }
 
-/** The group role that commands a side's units of a type with this component, from the Definition's groups and units. */
-export const commanderOf = (definition: ScenarioDefinition, side: string, component: keyof UnitType['components']): EinsatzViewer => {
-  const config = borderConfig(definition)
-  return groupViewer(definition, side, typeId => config.unitTypes.find(type => type.id === typeId)?.components[component] !== undefined, `units with ${component}`)
-}
-
 /** The group role that commands a side's units of a type, from the Definition's groups and units. */
 export const roleCommanding = (definition: ScenarioDefinition, side: string, typeId: string): EinsatzViewer => {
   const type = borderConfig(definition).unitTypes.find(entry => entry.id === typeId)

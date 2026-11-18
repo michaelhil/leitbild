@@ -1,5 +1,5 @@
 /** T09 frozen-context replay cases (plan v3.1 Appendix F; call paths, Appendix
- * C): five questions per frozen Run (frozen-runs.ts), decided before any
+ * C): up to five questions per frozen Run (frozen-runs.ts), decided before any
  * replay. Classes and the calls their path takes, the context costing none:
  * - K, vignette, subject known from the Run context: compose → answer (2);
  * - U, names unknown or cross-pack: search → compose → answer (3);
@@ -17,12 +17,6 @@ export interface ReplayCase {
 const c = (run: string, id: string, klass: ReplayCase['class'], views: ReplayCase['views'], question: string): ReplayCase => ({ run, id, question, class: klass, views })
 
 export const REPLAY_CASES: ReadonlyArray<ReplayCase> = [
-  c('halden-dispatch', 'units', 'K', ['values', 'map'], 'Show me the ambulance units and what each is doing.'),
-  c('halden-dispatch', 'helicopter', 'U', ['values', 'map'], 'Where is the Østfold medical helicopter and what is it doing?'),
-  c('halden-dispatch', 'count', 'N', [], 'How many incidents are open right now?'),
-  c('halden-dispatch', 'drones', 'U', ['map', 'values'], 'Show me where the two drones are and what they are observing.'),
-  c('halden-dispatch', 'events', 'K', ['events'], 'What has happened in the last half hour?'),
-
   c('halden-normal-operation', 'unit2-trend', 'K', ['trend'], 'Show me Unit 2\'s reactor power and pressurizer pressure over the last few minutes.'),
   c('halden-normal-operation', 'grid-freq', 'U', ['trend', 'values'], 'Show grid frequency next to the four units\' electrical output.'),
   c('halden-normal-operation', 'state', 'N', [], 'Is Unit 3 at full power?'),
@@ -40,12 +34,6 @@ export const REPLAY_CASES: ReadonlyArray<ReplayCase> = [
   c('halden-power-complex', 'stable', 'N', [], 'Is anything abnormal on Unit 1?'),
   c('halden-power-complex', 'weather', 'U', ['values'], 'Show me the weather at the power complex probe.'),
   c('halden-power-complex', 'unit2-lead', 'K', ['values', 'trend'], 'Give me a display of Unit 2\'s key values.'),
-
-  c('halden-weather-response', 'front', 'K', ['values', 'map'], 'Show me the weather at the Halden probe.'),
-  c('halden-weather-response', 'ambulance', 'U', ['values', 'map'], 'Where is the weather-response ambulance and how far is it from the incident?'),
-  c('halden-weather-response', 'hazard', 'N', [], 'Is the weather at Halden hazardous right now?'),
-  c('halden-weather-response', 'compare', 'U', ['values'], 'Compare the Halden probe with the northern probe.'),
-  c('halden-weather-response', 'visibility', 'K', ['trend', 'values'], 'Show me how visibility at Halden has changed.'),
 
   c('nordic-frequency-event', 'frequency', 'K', ['trend'], 'Show me the frequency since the Kvilldal trip.'),
   c('nordic-frequency-event', 'reserves', 'U', ['values', 'trend'], 'Which reserves responded to the trip? Show me.'),
@@ -79,7 +67,5 @@ export const REPLAY_CASES: ReadonlyArray<ReplayCase> = [
 
   c('integrated-all-packs', 'unit3', 'K', ['values', 'trend'], 'Show me Unit 3 after its loss of offsite power.'),
   c('integrated-all-packs', 'cross', 'U', ['values', 'trend'], 'Show the Hasle 420/300 kV transformer loading next to the four units\' output.'),
-  c('integrated-all-packs', 'release', 'N', [], 'Is anyone assigned to the industrial release?'),
   c('integrated-all-packs', 'alarms', 'K', ['alerts'], 'Which alarms are active across the Run?'),
-  c('integrated-all-packs', 'release-map', 'U', ['map', 'values'], 'Show me the industrial release with the nearest ambulances and the drone.'),
 ]

@@ -224,8 +224,6 @@ export interface DeclutteredPoints {
   /** The points as drawn, in draw order: the input itself when no icon moves. */
   readonly points: ReadonlyArray<OperationalPointFeature>
   readonly leaders: ReadonlyArray<PointLeader>
-  /** Where each moved object's icon is drawn, by object id. */
-  readonly drawnAt: ReadonlyMap<string, Position3>
 }
 
 /** The operational points as the map draws them at a zoom step, fanned out where their icons would overlap. */
@@ -235,17 +233,15 @@ export const declutterPoints = (points: ReadonlyArray<OperationalPointFeature>, 
     id: point.id,
     radiusPx: statusDiskRadiusPx(point.sizePx),
   })))
-  if (places.size === 0) return { points, leaders: [], drawnAt: new Map() }
-  const drawnAt = new Map<string, Position3>()
+  if (places.size === 0) return { points, leaders: [] }
   const leaders: PointLeader[] = []
   const drawn = points.map(point => {
     const place = places.get(point.id)
     if (place === undefined) return point
     const [lon, lat] = lonLatOfPixels(place.x, place.y, zoom)
     const position: Position3 = [lon, lat, point.position[2]]
-    drawnAt.set(point.id, position)
     leaders.push({ id: point.id, drawnAt: position, trueAt: point.position })
     return { ...point, position }
   })
-  return { points: drawn, leaders, drawnAt }
+  return { points: drawn, leaders }
 }

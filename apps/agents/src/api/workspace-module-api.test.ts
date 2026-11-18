@@ -24,6 +24,10 @@ import { messageFocus } from '../core/message-focus.ts'
 import { asAIAgent } from '../agents/shared.ts'
 import { DEFAULT_MODEL_ID, DEFAULT_REASONING_EFFORT } from '../llm/models/catalog.ts'
 import { createSampleChangesTool } from '../tools/built-in/utility-tools.ts'
+import { createRevisionedDefinitionStore } from '@leitbild/module-runtime'
+import { getBundledRoomDefinition, roomDefinitionSchema } from '../core/definitions/room-definition-catalog.ts'
+import { startRoomDefinition } from '../core/definitions/room-definition-service.ts'
+import { workspaceModulePaths } from '../core/paths.ts'
 
 let home = ''
 let originalHome: string | undefined
@@ -59,7 +63,15 @@ const withAssistantCatalog = (deployment: DeploymentRuntime): DeploymentRuntime 
     name: 'procedure-runner', description: 'Test procedure Skill', body: 'Step through procedures.',
     tools: [], allowedToolNames: ['workspace_explore', 'workspace_call'], dirPath: home,
   })
-  for (const name of ['product_search', 'product_read', 'place_resolve', 'get_time']) {
+  deployment.sharedSkillStore.register({
+    name: 'engineering-advice', description: 'Test engineering Skill', body: 'Run recorded calculations with explicit input provenance.',
+    tools: [], allowedToolNames: ['engineering_describe', 'engineering_calculate', 'engineering_run'], dirPath: home,
+  })
+  deployment.sharedSkillStore.register({
+    name: 'planning-advice', description: 'Test planning Skill', body: 'Check deadlines through recorded owner schedule options.',
+    tools: [], allowedToolNames: ['workspace_explore', 'workspace_call'], dirPath: home,
+  })
+  for (const name of ['product_search', 'product_read', 'place_resolve', 'get_time', 'engineering_describe', 'engineering_calculate', 'engineering_run']) {
     deployment.sharedToolRegistry.register({
       name,
       description: `Test ${name}`,
@@ -203,7 +215,7 @@ describe('Agents Workspace Module API', () => {
     assistant.updateMaxToolIterations(20)
     // The default model brings its own effort when the definition names neither.
     expect(assistant.getConfig()).toMatchObject({ model: DEFAULT_MODEL_ID, reasoningEffort: DEFAULT_REASONING_EFFORT })
-    expect(assistant.getSkills()).toEqual(['leitbild-assistance', 'operator-displays', 'procedure-runner'])
+    expect(assistant.getSkills()).toEqual(['leitbild-assistance', 'operator-displays', 'procedure-runner', 'engineering-advice', 'planning-advice'])
 
     const reused = await open('Now create a scenario.')
     expect(reused.status).toBe(200)
@@ -310,6 +322,60 @@ describe('Agents Workspace Module API', () => {
     }
     expect(runtime.rooms.listAllRooms()).toHaveLength(3)
     await Promise.all(runtime.team.listByKind('ai').map(agent => asAIAgent(agent)!.whenIdle()))
+  })
+
+  test('an existing Workspace with an old bundled definition and persisted Assistant opens new conversations with current calculation and planning tools', async () => {
+    const workspaceId = newWorkspaceId()
+    await request('PUT', `/internal/workspaces/${workspaceId}`, { workspaceId })
+    const current = getBundledRoomDefinition('leitbild-assistant')!
+    const oldTools = ['product_search', 'product_read', 'place_resolve', 'wiki_lookup', 'sample_changes']
+    const oldSkills = ['leitbild-assistance', 'operator-displays', 'procedure-runner']
+    const oldDefinition = { ...current, room: { ...current.room, agents: current.room.agents.map(agent => ({ ...agent, tools: oldTools, skills: oldSkills })) } }
+    // Persist the previous release's untouched bundled seed before the current
+    // library opens. This exercises real on-disk upgrade behavior, not a mock
+    // definition resolver or a replacement of the bundled catalog.
+    const oldStore = createRevisionedDefinitionStore({ workspaceId, rootDir: `${workspaceModulePaths(workspaceId).agents.root}/definitions`, documentSchema: roomDefinitionSchema,
+      metadata: definition => ({ id: definition.id, title: definition.title, description: definition.description }),
+    })
+    await oldStore.seed([oldDefinition])
+    const oldRevision = (await oldStore.currentRevision(current.id))!
+    const before = await registry.getOrLoad(workspaceId)
+    const oldRoom = await startRoomDefinition(before, { ...oldStore, close: async () => {} }, current.id, oldRevision.id, { scope: { kind: 'workspace' }, name: 'Previous-release Assistant' })
+    const oldAssistantId = oldRoom.agents[0]!.id
+    expect(asAIAgent(before.team.getAgent(oldAssistantId)!)!.getTools()).toEqual(oldTools)
+    await registry.shutdown()
+
+    // Reopening the same Workspace is the public remembered-Workspace path.
+    // A test-only provider avoids external requests; this test qualifies seed
+    // and profile persistence, not an LLM's scheduling behavior.
+    const gateway = makeStubGateway()
+    registry = createWorkspaceRuntimeRegistry({
+      deployment: withAssistantCatalog(createDeploymentRuntime({ providerConfig: stubProviderConfig, providerSetup: makeStubSetup({ ...gateway,
+        models: async () => [DEFAULT_MODEL_ID], getHealth: () => ({ ...gateway.getHealth(), availableModels: [DEFAULT_MODEL_ID] }),
+        stream: async function* () { yield { delta: 'Ready to check the plan.', done: true, tokensUsed: { prompt: 1, completion: 1 } } },
+      }) })), moduleState: state, idleMs: 1_000_000,
+    })
+    const capabilityId = 'agents.assistance.open'
+    const opened = await request('POST', `/internal/workspaces/${workspaceId}/capabilities/${capabilityId}/invoke`, invokeBody(workspaceId, capabilityId, {
+      conversation: 'new', title: 'Maintenance scheduling', scope: { kind: 'workspace' }, prompt: 'Can we complete maintenance by 18:00?',
+    }))
+    expect(opened.status).toBe(201)
+    const body = await opened.json() as { result: { resource: { id: string }; reused: boolean } }
+    expect(body.result.reused).toBe(false)
+    expect(body.result.resource.id).not.toBe(oldRoom.room.id)
+    const after = await registry.getOrLoad(workspaceId)
+    const restoredOld = asAIAgent(after.team.getAgent(oldAssistantId)!)!
+    expect(restoredOld.getTools()).toEqual(oldTools)
+    expect(restoredOld.getSkills()).toEqual(oldSkills)
+    const newRoom = after.rooms.getRoom(body.result.resource.id)!
+    const newAssistant = asAIAgent(newRoom.getParticipantIds().map(id => after.team.getAgent(id)!).find(agent => agent.kind === 'ai')!)!
+    expect(newAssistant.getTools()).toEqual(expect.arrayContaining(['engineering_describe', 'engineering_calculate', 'engineering_run']))
+    expect(newAssistant.getSkills()).toEqual(expect.arrayContaining(['engineering-advice', 'planning-advice']))
+    await newAssistant.whenIdle()
+    const library = registry.definitionsFor(workspaceId)
+    expect((await library.currentRevision(current.id))!.id).not.toBe(oldRevision.id)
+    expect((await library.getRevision(oldRevision.id))!.document.room.agents[0]!.tools).toEqual(oldTools)
+    expect(newRoom.profile.sourceDefinition?.revisionId).toBe((await library.currentRevision(current.id))!.id)
   })
 
   test('Run assistance is concurrent-safe, durable, and shared by one derived Run Family', async () => {

@@ -1,22 +1,30 @@
 import { einsatzQueryState } from '../read-policy.ts'
-import { nowIso, type CommandEnvelope, type CommandResult, type GeoJsonPoint, type IsoTimestamp, type ObjectAudience, type ObjectId, type OperationalObject, type Provenance, type RoleSees, type RunViewer } from '../../../core/model/index.ts'
+import { nowIso, type CommandEnvelope, type CommandResult, type GeoJsonPoint, type InteractionSignal, type IsoTimestamp, type ObjectAudience, type ObjectId, type OperationalObject, type Provenance, type RoleSees } from '../../../core/model/index.ts'
 import { defaultSimulationRunRuntimePolicy } from '../../../core/simulation-runs/runtime-persistence-policy.ts'
 import type { RoutingAdapter } from '../../../routing/protocol.ts'
-import type { PackRuntimeAdapter, PackRuntimeConnection, PackRuntimeConnectionConfig, PackRuntimeEvent, PackRuntimeEventHandler, PackRuntimeHealth } from '../../../simulation/protocol.ts'
+import type { PackCommandContext, PackRuntimeAdapter, PackRuntimeConnection, PackRuntimeConnectionConfig, PackRuntimeEvent, PackRuntimeEventHandler, PackRuntimeHealth, PackRuntimeQuery } from '../../../simulation/protocol.ts'
 import { createRuntimeStateWriter } from '../../../simulation/runtime-state-writer.ts'
 import { einsatzCapabilities, einsatzQueryIds, isEinsatzCommand, recommendInputSchema } from '../capabilities.ts'
+import { queuedPlanRoutesInputSchema } from '../chain-path.ts'
+import { situationInputSchema, unitOptionsInputSchema } from '../situation/schema.ts'
+import { readSituation } from '../situation/situation.ts'
+import { readUnitOptions } from '../situation/unit-options.ts'
 import { prepareCommand } from '../commands.ts'
 import { einsatzConfigSchema } from '../config-validation.ts'
 import { advanceEngine, commitIntent, planIntent, prepareLegs, type EnginePorts } from '../engine/engine.ts'
 import { loadedText } from '../engine/intent-support.ts'
-import { motionOf, type EngineState, type Transition } from '../engine/model.ts'
+import { motionOf, type EngineState, type Transition, type UnitMotion } from '../engine/model.ts'
 import { audienceOf, readEngineState, runtimeStateOf, transitionObject, unitObject, type ObjectStamp } from '../engine/objects.ts'
 import { sightingOf, trackDeletionRefusal, trackIndexObject, trackObject, type TrackStamp } from '../engine/track-objects.ts'
 import { hasLoad } from '../engine/rules.ts'
 import { recommend } from '../recommend.ts'
-import { refusal } from '../refusal.ts'
-import { attributionOf, resolveViewer } from '../viewer.ts'
+import { refusal, refusalCode } from '../refusal.ts'
+import { readEinsatzPlanningSource } from '../planning-source.ts'
+import { judgeObservation, observeTask, reconnaissanceObservationSignalType } from '../interactions/drone-observation.ts'
+import { withRoadWeather } from '../interactions/road-weather.ts'
+import { actorFor, attributionOf, resolveViewer } from '../viewer.ts'
 import { removeRecords } from './removal.ts'
+import { createQueuedRouteReader } from './queued-routes.ts'
 import { einsatzAdapterId, einsatzPackId, einsatzRuntimeId } from '../ids.ts'
 import { savedStateSchema, type SavedState } from './saved-state.ts'
 
@@ -30,6 +38,12 @@ import { savedStateSchema, type SavedState } from './saved-state.ts'
  * (advancing it, or executing a command it accepted) fails it.
  */
 
+type QueryId = typeof einsatzQueryIds[keyof typeof einsatzQueryIds]
+
+/** A restored Run whose saved Einsatz state this runtime does not read: refused, never migrated. */
+const savedStateInvalid = (error: unknown): Error =>
+  new Error(refusal('einsatz_saved_state_invalid', `This runtime cannot read this Run's saved Einsatz state, so the Run cannot be restored; start a new Run (${error instanceof Error ? error.message.slice(0, 300) : String(error)})`))
+
 /** Wall-time cadence at which positions follow the Run clock between explicit advances. */
 const tickIntervalMs = 1_000
 /** How often one command plans and routes again when the Run deleted Einsatz records while it was routing. */
@@ -37,6 +51,9 @@ const routingAttempts = 3
 
 const message = (error: unknown): string => error instanceof Error ? error.message : String(error)
 const samePoint = (a: GeoJsonPoint, b: GeoJsonPoint): boolean => a.coordinates[0] === b.coordinates[0] && a.coordinates[1] === b.coordinates[1]
+/** What was last published of a unit's motion: where it was, how far along its leg, and the route impacts on it. */
+type PublishedMotion = Pick<UnitMotion, 'point' | 'progressMs' | 'impacts'>
+const sameMotion = (a: PublishedMotion, b: PublishedMotion): boolean => samePoint(a.point, b.point) && a.progressMs === b.progressMs && a.impacts === b.impacts
 
 /** A command whose commit is being published, and what its caller sees. */
 export interface Commander {
@@ -67,24 +84,35 @@ const connectEinsatz = async (config: PackRuntimeConnectionConfig, routing: Rout
   if (config.initialObjects !== undefined && store !== undefined && raw === null) {
     throw new Error('Einsatz runtime state is missing on a restored Run; leg progress cannot be reconstructed')
   }
-  const saved = raw === null ? null : savedStateSchema.parse(raw)
+  const savedRead = raw === null ? null : savedStateSchema.safeParse(raw)
+  if (savedRead !== null && !savedRead.success) throw savedStateInvalid(savedRead.error)
+  const saved = savedRead?.data ?? null
   const revision = saved?.revision ?? 0
   const engineConfig = saved?.config ?? einsatzConfigSchema.parse(config.scenario.runtimeConfig)
   let serials = saved?.serials ?? { unit: 1, task: 1 }
   const objects = (config.initialObjects ?? config.scenario.initialObjects).filter(object => object.packId === einsatzPackId)
   /** The Run's declared roles and sides; none of either in open mode. */
   const roles = config.scenario.roles ?? []
-  let current: EngineState = readEngineState({
+  const readState = (): EngineState => readEngineState({
     config: engineConfig,
     sides: (config.scenario.sides ?? []).map(side => side.id),
     objects,
     runtime: saved?.engine ?? { timeMs: clockMs(), units: {}, combat: { units: {}, tracks: {} } },
   })
+  let current: EngineState
+  try {
+    current = readState()
+  } catch (error) {
+    // A restored Run whose Einsatz records this runtime does not read is refused, never migrated.
+    if (config.initialObjects !== undefined) throw savedStateInvalid(error)
+    throw error
+  }
   const ports: EnginePorts = { routing }
+  const readQueuedRoutes = createQueuedRouteReader(routing)
 
-  /** The object last published for each record, and where each unit was then. */
+  /** The object last published for each record, and each unit's motion then. */
   const published = new Map<string, OperationalObject>(objects.map(object => [object.id, object]))
-  const publishedMotion = new Map([...current.motion].map(([id, motion]) => [id, { point: motion.point, progressMs: motion.progressMs }]))
+  const publishedMotion = new Map<string, PublishedMotion>([...current.motion].map(([id, motion]) => [id, { point: motion.point, progressMs: motion.progressMs, impacts: motion.impacts }]))
   /** Each track's last published sighting; a track's position between transitions is snapshot-only. */
   const publishedSightings = new Map([...current.combat.sightings].map(([id, sighting]) => [id, sighting.observedAtMs]))
   /** Records the Run has held, so one it no longer holds was deleted rather than not yet committed. */
@@ -99,8 +127,10 @@ const connectEinsatz = async (config: PackRuntimeConnectionConfig, routing: Rout
     if (closed || health.state === 'failed') return
     health = { ...health, state, failureCount: health.failureCount + 1, lastFailure: { at: nowIso(), operation, message: message(error) } }
   }
+  /** Set while the last road-weather read failed: health stays degraded until a Weather read succeeds. */
+  let weatherFailing = false
   const succeeded = (): void => {
-    health = { ...health, ...(health.state === 'degraded' ? { state: 'ready' as const } : {}), lastSuccessfulInteractionAt: nowIso() }
+    health = { ...health, ...(health.state === 'degraded' && !weatherFailing ? { state: 'ready' as const } : {}), lastSuccessfulInteractionAt: nowIso() }
   }
 
   const savedState = (): SavedState => ({ revision, config: current.catalog.config, serials, engine: runtimeStateOf(current) })
@@ -158,14 +188,14 @@ const connectEinsatz = async (config: PackRuntimeConnectionConfig, routing: Rout
         continue
       }
       upsert(transitionObject(state, transition, stamp(transition.record.id, audienceOf(state, transition.record), at, commander)), 'record')
-      if (transition.kind === 'unit') publishedMotion.set(transition.record.id, { point: transition.point, progressMs: transition.progressMs })
+      if (transition.kind === 'unit') publishedMotion.set(transition.record.id, { point: transition.point, progressMs: transition.progressMs, impacts: motionOf(state, transition.record.id).impacts })
     }
     for (const unit of state.units.values()) {
       const motion = motionOf(state, unit.id)
       const last = publishedMotion.get(unit.id)
-      if (last !== undefined && samePoint(last.point, motion.point) && last.progressMs === motion.progressMs) continue
+      if (last !== undefined && sameMotion(last, motion)) continue
       upsert(unitObject(state, unit, motion, stamp(unit.id, audienceOf(state, unit), at, commander)), 'snapshot-only')
-      publishedMotion.set(unit.id, { point: motion.point, progressMs: motion.progressMs })
+      publishedMotion.set(unit.id, { point: motion.point, progressMs: motion.progressMs, impacts: motion.impacts })
     }
     for (const track of state.combat.tracks.values()) {
       const sighting = sightingOf(state.combat, track.id)
@@ -208,15 +238,34 @@ const connectEinsatz = async (config: PackRuntimeConnectionConfig, routing: Rout
     persistence.scheduleSave()
   }
 
-  /** Brings the engine to `targetMs`. A fault fails the runtime and is thrown to the caller. */
+  /**
+   * The state with each road unit's road weather read now, when the Run has
+   * the Weather Pack. A failed Weather read is no engine fault: the units
+   * keep the pace last read, and runtime health stays degraded until a
+   * Weather read succeeds again.
+   */
+  const weathered = async (state: EngineState): Promise<EngineState> => {
+    try {
+      const read = await withRoadWeather(state, config.queries)
+      weatherFailing = false
+      return read
+    } catch (error) {
+      weatherFailing = true
+      fault('road-weather', error, 'degraded')
+      return state
+    }
+  }
+
+  /** Reads the road weather, then brings the engine to `targetMs`. A fault fails the runtime and is thrown to the caller. */
   const advance = async (targetMs: number): Promise<void> => {
     if (unavailable()) return
+    const start = await weathered(current)
     try {
-      if (targetMs <= current.timeMs) {
-        commit(current, [])
+      if (targetMs <= start.timeMs) {
+        commit(start, [])
         return
       }
-      const outcome = await advanceEngine(current, targetMs, ports)
+      const outcome = await advanceEngine(start, targetMs, ports)
       commit(outcome.state, outcome.transitions)
       succeeded()
     } catch (error) {
@@ -244,14 +293,32 @@ const connectEinsatz = async (config: PackRuntimeConnectionConfig, routing: Rout
 
   const unavailableReason = refusal('runtime_unavailable', 'The Einsatz runtime is unavailable; inspect runtime health')
 
+  /** Each query by its Capability id; every one reads the current state without what the Run deleted. */
+  const queries: Readonly<Record<QueryId, (query: PackRuntimeQuery, viewer: ReturnType<typeof resolveViewer>) => Promise<unknown>>> = {
+    [einsatzQueryIds.planningBasis]: async query =>
+      await readEinsatzPlanningSource({ state: withoutDeleted(current).state, input: query.input, policy: query.readPolicy, routing }),
+    [einsatzQueryIds.situation]: async (query, viewer) =>
+      readSituation({ state: einsatzQueryState(withoutDeleted(current).state, query.readPolicy), viewer, roles, ...situationInputSchema.parse(query.input) }),
+    [einsatzQueryIds.recommend]: async (query, viewer) =>
+      await recommend({ state: einsatzQueryState(withoutDeleted(current).state, query.readPolicy), viewer, taskId: recommendInputSchema.parse(query.input).taskId, routing }),
+    [einsatzQueryIds.unitOptions]: async (query, viewer) => {
+      const state = einsatzQueryState(withoutDeleted(current).state, query.readPolicy)
+      return await readUnitOptions({ state, viewer, roles, actor: actorFor(state.catalog, viewer, 'options'), unitId: unitOptionsInputSchema.parse(query.input).unitId, routing })
+    },
+    [einsatzQueryIds.queuedRoutes]: async (query, viewer) =>
+      await readQueuedRoutes(einsatzQueryState(withoutDeleted(current).state, query.readPolicy), published, viewer, queuedPlanRoutesInputSchema.parse(query.input)),
+    [einsatzQueryIds.configuration]: async () => ({ revision, config: current.catalog.config }),
+  }
+
   /**
    * Runs one command as the viewer core stamped for it. A refusal reads
    * `<code>: <message>`. Anything thrown past the refusals is a fault in the
    * engine or runtime, never the caller's: it fails the runtime, and the
    * command is refused as unavailable.
    */
-  const runCommand = async (command: CommandEnvelope, stamped: RunViewer | undefined): Promise<CommandResult> => {
-    const refused = (reason: string): CommandResult => ({ ok: false, commandId: command.id, rejectedAt: nowIso(), reason })
+  const runCommand = async (command: CommandEnvelope, context: PackCommandContext): Promise<CommandResult> => {
+    const stamped = context.viewer
+    const refused = (reason: string): CommandResult => ({ ok: false, commandId: command.id, rejectedAt: nowIso(), reason, code: refusalCode(reason) })
     if (unavailable()) return refused(unavailableReason)
     if (!isEinsatzCommand(command.kind)) return refused(refusal('command_not_accepted', `Einsatz does not accept ${command.kind}`))
     try {
@@ -266,7 +333,7 @@ const connectEinsatz = async (config: PackRuntimeConnectionConfig, routing: Rout
         const base = current
         let nextSerials = serials
         const prepared = prepareCommand({
-          state: base, viewer, roles, by: attributionOf(viewer, command.actorId),
+          state: base, viewer, roles, by: attributionOf(viewer, command.actorId, context.origin), commandId: command.id,
           newId: kind => {
             const fresh = freshId(kind)
             nextSerials = fresh.serials
@@ -297,6 +364,25 @@ const connectEinsatz = async (config: PackRuntimeConnectionConfig, routing: Rout
   }
 
   /**
+   * Records an observation the Run committed on the task it observed, as
+   * `judgeObservation` judges it against the Run's objects, the same verdict
+   * the interaction handler's notice gives. Queued behind the work under way,
+   * never awaited by the Run's commit. Signals reach only a runtime a Run
+   * hosts, and a Run always gives its projection (`objectById`).
+   */
+  const recordObservation = (signal: InteractionSignal): void => {
+    const objectById = config.objectById
+    if (objectById === undefined) return
+    const verdict = judgeObservation(signal, objectById)
+    if (verdict.kind !== 'observed') return
+    void serialize(async () => {
+      if (unavailable() || !current.tasks.has(verdict.taskId)) return
+      const observed = observeTask(current, verdict.taskId, verdict.observed)
+      commit(observed.state, observed.transitions)
+    }).catch(error => fault('observation', error, 'failed'))
+  }
+
+  /**
    * One wall-time tick. It has no caller to report to: a fault has already
    * failed the runtime in `advance`, and recording it again changes nothing,
    * so runtime health is where it shows.
@@ -323,16 +409,12 @@ const connectEinsatz = async (config: PackRuntimeConnectionConfig, routing: Rout
       handlers.add(handler)
       return () => { handlers.delete(handler) }
     },
-    sendCommand: (command, context) => serialize(() => runCommand(command, context.viewer)),
+    sendCommand: (command, context) => serialize(() => runCommand(command, context)),
     invokeQuery: async query => {
       if (unavailable()) throw new Error(unavailableReason)
-      const viewer = resolveViewer(query.viewer, roles)
-      if (query.capabilityId === einsatzQueryIds.recommend) {
-        const input = recommendInputSchema.parse(query.input)
-        return await recommend({ state: einsatzQueryState(withoutDeleted(current).state, query.readPolicy), viewer, taskId: input.taskId, routing })
-      }
-      if (query.capabilityId === einsatzQueryIds.configuration) return { revision, config: current.catalog.config }
-      throw new Error(`Einsatz does not answer ${query.capabilityId}`)
+      const answer = queries[query.capabilityId as QueryId]
+      if (answer === undefined) throw new Error(`Einsatz does not answer ${query.capabilityId}`)
+      return await answer(query, resolveViewer(query.viewer, roles))
     },
     validateObjectDeletion: objectId => {
       const unit = current.units.get(objectId)
@@ -344,6 +426,7 @@ const connectEinsatz = async (config: PackRuntimeConnectionConfig, routing: Rout
       for (const event of events) {
         if (event.type === 'object.deleted' && (current.units.has(event.objectId) || current.tasks.has(event.objectId))) deletedByRun.add(event.objectId)
         if (event.type === 'object.upserted' && event.object.packId === einsatzPackId) heldByRun.add(event.object.id)
+        if (event.type === 'interaction.signal.received' && event.signal.type === reconnaissanceObservationSignalType) recordObservation(event.signal)
       }
     },
     setClock: () => serialize(() => advance(clockMs())),

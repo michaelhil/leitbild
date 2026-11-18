@@ -16,16 +16,17 @@ import { scenarioAuthoringCatalogFor } from '../src/core/scenarios/authoring.ts'
 import { createScenarioRuntimeResolver } from '../src/core/scenarios/runtime-resolver.ts'
 import { evaluateGuideCondition } from '../src/core/guides/conditions.ts'
 
-test('all sixteen pinned guides compile with exact owner targets and perspective-compatible human paths', async () => {
-  expect(builtinScenarioDefinitions).toHaveLength(16)
+test('all bundled guides compile with exact owner targets and perspective-compatible human paths', async () => {
+  expect(builtinScenarioDefinitions).toHaveLength(19)
   const panelIds = new Set(worldPacks.flatMap(pack => pack.ui?.surfacePanels.map(panel => panel.id) ?? []))
+  const startsRunning = new Set(['halden-delivery-planning', 'norway-situation-monitor'])
   let stateTasks = 0, promptTasks = 0
   for (const source of builtinScenarioDefinitions) {
     const compiled = await compileScenarioDefinition(source, worldPacks, { routing: createDirectRoutingAdapter() })
     const guide = compiled.guide!
     expect(guide, source.id).toBeDefined()
     expect(guide.steps.at(-1)?.id, source.id).toBe('explore')
-    expect(guide.startPaused, source.id).toBe(source.id !== 'norway-situation-monitor')
+    expect(guide.startPaused, source.id).toBe(!startsRunning.has(source.id))
     for (const step of guide.steps) {
       if (step.completion.kind === 'prompt-response') promptTasks++
       if (step.completion.kind === 'condition' && step.completion.condition.kind !== 'clock') stateTasks++
@@ -55,11 +56,12 @@ test('all sixteen pinned guides compile with exact owner targets and perspective
       expect(attempt.completed.every(record => record.outcome === 'skipped')).toBe(true)
     }
   }
-  expect(stateTasks).toBeGreaterThanOrEqual(5)
+  // halden-emergency's guide is one optional card (Einsatz plan S4), so it holds no state task.
+  expect(stateTasks).toBeGreaterThanOrEqual(4)
   expect(promptTasks).toBeGreaterThanOrEqual(7)
 })
 
-test('the two novice dispatch guides choose eligible real units and their actual arrival gate is reachable', async () => {
+test('the novice dispatch guide chooses an eligible real unit and its actual arrival gate is reachable', async () => {
   const dataDir = await mkdtemp(join(tmpdir(), 'builtin-guide-arrival-'))
   const routing = createDirectRoutingAdapter(), assembly = createWorldApplicationAssembly({ routing })
   const registry = createSimulationRunRegistry({ dataDir, workspaceId: newWorkspaceId(), scenarioDefinitions: builtinScenarioDefinitions,
@@ -68,16 +70,15 @@ test('the two novice dispatch guides choose eligible real units and their actual
   try {
     for (const [scenarioId, unitId, taskId, roles] of [
       ['supply-run', 'unit:truck-3', 'task:field-kitchen', []],
-      ['halden-emergency', 'unit:amb-4', 'task:tistedal-fall', ['group:ambulance']],
     ] as const) {
       const run = await registry.create({ scenarioId })
-      const actor = { id: 'actor:guide-learner' as never, label: 'Guide learner', role: 'operator' as const, roleIds: roles }
+      const actor = { id: 'actor:guide-learner' as never, label: 'Guide learner', role: 'operator' as const, ...(roles.length === 0 ? {} : { roleIds: roles }) }
       const source = registry.loadedCompiledScenario(run.id)
-      const condition = source.guide!.steps.find(step => step.id === (scenarioId === 'supply-run' ? 'arrival' : 'ems-arrival'))!.completion
+      const condition = source.guide!.steps.find(step => step.id === 'arrival')!.completion
       if (condition.kind !== 'condition') throw new Error('The arrival step must read actual World evidence')
       const evidence = () => evaluateGuideCondition({ condition: condition.condition, runtime: run, actor, startsAt: source.world.startsAt, canInspect: id => run.inspectionPolicy(actor).canInspect(id) })
       expect((await evidence()).status).toBe('contradicted')
-      const dispatched = await run.invokeCapability(actor, { capabilityId: 'world.einsatz.unit.send', input: { units: [unitId], to: { taskId } } })
+      const dispatched = await run.invokeCapability(actor, { capabilityId: 'world.einsatz.unit.order', input: { units: [unitId], stops: [{ taskId }] } })
       expect(dispatched.kind === 'command' && dispatched.result.ok, scenarioId).toBe(true)
       // Stop at the model's observed arrival, not an authored ETA or click receipt.
       await run.runMaximumPace(new Date(Date.parse(source.world.startsAt) + 15 * 60_000).toISOString() as never, {

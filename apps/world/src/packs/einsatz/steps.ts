@@ -1,14 +1,14 @@
 import { z } from 'zod'
-import { geoJsonPointSchema, idSchema, type GeoJsonPoint } from '../../core/model/index.ts'
+import { commandIdSchema, geoJsonPointSchema, idSchema, type GeoJsonPoint } from '../../core/model/index.ts'
 
 /**
- * Job chains: every unit holds an ordered list of steps in its `packData`
- * (`orders`). The first step is the one the unit carries out (`active`); the
- * steps behind it wait (`queued`). A step that is done or skipped leaves the
- * list: its end shows in the unit's `lastAction`, and a skipped step an
- * actor gave also in a `step_skipped` alert. The head is `queued` only while
- * the unit is paused (`unit.hold`) or waits for a route; the unit then
- * starts it by itself.
+ * Plans: every unit holds an ordered list of steps (the stops of its plan)
+ * in its `packData` (`orders`). The first step is the one the unit carries
+ * out (`active`); the steps behind it wait (`queued`). A step that is done
+ * or skipped leaves the list: its end shows in the unit's `lastAction`, and
+ * a skipped step an actor gave also in a `step_skipped` alert. The head is
+ * `queued` only while the unit waits for a route or has just finished its
+ * active step; the unit then starts it by itself.
  *
  * What a step does follows from its target: a task gives `serve`, a site
  * `deliver` while the unit carries load and a go-to (`move`) otherwise, open
@@ -16,17 +16,16 @@ import { geoJsonPointSchema, idSchema, type GeoJsonPoint } from '../../core/mode
  * stable and unique per unit: `step-<n>`, numbered by the unit's
  * `stepSerial`.
  *
- * This module imports nothing from the engine, so the Board and the map
- * presentation read steps in the browser with the very schema the engine
- * writes.
+ * This module imports nothing from the engine, so the dispatch surface and
+ * the map presentation read steps in the browser with the very schema the
+ * engine writes.
  */
 
 export const stepKinds = ['serve', 'deliver', 'move', 'engage'] as const
 export type StepKind = typeof stepKinds[number]
 export const stepStates = ['active', 'queued'] as const
-export type StepState = typeof stepStates[number]
 
-/** The most steps an actor's queue or send leaves a unit holding; a step beyond it is refused `chain_full`. */
+/** The most steps an actor's order leaves a unit holding; a step beyond it is refused `chain_full`. */
 export const maxSteps = 20
 
 /**
@@ -44,11 +43,11 @@ const pointSchema: z.ZodType<GeoJsonPoint> = geoJsonPointSchema
 
 /** Where a step leads: a task, a site (a unit that does not move; a delivery needs one that receives load), a point on open ground or one of the unit's own side's tracks. */
 export const stepTargetSchema = z.union([
-  z.object({ taskId: idSchema }).strict(),
-  z.object({ siteId: idSchema }).strict(),
-  z.object({ point: pointSchema }).strict(),
-  z.object({ trackId: idSchema }).strict(),
-])
+  z.object({ taskId: idSchema.describe('A task id: serve it, or pick up the load waiting there.') }).strict(),
+  z.object({ siteId: idSchema.describe('A site id (a unit that does not move): deliver the load carried there where it receives load, else go there.') }).strict(),
+  z.object({ point: pointSchema.describe('A GeoJSON point on open ground: go there.') }).strict(),
+  z.object({ trackId: idSchema.describe('One of the unit\'s own side\'s tracks: engage it (armed units only).') }).strict(),
+]).describe('One stop: exactly one of taskId, siteId, point or trackId.')
 export type StepTarget = z.output<typeof stepTargetSchema>
 
 /** The verb a target gives: a site is a delivery while the unit carries load, otherwise a go-to. */
@@ -71,6 +70,8 @@ export const stepSchema = z.object({
   state: z.enum(stepStates),
   /** Who gave the step, as `lastAction.by` names it: role labels, an actor id, or `standing-order:<id>` for one a standing order added. */
   by: z.string().trim().min(1).max(orderByMaxLength),
+  /** The command whose order gave the step, which `unit.undo` takes back; absent on a step a standing order or the Scenario gave. */
+  commandId: commandIdSchema.optional(),
 }).strict().refine(step => kindFits(step.kind, step.target), 'A serve step leads to a task, a deliver step to a site, a move to a point or a site, an engage step to a track')
 export type Step = z.output<typeof stepSchema>
 

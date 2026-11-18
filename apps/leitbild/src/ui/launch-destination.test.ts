@@ -22,4 +22,13 @@ describe('launch destination', () => {
     expect(workspacePath('a/b c')).toBe('/workspaces/a%2Fb%20c')
     expect(new URL(workspaceUrl('ws', { agents: 'room/id & test' }), 'https://leitbild.app').searchParams.get('agents')).toBe('room/id & test')
   })
+
+  test('a created plan opens Planning even when its use case also creates a World Run', () => {
+    const plan = { moduleId: 'planning', type: 'planning.plan', id: 'plan-1' }
+    expect(launchDestination('ws', [plan])).toBe('/workspaces/ws?planning=plan-1')
+    expect(launchDestination('ws', [run, plan], { world: 'old-run', agents: 'old-room' })).toBe('/workspaces/ws?planning=plan-1')
+    expect(launchDestination('ws', [room], { planning: 'plan-1' })).toBe('/workspaces/ws?agents=room-1&planning=plan-1')
+    expect(launchDestination('ws', [run], { planning: 'plan-1' })).toBe('/workspaces/ws?world=run-1')
+    expect(launchDestination('ws', [{ moduleId: 'planning', type: 'planning.study', id: 'old' }])).toBe('/workspaces/ws')
+  })
 })

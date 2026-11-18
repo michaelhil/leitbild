@@ -1,7 +1,7 @@
 {
   "id": "halden-emergency",
   "title": "Halden dispatch: medical, police, fire",
-  "description": "A fictional 30-minute emergency dispatch exercise in Halden, for one dispatcher or two side by side. Calls keep coming: falls, chest pain and a cardiac arrest for four road ambulances and an air ambulance; crashes, a fight and a break-in for three patrol cars; kitchen, grass, shed and car fires for two fire engines, one of which carries too little water for a building fire. Three moments test the desk: a twisted ankle and chest pain arrive together, the Torget fight needs two patrol cars while one is on its way to a fallen tree, and a car catches fire beside the kitchen fire Engine 1 is about to finish. Places, calls, crews and timings are invented for the exercise and make no claim about real services. How to play: tap a call to see its suggested unit, then tap the suggestion to dispatch it; a divert asks you to confirm. Or tap one of your units to highlight it, then tap a call on the map; a busy unit offers Do now or Add to end, or only Add to end once it is on scene. The + on a unit adds the next call you tap to the end of its job chain. With two dispatchers, each opens the groups dialog from the role chip and picks the Ambulance desk or the Police and fire desk.",
+  "description": "A fictional 30-minute emergency dispatch exercise in Halden. Calls keep coming: falls, chest pain and a cardiac arrest for four road ambulances and an air ambulance; crashes, a fight and a break-in for three patrol cars; kitchen, grass, shed and car fires for two fire engines, one of which carries too little water for a building fire. Three moments test the dispatcher: a twisted ankle and chest pain arrive together, the Torget fight needs two patrol cars while one is on its way to a fallen tree, and a car catches fire beside the kitchen fire Engine 1 is about to finish. A rain shower moves northeast past Tistedal, where you can inspect local weather. Places, calls, crews and timings are invented for the exercise and make no claim about real services. How to play: tap a waiting call, then Dispatch to send the suggested unit. Or tap a unit, then tap a highlighted target. If the unit already has a plan, choose Replace current target or Add to plan. To choose where an ambulance delivers, select a receiving site and add it to the plan.",
   "objectives": [
     "Get a unit on scene at every top-priority (P1) call within 8 minutes of the call.",
     "Get a fire engine to the guest harbour car fire within 4 minutes of the call.",
@@ -9,21 +9,20 @@
   ],
   "world": {"startsAt": "2026-09-03T18:00:00.000Z", "environment": {"city": "Halden", "model": "Fictional emergency dispatch exercise; no real patient data"}},
   "view": {"map": {"center": [11.3985, 59.1275], "zoom": 12.4}},
-  "roles": [{"id": "controller", "label": "Controller", "class": "controller"}],
-  "rolePresets": [
-    {"id": "all-desks", "label": "All desks (one dispatcher)", "roles": ["group:ambulance", "group:air-ambulance", "group:police", "group:fire"]},
-    {"id": "ambulance-desk", "label": "Ambulance desk", "roles": ["group:ambulance", "group:air-ambulance"]},
-    {"id": "police-fire-desk", "label": "Police and fire desk", "roles": ["group:police", "group:fire"]}
-  ],
   "packs": [
     {
       "id": "einsatz",
       "config": {
-        "lexicon": {"workList": "Calls", "unitBoard": "Units", "noWork": "No calls waiting", "close": "Close call", "send": "Dispatch", "hold": "Stop", "on-task": "On scene", "at-site": "Handing over"},
+        "lexicon": {"calls": "Calls", "units": "Units", "noCalls": "No calls waiting", "close": "Close call", "send": "Dispatch", "on-task": "On scene", "at-site": "Handing over"},
+        "priorities": [
+          {"id": "p1", "label": "Emergency", "code": "P1", "responseTargetS": 480},
+          {"id": "p2", "label": "Urgent", "code": "P2", "responseTargetS": 720},
+          {"id": "p3", "label": "Non-urgent", "code": "P3"}
+        ],
         "loadClasses": [
-          {"id": "acute", "label": "Acute", "code": "P1", "noun": {"one": "patient", "other": "patients"}},
-          {"id": "urgent", "label": "Urgent", "code": "P2", "noun": {"one": "patient", "other": "patients"}},
-          {"id": "routine", "label": "Non-urgent", "code": "P3", "noun": {"one": "patient", "other": "patients"}}
+          {"id": "acute", "label": "Acute", "code": "A", "noun": {"one": "patient", "other": "patients"}},
+          {"id": "urgent", "label": "Urgent", "code": "U", "noun": {"one": "patient", "other": "patients"}},
+          {"id": "routine", "label": "Non-urgent", "code": "N", "noun": {"one": "patient", "other": "patients"}}
         ],
         "unitTypes": [
           {
@@ -32,7 +31,7 @@
             "icon": "ambulance",
             "tags": ["medical"],
             "components": {
-              "mobility": {"mode": "road", "mobilizeS": 60},
+              "mobility": {"mode": "road", "mobilizeS": 3},
               "service": {"provides": ["patient-care"], "onSceneS": 180},
               "carry": {"capacity": 1, "classes": ["acute", "urgent", "routine"]}
             },
@@ -44,7 +43,7 @@
             "icon": "helicopter",
             "tags": ["medical"],
             "components": {
-              "mobility": {"mode": "direct", "speedMps": 60, "mobilizeS": 240},
+              "mobility": {"mode": "direct", "speedMps": 60, "mobilizeS": 3},
               "service": {"provides": ["patient-care"], "onSceneS": 180},
               "carry": {"capacity": 2, "classes": ["acute", "urgent", "routine"]}
             },
@@ -55,7 +54,7 @@
             "label": "Patrol car",
             "icon": "car",
             "tags": ["police"],
-            "components": {"mobility": {"mode": "road"}, "service": {"provides": ["policing"], "onSceneS": 300}},
+            "components": {"mobility": {"mode": "road", "mobilizeS": 3}, "service": {"provides": ["policing"], "onSceneS": 300}},
             "standingOrders": {"return": {"afterIdleS": 60}}
           },
           {
@@ -63,8 +62,8 @@
             "label": "Fire engine",
             "icon": "fire-extinguisher",
             "tags": ["fire"],
-            "components": {"mobility": {"mode": "road", "speedFactor": 0.8, "mobilizeS": 60}, "service": {"provides": ["fire-suppression"], "onSceneS": 480}},
-            "properties": [{"id": "waterL", "label": "Water", "kind": "number", "unit": "l", "min": 0, "max": 10000, "default": 3000, "board": true}],
+            "components": {"mobility": {"mode": "road", "speedFactor": 0.8, "mobilizeS": 3}, "service": {"provides": ["fire-suppression"], "onSceneS": 480}},
+            "properties": [{"id": "waterL", "label": "Water", "kind": "number", "unit": "l", "min": 0, "max": 10000, "default": 3000, "show": true}],
             "standingOrders": {"return": {"afterIdleS": 60}}
           },
           {
@@ -83,47 +82,47 @@
           }
         ],
         "taskTemplates": [
-          {"id": "medical", "label": "Medical call", "icon": "heart-pulse"},
+          {"id": "medical", "label": "Medical call", "icon": "heart-pulse", "priority": "p2"},
           {
             "id": "road-accident",
             "label": "Road accident",
             "icon": "car-front",
-            "priorityClass": "urgent",
+            "priority": "p2",
             "requires": [{"provides": "policing", "count": 1, "label": {"one": "patrol car", "other": "patrol cars"}}]
           },
           {
             "id": "public-order",
             "label": "Public order",
             "icon": "siren",
-            "priorityClass": "urgent",
+            "priority": "p2",
             "requires": [{"provides": "policing", "count": 2, "label": {"one": "patrol car", "other": "patrol cars"}}]
           },
           {
             "id": "road-hazard",
             "label": "Road hazard",
             "icon": "traffic-cone",
-            "priorityClass": "routine",
+            "priority": "p3",
             "requires": [{"provides": "policing", "count": 1, "label": {"one": "patrol car", "other": "patrol cars"}}]
           },
           {
             "id": "police-call",
             "label": "Police call",
             "icon": "shield-alert",
-            "priorityClass": "urgent",
+            "priority": "p2",
             "requires": [{"provides": "policing", "count": 1, "label": {"one": "patrol car", "other": "patrol cars"}}]
           },
           {
             "id": "building-fire",
             "label": "Building fire",
             "icon": "flame",
-            "priorityClass": "acute",
+            "priority": "p1",
             "requires": [{"provides": "fire-suppression", "count": 1, "label": {"one": "fire engine", "other": "fire engines"}, "where": [{"property": "waterL", "atLeast": 2000}]}]
           },
           {
             "id": "outdoor-fire",
             "label": "Outdoor fire",
             "icon": "flame-kindling",
-            "priorityClass": "urgent",
+            "priority": "p2",
             "requires": [{"provides": "fire-suppression", "count": 1, "label": {"one": "fire engine", "other": "fire engines"}, "where": [{"property": "waterL", "atLeast": 1000}]}]
           }
         ],
@@ -139,7 +138,7 @@
         {"type": "unit", "id": "site:remmen-triage", "label": "Remmen triage post — exercise", "unitType": "triage-post", "position": [11.41, 59.138]},
         {"type": "unit", "id": "unit:amb-1", "label": "A1", "unitType": "ambulance", "group": "ambulance", "position": [11.392, 59.126]},
         {"type": "unit", "id": "unit:amb-2", "label": "A2", "unitType": "ambulance", "group": "ambulance", "position": [11.392, 59.126]},
-        {"type": "unit", "id": "unit:amb-3", "label": "A3", "unitType": "ambulance", "group": "ambulance", "position": [11.405, 59.142]},
+        {"type": "unit", "id": "unit:amb-3", "label": "A3", "unitType": "ambulance", "group": "ambulance", "position": [11.410, 59.140]},
         {"type": "unit", "id": "unit:amb-4", "label": "A4", "unitType": "ambulance", "group": "ambulance", "position": [11.437, 59.128]},
         {"type": "unit", "id": "unit:air-1", "label": "H1", "unitType": "air-ambulance", "group": "air-ambulance", "position": [11.43, 59.108]},
         {"type": "unit", "id": "unit:patrol-1", "label": "Patrol 1", "unitType": "patrol-car", "group": "police", "position": [11.388, 59.124]},
@@ -152,32 +151,42 @@
           "label": "Engine 2",
           "unitType": "fire-engine",
           "group": "fire",
-          "position": [11.365, 59.142],
+          "position": [11.365, 59.143],
           "properties": {"waterL": 1500}
         },
         {"type": "task", "id": "task:tistedal-fall", "label": "C-1 Tistedal fall", "template": "medical", "position": [11.442, 59.124], "loads": {"urgent": 1}}
+      ]
+    },
+    {
+      "id": "weather",
+      "config": {"gridResolution": 7},
+      "items": [
+        {
+          "type": "weather_area",
+          "id": "weather:halden-dispatch-shower",
+          "label": "Rain shower over Halden",
+          "center": [11.423, 59.119],
+          "semiMajorAxisM": 3500,
+          "semiMinorAxisM": 1900,
+          "rotationDeg": 65,
+          "falloff": "linear",
+          "atmosphere": {
+            "humidity": 0.95,
+            "visibilityM": 4500,
+            "cloudCover": 1,
+            "precipitation": {"type": "rain", "intensityMmPerHour": 9}
+          },
+          "keyframes": [
+            {"atSeconds": 600, "center": [11.475, 59.142]},
+            {"atSeconds": 1200, "center": [11.522, 59.163], "atmosphere": {"precipitation": {"type": "none", "intensityMmPerHour": 0}}}
+          ]
+        },
+        {"type": "weather_probe", "id": "weather-probe:tistedal", "label": "Tistedal weather", "point": [11.438, 59.121]}
       ]
     }
   ],
   "timeline": {
     "cues": [
-      {
-        "id": "desk-briefing",
-        "at": {"kind": "after_scenario_start", "seconds": 0},
-        "title": "Calls keep coming for 30 minutes",
-        "actions": [
-          {
-            "type": "show_guidance",
-            "guidance": {
-              "id": "desk-briefing",
-              "title": "Calls keep coming for 30 minutes",
-              "message": "Tap the waiting call under Calls, then tap Dispatch to send its suggested unit.",
-              "dismissible": true,
-              "tone": "default"
-            }
-          }
-        ]
-      },
       {
         "id": "busterud-crash",
         "at": {"kind": "after_scenario_start", "seconds": 40},
@@ -210,7 +219,7 @@
           {
             "type": "invoke_capability",
             "capabilityId": "world.einsatz.task.create",
-            "input": {"template": "medical", "label": "C-4 Rødsberg ankle", "at": {"type": "Point", "coordinates": [11.41, 59.113]}, "loads": {"routine": 1}}
+            "input": {"template": "medical", "label": "C-4 Rødsberg ankle", "priority": "p3", "at": {"type": "Point", "coordinates": [11.41, 59.113]}, "loads": {"routine": 1}}
           }
         ]
       },
@@ -222,7 +231,7 @@
           {
             "type": "invoke_capability",
             "capabilityId": "world.einsatz.task.create",
-            "input": {"template": "medical", "label": "C-5 Fortress chest pain", "at": {"type": "Point", "coordinates": [11.398, 59.117]}, "loads": {"acute": 1}}
+            "input": {"template": "medical", "label": "C-5 Fortress chest pain", "priority": "p1", "at": {"type": "Point", "coordinates": [11.398, 59.117]}, "loads": {"acute": 1}}
           }
         ]
       },
@@ -258,13 +267,13 @@
           {
             "type": "invoke_capability",
             "capabilityId": "world.einsatz.task.create",
-            "input": {"template": "medical", "label": "C-8 Os fall", "at": {"type": "Point", "coordinates": [11.4, 59.112]}, "loads": {"routine": 1}}
+            "input": {"template": "medical", "label": "C-8 Os fall", "priority": "p3", "at": {"type": "Point", "coordinates": [11.4, 59.112]}, "loads": {"routine": 1}}
           }
         ]
       },
       {
         "id": "harbour-car-fire",
-        "at": {"kind": "after_scenario_start", "seconds": 660},
+        "at": {"kind": "after_scenario_start", "seconds": 600},
         "title": "A car catches fire beside the harbour kitchen fire",
         "actions": [
           {
@@ -306,7 +315,7 @@
           {
             "type": "invoke_capability",
             "capabilityId": "world.einsatz.task.create",
-            "input": {"template": "medical", "label": "C-12 Sauøy cut hand", "at": {"type": "Point", "coordinates": [11.365, 59.115]}, "loads": {"routine": 1}}
+            "input": {"template": "medical", "label": "C-12 Sauøy cut hand", "priority": "p3", "at": {"type": "Point", "coordinates": [11.365, 59.115]}, "loads": {"routine": 1}}
           }
         ]
       },
@@ -318,7 +327,7 @@
           {
             "type": "invoke_capability",
             "capabilityId": "world.einsatz.task.create",
-            "input": {"template": "medical", "label": "C-13 Tistedal cardiac arrest", "at": {"type": "Point", "coordinates": [11.435, 59.133]}, "loads": {"acute": 1}}
+            "input": {"template": "medical", "label": "C-13 Tistedal cardiac arrest", "priority": "p1", "at": {"type": "Point", "coordinates": [11.435, 59.133]}, "loads": {"acute": 1}}
           }
         ]
       },
@@ -390,7 +399,7 @@
           {
             "type": "invoke_capability",
             "capabilityId": "world.einsatz.task.create",
-            "input": {"template": "medical", "label": "C-19 Harbour steps fall", "at": {"type": "Point", "coordinates": [11.386, 59.1215]}, "loads": {"routine": 1}}
+            "input": {"template": "medical", "label": "C-19 Harbour steps fall", "priority": "p3", "at": {"type": "Point", "coordinates": [11.386, 59.1215]}, "loads": {"routine": 1}}
           }
         ]
       },
@@ -427,166 +436,14 @@
   },
   "guide": {
     "id": "guide:emergency",
-    "title": "Dispatch and verify a response",
-    "description": "Human role exercise. Choose a desk before starting its guide. AI assistance remains unavailable in role Runs.",
+    "title": "Judge the exercise",
+    "description": "Optional. The Dispatch panel needs no guide; this one card says how to judge your 30 minutes.",
     "startPaused": true,
-    "entry": {
-      "kind": "clock",
-      "beforeSeconds": 40
-    },
     "steps": [
       {
-        "id": "readiness",
-        "title": "Agree the shared start",
-        "instruction": "Controller: keep time paused while each desk selects its role and checks the Board. Participants tell the controller when ready. The controller explicitly starts the shared clock after agreement; one person advancing this guide never starts everybody. Guide progress remains independent.",
-        "effects": [],
-        "completion": {
-          "kind": "acknowledge"
-        }
-      },
-      {
-        "id": "controller",
-        "title": "Run the exercise",
-        "instruction": "Confirm each desk is ready before Play. Use the Board and shared clock to pace new calls; inspect assignments and arrival histories before debriefing.",
-        "effects": [
-          {
-            "id": "board",
-            "target": {
-              "kind": "panel",
-              "panelId": "einsatz.board"
-            },
-            "action": {
-              "kind": "reveal"
-            }
-          }
-        ],
-        "completion": {
-          "kind": "acknowledge"
-        },
-        "roles": [
-          "controller"
-        ]
-      },
-      {
-        "id": "ems-board",
-        "title": "Find the waiting call",
-        "instruction": "Inspect the waiting Tistedal fall call, its urgency and suggested eligible units. Dispatch A4 with the real Board action; follow the assignment result.",
-        "effects": [
-          {
-            "id": "board",
-            "target": {
-              "kind": "panel",
-              "panelId": "einsatz.board"
-            },
-            "action": {
-              "kind": "reveal"
-            }
-          },
-          {
-            "id": "call",
-            "target": {
-              "kind": "object",
-              "objectId": "task:tistedal-fall"
-            },
-            "action": {
-              "kind": "focus"
-            }
-          }
-        ],
-        "completion": {
-          "kind": "acknowledge"
-        },
-        "roles": [
-          "group:ambulance"
-        ]
-      },
-      {
-        "id": "ems-arrival",
-        "title": "Verify the response",
-        "instruction": "Advance in small intervals, then pause when A4 is on task. This gate observes the actual A4 phase, not the dispatch click. If you chose another unit or passed the phase, inspect history and Skip explicitly.",
-        "effects": [
-          {
-            "id": "unit",
-            "target": {
-              "kind": "object",
-              "objectId": "unit:amb-4"
-            },
-            "action": {
-              "kind": "reveal"
-            }
-          }
-        ],
-        "completion": {
-          "kind": "condition",
-          "condition": {
-            "kind": "object-status",
-            "objectId": "unit:amb-4",
-            "status": "on-task"
-          }
-        },
-        "roles": [
-          "group:ambulance"
-        ]
-      },
-      {
-        "id": "police",
-        "title": "Work the police desk",
-        "instruction": "Inspect Patrol 1 and eligible calls in your Board. Dispatch through the supported action, then verify assignment and actual arrival history.",
-        "effects": [
-          {
-            "id": "patrol",
-            "target": {
-              "kind": "object",
-              "objectId": "unit:patrol-1"
-            },
-            "action": {
-              "kind": "reveal"
-            }
-          }
-        ],
-        "completion": {
-          "kind": "acknowledge"
-        },
-        "roles": [
-          "group:police"
-        ]
-      },
-      {
-        "id": "fire",
-        "title": "Work the fire desk",
-        "instruction": "Inspect Engine 1 and eligible calls in your Board. Check required capacity, dispatch through the supported action and follow actual arrival history.",
-        "effects": [
-          {
-            "id": "engine",
-            "target": {
-              "kind": "object",
-              "objectId": "unit:engine-1"
-            },
-            "action": {
-              "kind": "reveal"
-            }
-          }
-        ],
-        "completion": {
-          "kind": "acknowledge"
-        },
-        "roles": [
-          "group:fire"
-        ]
-      },
-      {
-        "id": "debrief",
-        "title": "Review the queue",
-        "instruction": "Continue the shared exercise. At a stopping point derive urgent waits and outcomes from actual histories and authored objectives. Closing a guide card never closes a call or proves arrival.",
-        "effects": [],
-        "completion": {
-          "kind": "acknowledge"
-        }
-      },
-      {
         "id": "explore",
-        "title": "Continue exploring",
-        "instruction": "This guide is finished. The same Run remains available. Pause or stop guidance whenever you wish; those controls do not pause the shared simulation. Copy the Run before trying a different intervention. Acknowledgements record your choice to continue, not a qualification.",
+        "title": "Judge the 30 minutes",
+        "instruction": "Calls keep coming for 30 minutes. At any stopping point, compare actual arrival times from history with the objectives: P1 within 8 min, the guest harbour car fire within 4 min and P2 within 12 min. Copy the Run before trying a different approach. Acknowledging this card records your choice to continue, not a score.",
         "effects": [],
         "completion": {
           "kind": "acknowledge"

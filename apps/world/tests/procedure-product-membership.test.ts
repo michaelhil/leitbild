@@ -14,18 +14,17 @@ describe('product procedure content ownership', () => {
     try {
       const source = procedureSources[0]!
       const selected = source.documentPaths!
-      expect(selected).toHaveLength(41)
+      expect(selected).toHaveLength(39)
       expect(selected.filter(path => path.startsWith('world/'))).toEqual([
         'world/packs/process-plant/procedures/E-0.md',
         'world/packs/process-plant/procedures/ES-0.1.md',
         'world/packs/process-plant/procedures/ES-1.3.md',
         'world/packs/process-plant/procedures/RHR-1.md',
-        'world/packs/process-plant/procedures/RHR-2.md',
         'world/packs/process-plant/procedures/ECA-0.0.md',
         'world/packs/process-plant/procedures/FR-H.3.md',
-        'world/packs/process-plant/procedures/FR-H.4.md',
-        'world/packs/process-plant/procedures/FR-H.5.md',
       ])
+      expect(selected).toContain('archive/pwr-reference-model/procedures/FR-H.5.md')
+      expect(selected.some(path => path.endsWith('/FR-H.4.md') || path.endsWith('/RHR-2.md'))).toBe(false)
       expect(selected.some(path => path.includes('/ld-01/'))).toBe(false)
       const archivedPath = 'archive/pwr-reference-model/procedures/ES-0.1.md'
       const archivedTransferPath = 'archive/pwr-reference-model/procedures/ES-1.3.md'
@@ -44,11 +43,13 @@ describe('product procedure content ownership', () => {
       })
       const current = createProcedureSourceService({ sources: procedureSources, retentionDirectory: directory,
         loadKnowledge: async () => createKnowledge({ revision: 'b'.repeat(40), documents: [...documents, ...archivedDocuments] }) })
-      expect((await current.readCatalog()).procedures).toHaveLength(41)
+      expect((await current.readCatalog()).procedures).toHaveLength(39)
       expect((await current.readDocument({ procedureId: 'ES-0.1' })).title).toBe('Finite model task ES-0.1')
       expect((await current.readDocument({ procedureId: 'RHR-1' })).title).toBe('Finite model task RHR-1')
       expect((await current.readDocument({ procedureId: 'ES-1.3' })).sourcePath).toBe('world/packs/process-plant/procedures/ES-1.3.md')
-      expect((await current.readDocument({ procedureId: 'FR-H.4' })).sourcePath).toBe('world/packs/process-plant/procedures/FR-H.4.md')
+      expect((await current.readDocument({ procedureId: 'FR-H.5' })).sourcePath).toBe('archive/pwr-reference-model/procedures/FR-H.5.md')
+      await expect(current.readDocument({ procedureId: 'FR-H.4' })).rejects.toThrow()
+      await expect(current.readDocument({ procedureId: 'RHR-2' })).rejects.toThrow()
       expect((await current.readDocument({ procedureId: 'ECA-0.0' })).sourcePath).toBe('world/packs/process-plant/procedures/ECA-0.0.md')
       const retained = await current.readDocument({ procedureId: 'ES-0.1', sourceRevision: pinned.source.revision, sourcePath: archivedPath })
       expect(retained.rawMarkdown).toBe(original)

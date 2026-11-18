@@ -1,0 +1,52 @@
+{
+  "id": "halden-delivery-planning",
+  "title": "Halden: plan two deliveries",
+  "description": "One truck has two deliveries in Halden. Compare which stop to serve first in a plan based on the truck's unloading time. The depot, destinations and appointments are fictional.",
+  "objectives": ["Find the truck and both delivery stops on the map.", "Compare the two delivery orders in Planning."],
+  "world": { "startsAt": "2026-11-16T08:00:00.000Z", "environment": { "city": "Halden", "purpose": "delivery planning demonstration" } },
+  "view": { "map": { "center": [11.3575, 59.1435], "zoom": 13.6 } },
+  "packs": [
+    {
+      "id": "einsatz",
+      "config": {
+        "lexicon": { "calls": "Delivery stops", "units": "Vehicles", "noCalls": "No deliveries waiting", "close": "Close delivery", "send": "Send", "on-task": "Unloading" },
+        "priorities": [{ "id": "P2", "label": "Routine", "code": "P2" }],
+        "unitTypes": [
+          { "id": "depot", "label": "Depot", "icon": "warehouse", "tags": ["logistics"], "public": true, "components": {} },
+          { "id": "delivery-truck", "label": "Delivery truck", "icon": "truck", "tags": ["logistics"], "components": { "mobility": { "mode": "road" }, "service": { "provides": ["delivery"], "onSceneS": 600 } } }
+        ],
+        "taskTemplates": [
+          { "id": "delivery", "label": "Delivery stop", "icon": "package", "priority": "P2", "requires": [{ "provides": "delivery", "count": 1, "label": { "one": "delivery truck", "other": "delivery trucks" } }] }
+        ]
+      },
+      "items": [
+        { "type": "unit", "id": "site:delivery-depot", "label": "Tosterød depot", "unitType": "depot", "position": [11.3522, 59.144] },
+        { "type": "unit", "id": "unit:delivery-truck", "label": "Delivery truck", "unitType": "delivery-truck", "position": [11.3537, 59.1437] },
+        { "type": "task", "id": "task:school-delivery", "label": "School delivery", "template": "delivery", "position": [11.342, 59.148] },
+        { "type": "task", "id": "task:sports-hall-delivery", "label": "Sports hall delivery", "template": "delivery", "position": [11.369, 59.139] }
+      ]
+    }
+  ],
+  "guide": {
+    "id": "guide:delivery-planning",
+    "title": "Which stop comes first?",
+    "description": "Find the delivery truck and its two stops on the map. Then open Planning to compare serving the school first with serving the sports hall first. Planning uses the truck’s ten-minute unloading time from this simulation.",
+    "startPaused": false,
+    "planningDefinitionId": "halden-delivery-planning",
+    "steps": [
+      {
+        "id": "find-truck",
+        "title": "Find the delivery truck",
+        "instruction": "One truck is available for both stops. The truck unloads for ten minutes at each stop. Open Planning when you’re ready to compare the two orders.",
+        "effects": [{ "id": "truck-on-map", "target": { "kind": "object", "objectId": "unit:delivery-truck" }, "action": { "kind": "reveal" } }],
+        "completion": { "kind": "acknowledge" }
+      },
+      {
+        "id": "explore",
+        "title": "Try both orders in Planning",
+        "instruction": "Choose Open planning demo, then Generate schedules. Select each delivery order to see when deliveries finish and which are on time. The truck stays on the World map while you work on the schedule.",
+        "completion": { "kind": "acknowledge" }
+      }
+    ]
+  }
+}

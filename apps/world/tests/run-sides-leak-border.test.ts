@@ -73,7 +73,7 @@ const oracleRun = (source: ScenarioDefinition, minutes: number, redOrders: boole
   const item = (id: string) => definition.packs[0]!.items.find(entry => entry.id === originalId(id))!
 
   const oracle = createWireOracle(declaration)
-  const { registry, createScreen, join, einsatzIds, einsatzType, sideCommands, takeInventory, forbiddenFor, expectNoLeak, barrier, eventsReceived, command, recommendAs, boardText, screens } = oracle
+  const { registry, createScreen, join, einsatzIds, einsatzType, sideCommands, takeInventory, forbiddenFor, expectNoLeak, barrier, eventsReceived, command, recommendAs, surfaceText, screens } = oracle
 
   let red: Screen
   let blue: Screen
@@ -88,9 +88,9 @@ const oracleRun = (source: ScenarioDefinition, minutes: number, redOrders: boole
     for (const object of screen.stores?.objects ?? []) {
       if (einsatzType(object) !== 'task' || object.operational.status !== 'open') continue
       const recommendation = await recommendAs(screen, object.id)
-      if (recommendation.need === null || !recommendation.proposal.covers || recommendation.proposal.units.length === 0) continue
-      if (recommendation.proposal.units.some(unit => unit.divertFrom !== undefined)) continue
-      const outcome = await command(screen, einsatzCommandIds.send, { units: recommendation.proposal.units.map(unit => unit.unitId), to: { taskId: object.id } })
+      const proposal = recommendation.proposal
+      if (proposal === null || proposal.covers.covered < proposal.covers.needed) continue
+      const outcome = await command(screen, einsatzCommandIds.order, proposal.order)
       if (outcome.kind === 'command' && outcome.result.ok) sent++
     }
     return sent
@@ -107,7 +107,7 @@ const oracleRun = (source: ScenarioDefinition, minutes: number, redOrders: boole
     const shooter = (red.stores?.objects ?? []).find(object => einsatzType(object) === 'unit' && !busy.has(object.id) && object.id.startsWith('unit:red-tank'))
     expect(shooter).toBeDefined()
     const knut = (item('site:knut') as unknown as { readonly position: readonly [number, number] }).position
-    const moved = await command(red, einsatzCommandIds.send, { units: [shooter!.id], to: { point: { type: 'Point', coordinates: [knut[0] + 0.01, knut[1] + 0.01] } } })
+    const moved = await command(red, einsatzCommandIds.order, { units: [shooter!.id], stops: [{ point: { type: 'Point', coordinates: [knut[0] + 0.01, knut[1] + 0.01] } }] })
     expect(moved).toMatchObject({ kind: 'command', result: { ok: true } })
     return sent + 1
   }
@@ -169,7 +169,7 @@ const oracleRun = (source: ScenarioDefinition, minutes: number, redOrders: boole
         sent += await dispatchAs(blue)
         if (redOrders) redSent += await dispatchAs(red)
         await barrier(red, blue, controller)
-        const built = minute % 5 === 0 ? { red: [await boardText(red)], blue: [await boardText(blue)] } : { red: [], blue: [] }
+        const built = minute % 5 === 0 ? { red: [await surfaceText(red)], blue: [await surfaceText(blue)] } : { red: [], blue: [] }
         await expectNoLeak(red, redSide, since.get(red), built.red)
         await expectNoLeak(blue, blueSide, since.get(blue), built.blue)
       }

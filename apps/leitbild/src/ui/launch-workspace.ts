@@ -13,7 +13,7 @@ export const MODULE_TITLES: Readonly<Record<RequiredModule, string>> = { world: 
 
 /** A Module's title; a Module without one is named by its id as it stands, never by a guess. */
 export const moduleTitle = (moduleId: string): string =>
-  Object.hasOwn(MODULE_TITLES, moduleId) ? MODULE_TITLES[moduleId as RequiredModule] : moduleId
+  moduleId === 'planning' ? 'Planning' : Object.hasOwn(MODULE_TITLES, moduleId) ? MODULE_TITLES[moduleId as RequiredModule] : moduleId
 export type ModuleReadiness = 'ready' | 'provisioning' | 'failed' | 'missing'
 
 export const LAST_WORKSPACE_GONE_TEXT = 'Your last Workspace no longer exists.'
@@ -133,14 +133,14 @@ export const moduleReadiness = (workspace: Pick<Workspace, 'modules'>, moduleId:
 export type WorkspaceNotReadyError = Error & {
   readonly code: 'workspace_module_not_ready'
   readonly workspace: Workspace
-  readonly moduleId: RequiredModule
+  readonly moduleId: string
   readonly created: boolean
 }
 
-export const workspaceNotReady = (workspace: Workspace, moduleId: RequiredModule, created: boolean): WorkspaceNotReadyError =>
+export const workspaceNotReady = (workspace: Workspace, moduleId: string, created: boolean): WorkspaceNotReadyError =>
   Object.assign(new Error(created
-    ? `${MODULE_TITLES[moduleId]} could not be prepared in the new Workspace.`
-    : `${MODULE_TITLES[moduleId]} is not ready in ${workspaceLabel(workspace)}.`), {
+    ? `${moduleTitle(moduleId)} could not be prepared in the new Workspace.`
+    : `${moduleTitle(moduleId)} is not ready in ${workspaceLabel(workspace)}.`), {
     code: 'workspace_module_not_ready' as const, workspace, moduleId, created,
   })
 

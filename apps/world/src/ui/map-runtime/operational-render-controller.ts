@@ -15,9 +15,9 @@ import { createMapUpdateScheduler } from './map-update-scheduler.ts'
 import { createOperationalDeckLayerFactory, visibleFamiliesKey } from './operational-deck-layers.ts'
 import { fanZoomOf } from './point-declutter.ts'
 import type {
-  MapAssignmentHandleFeature,
-  MapAssignmentInteraction,
   MapRuntimeHandle,
+  MapTargetingLine,
+  MapTargetingRender,
   OperationalPointFeature,
   OperationalRenderSnapshot,
   RenderFamily,
@@ -28,6 +28,8 @@ export interface OperationalRenderControllerState {
   readonly selectedControllerId: string | null
   readonly highlightedObjectIds: ReadonlyArray<string>
   readonly mutedObjectIds: ReadonlyArray<string>
+  /** The armed order's tagged targets, every other object dimmed; null while nothing is armed. */
+  readonly targeting: MapTargetingRender | null
   /** The severity table's palette the alert badges take: the screen's theme (D9). */
   readonly alertPalette: Palette
   readonly hiddenObjectCategoryIds: ReadonlyArray<string>
@@ -35,7 +37,8 @@ export interface OperationalRenderControllerState {
   readonly packFeatures: ReadonlyArray<PackMapFeature>
   readonly visibleFamilies: ReadonlySet<string>
   readonly placementCursorActive: boolean
-  readonly assignmentInteraction: MapAssignmentInteraction
+  /** The armed order's line to a mouse pointer. */
+  readonly targetingLine: MapTargetingLine
   /** Whether the icons' disks take clicks and hover too (`OperationalDeckLayerConfig`, `disksPick`). */
   readonly disksPick: boolean
   /** Objects whose whole disk takes a click on every surface, or null for a finger (`OperationalDeckLayerConfig`, `diskClicks`). */
@@ -56,7 +59,6 @@ export interface OperationalRenderControllerConfig {
   readonly onObjectSelected: (object: OperationalObject) => void
   readonly onObjectSeen: (object: OperationalObject) => void
   readonly onObjectHover: (object: OperationalObject | null) => void
-  readonly onAssignmentHandleSelected: (handle: MapAssignmentHandleFeature) => void
   readonly setCursor: (cursor: 'crosshair' | 'pointer' | '') => void
   readonly refreshPopup: (objects: ReadonlyArray<OperationalObject>) => void
   readonly onDiagnostic: (runtime: MapRuntimeHandle) => void
@@ -147,7 +149,7 @@ const createRenderHasNewInfo = (
 const renderSignatureFor = (
   snapshot: OperationalRenderSnapshot,
   visibleFamilies: ReadonlySet<string>,
-  interactionRevision: number,
+  lineRevision: number,
   catalogueAtlasRevision: number,
   disksPick: boolean,
   diskClicks: boolean,
@@ -158,7 +160,7 @@ const renderSignatureFor = (
   snapshot.revisions.areaSymbols,
   snapshot.revisions.placement,
   visibleFamiliesKey(visibleFamilies),
-  interactionRevision,
+  lineRevision,
   catalogueAtlasRevision,
   disksPick,
   diskClicks,
@@ -239,6 +241,7 @@ export const createOperationalRenderController = (
           selectedControllerId: state.selectedControllerId,
           highlightedObjectIds: state.highlightedObjectIds,
           mutedObjectIds: state.mutedObjectIds,
+          targeting: state.targeting,
           alertPalette: state.alertPalette,
           hiddenObjectCategoryIds: state.hiddenObjectCategoryIds,
           placementPoints: state.placementPoints,
@@ -260,7 +263,7 @@ export const createOperationalRenderController = (
     const catalogueAtlas = config.catalogueAtlas.current()
     const zoom = fanZoomOf(runtime.map.getZoom())
     layoutZoom = zoom
-    const renderSignature = renderSignatureFor(snapshot, state.visibleFamilies, state.assignmentInteraction.revision, catalogueAtlas.revision, state.disksPick, state.diskClicks !== null, zoom)
+    const renderSignature = renderSignatureFor(snapshot, state.visibleFamilies, state.targetingLine.revision, catalogueAtlas.revision, state.disksPick, state.diskClicks !== null, zoom)
     const deckUpdated = renderSignature !== lastRenderSignature
     if (deckUpdated) {
       lastRenderSignature = renderSignature
@@ -290,8 +293,7 @@ export const createOperationalRenderController = (
             config.onObjectSeen(point.object)
             config.onObjectHover(point.object)
           },
-          assignmentInteraction: state.assignmentInteraction,
-          onAssignmentHandleSelected: config.onAssignmentHandleSelected,
+          targetingLine: state.targetingLine,
         }),
         {
           points: snapshot.points.length,

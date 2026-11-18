@@ -1,0 +1,26 @@
+{
+  "name": "@leitbild/planning",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "packageManager": "bun@1.4.0",
+  "scripts": {
+    "start": "bun run src/index.ts",
+    "build:ui": "vite build",
+    "check": "tsc --noEmit && svelte-check --tsconfig tsconfig.json --fail-on-warnings",
+    "test": "bun test"
+  },
+  "dependencies": {
+    "@leitbild/contracts": "workspace:*",
+    "@leitbild/module-runtime": "workspace:*",
+    "svelte": "^5.57.2",
+    "zod": "^4.4.3"
+  },
+  "devDependencies": {
+    "@sveltejs/vite-plugin-svelte": "^7.1.2",
+    "svelte-check": "^4.7.7",
+    "typescript": "^6.0.3",
+    "vite": "^8.0.14"
+  },
+  "engines": { "bun": "1.4.0" }
+}

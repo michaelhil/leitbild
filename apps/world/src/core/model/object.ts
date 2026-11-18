@@ -8,7 +8,7 @@ import { alertStateSchema, type AlertState } from './alerts.ts'
 import { objectContextSchema, type ObjectContext } from './context.ts'
 import { objectAudienceSchema, type ObjectAudience } from './audience.ts'
 
-export const objectKindSchema = z.enum(['mobile_entity', 'incident', 'facility', 'zone', 'patient', 'observation'])
+export const objectKindSchema = z.enum(['mobile_entity', 'incident', 'facility', 'zone', 'observation'])
 export type ObjectKind = z.infer<typeof objectKindSchema>
 
 export const objectLifecycleSchema = z.enum(['active', 'inactive', 'resolved', 'removed'])

@@ -32,7 +32,8 @@ test('SIGTERM checkpoints a running Weather scenario and restores it without clo
     const root = `/internal/workspaces/${workspaceId}`
     expect((await fetch(origin + root, { method: 'PUT', body: JSON.stringify({ workspaceId }), headers: { 'Content-Type': 'application/json' } })).status).toBe(201)
     const catalog = await (await fetch(origin + root + '/definitions')).json() as { definitions: Array<{ ref: object; currentRevisionId: string; title: string }> }
-    const definition = catalog.definitions.find(item => item.title === 'Halden weather response')!
+    // A bundled Scenario that runs the Weather Pack (halden-weather-response went with the Ambulance Pack).
+    const definition = catalog.definitions.find(item => item.title === 'Halden four-unit power complex')!
     const invoke = (capabilityId: string, target: object) => fetch(`${origin}${root}/capabilities/${capabilityId}/invoke`, {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ workspaceId, capabilityId, ...target, input: {}, access: { workspaceId, requestId: crypto.randomUUID(), actor: { kind: 'human' }, client: { id: 'shutdown-test', kind: 'service' } } }),

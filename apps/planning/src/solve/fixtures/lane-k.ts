@@ -1,0 +1,23 @@
+// Test support: lane K's REAL checker and certificate re-verification behind lane S's ports, so solver
+// tests judge plans and proofs exactly as the product does (no double).
+import { checkPlan } from '../../check/check.ts'
+import { verifyCertificate, verifySpanRefusal } from '../../check/certificate.ts'
+import { verifyBound } from '../../check/optimal.ts'
+import { judgeRetiming } from '../../check/retime.ts'
+import type { JudgeRetimed } from '../retime.ts'
+import type { CheckPlan, VerifyBound, VerifyCertificate, VerifySpan } from '../status.ts'
+
+export const laneKCheck: CheckPlan = ({ inputs, variant, rows }) => {
+  const result = checkPlan(inputs, variant, rows)
+  return {
+    violations: result.violations.map(violation => ({ code: violation.code, about: violation.about })),
+    goals: result.goals.map(goal => ('spans' in goal ? goal.spans.map(span => span.value) : goal.value)),
+    spanGroups: result.goals.map(goal => (goal.metric === 'span-over' ? goal.spans.map(span => span.group) : undefined)),
+    metrics: result.metrics.filter(metric => metric.id.startsWith('bought:') || metric.id.startsWith('span:') || metric.id === 'extra-cost'),
+  }
+}
+
+export const laneKVerify: VerifyCertificate = (inputs, variant, cause) => verifyCertificate(inputs, variant, cause)
+export const laneKVerifyBound: VerifyBound = (inputs, variant, goal, bound) => verifyBound(inputs, variant, goal, bound)
+export const laneKJudgeRetimed: JudgeRetimed = ({ inputs, variant, planned, retimed, high }) => judgeRetiming(inputs, variant, planned, retimed, high)
+export const laneKVerifySpan: VerifySpan = (inputs, variant, claim) => verifySpanRefusal(inputs, variant, claim)

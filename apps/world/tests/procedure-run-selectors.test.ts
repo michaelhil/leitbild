@@ -20,6 +20,8 @@ import {
   procedureRunSummariesForScope,
   procedureRunSummaryText,
   procedureStepDisplayName,
+  procedureRunInEffect,
+  procedureTransferStep,
 } from '../src/ui/procedures/procedure-run-selectors.ts'
 
 const at = '2026-01-01T00:00:00.000Z' as IsoTimestamp
@@ -278,5 +280,34 @@ describe('procedure run selectors', () => {
     expect(procedureCompletionWarning(document, run)).toBe('E-0 is at step 2, not at an END step. Steps 2–4, 6 are still open.')
     expect(procedureCompletionWarning(document, { ...run, currentStepId: 's4' })).toBeNull()
     expect(procedureCompletionWarning(document, { ...run, currentStepId: 's6' })).toBeNull()
+  })
+})
+
+describe('where a transfer lands', () => {
+  const steps = (procedure as unknown as ProcedureDocument).steps
+  const open = (status: ProcedureRunState['status'], currentStepId: string) => ({ status, currentStepId, sourceRevision: source.revision, sourcePath: procedure.sourcePath, stepStates: [] }) as unknown as ProcedureRunState
+  const [first, last] = [steps[0]!, steps.at(-1)!]
+
+  test('a branch that names a step goes there, even past where a held Run stands', () => {
+    expect(procedureTransferStep({ targetStepId: first.id }, procedure as unknown as ProcedureDocument, open('transferred', last.id))?.id).toBe(first.id)
+  })
+  test('a branch that names none resumes an open Run where it stands, else starts at the first step', () => {
+    expect(procedureTransferStep({}, procedure as unknown as ProcedureDocument, open('transferred', last.id))?.id).toBe(last.id)
+    expect(procedureTransferStep({}, procedure as unknown as ProcedureDocument, null)?.id).toBe(first.id)
+    expect(procedureTransferStep({}, procedure as unknown as ProcedureDocument, open('completed', last.id))?.id).toBe(first.id)
+  })
+})
+
+describe('the procedure in effect', () => {
+  const run = (procedureId: string, status: ProcedureRunState['status'], startedAt: string, plantId: string = unitScope.plantId) => ({ procedureId, status, startedAt, scope: { ...unitScope, plantId } }) as unknown as ProcedureRunState
+  test('an active Run wins over a held one, and the latest active over an earlier one', () => {
+    const runs = [run('E-0', 'transferred', '2026-01-01T00:00:00.000Z'), run('ES-0.1', 'active', '2026-01-01T00:05:00.000Z'), run('FR-H.3', 'active', '2026-01-01T00:09:00.000Z')]
+    expect(procedureRunInEffect(runs, unitScope)?.procedureId).toBe('FR-H.3')
+    expect(procedureRunInEffect(runs.slice(0, 2), unitScope)?.procedureId).toBe('ES-0.1')
+  })
+  test('a held Run is in effect when nothing is active, a finished one never is, and another unit does not count', () => {
+    expect(procedureRunInEffect([run('E-0', 'transferred', '2026-01-01T00:00:00.000Z'), run('FR-H.3', 'completed', '2026-01-01T00:09:00.000Z')], unitScope)?.procedureId).toBe('E-0')
+    expect(procedureRunInEffect([run('FR-H.3', 'completed', '2026-01-01T00:09:00.000Z')], unitScope)).toBeNull()
+    expect(procedureRunInEffect([run('E-0', 'active', '2026-01-01T00:00:00.000Z', 'halden-unit-b')], unitScope)).toBeNull()
   })
 })

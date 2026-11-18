@@ -32,6 +32,12 @@ const TOGGLE = 'shrink-0 inline-flex items-center justify-center w-8 h-8 rounded
 const PRIMARY = 'inline-flex items-center gap-1 h-8 px-3 rounded-md text-xs font-medium bg-accent text-white no-underline interactive cursor-pointer hover:bg-accent-hover'
 const SECONDARY = 'inline-flex items-center gap-1 h-8 px-3 rounded-md border border-border bg-surface text-xs font-medium text-text-muted no-underline interactive cursor-pointer hover:bg-surface-strong hover:border-accent hover:text-accent'
 const SUBTITLE = 'Live process display · AI-composed'
+const wording = (listing: EmbeddedViewListing): { readonly kind: string; readonly subtitle: string } =>
+  listing.envelope.moduleId === 'planning' && listing.envelope.viewType === 'planning.schedule'
+    ? { kind: 'planning schedule', subtitle: 'Planning schedule' }
+    : listing.envelope.moduleId === 'agents' && listing.envelope.viewType === 'engineering.result'
+      ? { kind: 'engineering calculation', subtitle: 'Engineering calculation · retained result' }
+      : { kind: 'live display', subtitle: SUBTITLE }
 
 /** What a chip that offers its display does when the reader asks. */
 export interface ChipActions {
@@ -116,6 +122,7 @@ const dropInline = (host: HTMLElement): void => {
 /** The 32 px toggle that shows the live display in the answer, below the chip, and hides it again. */
 const inlineToggle = (host: HTMLElement, listing: EmbeddedViewListing, actions: ChipActions, changed: () => void): HTMLButtonElement => {
   const title = listing.envelope.title
+  const { kind } = wording(listing)
   const button = element('button', TOGGLE)
   button.type = 'button'
   button.dataset.inline = ''
@@ -125,8 +132,8 @@ const inlineToggle = (host: HTMLElement, listing: EmbeddedViewListing, actions: 
     // It controls the inline display only while that is in the answer.
     if (shown) button.setAttribute('aria-controls', inlineSlotOf(host).id)
     else button.removeAttribute('aria-controls')
-    button.setAttribute('aria-label', `${shown ? 'Hide' : 'Show'} the live display in this answer: ${title}`)
-    button.title = shown ? 'Hide the live display here' : 'Show the live display here'
+    button.setAttribute('aria-label', `${shown ? 'Hide' : 'Show'} the ${kind} in this answer: ${title}`)
+    button.title = `${shown ? 'Hide' : 'Show'} the ${kind} here`
     const glyph = icon(shown ? 'eye-off' : 'eye', { size: 16 })
     glyph.setAttribute('aria-hidden', 'true')
     button.replaceChildren(glyph)
@@ -249,7 +256,7 @@ export const showPreparing = (host: HTMLElement): void => {
   const chip = element('button', `${CHIP} max-w-[520px] cursor-wait`)
   chip.type = 'button'
   chip.disabled = true
-  chip.append(leadingIcon('loader-circle', 'text-text-muted animate-spin'), lines('Preparing display…', SUBTITLE, { titleTooltip: false, wrapSubtitle: false }))
+  chip.append(leadingIcon('loader-circle', 'text-text-muted animate-spin'), lines('Preparing display…', 'Reading the published view…', { titleTooltip: false, wrapSubtitle: false }))
   chipListings.delete(host)
   chipCards.delete(host)
   dropInline(host)
@@ -258,9 +265,10 @@ export const showPreparing = (host: HTMLElement): void => {
 
 export const showAvailable = (host: HTMLElement, listing: EmbeddedViewListing, actions: ChipActions, card = chipCards.get(host), context = chipContexts.get(host) ?? { proposal: false }): void => {
   const title = listing.envelope.title
+  const { kind, subtitle } = wording(listing)
   const opener = (button: HTMLButtonElement): HTMLButtonElement => {
     button.type = 'button'
-    button.setAttribute('aria-label', `Open live display in the display window: ${title}`)
+    button.setAttribute('aria-label', `Open ${kind} in the display window: ${title}`)
     button.onclick = event => {
       event.stopPropagation()
       actions.open(listing)
@@ -273,7 +281,7 @@ export const showAvailable = (host: HTMLElement, listing: EmbeddedViewListing, a
     chip: () => {
       const chip = opener(element('button', `${CHIP} ${INTERACTIVE}`))
       const refused = card !== undefined && 'refused' in card ? card.refused : undefined
-      chip.append(leadingIcon('monitor-cog', 'text-accent'), lines(title, refused === undefined ? SUBTITLE : `${SUBTITLE} · ${refused}`, { titleTooltip: true, wrapSubtitle: false }),
+      chip.append(leadingIcon('monitor-cog', 'text-accent'), lines(title, refused === undefined ? subtitle : `${subtitle} · ${refused}`, { titleTooltip: true, wrapSubtitle: false }),
         element('span', 'shrink-0 text-xs font-medium text-accent', 'Open'))
       return chip
     },
@@ -291,11 +299,13 @@ export const showRefused = (host: HTMLElement, code: string, message: string): v
 /** Outside the Host no window shows displays: link to the Workspace page with this room; Inline still shows the display here. */
 export const showUnhosted = (host: HTMLElement, listing: EmbeddedViewListing, href: string, actions: ChipActions, card?: ChipCard, context: ChipContext = { proposal: false }): void => {
   const title = listing.envelope.title
+  const { kind, subtitle } = wording(listing)
+  const destinationText = kind === 'live display' ? 'Process displays open in the Leitbild workspace' : `${subtitle} · open in the Leitbild workspace`
   const link = (className: string): HTMLAnchorElement => {
     const anchor = element('a', className)
     anchor.href = href
     anchor.target = '_top'
-    anchor.setAttribute('aria-label', `Open live display in the workspace: ${title}`)
+    anchor.setAttribute('aria-label', `Open ${kind} in the workspace: ${title}`)
     return anchor
   }
   offer(host, 'unhosted', listing, actions, card, context, {
@@ -305,7 +315,7 @@ export const showUnhosted = (host: HTMLElement, listing: EmbeddedViewListing, hr
       const refused = card !== undefined && 'refused' in card ? card.refused : undefined
       const action = element('span', 'shrink-0 inline-flex items-center gap-1 text-xs font-medium text-accent')
       action.append('Open workspace', icon('external-link', { size: 14 }))
-      chip.append(leadingIcon('monitor-cog', 'text-accent'), lines(title, refused === undefined ? 'Process displays open in the Leitbild workspace' : refused, { titleTooltip: true, wrapSubtitle: false }), action)
+      chip.append(leadingIcon('monitor-cog', 'text-accent'), lines(title, refused === undefined ? destinationText : refused, { titleTooltip: true, wrapSubtitle: false }), action)
       return chip
     },
   })

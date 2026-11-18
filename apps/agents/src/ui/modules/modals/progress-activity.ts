@@ -1,6 +1,6 @@
 import type { ExecutionInspection, JourneyEvent } from './execution-journey.ts'
 import type { ExecutionCall } from '../../../core/executions/store.ts'
-import { checkViewEnvelope } from '../../../core/render-validators/view-fence.ts'
+import { checkViewEnvelope, trustedEngineeringViewEntry } from '../../../core/render-validators/view-fence.ts'
 
 export interface ProgressActivity {
   readonly content: string
@@ -35,11 +35,15 @@ export interface RecordedOperation {
   readonly input: unknown
   readonly target?: unknown
   readonly result?: Record<string, unknown>
+  /** Set only after validating the two built-ins, never copied from tool data. */
+  readonly engineeringPublication?: true
 }
 
 /** Agents owns the workspace_call envelope; the owning Module's result stays
  * opaque. An accepted command is not reclassified as physical success. */
 export const recordedOperations = (call: ExecutionCall): ReadonlyArray<RecordedOperation> => {
+  const engineering = trustedEngineeringViewEntry(call)
+  if (engineering !== null) return [{ key: engineering.key, operationId: call.tool, input: call.arguments, result: engineering, engineeringPublication: true }]
   if (call.tool !== 'workspace_call') return []
   const args = object(call.arguments)
   if (!Array.isArray(args?.calls)) return []
@@ -60,5 +64,7 @@ export const recordedOperationView = (operation: RecordedOperation, workspaceId:
   // A publication is optional. A provided but invalid one remains an explicit
   // refusal, rather than silently hiding why its view could not be opened.
   if (operation.result?.success !== true || operation.result.embeddedView === undefined) return
-  return checkViewEnvelope(operation.result.embeddedView, workspaceId)
+  const checked = checkViewEnvelope(operation.result.embeddedView, workspaceId)
+  if (checked.kind === 'view' && checked.envelope.moduleId === 'agents' && operation.engineeringPublication !== true) return { kind: 'refused', code: 'view_module_not_embeddable', error: 'Only a retained engineering built-in can publish this Room calculation' }
+  return checked
 }

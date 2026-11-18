@@ -2,7 +2,7 @@
   {
     "scenarioId": "halden-offsite-power-restoration",
     "summary": "Follow a guided loss of grid power at four fictional nuclear units, then inspect the evidence and restore their external supply.",
-    "about": "Start paused with a guide that finds Unit 1, opens its live display and offers an editable Assistant prompt. Advance two minutes when ready, inspect the actual plant and grid response, then restore offsite power. Choose Explore for direct control. It shows Leitbild connecting plant, grid and guidance based on observations.",
+    "about": "The guide finds Unit 1, opens its live display and offers an editable Assistant prompt. When the fault occurs at two simulation minutes, inspect the plant and grid response and restore offsite power. Choose Explore for direct control. It shows Leitbild connecting plant, grid and guidance based on observations.",
     "tags": [
       "Plant + grid",
       "Paced guide",
@@ -28,9 +28,40 @@
     ]
   },
   {
+    "scenarioId": "nuclear-maintenance-planning",
+    "summary": "Compare two nuclear maintenance schedules and see whether an extra crew meets the return-to-service target.",
+    "about": "Two separate work sites share one maintenance crew while Pump B stays outside the plan’s work scope. Compare checked schedules, ask the Assistant whether work can finish by a chosen time and inspect the pump in World. Then try a reproducible heat-transport calculation with explicit assumptions. It shows Leitbild using plant observations in checked plans and reproducible calculations.",
+    "tags": [
+      "Nuclear plant",
+      "Planning + calculation",
+      "One crew or extra",
+      "Desktop"
+    ],
+    "requiresModules": [
+      "planning"
+    ],
+    "previews": [
+      {
+        "alt": "Nuclear maintenance planning with two crew options, a five-job Gantt schedule and a visible return-to-service target.",
+        "width": 1600,
+        "height": 1000,
+        "sources": [
+          {
+            "file": "nuclear-maintenance-planning-960.a855f367.webp",
+            "width": 960
+          },
+          {
+            "file": "nuclear-maintenance-planning-1600.a93bcb8d.webp",
+            "width": 1600
+          }
+        ]
+      }
+    ]
+  },
+  {
     "scenarioId": "nordland-corridor-security",
     "summary": "Inspect a weakness in northern Norway’s grid, change one independent copy and compare both futures with a paced guide.",
-    "about": "Start paused and inspect the northern grid with the guide. Create an independent copy, make the preventive change in one simulation, then advance both to the same time and compare their actual state. Choose Explore to investigate freely. It shows Leitbild supporting guided what-if comparisons while preserving the original.",
+    "about": "Inspect the northern grid with the guide and pause the clock to prepare the comparison. Create an independent copy, make the preventive change in one simulation, then advance both to the same time and compare their actual state. Choose Explore to investigate freely. It shows Leitbild supporting guided what-if comparisons while preserving the original.",
     "tags": [
       "Power grid",
       "Paced guide",
@@ -57,26 +88,25 @@
   },
   {
     "scenarioId": "halden-emergency",
-    "summary": "Learn a fictional Halden dispatch desk with a paced guide, then send ambulances, patrol cars and fire engines to incoming calls.",
-    "about": "Choose a desk or controller role and use the guide to find calls and dispatch an eligible unit. Shared time starts paused; agree readiness before starting it. Follow the actual unit to arrival, then continue the 30-minute exercise alone or with a colleague. It shows Leitbild configuring roles, units and calls through Einsatz, its general dispatch engine.",
+    "summary": "Send ambulances, patrol cars and fire engines to a steady stream of fictional calls in Halden, by touch or with a mouse.",
+    "about": "Tap or click a waiting call, then Dispatch to send its suggested unit; or tap a unit, then a highlighted target on the map. Calls keep coming for 30 minutes, some at the same moment, and the Dispatch panel lists every call, unit and site. It shows Leitbild configuring units, calls and their words through Einsatz, its general dispatch engine.",
     "tags": [
       "Emergency dispatch",
-      "Paced guide",
-      "1–2 players",
+      "30 min",
       "iPad or desktop"
     ],
     "previews": [
       {
-        "alt": "Halden’s paused ambulance desk with the waiting call, eligible units and a dispatch guide.",
+        "alt": "Halden, paused: ambulance A2 open in the Dispatch panel above the calls ranked by priority, and two waiting calls on the map.",
         "width": 1600,
         "height": 1000,
         "sources": [
           {
-            "file": "halden-emergency-960.ae87f6da.webp",
+            "file": "halden-emergency-960.9990aa8a.webp",
             "width": 960
           },
           {
-            "file": "halden-emergency-1600.1092df44.webp",
+            "file": "halden-emergency-1600.338cbeb1.webp",
             "width": 1600
           }
         ]

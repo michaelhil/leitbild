@@ -107,9 +107,10 @@ describe('World featured Scenarios', () => {
     for (const featured of builtinFeaturedScenarioDefinitions.definitions) expect(bundledIds.has(featured.definition.id)).toBe(true)
   })
 
-  test('features the three curated demos in order, each titled by its bundled Scenario', () => {
+  test('features the curated demos in order, each titled by its bundled Scenario', () => {
     expect(builtinFeaturedScenarioDefinitions.definitions.map(featured => featured.definition.id)).toEqual([
       'halden-offsite-power-restoration',
+      'nuclear-maintenance-planning',
       'nordland-corridor-security',
       'halden-emergency',
     ] as never)
@@ -118,6 +119,8 @@ describe('World featured Scenarios', () => {
       expect(featured.definition).toEqual({ moduleId: 'world', type: 'world.scenario', id: scenario.id } as never)
       expect(featured.title).toBe(scenario.title)
     }
+    const planningDemo = builtinFeaturedScenarioDefinitions.definitions.find(({ definition }) => definition.id === 'nuclear-maintenance-planning')!
+    expect(planningDemo.requiresModules?.map(String)).toEqual(['planning'])
   })
 
   test('keeps each demo\'s copy short, plain and free of banned phrases', () => {
@@ -177,12 +180,14 @@ describe('World featured Scenarios', () => {
   test('lists the other Scenarios beside the demos in order, each titled by its bundled Scenario', () => {
     const featuredIds = new Set(builtinFeaturedScenarioDefinitions.definitions.map(featured => String(featured.definition.id)))
     expect(builtinFeaturedScenarioDefinitions.listed.map(listed => listed.definition.id)).toEqual([
+      'halden-delivery-planning',
       'halden-normal-operation',
       'nordic-frequency-event',
       'supply-run',
       'halden-rhr-cooling-chain',
       'halden-cold-leg-recirculation',
     ] as never)
+    expect(builtinFeaturedScenarioDefinitions.listed.find(listed => listed.definition.id === 'halden-delivery-planning')?.requiresModules?.map(String)).toEqual(['planning'])
     for (const listed of builtinFeaturedScenarioDefinitions.listed) {
       const scenario = builtinScenarioDefinitions.find(candidate => candidate.id === listed.definition.id)!
       expect(listed.definition).toEqual({ moduleId: 'world', type: 'world.scenario', id: scenario.id } as never)

@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test'
-import { newWorkspaceId, type WorkspaceResourceReference } from '@leitbild/contracts'
+import { embeddedViewListingSchema, newWorkspaceId, type EmbeddedViewListing, type WorkspaceResourceReference } from '@leitbild/contracts'
 import { createViewRelay, PENDING_VIEW_OPEN_MS, type WorldPane } from '../src/ui/view-relay.ts'
 
 const workspaceId = newWorkspaceId()
@@ -17,7 +17,19 @@ const listing = (key: string, runId = 'run-1', inWorkspace: string = workspaceId
   caption: 'Answer 14:02:31',
 })
 const views = (...listings: ReadonlyArray<ReturnType<typeof listing>>) => ({ type: 'leitbild:views', views: listings })
-const open = (view: ReturnType<typeof listing>) => ({ type: 'leitbild:view-open', view })
+const open = <T>(view: T) => ({ type: 'leitbild:view-open', view })
+const calculation = (inWorkspace: string = workspaceId) => embeddedViewListingSchema.parse({
+  key: 'calculation-result',
+  envelope: {
+    moduleId: 'agents',
+    viewType: 'engineering.result',
+    subject: { workspaceId: inWorkspace, moduleId: 'agents', type: 'agents.room', id: 'research-room' },
+    title: 'Thermal investigation',
+    height: 650,
+    state: JSON.stringify({ roomId: 'research-room', turnId: 'retained-turn', toolCallId: 'retained-call' }),
+  },
+  caption: 'Answer 14:02:31',
+})
 const ready = { type: 'leitbild:view-window-ready' }
 
 // Lets the relay's asynchronous Run check settle.
@@ -34,6 +46,7 @@ const harness = (options: { pane?: WorldPane; runs?: ReadonlyArray<string>; refu
     maximised: [] as boolean[],
     timers: [] as Array<{ readonly ms: number; readonly expire: () => void; cancelled: boolean }>,
     runChecks: 0,
+    owned: null as EmbeddedViewListing | null,
   }
   const runs = new Set(options.runs ?? [])
   const relay = createViewRelay({
@@ -49,6 +62,7 @@ const harness = (options: { pane?: WorldPane; runs?: ReadonlyArray<string>; refu
     showWorld: () => { state.shownWorld += 1; state.pane = 'shown' },
     maximiseWorld: maximised => { state.maximised.push(maximised) },
     openRun: runId => { state.openedRuns.push(runId); state.pane = 'shown' },
+    openOwnedView: view => { state.owned = view },
     reportError: message => { state.errors.push(message) },
     startTimer: (ms, expire) => {
       const timer = { ms, expire, cancelled: false }
@@ -61,6 +75,96 @@ const harness = (options: { pane?: WorldPane; runs?: ReadonlyArray<string>; refu
 }
 
 describe('process display relay', () => {
+  test.each(['absent', 'collapsed', 'shown'] as const)('a Room-owned calculation opens its owner view with the World pane %s, without selecting a Run', pane => {
+    const { relay, state, liveTimers } = harness({ pane })
+    const received = calculation()
+    relay.fromAgents(open(received))
+    expect(state.owned).toEqual(received)
+    expect(state.owned).not.toBe(received)
+    expect(state.owned?.envelope.state).toBe(received.envelope.state)
+    expect(state.runChecks).toBe(0)
+    expect(state.openedRuns).toEqual([])
+    expect(state.pane).toBe(pane)
+    expect(state.shownWorld).toBe(0)
+    expect(state.world).toEqual([])
+    expect(liveTimers()).toEqual([])
+    expect(state.errors).toEqual([])
+  })
+
+  test('owner-view opening preserves opaque state and refuses foreign or malformed envelopes before framing them', () => {
+    const { relay, state } = harness({ pane: 'absent' })
+    const received = calculation()
+    received.envelope.state = 'owner-defined state, not Host JSON'
+    relay.fromAgents(open(received))
+    expect(state.owned?.envelope.state).toBe(received.envelope.state)
+    relay.fromAgents(open(calculation(newWorkspaceId())))
+    relay.fromAgents(open({ ...received, envelope: { ...received.envelope, moduleId: 'world' } }))
+    expect(state.owned).toEqual(received)
+    expect(state.errors).toEqual([
+      'Display could not be opened: it belongs to another Workspace',
+      expect.stringContaining('An embedded view subject must belong to the publishing Module'),
+    ])
+    expect(state.runChecks).toBe(0)
+  })
+
+  test('opening an owner view supersedes both a pending World delivery and an asynchronous Run admission', async () => {
+    const waiting = harness()
+    waiting.relay.fromAgents(open(listing('old')))
+    expect(waiting.liveTimers()).toHaveLength(1)
+    waiting.relay.fromAgents(open(calculation()))
+    expect(waiting.liveTimers()).toEqual([])
+    waiting.relay.fromWorld(ready)
+    expect(waiting.state.world).toEqual([views()])
+    expect(waiting.state.owned).toEqual(calculation())
+
+    const checking = harness({ pane: 'absent', runs: ['run-2'] })
+    checking.relay.fromAgents(open(listing('old', 'run-2')))
+    checking.relay.fromAgents(open(calculation()))
+    await settle()
+    expect(checking.state.openedRuns).toEqual([])
+    expect(checking.state.owned).toEqual(calculation())
+    expect(checking.liveTimers()).toEqual([])
+
+    const refusing = harness({ pane: 'absent', refusal: 'Old Run is outside this Room' })
+    refusing.relay.fromAgents(open(listing('old', 'run-2')))
+    refusing.relay.fromAgents(open(calculation()))
+    await settle()
+    expect(refusing.state.errors).toEqual([])
+    expect(refusing.state.owned).toEqual(calculation())
+  })
+
+  test('a later World open closes the owner view and follows the existing Run admission and ready handshake', async () => {
+    const { relay, state } = harness({ pane: 'absent', runs: ['run-2'] })
+    relay.fromAgents(open(calculation()))
+    relay.fromAgents(open(listing('world', 'run-2')))
+    await settle()
+    expect(state.owned).toBeNull()
+    expect(state.openedRuns).toEqual(['run-2'])
+    expect(state.runChecks).toBe(1)
+    relay.fromWorld(ready)
+    expect(state.world.at(-1)).toEqual(open(listing('world', 'run-2')))
+  })
+
+  test.each(['agentsFrameUnloaded', 'agentsFrameLoaded', 'dispose'] as const)('%s closes an owner view and prevents an older Run check from reopening its old context', async lifecycle => {
+    const { relay, state, liveTimers } = harness({ pane: 'absent', runs: ['run-2'] })
+    relay.fromAgents(open(calculation()))
+    relay[lifecycle]()
+    expect(state.owned).toBeNull()
+    relay.fromAgents(open(listing('old', 'run-2')))
+    relay[lifecycle]()
+    await settle()
+    expect(state.openedRuns).toEqual([])
+    expect(liveTimers()).toEqual([])
+
+    const waiting = harness()
+    waiting.relay.fromAgents(open(listing('old')))
+    expect(waiting.liveTimers()).toHaveLength(1)
+    waiting.relay[lifecycle]()
+    expect(waiting.liveTimers()).toEqual([])
+    waiting.relay.fromWorld(ready)
+    expect(waiting.state.world).toEqual([views()])
+  })
+
   test('keeps the latest Agents list and relays it once World listens, and again on every ready', () => {
     const { relay, state } = harness()
     relay.fromAgents(views(listing('a')))

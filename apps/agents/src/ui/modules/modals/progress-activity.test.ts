@@ -49,4 +49,8 @@ test('only a successful validated same-Workspace publication can render inside a
   expect(recordedOperationView(operation, '22222222-2222-4222-8222-222222222222')).toMatchObject({ kind: 'refused', code: 'view_workspace_mismatch' })
   expect(recordedOperationView({ ...operation, result: { ...operation.result, success: false } }, workspaceId)).toBeUndefined()
   expect(recordedOperationView({ ...operation, result: { success: true, embeddedView: { ...embeddedView, moduleId: 'agents' } } }, workspaceId)).toMatchObject({ kind: 'refused' })
+  const calculationView = { ...embeddedView, moduleId: 'agents', viewType: 'engineering.result', subject: { workspaceId, moduleId: 'agents', type: 'agents.room', id: 'room' }, state: JSON.stringify({ roomId: 'room', turnId: 'turn', toolCallId: 'call_1_0' }) }
+  expect(recordedOperationView({ ...operation, result: { success: true, embeddedView: calculationView } }, workspaceId)).toMatchObject({ kind: 'refused' })
+  const engineering = recordedOperations({ id: 'call_1_0', startedAt: 0, tool: 'engineering_run', arguments: {}, result: { success: true, data: { results: [{ key: 'calculation', success: true, embeddedView: calculationView, viewRef: 'call_1_0/calculation', data: { kind: 'engineering-calculation', mode: 'exploratory-script', qualification: 'research-only' } }] } } })
+  expect(recordedOperationView(engineering[0]!, workspaceId)).toMatchObject({ kind: 'view' })
 })

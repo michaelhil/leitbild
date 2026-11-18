@@ -14,7 +14,7 @@ import type { RoutingAdapter } from '../src/routing/protocol.ts'
 import { createRoleRunWorkspaces, roleRunPacks } from './fixtures/role-runs.ts'
 
 /**
- * Einsatz as production registers it, beside Ambulance: the application
+ * Einsatz as production registers it: the application
  * assembly hands it the same routing every road Pack gets, a routing outage
  * reaches the caller as a refusal and never as a straight line, and a Run
  * whose Definition declares only a Controller and groups publishes its roles
@@ -46,7 +46,7 @@ const groupsOnlyDefinition = {
   ...definitionOf(groupItems, undefined, {
     roles: [{ id: 'control', label: 'Control', class: 'controller', sees: 'all' }],
     sides: groupSides,
-    config: { ...groupConfig, authority: [] },
+    config: groupConfig,
   }),
   id: 'einsatz-groups-only',
 }
@@ -87,24 +87,22 @@ const createRun = async (workspaces: WorldWorkspaceRuntimeRegistry, workspaceId:
   await workspaces.withRuntime(workspaceId, async runtime => (await runtime.simulationRuns.create({ scenarioId })).id)
 
 describe('Einsatz registered in the World application assembly', () => {
-  test('it stands beside Ambulance, which stays registered', () => {
+  test('it is registered with its runtime adapter', () => {
     const assembly = createWorldApplicationAssembly({ routing: offlineRouting().routing })
-    const ids = assembly.packs.map(pack => pack.descriptor.id)
-    expect(ids).toContain('ambulance')
-    expect(ids).toContain(einsatzPackId)
-    expect(assembly.runtimeAdapters.map(adapter => String(adapter.id))).toEqual(expect.arrayContaining(['ambulance.local', einsatzRuntimeId]))
+    expect(assembly.packs.map(pack => pack.descriptor.id)).toContain(einsatzPackId)
+    expect(assembly.runtimeAdapters.map(adapter => String(adapter.id))).toContain(einsatzRuntimeId)
   })
 
   test('a road send goes to the assembly\'s router, and an outage is refused routing_unavailable, never sent in a straight line', async () => {
     const { routing, calls } = offlineRouting()
     const { workspaces, workspaceId } = await setup(routing)
     const run = await createRun(workspaces, workspaceId, openDefinition.id)
-    const sent = await invoke<unknown>(workspaces, workspaceId, run, einsatzCommandIds.send, { units: ['c1'], to: { taskId: 'low1' } })
-    expect(sent).toEqual({ status: 409, body: { error: { code: 'simulation_command_rejected', message: 'routing_unavailable: No route for C1: Router offline' } } })
+    const sent = await invoke<unknown>(workspaces, workspaceId, run, einsatzCommandIds.order, { units: ['c1'], stops: [{ taskId: 'low1' }] })
+    expect(sent).toEqual({ status: 409, body: { error: { code: 'routing_unavailable', message: 'routing_unavailable: No route for C1: Router offline' } } })
     expect(calls.route).toBe(1)
-    const recommended = await invoke<{ result: { proposal: { units: ReadonlyArray<{ unitId: string; eta: { kind: string; reason?: string } }> } } }>(workspaces, workspaceId, run, einsatzQueryIds.recommend, { taskId: 'low1' })
+    const recommended = await invoke<{ result: { proposal: { units: ReadonlyArray<{ unitId: string; eta: { kind: string; reason?: string } }> } | null } }>(workspaces, workspaceId, run, einsatzQueryIds.recommend, { taskId: 'low1' })
     expect(recommended.status).toBe(200)
-    expect(recommended.body.result.proposal.units).toMatchObject([{ unitId: 'c1', eta: { kind: 'unavailable', reason: 'routing_unavailable: ETA unavailable: Router offline' } }])
+    expect(recommended.body.result.proposal?.units).toMatchObject([{ unitId: 'c1', eta: { kind: 'unavailable', reason: 'routing_unavailable: ETA unavailable: Router offline' } }])
     expect(calls.table).toBe(1)
   })
 

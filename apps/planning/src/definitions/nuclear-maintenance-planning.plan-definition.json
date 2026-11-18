@@ -1,0 +1,427 @@
+{
+  "id": "nuclear-maintenance-planning",
+  "title": "Plan: A cooling train maintenance window",
+  "description": "Compare one maintenance crew with an extra crew on two separate A-train work sites. World supplies current pump readings; work scope, durations, crew qualifications, target and cost are illustrative planning assumptions. Pump B is protected. Planning never changes the plant.",
+  "inputs": {
+    "settings": {
+      "title": "A cooling train maintenance window",
+      "purpose": "Compare the return time and extra crew cost for the A cooling train while protecting Pump B.",
+      "timeZone": "Europe/Oslo",
+      "window": {
+        "start": "2026-11-18T08:00:00Z",
+        "end": "2026-11-18T20:00:00Z"
+      },
+      "dataDate": "2026-11-18T08:00:00Z",
+      "grid": "30min",
+      "currency": "NOK",
+      "run": null,
+      "scenario": {
+        "id": "nuclear-maintenance-planning",
+        "title": "Nuclear planning: a pump maintenance window"
+      }
+    },
+    "equipment": [
+      {
+        "key": "CCWA",
+        "label": "Cooling Water Pump A",
+        "supportedBy": [],
+        "source": {
+          "by": "planner",
+          "note": "Reference model equipment; A is the train selected for this authored work window."
+        },
+        "locator": "process-plant/plant%3Amaintenance/componentCoolingWaterPumpA",
+        "function": "component-cooling"
+      },
+      {
+        "key": "CCWHXA",
+        "label": "Cooling Heat Exchanger A",
+        "supportedBy": [],
+        "source": {
+          "by": "planner",
+          "note": "Reference model equipment; Planning declares its work and isolation scope because World planning facts cover pumps only."
+        }
+      },
+      {
+        "key": "CCWB",
+        "label": "Cooling Water Pump B",
+        "supportedBy": [],
+        "source": {
+          "by": "planner",
+          "note": "Reference model equipment; B is protected from all work in this plan. A running reading does not establish operability or cooling adequacy."
+        },
+        "locator": "process-plant/plant%3Amaintenance/componentCoolingWaterPumpB",
+        "function": "component-cooling"
+      }
+    ],
+    "groups": [],
+    "calendars": [
+      {
+        "key": "window",
+        "label": "09:00\u201321:00 work window",
+        "weekly": [],
+        "periods": [
+          {
+            "start": "2026-11-18T08:00:00Z",
+            "end": "2026-11-18T20:00:00Z"
+          }
+        ],
+        "except": [],
+        "source": {
+          "by": "assumption",
+          "note": "Illustrative work-planning inputs for this fictional exercise; not a plant procedure or measured work duration."
+        }
+      },
+      {
+        "key": "unbooked",
+        "label": "Not booked",
+        "weekly": [],
+        "periods": [],
+        "except": [],
+        "source": {
+          "by": "assumption",
+          "note": "Illustrative work-planning inputs for this fictional exercise; not a plant procedure or measured work duration."
+        }
+      }
+    ],
+    "resources": [
+      {
+        "key": "station-crew",
+        "label": "Station maintenance crew",
+        "kind": "crew",
+        "count": 1,
+        "calendar": "window",
+        "attributes": [],
+        "words": "One qualified mechanical crew. May work on either of the two separate A-train work sites.",
+        "source": {
+          "by": "assumption",
+          "note": "Illustrative work-planning inputs for this fictional exercise; not a plant procedure or measured work duration."
+        }
+      },
+      {
+        "key": "extra-crew",
+        "label": "Additional maintenance crew",
+        "kind": "crew",
+        "count": 1,
+        "calendar": "unbooked",
+        "attributes": [],
+        "words": "One additional equally qualified mechanical crew, available only when purchased.",
+        "source": {
+          "by": "assumption",
+          "note": "Illustrative work-planning inputs for this fictional exercise; not a plant procedure or measured work duration."
+        }
+      },
+      {
+        "key": "work-control",
+        "label": "Work-control operator",
+        "kind": "crew",
+        "count": 1,
+        "calendar": "window",
+        "attributes": [],
+        "words": "Carries out the authored isolation and restoration work; no plant controls are changed.",
+        "source": {
+          "by": "assumption",
+          "note": "Illustrative work-planning inputs for this fictional exercise; not a plant procedure or measured work duration."
+        }
+      },
+      {
+        "key": "inspector",
+        "label": "Independent inspector",
+        "kind": "crew",
+        "count": 1,
+        "calendar": "window",
+        "attributes": [],
+        "words": "Independent final inspection after both work fronts are complete.",
+        "source": {
+          "by": "assumption",
+          "note": "Illustrative work-planning inputs for this fictional exercise; not a plant procedure or measured work duration."
+        }
+      }
+    ],
+    "purchases": [
+      {
+        "key": "extra-maintenance-crew",
+        "label": "Additional qualified maintenance crew",
+        "resource": "extra-crew",
+        "adds": {
+          "periods": [
+            {
+              "start": "2026-11-18T08:00:00Z",
+              "end": "2026-11-18T20:00:00Z"
+            }
+          ]
+        },
+        "replaces": [],
+        "price": {
+          "once": 12000
+        },
+        "allowed": true
+      }
+    ],
+    "methods": [],
+    "jobs": [
+      {
+        "key": "isolate",
+        "title": "Isolate Pump A and Heat Exchanger A",
+        "kind": "tag-out",
+        "equipment": [
+          "CCWA",
+          "CCWHXA"
+        ],
+        "isolation": "none",
+        "duration": {
+          "value": 1,
+          "unit": "h",
+          "calendar": "working",
+          "origin": {
+            "by": "assumption",
+            "note": "Illustrative work-planning inputs for this fictional exercise; not a plant procedure or measured work duration."
+          }
+        },
+        "durationWith": [],
+        "needs": [
+          {
+            "anyOf": [
+              "work-control"
+            ],
+            "amount": 1,
+            "handover": false
+          }
+        ],
+        "continuous": true,
+        "checks": [
+          {
+            "equipment": "CCWB",
+            "fact": "plant:maintenance/componentCoolingWaterPumpB/runningState",
+            "expect": true,
+            "words": "World shows Cooling Water Pump B running at the source read time."
+          }
+        ],
+        "tags": []
+      },
+      {
+        "key": "pump-work",
+        "title": "Inspect and service Pump A",
+        "kind": "work",
+        "equipment": [
+          "CCWA"
+        ],
+        "isolation": "inside",
+        "duration": {
+          "value": 4,
+          "unit": "h",
+          "calendar": "working",
+          "origin": {
+            "by": "assumption",
+            "note": "Illustrative work-planning inputs for this fictional exercise; not a plant procedure or measured work duration."
+          }
+        },
+        "durationWith": [],
+        "needs": [
+          {
+            "anyOf": [
+              "station-crew",
+              "extra-crew"
+            ],
+            "amount": 1,
+            "handover": false
+          }
+        ],
+        "continuous": true,
+        "checks": [],
+        "tags": []
+      },
+      {
+        "key": "hx-work",
+        "title": "Inspect and clean Heat Exchanger A",
+        "kind": "work",
+        "equipment": [
+          "CCWHXA"
+        ],
+        "isolation": "inside",
+        "duration": {
+          "value": 3,
+          "unit": "h",
+          "calendar": "working",
+          "origin": {
+            "by": "assumption",
+            "note": "Illustrative work-planning inputs for this fictional exercise; not a plant procedure or measured work duration."
+          }
+        },
+        "durationWith": [],
+        "needs": [
+          {
+            "anyOf": [
+              "station-crew",
+              "extra-crew"
+            ],
+            "amount": 1,
+            "handover": false
+          }
+        ],
+        "continuous": true,
+        "checks": [],
+        "tags": []
+      },
+      {
+        "key": "inspect",
+        "title": "Independent final inspection",
+        "kind": "work",
+        "equipment": [],
+        "isolation": "none",
+        "duration": {
+          "value": 1,
+          "unit": "h",
+          "calendar": "working",
+          "origin": {
+            "by": "assumption",
+            "note": "Illustrative work-planning inputs for this fictional exercise; not a plant procedure or measured work duration."
+          }
+        },
+        "durationWith": [],
+        "needs": [
+          {
+            "anyOf": [
+              "inspector"
+            ],
+            "amount": 1,
+            "handover": false
+          }
+        ],
+        "continuous": true,
+        "checks": [],
+        "tags": []
+      },
+      {
+        "key": "restore",
+        "title": "Restore and test the A cooling train",
+        "kind": "test",
+        "equipment": [
+          "CCWA",
+          "CCWHXA"
+        ],
+        "isolation": "none",
+        "duration": {
+          "value": 1,
+          "unit": "h",
+          "calendar": "working",
+          "origin": {
+            "by": "assumption",
+            "note": "Illustrative work-planning inputs for this fictional exercise; not a plant procedure or measured work duration."
+          }
+        },
+        "durationWith": [],
+        "needs": [
+          {
+            "anyOf": [
+              "work-control"
+            ],
+            "amount": 1,
+            "handover": false
+          }
+        ],
+        "continuous": true,
+        "checks": [],
+        "tags": [
+          "return-to-service"
+        ],
+        "target": {
+          "finishBy": "2026-11-18T16:00:00Z",
+          "words": "The planner targets return to service by 17:00; the hard window ends at 21:00."
+        }
+      }
+    ],
+    "links": [
+      {
+        "from": "isolate",
+        "to": "pump-work",
+        "type": "FS",
+        "lag": {
+          "value": 0,
+          "unit": "h"
+        }
+      },
+      {
+        "from": "isolate",
+        "to": "hx-work",
+        "type": "FS",
+        "lag": {
+          "value": 0,
+          "unit": "h"
+        }
+      },
+      {
+        "from": "pump-work",
+        "to": "inspect",
+        "type": "FS",
+        "lag": {
+          "value": 0,
+          "unit": "h"
+        }
+      },
+      {
+        "from": "hx-work",
+        "to": "inspect",
+        "type": "FS",
+        "lag": {
+          "value": 0,
+          "unit": "h"
+        }
+      },
+      {
+        "from": "inspect",
+        "to": "restore",
+        "type": "FS",
+        "lag": {
+          "value": 0,
+          "unit": "h"
+        }
+      }
+    ],
+    "rules": [
+      {
+        "kind": "protected",
+        "key": "protect-B",
+        "equipment": [
+          "CCWB"
+        ],
+        "words": "Pump B is protected: this plan contains no isolation, work or testing on it.",
+        "source": {
+          "by": "planner",
+          "note": "Declared protection for this fictional work window; no claim of plant licensing compliance."
+        }
+      }
+    ],
+    "goals": [
+      {
+        "metric": "lateness",
+        "scope": {
+          "tags": [
+            "return-to-service"
+          ]
+        },
+        "tolerance": {
+          "value": 0,
+          "unit": "h"
+        }
+      },
+      {
+        "metric": "extra-cost",
+        "tolerance": {
+          "value": 0,
+          "unit": "NOK"
+        }
+      },
+      {
+        "metric": "finish",
+        "tolerance": {
+          "value": 0,
+          "unit": "h"
+        }
+      }
+    ],
+    "world": {
+      "refreshedAt": null,
+      "facts": []
+    }
+  }
+}

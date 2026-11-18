@@ -21,6 +21,11 @@ branches carry source positions for display; `step.branches` remains in source
 branch order because its index is used by persisted World transition commands.
 Fenced examples are literal text blocks with no operational tag references.
 
+`«TAG op value»` at the end of a Check, Expected or When line, or on a branch
+line, compiles into a comparison leaf of the branch it tests; `check-document.ts`
+checks a document's words against its limits and prints the table a person reads
+once. `### Foldout` in the preamble becomes the `foldout` field.
+
 Tests freeze the 39-document PWR corpus and its previous branch-index meanings;
 see [fixture provenance](fixtures/README.md). A matching format or plant label
 does not establish applicability to a live simulation or certify its readings.

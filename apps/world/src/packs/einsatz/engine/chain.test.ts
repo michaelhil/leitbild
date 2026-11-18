@@ -15,14 +15,14 @@ import { emptyEngineState, type EngineState, type Transition, type UnitRecord } 
 import { engineObjects, readEngineState, runtimeStateOf } from './objects.ts'
 import { sameValue } from './values.ts'
 
-const queue = (unitId: string, to: StepTarget): Intent => ({ kind: 'queue', unitId, to })
-const remove = (unitId: string, stepId: string): Intent => ({ kind: 'step.remove', unitId, stepId })
+const queue = (unitId: string, to: StepTarget): Intent => ({ kind: 'order', units: [unitId], stops: [to], when: 'after' })
+const remove = (unitId: string, stepId: string): Intent => ({ kind: 'stop.remove', unitId, stopId: stepId })
 const unitTransitions = (transitions: ReadonlyArray<Transition>, id: string): UnitRecord[] =>
   transitions.flatMap(entry => entry.kind === 'unit' && entry.record.id === id ? [entry.record] : [])
 const stepsOf = (unit: UnitRecord) => unit.orders.map(step => [step.id, step.kind, step.state] as const)
 const objectsOf = (state: EngineState) => engineObjects(state, () => ({ at: new Date(state.timeMs).toISOString() as IsoTimestamp, provenance: { source: 'simulator' } }))
 
-const sidedSelection = einsatzSidedSelection('chain', { side: 'north', role: 'north-lead' }, { side: 'south', role: 'south-lead' })
+const sidedSelection = einsatzSidedSelection('chain', { side: 'north', crew: 'north-crew' }, { side: 'south', crew: 'south-crew' })
 const sidedTypes = einsatzConfigSchema.parse(sidedSelection.config).unitTypes
 const gunType = sidedTypes.find(type => type.components.effector !== undefined)!
 const scoutType = sidedTypes.find(type => type.components.sensor !== undefined && type.components.effector === undefined && type.components.durability !== undefined)!
@@ -33,7 +33,7 @@ const fixedGun = (() => {
 })()
 const sidedConfig = einsatzConfigSchema.parse({ ...sidedSelection.config, unitTypes: [...sidedTypes, fixedGun] })
 const north = (metres: number): GeoJsonPoint => geoPointFromLonLat(11.2, 59 + metres / 110_540)
-const place = (id: string, type: string, side: string, point: GeoJsonPoint): Intent => ({ kind: 'unit.create', id, type, side, at: point, label: id.toUpperCase() })
+const place = (id: string, type: string, side: string, point: GeoJsonPoint): Intent => ({ kind: 'unit.create', id, type, side, group: `${side}-crew`, at: point, label: id.toUpperCase() })
 const outcome = async (state: EngineState, intent: Intent): Promise<EngineState> => {
   const result = await executeIntent(state, intent, controller, ports)
   if (!result.ok) throw new Error(result.reason)
@@ -61,7 +61,7 @@ describe('Einsatz job chains: steps', () => {
     expect(unitOf(state, 'g1').phase).toBe('holding')
   })
 
-  test('queue on a unit with no step is exactly a send; on a busy unit it waits at the end and counts towards nothing', async () => {
+  test('an order after on a unit with no step is exactly a do-now order; on a busy unit it waits at the end and counts towards nothing', async () => {
     const base = await runAll(emptyState(), [
       newUnit('c1', types.roadCarrier, at(0)),
       newTask('t1', templates.load, at(0.01), { [low]: 1 }),
@@ -77,8 +77,7 @@ describe('Einsatz job chains: steps', () => {
     expect(unitOf(state, 'c1')).toMatchObject({ taskId: 't1', lastAction: { verb: 'queue', target: 't2', stepId: 'step-2', by: 'Controller' } })
     expect(taskOf(state, 't2').coverage.loads).toEqual([{ classId: middle, waiting: 1, covered: 0 }])
     const answer = await recommend({ state, viewer: openViewer, taskId: 't2', routing: createDirectRoutingAdapter() })
-    expect(answer.next).toEqual([{ unitId: 'c1', label: 'C1', stepId: 'step-2', stepsAhead: 1 }])
-    expect(answer.need).toMatchObject({ id: middle })
+    expect(answer.proposal).toBeNull()
   })
 
   test('a deliver order applies only where the chain says nothing: after a pickup with another task next, the unit delivers first', async () => {
@@ -140,7 +139,6 @@ describe('Einsatz job chains: steps', () => {
       queue('g1', { point: at(0.02) }),
     ])
     state = await advance(state, start + 30_000)
-    state = await run(state, { kind: 'hold', unitId: 'g1' })
     const restored = readEngineState({ config, sides: [], objects: objectsOf(state), runtime: runtimeStateOf(state) })
     expect([...restored.units.values()]).toEqual([...state.units.values()])
     const [original, copy] = [await advance(state, start + 600_000), await advance(restored, start + 600_000)]
@@ -213,7 +211,7 @@ describe('Einsatz job chains: rules', () => {
       newTask('t2', templates.load, at(0.006), { [low]: 1 }),
       send(['d1'], { taskId: 't1' }),
     ])
-    expect(await refusalOf(state, queue('d1', { taskId: 't2' }))).toEqual({ code: 'unit_loaded', reason: 'unit_loaded: D1 will have 1 person on board by then; queue a delivery first' })
+    expect(await refusalOf(state, queue('d1', { taskId: 't2' }))).toEqual({ code: 'unit_loaded', reason: 'unit_loaded: D1 will have 1 person on board by then; add a delivery stop first' })
     expect((await refusalOf(state, queue('d1', { point: at(0.02) }))).code).toBe('unit_loaded')
     state = await run(state, queue('d1', { siteId: 's1' }))
     state = await run(state, queue('d1', { taskId: 't2' }))
@@ -241,11 +239,8 @@ describe('Einsatz job chains: rules', () => {
     expect(stepsOf(unitOf(second, 'c2'))).toEqual([['step-1', 'serve', 'active'], ['step-2', 'deliver', 'queued'], ['step-3', 'serve', 'queued']])
     expect((await refusalOf(await run(second, queue('c2', { siteId: 's1' })), queue('c2', { taskId: 'two' }))).code).toBe('requirement_covered')
 
-    state = await run(state, { kind: 'hold', unitId: 'c1' })
     state = await run(state, queue('c1', { point: at(0.02) }))
-    expect(stepsOf(unitOf(state, 'c1'))).toEqual([['step-1', 'serve', 'queued'], ['step-2', 'move', 'queued']])
-    state = await run(state, send(['c1'], { taskId: 'one' }))
-    expect(stepsOf(unitOf(state, 'c1'))).toEqual([['step-3', 'serve', 'active'], ['step-2', 'move', 'queued']])
+    expect(stepsOf(unitOf(state, 'c1'))).toEqual([['step-1', 'serve', 'active'], ['step-2', 'move', 'queued']])
     state = await advance(state, start + 600_000)
     expect(taskOf(state, 'one').closedAtMs).toBeDefined()
     expect(unitOf(state, 'c1').alerts).toEqual([])
@@ -260,7 +255,7 @@ describe('Einsatz job chains: rules', () => {
       queue('c1', { point: at(0.03) }),
     ])
     state = await advance(state, start + 4_000)
-    state = await run(state, send(['c1'], { taskId: 'top1' }, [{ unitId: 'c1', fromTaskId: 'low1' }]))
+    state = await run(state, send(['c1'], { taskId: 'top1' }, 'low1'))
     expect(stepsOf(unitOf(state, 'c1'))).toEqual([['step-3', 'serve', 'active'], ['step-2', 'move', 'queued']])
     expect(unitOf(state, 'c1')).toMatchObject({ taskId: 'top1', lastAction: { verb: 'divert', stepId: 'step-3', cause: 'from LOW1' } })
     expect(taskOf(state, 'low1').alerts).toMatchObject([{ code: 'work_returned' }])
@@ -278,7 +273,7 @@ describe('Einsatz job chains: rules', () => {
     state = await run(state, remove('c1', 'step-2'))
     expect(stepsOf(unitOf(state, 'c1'))).toEqual([['step-1', 'serve', 'active'], ['step-3', 'move', 'queued']])
     expect(unitOf(state, 'c1').lastAction).toMatchObject({ verb: 'remove', stepId: 'step-2' })
-    expect(await refusalOf(state, remove('c1', 'step-2'))).toEqual({ code: 'step_not_found', reason: 'step_not_found: C1 holds no step step-2' })
+    expect(await refusalOf(state, remove('c1', 'step-2'))).toEqual({ code: 'step_not_found', reason: 'step_not_found: C1 holds no stop step-2' })
 
     state = await advance(state, start + 5_000)
     state = await run(state, remove('c1', 'step-1'))
@@ -295,58 +290,18 @@ describe('Einsatz job chains: rules', () => {
     loaded = await advance(loaded, start + 3_000)
     expect(unitOf(loaded, 'd1')).toMatchObject({ phase: 'transporting', load: { [low]: 1 }, orders: [{ id: 'step-2', kind: 'deliver', state: 'active' }] })
     expect((await refusalOf(loaded, remove('d1', 'step-2'))).code).toBe('unit_loaded')
-    expect((await refusalOf(loaded, { kind: 'clear', unitId: 'd1' })).code).toBe('unit_loaded')
+    expect((await refusalOf(loaded, { kind: 'recall', unitId: 'd1' })).code).toBe('unit_loaded')
   })
 
-  test('clear empties the chain and stops the unit, whose return order then applies; recall empties it and brings the unit home', async () => {
-    let state = await runAll(emptyState(), [
-      newUnit('g1', types.pairServer, at(0)),
-      send(['g1'], { point: at(0.01) }),
-      queue('g1', { point: at(0.02) }),
-    ])
-    state = await advance(state, start + 10_000)
-    const cleared = await run(state, { kind: 'clear', unitId: 'g1' })
-    expect(unitOf(cleared, 'g1')).toMatchObject({ phase: 'available', orders: [], lastAction: { verb: 'clear' } })
-    expect(unitOf(cleared, 'g1').leg).toBeUndefined()
-    expect(unitOf(await advance(cleared, start + 41_000), 'g1')).toMatchObject({ phase: 'returning', lastAction: { verb: 'recall', by: 'standing-order:return' } })
-    const recalled = await run(state, { kind: 'recall', unitId: 'g1' })
-    expect(unitOf(recalled, 'g1')).toMatchObject({ phase: 'returning', orders: [] })
-  })
-
-  test('hold pauses the chain where the unit is; resume starts the paused step again from there', async () => {
-    let state = await runAll(emptyState(), [
-      newUnit('g1', types.pairServer, at(0)),
-      send(['g1'], { point: at(0.01) }),
-      queue('g1', { point: at(0.02) }),
-    ])
-    state = await advance(state, start + 10_000)
-    state = await run(state, { kind: 'hold', unitId: 'g1' })
-    const stopped = pointOf(state, 'g1')
-    expect(unitOf(state, 'g1')).toMatchObject({ phase: 'holding', paused: true, orders: [{ id: 'step-1', state: 'queued' }, { id: 'step-2', state: 'queued' }] })
-    state = await run(state, queue('g1', { point: at(0.03) }))
-    state = await advance(state, start + 300_000)
-    expect(pointOf(state, 'g1')).toEqual(stopped)
-    expect(unitOf(state, 'g1').orders).toHaveLength(3)
-    state = await run(state, { kind: 'resume', unitId: 'g1' })
-    expect(unitOf(state, 'g1')).toMatchObject({ phase: 'en-route', orders: [{ id: 'step-1', state: 'active' }, { id: 'step-2' }, { id: 'step-3' }] })
-    expect(unitOf(state, 'g1').paused).toBeUndefined()
-    expect(unitOf(state, 'g1').leg!.geometry.coordinates[0]).toEqual([...stopped.coordinates])
-    state = await advance(state, start + 900_000)
-    expect(pointOf(state, 'g1')).toEqual(at(0.03))
-  })
-
-  test('an actor leaves a chain at most its limit of steps: a queue past it, or a do-now send to a paused full chain, is refused', async () => {
+  test('an actor leaves a plan at most its limit of stops: an order after it is refused, and a do-now order keeps the length', async () => {
     let state = await runAll(emptyState(), [newUnit('g1', types.pairServer, at(0)), send(['g1'], { point: at(0.5) })])
     for (let index = 1; index < 20; index++) state = await run(state, queue('g1', { point: at(0.5, 0.001 * index) }))
     expect(unitOf(state, 'g1').orders).toHaveLength(20)
-    expect(await refusalOf(state, queue('g1', { point: at(0.6) }))).toEqual({ code: 'chain_full', reason: 'chain_full: G1 already holds 20 steps; remove one first' })
+    expect(await refusalOf(state, queue('g1', { point: at(0.6) }))).toEqual({ code: 'chain_full', reason: 'chain_full: G1 already holds 20 stops; remove one first' })
     // A send drops the active step, so the chain keeps its length.
     expect(unitOf(await run(state, send(['g1'], { point: at(0.4) })), 'g1').orders).toHaveLength(20)
-    // Paused, the head waits in the queue and a send would add a step.
-    const held = await run(state, { kind: 'hold', unitId: 'g1' })
-    expect(await refusalOf(held, send(['g1'], { point: at(0.4) }))).toEqual({ code: 'chain_full', reason: 'chain_full: G1 already holds 20 steps; remove one first' })
-    const room = await run(held, remove('g1', 'step-20'))
-    expect(unitOf(await run(room, send(['g1'], { point: at(0.4) })), 'g1').orders).toHaveLength(20)
+    const room = await run(state, remove('g1', 'step-20'))
+    expect(unitOf(await run(room, queue('g1', { point: at(0.4) })), 'g1').orders).toHaveLength(20)
   })
 
   test('a loaded unit whose chain names no delivery delivers first, even in front of a full chain, and a Run restores that chain', async () => {
@@ -358,22 +313,19 @@ describe('Einsatz job chains: rules', () => {
     ])
     state = await advance(state, start + 3_000)
     expect(unitOf(state, 'c1').phase).toBe('on-task')
-    state = await run(state, { kind: 'hold', unitId: 'c1' })
-    state = await advance(state, start + 6_000)
-    expect(unitOf(state, 'c1')).toMatchObject({ phase: 'holding', paused: true, load: { [low]: 1 }, orders: [] })
-    // Its deliver order delivers before any other step, so the queue takes the full limit.
-    for (let index = 1; index <= 20; index++) state = await run(state, queue('c1', { point: at(-0.01, 0.001 * index) }))
+    // Its deliver order delivers before any other stop, so the plan takes the full limit behind the active one.
+    for (let index = 1; index < 20; index++) state = await run(state, queue('c1', { point: at(-0.01, 0.001 * index) }))
     expect((await refusalOf(state, queue('c1', { point: at(-0.02) }))).code).toBe('chain_full')
-    state = await run(state, { kind: 'resume', unitId: 'c1' })
+    state = await advance(state, start + 6_000)
     const carrier = unitOf(state, 'c1')
-    expect(carrier.orders).toHaveLength(21)
+    expect(carrier.orders).toHaveLength(20)
     expect(carrier).toMatchObject({ phase: 'transporting', siteId: 's1' })
-    expect(carrier.orders.slice(0, 2)).toMatchObject([{ id: 'step-22', kind: 'deliver', state: 'active', by: 'standing-order:deliver' }, { id: 'step-2', state: 'queued' }])
-    expect(await refusalOf(state, queue('c1', { point: at(-0.02) }))).toEqual({ code: 'chain_full', reason: 'chain_full: C1 already holds 21 steps; remove one first' })
+    expect(carrier.orders.slice(0, 2)).toMatchObject([{ id: 'step-21', kind: 'deliver', state: 'active', by: 'standing-order:deliver' }, { id: 'step-2', state: 'queued' }])
+    expect(await refusalOf(state, queue('c1', { point: at(-0.02) }))).toEqual({ code: 'chain_full', reason: 'chain_full: C1 already holds 20 stops; remove one first' })
 
     const restored = readEngineState({ config, sides: [], objects: objectsOf(state), runtime: runtimeStateOf(state) })
     expect(unitOf(restored, 'c1')).toEqual(carrier)
-    expect(plannedPaths(objectsOf(state)).find(path => path.unitId === 'c1')!.segments).toHaveLength(20)
+    expect(plannedPaths(objectsOf(state)).find(path => path.unitId === 'c1')!.segments).toHaveLength(19)
     const done = await advance(restored, start + 600_000)
     expect(unitOf(done, 's1').received).toEqual({ [low]: 1 })
     expect(unitOf(done, 'c1').orders.map(step => step.by)).not.toContain('standing-order:deliver')
@@ -445,52 +397,6 @@ describe('Einsatz job chains for any unit', () => {
     expect((await refusalOf(state, send(['c1'], { siteId: 'store' }))).reason).toBe('not_a_site: STORE does not receive load')
   })
 
-  test('Stop, then Resume or Clear, leaves a unit parked at a point there: only the pause held its orders back, and it never had a return to make', async () => {
-    let state = await runAll(emptyState(), [newUnit('g1', types.pairServer, at(0)), send(['g1'], { point: at(0.02) })])
-    state = await advance(state, arrivalAt(state, 'g1'))
-    const parked = unitOf(state, 'g1')
-    expect(parked).toMatchObject({ phase: 'holding', orders: [] })
-    const held = await run(state, { kind: 'hold', unitId: 'g1' })
-    expect(unitOf(held, 'g1')).toMatchObject({ phase: 'holding', paused: true, phaseSinceMs: parked.phaseSinceMs })
-    for (const verb of ['resume', 'clear'] as const) {
-      let after = await run(held, { kind: verb, unitId: 'g1' })
-      expect(unitOf(after, 'g1')).toMatchObject({ phase: 'holding', phaseSinceMs: parked.phaseSinceMs, lastAction: { verb } })
-      expect(unitOf(after, 'g1').paused).toBeUndefined()
-      after = await advance(after, after.timeMs + 600_000)
-      expect(unitOf(after, 'g1')).toMatchObject({ phase: 'holding', lastAction: { verb } })
-      expect(pointOf(after, 'g1')).toEqual(at(0.02))
-    }
-  })
-
-  test('a unit stopped on its way home stands available, paused; resumed, its return order brings it home', async () => {
-    let state = await runAll(emptyState(), [newUnit('g1', types.pairServer, at(0)), send(['g1'], { point: at(0.02) })])
-    state = await advance(state, arrivalAt(state, 'g1'))
-    state = await run(state, { kind: 'recall', unitId: 'g1' })
-    state = await advance(state, state.timeMs + 20_000)
-    state = await run(state, { kind: 'hold', unitId: 'g1' })
-    const stopped = pointOf(state, 'g1')
-    expect(unitOf(state, 'g1')).toMatchObject({ phase: 'available', paused: true, atBase: false, orders: [] })
-    expect(unitOf(state, 'g1').leg).toBeUndefined()
-    state = await advance(state, state.timeMs + 600_000)
-    expect(pointOf(state, 'g1')).toEqual(stopped)
-    // Idle since the hold for longer than its return order waits, it sets off home at once.
-    state = await run(state, { kind: 'resume', unitId: 'g1' })
-    expect(unitOf(state, 'g1')).toMatchObject({ phase: 'returning', lastAction: { verb: 'recall', by: 'standing-order:return' } })
-    state = await advance(state, state.timeMs + 600_000)
-    expect(unitOf(state, 'g1')).toMatchObject({ phase: 'available', atBase: true })
-  })
-
-  test('a move to an observation point, then hold: the unit stays there past its return order', async () => {
-    let state = await runAll(emptyState(), [newUnit('g1', types.pairServer, at(0)), send(['g1'], { point: at(0.02) })])
-    state = await advance(state, arrivalAt(state, 'g1') + 120_000)
-    expect(unitOf(state, 'g1')).toMatchObject({ phase: 'holding', orders: [] })
-    state = await run(state, { kind: 'hold', unitId: 'g1' })
-    state = await run(state, queue('g1', { point: at(0.03) }))
-    state = await advance(state, state.timeMs + 600_000)
-    expect(unitOf(state, 'g1')).toMatchObject({ phase: 'holding', paused: true, orders: [{ id: 'step-2', state: 'queued' }] })
-    expect(pointOf(state, 'g1')).toEqual(at(0.02))
-  })
-
   test('an armed unit moves into range, then engages a track of its side until the kill it watched ends the step', async () => {
     let { state, track } = await sidedField([place('ng', gunType.id, 'north', north(-3_000))])
     // Its weapon reaches the track only in the last 100 m of the move.
@@ -534,14 +440,4 @@ describe('Einsatz job chains for any unit', () => {
     expect(pointOf(state, 'ng')).toEqual(north(-3_100))
   })
 
-  test('a unit that cannot move pauses and resumes the engage steps it holds; holding none, it has nothing to pause', async () => {
-    let { state, track } = await sidedField([place('fx', fixedGun.id, 'north', north(-3_000))])
-    expect(await refusalOf(state, { kind: 'hold', unitId: 'fx' })).toEqual({ code: 'unit_unavailable', reason: 'unit_unavailable: FX cannot move' })
-    state = await outcome(state, send(['fx'], { trackId: track.id }))
-    state = await outcome(state, { kind: 'hold', unitId: 'fx' })
-    expect(unitOf(state, 'fx')).toMatchObject({ phase: 'available', paused: true, engage: track.id, orders: [{ id: 'step-1', kind: 'engage', state: 'active' }] })
-    state = await outcome(state, { kind: 'resume', unitId: 'fx' })
-    expect(unitOf(state, 'fx')).toMatchObject({ phase: 'available', engage: track.id, lastAction: { verb: 'resume' } })
-    expect(unitOf(state, 'fx').paused).toBeUndefined()
-  })
 })

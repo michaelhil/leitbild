@@ -1,15 +1,25 @@
 <script lang="ts">
   import { onDestroy, untrack, tick } from 'svelte'
-  import type { WorkspaceResourceReference, WorkspaceSubjectReference } from '@leitbild/contracts'
+  import type { EmbeddedViewListing, WorkspaceResourceReference, WorkspaceSubjectReference } from '@leitbild/contracts'
+  import { embeddedViewFragment, embeddedViewPath } from '@leitbild/contracts/embedded-view-route'
+  import Modal from './Modal.svelte'
+  import { closeEmbeddedViewOnEscape } from './embedded-view-keyboard.ts'
   import { createViewRelay, type WorldPane } from './view-relay.ts'
   import { createRunAssistantBridge } from './run-assistant-bridge.ts'
   import { createPresentationBridge } from './presentation-bridge.ts'
   import type { RunAssistantResolution } from './run-assistant-opening.ts'
   import { workspaceSubjectFocusMessage } from './workspace-focus.ts'
+  import { isCurrentResourceCatalogChange } from './resource-catalog-message.ts'
 
   interface Props {
     readonly workspaceId: string
     readonly worldRunId: string | null
+    readonly worldFocus?: string | null
+    readonly worldElement?: string | null
+    readonly worldOption?: string | null
+    readonly planningPath?: string | null
+    readonly planningResource?: WorkspaceResourceReference | null
+    readonly onResourceCatalogChange: () => void
     readonly focusedSubjects: ReadonlyArray<WorkspaceSubjectReference>
     readonly agentsRoomId: string | null
     readonly agentsVisible: boolean
@@ -34,7 +44,7 @@
   const minimumOpenShare = 20
 
   let {
-    workspaceId, worldRunId, focusedSubjects, agentsRoomId, agentsVisible, onShowAgents, runRefusal, onOpenRun,
+    workspaceId, worldRunId, worldFocus = null, worldElement = null, worldOption = null, planningPath = null, planningResource = null, onResourceCatalogChange, focusedSubjects, agentsRoomId, agentsVisible, onShowAgents, runRefusal, onOpenRun,
     runAssistantAvailable, onOpenRunAssistant, onError, worldPane = $bindable(null),
   }: Props = $props()
   let splitPercent = $state(initialSplit)
@@ -45,6 +55,16 @@
   let dragWidth = 1
   let agentsFrame = $state<HTMLIFrameElement | null>(null)
   let worldFrame = $state<HTMLIFrameElement | null>(null)
+  let planningFrame = $state<HTMLIFrameElement | null>(null)
+  let ownedView = $state<EmbeddedViewListing | null>(null)
+  let ownedViewOpen = $state(false)
+  const primaryOpen = $derived(planningPath !== null || worldRunId !== null)
+  const worldQuery = $derived(worldFocus === null ? '' : new URLSearchParams({
+    focus: worldFocus,
+    ...(worldElement === null ? {} : { element: worldElement }),
+    ...(worldOption === null ? {} : { option: worldOption }),
+    ...(agentsRoomId === null || !agentsVisible ? {} : { agents: agentsRoomId }),
+  }).toString())
   // The process display window asked for the whole area and the chat was collapsed for it.
   let windowMaximised = $state(false)
 
@@ -61,7 +81,7 @@
   })
 
   const gridColumns = $derived(
-    worldRunId === null
+    !primaryOpen
       ? 'minmax(0, 1fr)'
       : agentsRoomId === null || !agentsVisible
         ? 'minmax(0, 1fr)'
@@ -118,7 +138,7 @@
   // restoring undoes only that collapse.
   const maximiseWorld = (maximised: boolean): void => {
     if (maximised) {
-      if (worldRunId === null || agentsRoomId === null || !agentsVisible || collapsedPane !== null) return
+      if (planningPath !== null || worldRunId === null || agentsRoomId === null || !agentsVisible || collapsedPane !== null) return
       collapsedPane = 'agents'
       windowMaximised = true
       return
@@ -132,13 +152,14 @@
   // proxy cannot be posted to a frame (see workspace-focus.ts).
   const relay = createViewRelay({
     workspaceId: () => workspaceId,
-    worldPane: (): WorldPane => worldRunId === null ? 'absent' : collapsedPane === 'world' ? 'collapsed' : 'shown',
+    worldPane: (): WorldPane => planningPath !== null || worldRunId === null ? 'absent' : collapsedPane === 'world' ? 'collapsed' : 'shown',
     runRefusal: run => runRefusal(run),
     postToWorld: message => worldFrame?.contentWindow?.postMessage(message, location.origin),
     postToAgents: message => agentsFrame?.contentWindow?.postMessage(message, location.origin),
     showWorld: () => restoreSplit(),
     maximiseWorld,
     openRun: runId => onOpenRun(runId),
+    openOwnedView: view => { ownedView = view; ownedViewOpen = view !== null },
     reportError: message => onError(message),
     startTimer: (ms, expire) => {
       const timer = setTimeout(expire, ms)
@@ -189,9 +210,12 @@
   // document (a reload, or the World start page) no longer listens.
   let listeningWorldDocument: Document | null = null
 
-  // Only the two frames' own documents take part in the window's protocol.
+  // Only the active Module frames take part in the window's protocol.
   const receiveViewMessage = (event: MessageEvent): void => {
     if (event.origin !== location.origin || event.source === null) return
+    if (planningPath !== null && isCurrentResourceCatalogChange(event, {
+      origin: location.origin, source: planningFrame?.contentWindow ?? null, resource: planningResource,
+    })) onResourceCatalogChange()
     if (event.source === agentsFrame?.contentWindow) { relay.fromAgents(event.data); presentation.fromAgents(event.data) }
     else if (event.source === worldFrame?.contentWindow) {
       if ((event.data as { readonly type?: unknown } | null)?.type === 'leitbild:view-window-ready') listeningWorldDocument = worldFrame?.contentDocument ?? null
@@ -229,8 +253,9 @@
     untrack(() => assistantBridge.availabilityChanged())
   })
 
-  // Another Room or a closed chat ends the Agents document that listed the displays.
+  // Another Workspace, Room or a closed chat ends the Agents document that listed the displays.
   $effect(() => {
+    workspaceId
     agentsRoomId
     untrack(() => { relay.agentsFrameUnloaded(); presentation.agentsUnloaded() })
   })
@@ -271,21 +296,25 @@
   class:window-maximised={windowMaximised}
   style={`grid-template-columns: ${gridColumns}`}
 >
-  {#if worldRunId !== null}<section bind:this={worldPane} class="module-pane world-pane" class:collapsed={collapsedPane === 'world'} aria-label="World simulations">
+  {#if primaryOpen}<section bind:this={worldPane} class="module-pane world-pane" class:collapsed={collapsedPane === 'world'} aria-label={planningPath !== null ? 'Planning' : 'World simulations'}>
+    {#if planningPath !== null}
+    <iframe bind:this={planningFrame} class="module-frame active" src={planningPath} title="Planning"></iframe>
+    {:else if worldRunId !== null}
     <iframe
       bind:this={worldFrame}
       class="module-frame active"
-      src={`/workspaces/${encodeURIComponent(workspaceId)}/world/runs/${encodeURIComponent(worldRunId)}`}
+      src={`/workspaces/${encodeURIComponent(workspaceId)}/world/runs/${encodeURIComponent(worldRunId)}${worldQuery === '' ? '' : `?${worldQuery}`}`}
       title="World simulations"
       onload={worldFrameLoaded}
     ></iframe>
+    {/if}
   </section>{/if}
 
-  {#if worldRunId !== null && agentsRoomId !== null && agentsVisible}<button
+  {#if primaryOpen && agentsRoomId !== null && agentsVisible}<button
     class="split-handle"
     class:hidden={collapsedPane !== null}
     type="button"
-    aria-label="Resize World and Agents"
+    aria-label={planningPath !== null ? 'Resize Planning and Agents' : 'Resize World and Agents'}
     onpointerdown={beginResize}
     onpointermove={resize}
     onpointerup={finishResize}
@@ -304,11 +333,27 @@
   </section>{/if}
 
   {#if collapsedPane === 'world'}
-    <button class="reopen-handle left" type="button" aria-label="Reopen World" onclick={restoreSplit}>›</button>
+    <button class="reopen-handle left" type="button" aria-label={planningPath !== null ? 'Reopen Planning' : 'Reopen World'} onclick={restoreSplit}>›</button>
   {:else if collapsedPane === 'agents'}
     <button class="reopen-handle right" type="button" aria-label="Reopen Agents" onclick={restoreSplit}>‹</button>
   {/if}
-  {#if worldRunId !== null && agentsRoomId !== null && !agentsVisible}
+  {#if primaryOpen && agentsRoomId !== null && !agentsVisible}
     <button class="reopen-handle right" type="button" aria-label="Show Agents" onclick={onShowAgents}>‹</button>
   {/if}
 </section>
+
+<Modal bind:open={ownedViewOpen} title={ownedView?.envelope.title ?? 'Display'} eyebrow={ownedView?.caption ?? ''}
+  width="1100px" height="820px" scrollBody={false} closeLabel="Close display"
+  onclose={() => { ownedView = null }}>
+  {#if ownedView}
+    <iframe class="owned-view-frame" title={ownedView.envelope.title}
+      use:closeEmbeddedViewOnEscape={() => { ownedViewOpen = false }}
+      src={embeddedViewPath(ownedView.envelope) + embeddedViewFragment(ownedView.envelope)}
+      allow="camera 'none'; microphone 'none'; geolocation 'none'; display-capture 'none'"
+      referrerpolicy="same-origin"></iframe>
+  {/if}
+</Modal>
+
+<style>
+  .owned-view-frame { display: block; width: 100%; height: 100%; border: 0; }
+</style>

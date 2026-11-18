@@ -5,14 +5,20 @@ import { isProcedureMarkdown, parseProcedure } from '@leitbild/procmd'
 export { headingsFor, type KnowledgeHeading } from './markdown.ts'
 
 const documentSchema = z.object({ path: z.string(), content: z.string() }).strict()
+const imageSchema = z.object({ path: z.string(), mediaType: z.enum(['image/png', 'image/webp']), base64: z.string().max(7_000_000) }).strict()
 export const snapshotSchema = z.object({
   revision: z.string().regex(/^[a-f0-9]{40}$/),
   documents: z.array(documentSchema),
+  images: z.array(imageSchema).optional(),
 }).strict()
 export type KnowledgeSnapshot = z.infer<typeof snapshotSchema>
 
 export const safeDocumentPath = (path: string): boolean =>
   path.endsWith('.md') && !path.includes('\\') && !path.includes('\0')
+  && path.split('/').every(segment => segment.length > 0 && segment !== '.' && segment !== '..' && !segment.startsWith('.'))
+
+export const safeKnowledgeImagePath = (path: string): boolean =>
+  /\.(png|webp)$/.test(path) && /^[A-Za-z0-9._/-]+$/.test(path)
   && path.split('/').every(segment => segment.length > 0 && segment !== '.' && segment !== '..' && !segment.startsWith('.'))
 
 const searchStopWords = new Set('a an and are as at be by can could do does for from how i in is it me of on or see that the this to use was what when where which with would you your'.split(' '))
@@ -28,6 +34,11 @@ const isReferencePage = (path: string): boolean =>
 
 export const createKnowledge = (input: unknown) => {
   const snapshot = snapshotSchema.parse(input)
+  const imagePaths = new Set<string>()
+  for (const image of snapshot.images ?? []) {
+    if (!safeKnowledgeImagePath(image.path) || imagePaths.has(image.path)) throw new Error(`Invalid or duplicate knowledge image: ${image.path}`)
+    imagePaths.add(image.path)
+  }
   const paths = new Set<string>()
   const documents = snapshot.documents.map(document => {
     if (!safeDocumentPath(document.path) || paths.has(document.path)) throw new Error(`Invalid or duplicate knowledge path: ${document.path}`)
@@ -151,6 +162,12 @@ export const createKnowledge = (input: unknown) => {
   }
   return {
     revision: snapshot.revision,
+    image: (path: string, revision?: string) => {
+      if (revision !== undefined && revision !== snapshot.revision) throw new Error('Knowledge revision is not available in this publication; rediscover the current revision')
+      const image = snapshot.images?.find(image => image.path === path)
+      if (!image) throw new Error('Knowledge image not found')
+      return image
+    },
     navigation: () => navigation.map(({ path, title, parent, hub }) => ({ path, title, parent, hub })),
     procedureReferences,
     read,

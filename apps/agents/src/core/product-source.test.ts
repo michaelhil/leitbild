@@ -16,8 +16,8 @@ describe('product source reader', () => {
     expect(runtimeSource.authority).toBe('implementation')
     expect(runtimeSource.content.length).toBeGreaterThan(0)
 
-    const uniqueBasename = await readProductSource('halden-dispatch.scenario.json', root)
-    expect(uniqueBasename.path).toBe('apps/world/src/scenarios/halden-dispatch.scenario.json')
+    const uniqueBasename = await readProductSource('supply-run.scenario.json', root)
+    expect(uniqueBasename.path).toBe('apps/world/src/scenarios/supply-run.scenario.json')
   })
 
   test('rejects traversal and operational files', async () => {

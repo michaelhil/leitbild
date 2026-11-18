@@ -321,7 +321,7 @@ export const CITATION_CASES_R3: ReadonlyArray<CitationCase> = [
 ]
 
 /** The Runs with observation content (plant, grid or weather): T10 needs numbers on its cards. */
-export const CITATION_RUNS = ['halden-normal-operation', 'halden-offsite-power-restoration', 'halden-power-complex', 'halden-weather-response', 'nordic-frequency-event', 'nordland-corridor-security', 'rogaland-black-start', 'integrated-all-packs']
+export const CITATION_RUNS = ['halden-normal-operation', 'halden-offsite-power-restoration', 'halden-power-complex', 'nordic-frequency-event', 'nordland-corridor-security', 'rogaland-black-start', 'integrated-all-packs']
 
 /** The cards of one frozen Run: the first two observed assets' lead values, and states with their `since`. */
 export const cardsOf = async (frozen: FrozenRun) => {

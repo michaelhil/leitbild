@@ -60,6 +60,8 @@ export interface PackObjectPresentation {
   readonly fields: ReadonlyArray<PackObjectField>
   readonly status?: PackObjectStatusPresentation
   readonly muted?: boolean
+  /** Fade an object in normal map browsing, or draw it as a small, still-selectable dot. */
+  readonly mapMarker?: 'muted' | 'dot'
   readonly mapIconVisible?: boolean
   readonly mapLineVisible?: boolean
   readonly mapIconSizePx?: number
@@ -183,12 +185,9 @@ export interface PackObjectPresentationContext {
    */
   readonly seenRoleIds?: ReadonlyArray<string>
   /**
-   * The object the map selects, for the `mapFeatures` of a Pack that
-   * declares `mapFeaturesFollowSelection` (the map feature loader passes it;
-   * absent while nothing is selected). Such a Pack may draw what belongs to
-   * the selected object more strongly, such as its planned path; selection
-   * is this tab's alone. No other Pack's hooks and no `mapFeatureQueries`
-   * receive it.
+   * The object the map selects, for the map feature hooks of a Pack that
+   * declares `mapFeaturesFollowSelection`. The selection belongs to this
+   * tab and is absent while nothing is selected.
    */
   readonly selectedObjectId?: string
 }
@@ -527,11 +526,9 @@ export interface PackPresentationContribution {
     context: PackObjectPresentationContext,
   ) => ReadonlyArray<PackMapFeature>
   /**
-   * The Pack's `mapFeatures` draw the selected object differently: only they
-   * receive `selectedObjectId`, and only while an active Pack declares this
-   * does a selection change redraw Pack map features. A selection change
-   * re-runs no Pack's `mapFeatureQueries`: the map feature loader keeps
-   * their last results.
+   * The Pack's map feature hooks receive `selectedObjectId`, and the map
+   * redraws on selection changes. Queries that keep the same inputs keep
+   * their last results on a selection change.
    */
   readonly mapFeaturesFollowSelection?: true
   readonly mapFeatureLayers?: ReadonlyArray<MapLayerId>
@@ -617,40 +614,6 @@ export interface PackTargetingContribution {
     controller: OperationalObject,
     context: PackTargetContext,
   ) => PackCommandRequest
-}
-
-export type PackMapAssignmentMode = 'start' | 'append'
-
-export interface PackMapAssignmentChoice {
-  readonly id: string
-  readonly label: string
-  readonly summary: string
-  readonly disabledReason?: string
-}
-
-export interface PackMapAssignmentTarget {
-  readonly id: string
-  readonly label: string
-  readonly choices: ReadonlyArray<PackMapAssignmentChoice>
-  readonly minimumChoices: number
-  readonly maximumChoices: number
-  readonly buildCommand: (choiceIds: ReadonlyArray<string>) => PackCommandRequest
-}
-
-export interface PackMapAssignmentHandle {
-  readonly id: string
-  readonly controllerId: ObjectId
-  readonly point: GeoJsonPoint
-}
-
-/** Pack-owned assignment semantics exposed through generic map gestures. The
- * host renders pointers, lines, handles and choice UI, but never interprets
- * targets or builds domain commands. */
-export interface PackMapAssignmentContribution {
-  readonly canStart: (controller: OperationalObject, context: PackTargetContext) => boolean
-  readonly anchorFor: (controller: OperationalObject, mode: PackMapAssignmentMode, context: PackTargetContext) => GeoJsonPoint
-  readonly handles: (context: PackTargetContext) => ReadonlyArray<PackMapAssignmentHandle>
-  readonly targetFor: (controller: OperationalObject, candidate: OperationalObject, mode: PackMapAssignmentMode, context: PackTargetContext) => PackMapAssignmentTarget | null
 }
 
 export interface PackInteractionContribution {
@@ -870,7 +833,6 @@ export interface WorldPackView {
   readonly presentation: PackPresentationContribution
   readonly creation?: PackCreationContribution
   readonly targeting?: PackTargetingContribution
-  readonly mapAssignment?: PackMapAssignmentContribution
   readonly ui?: PackUiContribution
   readonly procedures?: PackProcedureContribution
   readonly roles?: PackRoleContribution

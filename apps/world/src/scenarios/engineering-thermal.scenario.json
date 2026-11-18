@@ -1,0 +1,10 @@
+{
+  "id": "engineering-thermal",
+  "title": "Engineering lab: thermal response",
+  "description": "An open, paused fictional four-loop PWR for shared human/AI engineering research. No hidden future cues or injected failures are authored. Compare explicit control schedules from one reached state. Results describe this reduced simulator, not a real plant or a qualified cooldown procedure.",
+  "objectives": ["Capture dated thermal readings and test a calculation.", "Compare a baseline and an explicitly chosen control alternative without changing the source Run."],
+  "world": { "startsAt": "2026-11-08T10:00:00.000Z", "environment": { "purpose": "shared engineering research" } },
+  "view": { "map": { "center": [11.47, 59.086], "zoom": 14 } },
+  "packs": [{ "id": "process-plant", "items": [{ "type": "plant", "id": "plant:engineering-thermal", "label": "Thermal research plant", "location": [11.47, 59.086], "model": { "ref": "process-plant.pwr.reference", "parameters": { "loopCount": 4 } }, "operatingPoint": { "ref": "process-plant.pwr.full-power" }, "automation": { "ref": "process-plant.pwr.standard" } }] }],
+  "guide": { "id": "engineering-thermal-guide", "title": "Inspect a conditional thermal comparison", "startPaused": true, "steps": [{ "id": "compare", "title": "Capture and compare", "instruction": "Read the engineering input capture, inspect offered plant controls, and compare a baseline with a declared alternative. The comparison never acts on this Run. Reached time, failed controls and assumptions remain part of its evidence.", "completion": { "kind": "acknowledge" } }, { "id": "explore", "title": "Inspect the evidence", "instruction": "Inspect the retained calculation or case comparison. Check the source time, assumptions and actual model coverage before trying another alternative. This guide is finished. The Run remains available for further research.", "completion": { "kind": "acknowledge" } }] }
+}

@@ -8,6 +8,7 @@ import type { MapPerformanceDiagnosticsSnapshot } from './map-performance-diagno
 import type { SymbolAtlas } from './symbol-kit.ts'
 import type { CameraInteraction } from '../map/map-camera.ts'
 import type { MapFocusTarget } from '../map-view.ts'
+import type { MapTargetingTone } from '../surface-panel-interaction.ts'
 
 export type RenderPhase =
   | 'base'
@@ -50,6 +51,15 @@ export interface OperationalPointFeature {
   readonly highlighted: boolean
   readonly hasNewInfo: boolean
   readonly muted: boolean
+  readonly dot?: boolean
+  /** The target's halo, or null when it is outside the current targeting. */
+  readonly targetTone: MapTargetingTone | null
+  /** A tagged target's tag above its halo; null for any other object. */
+  readonly targetTag: string | null
+  /** Which way the tag runs from its target, so it stays on the map near an edge. */
+  readonly targetTagAnchor: TargetTagAnchor
+  /** Dimmed while an order is armed whose targets are known: neither its object nor one of its targets. */
+  readonly dimmed: boolean
   readonly sizePx: number
   readonly rotationDeg: number
   readonly priority: number
@@ -81,18 +91,29 @@ export interface OperationalSymbolFeature {
   readonly signature: string
 }
 
-export interface MapAssignmentHandleFeature {
-  readonly id: string
-  readonly controllerId: string
-  readonly position: Position3
-}
-
-export interface MapAssignmentInteraction {
+/**
+ * An armed order's line to a mouse pointer (`MapTargeting`): from where its
+ * object's icon is drawn to the pointer, drawn only while both are known.
+ * `revision` counts each move of either end.
+ */
+export interface MapTargetingLine {
   readonly revision: number
-  readonly active: boolean
   readonly anchor: Position3 | null
   readonly pointer: Position3 | null
-  readonly handles: ReadonlyArray<MapAssignmentHandleFeature>
+}
+
+/** How a target's tag lies against its target: centred above it, or running right (`start`) or left (`end`) from it near the map's edge. */
+export type TargetTagAnchor = 'start' | 'middle' | 'end'
+
+/**
+ * An armed order as the map draws it (`MapTargeting`): the object it is
+ * for, each target's tag, tag anchor and tone by object id, and whether the
+ * targets are every valid one, so the others are dimmed.
+ */
+export interface MapTargetingRender {
+  readonly fromId: string
+  readonly targets: ReadonlyMap<string, { readonly tag: string | null; readonly anchor: TargetTagAnchor; readonly tone: MapTargetingTone }>
+  readonly complete: boolean
 }
 
 export interface OperationalRenderInput {
@@ -101,6 +122,8 @@ export interface OperationalRenderInput {
   readonly highlightedObjectIds: ReadonlyArray<string>
   /** Objects the screen sees but may not order (`targeting.mutedOnMap`): drawn muted. */
   readonly mutedObjectIds?: ReadonlyArray<string>
+  /** The armed order's targets, haloed and some tagged, and once they are complete every other object dimmed; none while nothing is armed. */
+  readonly targeting?: MapTargetingRender | null
   readonly hiddenObjectCategoryIds: ReadonlyArray<string>
   readonly placementPoints: ReadonlyArray<GeoJsonPoint>
   readonly packFeatures: ReadonlyArray<PackMapFeature>
@@ -190,6 +213,7 @@ export interface MapFeatureProjectionContext {
   readonly selectedControllerId: string | null
   readonly highlightedObjectIds: ReadonlySet<string>
   readonly mutedObjectIds: ReadonlySet<string>
+  readonly targeting: MapTargetingRender | null
   readonly hiddenObjectCategoryIds: ReadonlySet<string>
   readonly hasNewInfo: (object: OperationalObject) => boolean
   readonly presentationFor: (object: OperationalObject) => PackObjectPresentation

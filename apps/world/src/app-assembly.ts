@@ -1,5 +1,4 @@
 import type { WorldPack } from './core/packs/protocol.ts'
-import { ambulancePack } from './packs/ambulance/pack.ts'
 import { dronePack } from './packs/drone/pack.ts'
 import { einsatzPack } from './packs/einsatz/pack.ts'
 import { electricGridPack } from './packs/electric-grid/pack.ts'
@@ -12,7 +11,6 @@ import { createSituationMonitorRuntimeAdapter } from './packs/situation-monitor/
 import type { RoutingAdapter } from './routing/protocol.ts'
 import type { PackRuntimeAdapter } from './simulation/protocol.ts'
 import { validateWorldAssembly } from './core/packs/assembly.ts'
-import { createLocalAmbulancePackRuntimeAdapter } from './packs/ambulance/sim/adapter.ts'
 import { createLocalElectricGridPackRuntimeAdapter } from './packs/electric-grid/sim/adapter.ts'
 import { createDroneNativePackRuntimeAdapter } from './packs/drone/native/adapter.ts'
 import { createEinsatzPackRuntimeAdapter } from './packs/einsatz/runtime/adapter.ts'
@@ -31,7 +29,6 @@ const withReferenceDatasetBuilders = (
 })
 
 export const worldPacks: ReadonlyArray<WorldPack> = [
-  ambulancePack,
   einsatzPack,
   weatherPack,
   situationMonitorPack,
@@ -50,7 +47,6 @@ export const createWorldApplicationAssembly = (config: {
   readonly routing: RoutingAdapter
 }): WorldApplicationAssembly => {
   const runtimeAdapters: ReadonlyArray<PackRuntimeAdapter> = [
-      createLocalAmbulancePackRuntimeAdapter({ routing: config.routing }),
       createEinsatzPackRuntimeAdapter({ routing: config.routing }),
       createLocalWeatherPackRuntimeAdapter(),
       createSituationMonitorRuntimeAdapter(),

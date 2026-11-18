@@ -1,12 +1,14 @@
-import type { ParsedProcedure, ProcedureBranch, ProcedureResponsePair, ProcedureStep, ProcedureTag, ProcedureTextBlock } from './types.ts'
-import { assessmentLeaves, parseProcedureAssessment } from './assessment.ts'
+import type { ParsedProcedure, ProcedureBranch, ProcedureFoldout, ProcedureResponsePair, ProcedureStep, ProcedureTag, ProcedureTextBlock } from './types.ts'
+import { assessmentLeaves, parseProcedureAssessment, type ProcedureAssessmentCondition } from './assessment.ts'
 import { parseProcedureDecisions } from './decisions.ts'
+import { compileLimits, limitConditions, readAuthoredLimits, type AuthoredLimits } from './limits.ts'
 
 export const PARSER_PROCMD_VERSION = '0.7'
 type Mutable<T> = { -readonly [K in keyof T]: T[K] }
 type Step = Omit<Mutable<ProcedureStep>, 'blocks' | 'branches'> & { blocks: Mutable<ProcedureTextBlock>[]; branches: Mutable<ProcedureBranch>[] }
 const keywords = new Set(['check', 'action', 'expected', 'rno', 'unknown', 'basis', 'decision', 'when', 'until', 'abort-if', 'abort-to', 'within', 'concurrent', 'caution', 'note', 'because', 'against'])
 const advisory = new Set(['when', 'until', 'abort-if', 'abort-to', 'within', 'concurrent'])
+const limitKinds = new Set(['check', 'expected', 'when'])
 const tagsIn = (text: string): string[] => [...new Set([...text
   .replace(/`+[^`]*`+/g, '').replace(/\[\[[\s\S]*?\]\]/g, '')
   .matchAll(/«([A-Za-z0-9][A-Za-z0-9._/-]*)»/g)].map(match => match[1]!))]
@@ -55,6 +57,9 @@ export const parseProcedure = (rawMarkdown: string): ParsedProcedure => {
   const steps: Step[] = []
   const tags: ProcedureTag[] = []
   const preamble: string[] = []
+  const authored = new Map<object, AuthoredLimits>()
+  let foldout: { title: string; sourceLine: number; lines: string[] } | undefined
+  let inFoldout = false
   let current: Step | undefined
   let section: 'preamble' | 'steps' | 'tags' | 'other' = 'preamble'
   let tag: Record<string, string> | undefined
@@ -167,7 +172,21 @@ export const parseProcedure = (rawMarkdown: string): ParsedProcedure => {
       if (text) warn(sourceLine, 'unsupported Tags content retained in raw source')
       continue
     }
-    if (!current) { preamble.push(raw); continue }
+    if (!current) {
+      if (section === 'preamble') {
+        const heading = /^###\s+(Foldout\b.*)$/i.exec(text)
+        if (heading) {
+          if (foldout) throw new Error(`Line ${sourceLine}: a procedure has one foldout`)
+          foldout = { title: heading[1]!, sourceLine, lines: [] }
+          inFoldout = true
+          continue
+        }
+        if (/^#{1,6}\s/.test(raw)) inFoldout = false
+        if (inFoldout) { foldout!.lines.push(raw); continue }
+      }
+      preamble.push(raw)
+      continue
+    }
     if (!text) { activeBranch = undefined; continue }
     if (decision) {
       const path = text.match(/^\d+\.\s+(.+)$/)
@@ -222,18 +241,24 @@ export const parseProcedure = (rawMarkdown: string): ParsedProcedure => {
         return ''
       }).trim()
       if (/\[(?:outcome|execution)\b/i.test(label)) throw new Error(`Line ${sourceLine}: malformed reserved branch annotation`)
+      const branchLimits = readAuthoredLimits(label, sourceLine)
+      if (branchLimits) label = branchLimits.body
       if (!label) throw new Error(`Line ${sourceLine}: branch requires a readable label`)
       activeBranch = { label, target: clean, targetKind, ...(targetStepId === undefined ? {} : { targetStepId }), ...meaning, sourceLine, tagIds: tagsIn(label) }
+      if (branchLimits) authored.set(activeBranch, branchLimits)
       current.branches.push(activeBranch)
       continue
     }
     const keyword = text.match(/^([A-Za-z][A-Za-z-]*):\s*(.*)$/)
     const kind = keyword?.[1]?.toLowerCase()
     if (kind && keywords.has(kind) && keyword![2]!.trim()) {
-      const block: Mutable<ProcedureTextBlock> = { kind: kind as ProcedureTextBlock['kind'], text: keyword![2]!.trim(), sourceLine, tagIds: tagsIn(keyword![2]!) }
+      const limits = readAuthoredLimits(keyword![2]!.trim(), sourceLine)
+      if (limits && !limitKinds.has(kind)) throw new Error(`Line ${sourceLine}: a limit belongs on a Check, Expected or When line, or on a branch`)
+      const block: Mutable<ProcedureTextBlock> = { kind: kind as ProcedureTextBlock['kind'], text: limits?.text ?? keyword![2]!.trim(), sourceLine, tagIds: tagsIn(limits?.text ?? keyword![2]!) }
       current.blocks.push(block)
+      if (limits) authored.set(block, limits)
       if (kind === 'decision') { block.paths = []; decision = block }
-      if (advisory.has(kind)) warn(sourceLine, `${kind} is source guidance only; timing/condition/concurrency semantics are not executed`)
+      if (advisory.has(kind) && !limits) warn(sourceLine, `${kind} is source guidance only; timing/condition/concurrency semantics are not executed`)
       if (kind === 'because' || kind === 'against') warn(sourceLine, 'unattached rationale retained as a block, not assigned to an earlier branch')
       continue
     }
@@ -246,6 +271,34 @@ export const parseProcedure = (rawMarkdown: string): ParsedProcedure => {
   if (fence?.decisions) throw new Error('unterminated procedure-decisions')
   if (fence) warn(lines.length, 'unterminated fenced example retained as literal text')
   if (!steps.length) throw new Error(`no Step headings found in ${procedureId}`)
+  const compiled = new Map<Step, ReadonlySet<number>>()
+  for (const step of steps) {
+    const conditions = new Map<number, ProcedureAssessmentCondition[]>()
+    const source = step.blocks.filter(block => block.kind === 'basis').flatMap(block => [...block.text.matchAll(/\]\(([^)#\s]+\.md#[^)\s]+)\)/g)].map(match => match[1]!))[0]
+    const compile = (owner: { limits?: ProcedureTextBlock['limits']; sourceLine: number }, into: number, limits: AuthoredLimits) => {
+      owner.limits = compileLimits(limits, { sourceLine: owner.sourceLine, source, unitOf: tagId => tags.find(tag => tag.id === tagId)?.units })
+      conditions.set(into, [...(conditions.get(into) ?? []), ...limitConditions(owner.limits)])
+    }
+    const named = new Set((step.pairs ?? []).flatMap(pair => pair.advisoryBranchIndex === undefined ? [] : [pair.advisoryBranchIndex]))
+    for (const block of step.blocks) {
+      const limits = authored.get(block)
+      if (!limits) continue
+      const pair = [...(step.pairs ?? [])].reverse().find(item => item.sourceLine < block.sourceLine)
+      if (pair?.advisoryBranchIndex === undefined) throw new Error(`Line ${block.sourceLine}: a limit needs its Pair to name the branch it tests, [id: name, criterion: branchIndex]`)
+      compile(block as Mutable<ProcedureTextBlock>, pair.advisoryBranchIndex, limits)
+    }
+    for (const [index, branch] of step.branches.entries()) {
+      const limits = authored.get(branch)
+      if (!limits) continue
+      if (named.has(index)) throw new Error(`Line ${branch.sourceLine}: a branch a Pair names is tested by that Pair's lines, not by limits of its own`)
+      compile(branch, index, limits)
+      branch.tagIds = [...new Set([...branch.tagIds, ...branch.limits!.comparisons.map(item => item.tagId)])]
+    }
+    if (conditions.size === 0) continue
+    if (step.decisions) throw new Error(`Step ${step.id}: limits and a procedure-decisions block cannot both decide a step`)
+    step.decisions = parseProcedureDecisions([...conditions].map(([branchIndex, list]) => ({ branchIndex, condition: { type: 'all', conditions: list } })))
+    compiled.set(step, new Set(conditions.keys()))
+  }
   for (const step of steps) {
     step.tagIds = [...new Set([...step.blocks.flatMap(block => block.tagIds), ...step.branches.flatMap(branch => branch.tagIds),
       ...(step.assessment ? assessmentLeaves(step.assessment.condition).flatMap(leaf => leaf.type === 'comparison' ? [leaf.tagId] : leaf.tagIds) : []),
@@ -267,21 +320,26 @@ export const parseProcedure = (rawMarkdown: string): ParsedProcedure => {
     for (const [index, pair] of (step.pairs ?? []).entries()) {
       const next = step.pairs?.[index + 1]?.sourceLine ?? Infinity
       const instructions = step.blocks.filter(block => block.sourceLine > pair.sourceLine && block.sourceLine < next)
-      const hasExpected = instructions.some(block => block.kind === 'check' || block.kind === 'expected')
+      const hasLimit = instructions.some(block => block.limits !== undefined)
+      const hasExpected = hasLimit || instructions.some(block => block.kind === 'check' || block.kind === 'expected')
       if (!hasExpected && !instructions.some(block => block.kind === 'action')) throw new Error(`Line ${pair.sourceLine}: Pair requires a Check, Expected or Action instruction`)
       const branchIndex = pair.advisoryBranchIndex
       if (branchIndex === undefined) continue
+      if (compiled.has(step) && !hasLimit) throw new Error(`Line ${pair.sourceLine}: in a step with limits, a Pair names a criterion only if its own lines carry limits`)
       const decision = step.decisions?.find(item => item.branchIndex === branchIndex)
       if (!hasExpected || step.branches[branchIndex]?.outcome !== 'normal' || decision === undefined
         || (decision.condition !== undefined && assessmentLeaves(decision.condition).some(leaf => leaf.type !== 'comparison'))) {
         throw new Error(`Line ${pair.sourceLine}: Pair criterion requires a Check or Expected instruction and a deterministic normal branch`)
       }
-      if (pairCriteria.has(branchIndex)) throw new Error(`Line ${pair.sourceLine}: duplicate Pair criterion ${branchIndex}`)
+      if (pairCriteria.has(branchIndex) && !compiled.get(step)?.has(branchIndex)) throw new Error(`Line ${pair.sourceLine}: duplicate Pair criterion ${branchIndex}`)
       pairCriteria.add(branchIndex)
     }
     for (const branch of step.branches) if (branch.targetKind === 'step' && !steps.some(candidate => candidate.id === branch.target)) warn(branch.sourceLine, `unresolved step target #${branch.target}; no transition inferred`)
   }
+  const parsedFoldout: ProcedureFoldout | undefined = foldout === undefined ? undefined : { title: foldout.title, text: foldout.lines.join('\n').trim(), tagIds: tagsIn(foldout.lines.join('\n')), sourceLine: foldout.sourceLine }
+  if (parsedFoldout && /«[^»]*[<>=!][^»]*»|«any»/.test(parsedFoldout.text)) throw new Error(`Line ${parsedFoldout.sourceLine}: a foldout has no limits`)
   return { procedureId, title, rawMarkdown,
+    ...(parsedFoldout === undefined ? {} : { foldout: parsedFoldout }),
     ...(fm.profile === undefined ? {} : { profile: scalar(fm.profile) }),
     ...(fm.category === undefined ? {} : { category: scalar(fm.category) }),
     ...(fm['applies-to'] === undefined ? {} : { appliesTo: scalar(fm['applies-to']) }),

@@ -14,7 +14,7 @@
   import { deletedText, deleteLabel, keepExisting, selectAllState, toggleAll, toggleOne } from './bulk-delete.ts'
   import { workspaceUrl } from './launch-destination.ts'
   import { catalogDeleteBody, catalogDeleteItem, catalogNoun, createCatalogRemover, type CatalogDeleteItem } from './catalog-delete.ts'
-  import { CONTINUE_LIMIT, type ContinueItem } from './workspace-page.ts'
+  import { CONTINUE_LIMIT, continueKindLabel, type ContinueItem } from './workspace-page.ts'
 
   let { items, workspaceId, capabilities, summaryValue, inspecting, oninspect, onrename, onremoved }: {
     items: ReadonlyArray<ContinueItem>
@@ -56,7 +56,9 @@
   const remove = $derived(createCatalogRemover(workspaceId))
   const hrefOf = (resource: ModuleResourceDescriptor): string => resource.ref.type === 'agents.room'
     ? workspaceUrl(workspaceId, { agents: resource.ref.id })
-    : workspaceUrl(workspaceId, { world: resource.ref.id })
+    : resource.ref.type === 'planning.plan'
+      ? workspaceUrl(workspaceId, { planning: resource.ref.id })
+      : workspaceUrl(workspaceId, { world: resource.ref.id })
 
   $effect(() => { if (selectAllBox) selectAllBox.indeterminate = allState === 'some' })
 
@@ -139,7 +141,7 @@
         {@const actions = menuItems(item.resource)}
         {@const removable = deletable.get(key)}
         <li class="card {item.kind}" class:checked={selecting && selected.has(key)}>
-          <span class="state"><span class="dot" aria-hidden="true"></span>{item.status}</span>
+          <span class="state"><span class="kind-label">{continueKindLabel(item.kind)}</span><span class="dot" aria-hidden="true"></span>{item.status}</span>
           {#if selecting}
             {#if removable}
               <label class="title pick" for={`${uid}-${key}`}>{item.resource.title}</label>
@@ -211,12 +213,14 @@
   .card:has(.title:focus-visible), .card:has(.pick-box:focus-visible) { outline: 2px solid var(--lb-focus); outline-offset: 2px; }
   .card.checked { border-color: var(--lb-brand-600); background: var(--lb-brand-50); }
   /* Room for the Delete and ⋯ buttons (or the tick box) in the top-right corner. */
+  .kind-label { font-weight: 600; color: var(--lb-ink-2); text-transform: uppercase; letter-spacing: .04em; }
   .state { display: inline-flex; align-items: center; gap: 7px; padding-right: 80px; color: var(--lb-ink-3); font-size: var(--lb-fs-micro); }
   .selecting .state { padding-right: 40px; }
   .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--lb-ok); }
   .paused .dot { background: #b5822a; }
   .unavailable .dot { background: var(--lb-danger); }
   .conversation .dot { background: var(--lb-focus); }
+  .plan .dot { background: var(--lb-accent); }
   .title { min-width: 0; color: var(--lb-ink); font-size: .9375rem; font-weight: 700; line-height: 1.35; text-decoration: none; overflow-wrap: anywhere; }
   a.title::after, label.pick::after { content: ''; position: absolute; inset: 0; border-radius: inherit; }
   a.title:focus { outline: none; }

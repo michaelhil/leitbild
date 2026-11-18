@@ -233,35 +233,6 @@ const createDroneMesh = (scene: Scene, color: string): TransformNode => {
   return root
 }
 
-const createAmbulanceMesh = (scene: Scene): TransformNode => {
-  const root = new TransformNode('ambulance', scene)
-  const white = material(scene, 'ambulance-white', '#f8fafc')
-  const red = material(scene, 'ambulance-red', '#dc2626')
-  const dark = material(scene, 'ambulance-dark', '#111827')
-  const body = MeshBuilder.CreateBox('ambulance-body', { width: 4.6, height: 1.7, depth: 2.2 }, scene)
-  body.material = white
-  body.position.y = 0.85
-  body.parent = root
-  const cab = MeshBuilder.CreateBox('ambulance-cab', { width: 1.7, height: 1.45, depth: 2.05 }, scene)
-  cab.material = material(scene, 'ambulance-cab-glass', '#dbeafe')
-  cab.position.set(1.65, 1.05, 0)
-  cab.parent = root
-  const stripe = MeshBuilder.CreateBox('ambulance-stripe', { width: 4.7, height: 0.24, depth: 2.24 }, scene)
-  stripe.material = red
-  stripe.position.y = 1.2
-  stripe.parent = root
-  for (const x of [-1.55, 1.45]) {
-    for (const z of [-1.16, 1.16]) {
-      const wheel = MeshBuilder.CreateCylinder('ambulance-wheel', { diameter: 0.68, height: 0.24, tessellation: 18 }, scene)
-      wheel.material = dark
-      wheel.rotation.z = Math.PI / 2
-      wheel.position.set(x, 0.35, z)
-      wheel.parent = root
-    }
-  }
-  return root
-}
-
 const createGenericAssetMesh = (scene: Scene, color: string): TransformNode => {
   const root = new TransformNode('asset', scene)
   const base = MeshBuilder.CreateCylinder('asset-base', { diameter: 2.2, height: 0.5, tessellation: 24 }, scene)
@@ -278,14 +249,12 @@ const createGenericAssetMesh = (scene: Scene, color: string): TransformNode => {
 const meshSignatureFor = (object: OperationalObject): string => {
   const droneData = dronePackDataSchema.safeParse(object.packData)
   if (droneData.success) return `drone:${droneData.data.vehicle.visual.color}:${droneData.data.vehicle.visual.scale}`
-  if (object.packId === 'ambulance') return 'ambulance'
   return `asset:${object.operational.priority === 'critical' ? 'critical' : 'normal'}`
 }
 
 const createMeshFor = (scene: Scene, object: OperationalObject): TransformNode => {
   const droneData = dronePackDataSchema.safeParse(object.packData)
   if (droneData.success) return createDroneMesh(scene, droneData.data.vehicle.visual.color)
-  if (object.packId === 'ambulance') return createAmbulanceMesh(scene)
   return createGenericAssetMesh(scene, object.operational.priority === 'critical' ? '#dc2626' : '#f59e0b')
 }
 

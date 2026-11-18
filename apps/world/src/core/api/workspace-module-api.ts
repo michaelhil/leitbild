@@ -33,6 +33,8 @@ import { assembleRunContext } from '../../features/displays/context/run-context.
 import { storedDashboards } from '../../features/displays/dashboards/dashboards.ts'
 import { observablesSearchInputSchema, observablesSearchOutputSchema, searchObservables } from '../../features/displays/observation/search.ts'
 import { displayCapabilities } from './display-capabilities.ts'
+import { planningFactsCapability } from './planning-facts-capability.ts'
+import { engineeringCapabilities } from './engineering-capabilities.ts'
 import { guidanceCapabilities } from './guidance-capabilities.ts'
 import { isGuidanceFailure } from '../guides/errors.ts'
 import { isCapabilityRejection } from '../../simulation/capability-rejection.ts'
@@ -222,7 +224,7 @@ const procedureTransitionAnswerSchema = z.discriminatedUnion('ok', [
   procedureTransitionResultSchema.options[0].extend({ next: z.union([procedureStepViewSchema, procedureRunReadViewSchema]).optional() }),
   procedureTransitionResultSchema.options[1],
 ])
-const procedureTransitionApiDescription = 'Input {runId, stepId, branchIndex, basis, evidenceTagIds?, nextDetail?}. Atomically follows an exact authored local-step, transfer, retry, END or ABORT branch from the pinned procedure. AI selects only its current step on a Run it drives; World reacquires the complete authored criterion at commit and refuses unknown, inapplicable or contradicted evidence. Acquire fresh native criterion evidence through step.branchAssessments or its exact pinned declared query. Inspect the full step on deviation, unknown evidence or new step/source identity. Optional citations name readable step tags; World retains full criterion proof independently. A person selecting off the current step of an AI-driven Run takes over. Transfers preserve source placekeeping and hand the driver to the destination; they are not completed recovery. An accepted result has a compact exact decision/event receipt and view for world.procedure.decision.read to retrieve immutable full proof. For AI, next normally carries the full next step, or the Run after END. nextDetail:"state" instead returns the same canonical control-state view as world.procedure.run.read: source, driver, current step, complete current note and proof/definition references, with observationsAcquired:false and no second Pack acquisition. State is not current physical evidence. Read full guidance when step/source changes and acquire physical facts separately. The response preference changes neither admission nor the canonical command, decision or proof. An unavailable post-commit view is reported as nextUnavailable; the accepted decision still stands.'
+const procedureTransitionApiDescription = 'Input {runId, stepId, branchIndex, basis, evidenceTagIds?, nextDetail?}. Atomically follows an exact authored local-step, transfer, retry, END or ABORT branch from the pinned procedure. AI selects only its current step on a Run it drives; World reacquires the complete authored criterion at commit and refuses unknown, inapplicable or contradicted evidence. On a document marked ai-workable, a branch with limits needs them met; a branch with no limit that stays in the document is a judgement, taken on a stated basis unless a reading on the step\'s lines is unbound, bad or stale; a no-limit transfer, END and every answer to a no-limit step that can transfer are refused, so ask a person with world.procedure.run.request-input. Acquire fresh native criterion evidence through step.branchAssessments or its exact pinned declared query. Inspect the full step on deviation, unknown evidence or new step/source identity. Optional citations are recorded and never refused; World retains full criterion proof independently. A person selecting off the current step of an AI-driven Run takes over. Transfers preserve source placekeeping and hand the driver to the destination; they are not completed recovery. An accepted result has a compact exact decision/event receipt and view for world.procedure.decision.read to retrieve immutable full proof. For AI, next normally carries the full next step, or the Run after END. nextDetail:"state" instead returns the same canonical control-state view as world.procedure.run.read: source, driver, current step, complete current note and proof/definition references, with observationsAcquired:false and no second Pack acquisition. State is not current physical evidence. Read full guidance when step/source changes and acquire physical facts separately. The response preference changes neither admission nor the canonical command, decision or proof. An unavailable post-commit view is reported as nextUnavailable; the accepted decision still stands. A step is finished only when this call is accepted.'
 const procedureEvidenceInputSchema = z.object({
   sourceId: procedureSourceIdSchema.optional(),
   sourceRevision: sourceRevisionSchema,
@@ -281,6 +283,8 @@ const setAgentRestrictionsInputSchema = z.object({
 const scenarioWriteInputJsonSchema = z.toJSONSchema(createScenarioInputSchema, { unrepresentable: 'any' })
 
 import { scenarioPreviewSchema,scenarioWriteResultSchema } from '../scenarios/authoring-preview.ts'
+
+const scenarioStartInputSchema = z.object({ playback: z.literal('playing').optional() }).strict()
 
 const scenarioStartResultSchema = z.object({
   id: simulationRunIdSchema,
@@ -413,7 +417,9 @@ const resourcesFor = async (registry: SimulationRunRegistry): Promise<ReadonlyAr
   const observedAt = new Date().toISOString()
   const simulationRuns = await registry.listKnown()
   const executionByRun = new Map(await Promise.all(simulationRuns
-    .filter(simulationRun => simulationRun.loadError === undefined)
+    // The manifest is visible before startup writes the first clock. A
+    // concurrent catalogue read must still describe all the other Runs.
+    .filter(simulationRun => simulationRun.loadError === undefined && simulationRun.clock !== null)
     .map(async simulationRun => [simulationRun.id, await registry.executionOverview(simulationRun.id)] as const)))
   const runRef = (id: string) => ({
     workspaceId: registry.workspaceId,
@@ -459,7 +465,7 @@ const resourcesFor = async (registry: SimulationRunRegistry): Promise<ReadonlyAr
       ...simulationRuns.map(simulationRun => {
       const viewers = registry.leaseSummary(simulationRun.id).leasesByKind.realtime
       const execution = executionByRun.get(simulationRun.id)
-      const status = simulationRun.loadError !== undefined
+      const status = simulationRun.loadError !== undefined || simulationRun.clock === null
         ? 'Unavailable'
         : execution?.playback === 'playing' && execution.pace === 'maximum'
           ? `Fast-forward · ${execution.acceleration?.measuredSpeed.toFixed(1) ?? '0.0'}×`
@@ -884,6 +890,8 @@ const visibleChangeEvents = (
 }
 
 const worldCapabilities = createModuleCapabilityRegistry<SimulationRunRegistry, Response>(WORLD_MODULE_ID, [
+  planningFactsCapability,
+  ...engineeringCapabilities,
   ...guidanceCapabilities(),
   {
     descriptor: {
@@ -1087,18 +1095,19 @@ const worldCapabilities = createModuleCapabilityRegistry<SimulationRunRegistry, 
       kind: 'command',
       scope: { kind: 'definition', definitionType: SCENARIO_DEFINITION_TYPE },
       title: 'Start Scenario',
-      description: 'Creates a Simulation Run from the requested immutable Scenario Revision. A Run whose Definition declares roles starts paused and plays in realtime when the first screen holding roles joins, unless world.simulation-run.execution.set or world.simulation-run.execution.advance is used first.',
+      description: 'Creates a Simulation Run from the requested immutable Scenario Revision. Request playing to override the guide’s initial pause. For a Run with roles, automatic playback begins when the first screen holding roles joins, unless an execution command is used first.',
       risk: 'write',
       idempotent: false,
-      inputSchema: z.toJSONSchema(emptyInputSchema, { io: 'input' }),
+      inputSchema: z.toJSONSchema(scenarioStartInputSchema, { io: 'input' }),
       outputSchema: capabilityJsonSchema(scenarioStartResultSchema),
     },
     invoke: async (registry, invocation) => {
-      emptyInputSchema.parse(invocation.input)
+      const input = scenarioStartInputSchema.parse(invocation.input)
       if (!invocation.definition) throw new Error('Scenario Capability requires a Definition')
       const runtime = await registry.create({
         scenarioId: requireScenarioDefinitionId(invocation),
         scenarioRevisionId: scenarioRevisionIdSchema.parse(invocation.definition.revisionId),
+        autoPlay: input.playback === 'playing',
       })
       const resource = {
         workspaceId: registry.workspaceId,
@@ -1719,7 +1728,7 @@ const worldCapabilities = createModuleCapabilityRegistry<SimulationRunRegistry, 
       kind: 'query',
       scope: { kind: 'resource', resourceType: 'world.simulation-run' },
       title: 'Wait for a Run change',
-      description: `Waits in your turn, at most ${runWaitMaxMs / 1_000} s of wall time, for the plant to respond or a person to act. Input {afterSequence?, maxWaitMs? (1000-${runWaitMaxMs}), simulationSeconds? (1-600) or untilSimulationTime? (ISO timestamp), events? [{type, procedureRunId?, signalType?}] (up to 8), procedureRunId?, includeGuidance?}; name time, events, or both; simulationSeconds and untilSimulationTime are exclusive. untilSimulationTime uses the exact execution.advance receipt target without adding request latency. Optional procedureRunId reacquires all branch observations, including current checks and historical sample windows, into next: potentially expensive. For clock-only checkpoint waits, omit both procedureRunId and includeGuidance, then make the source-required focused reads. Takeover/release/close/reset detection for Runs you drive remains active. includeGuidance:false removes static guidance only, not acquisitions; current facts and exact step.definition remain, marked guidanceIncluded:false. Reload guidance on step/source changes. Returns at the first of: a durable event after afterSequence (a step read's sequence; omitted: from now) matching events, e.g. {"type":"interaction.signal.received","signalType":"process-plant.proposal.approved"}; simulationSeconds of plant time from now; someone else taking over, releasing, closing or resetting a procedure Run you drive (reason driver-changed: stop and report); or maxWaitMs (timeout). At the requested target, simulation-time succeeds even when completion pauses the Run. Before the target, clock-paused means execution is not advancing (including maximum pace): it never plays or advances time. If the Run is deleted, its Workspace removed or World stops, the wait fails at once with simulation_run_closed: stop. Returns reason, fromSequence, sequence, simulationTime, waitedMs, matching events and driverChanged. Call it alone.`,
+      description: `Waits in your turn, at most ${runWaitMaxMs / 1_000} s of wall time, for the plant to respond or a person to act. Input {afterSequence?, maxWaitMs? (1000-${runWaitMaxMs}), simulationSeconds? (1-600) or untilSimulationTime? (ISO timestamp), events? [{type, procedureRunId?, signalType?}] (up to 8), procedureRunId?, includeGuidance?}; name time, events, or both; simulationSeconds and untilSimulationTime are exclusive. untilSimulationTime uses the exact execution.advance receipt target without adding request latency. On timeout, wait for the same target again; never add time. Optional procedureRunId reacquires all branch observations, including current checks and historical sample windows, into next: potentially expensive. For clock-only checkpoint waits, omit both procedureRunId and includeGuidance, then make the source-required focused reads. Takeover/release/close/reset detection for Runs you drive remains active. includeGuidance:false removes static guidance only, not acquisitions; current facts and exact step.definition remain, marked guidanceIncluded:false. Reload guidance on step/source changes. Returns at the first of: a durable event after afterSequence (a step read's sequence; omitted: from now) matching events, e.g. {"type":"interaction.signal.received","signalType":"process-plant.proposal.approved"}; simulationSeconds of plant time from now; someone else taking over, releasing, closing or resetting a procedure Run you drive (reason driver-changed: stop and report); or maxWaitMs (timeout). At the requested target, simulation-time succeeds even when completion pauses the Run. Before the target, clock-paused means execution is not advancing (including maximum pace): it never plays or advances time. If the Run is deleted, its Workspace removed or World stops, the wait fails at once with simulation_run_closed: stop. Returns reason, fromSequence, sequence, simulationTime, waitedMs, matching events and driverChanged. Call it alone.`,
       searchTerms: ['wait for plant response', 'wait plant time', 'wait for approval', 'simulation seconds', 'procedure wait'],
       risk: 'read',
       idempotent: true,
@@ -1925,7 +1934,8 @@ const invokeCapability = async (
   const invocation = moduleCapabilityInvocationSchema.parse(rawInvocation)
   if (invocation.workspaceId !== registry.workspaceId) return apiError(409, 'workspace_scope_mismatch', 'Invocation belongs to another Workspace')
   if (invocation.capabilityId !== capabilityId) return apiError(409, 'capability_scope_mismatch', 'Invocation Capability does not match the route')
-  if (invocation.idempotencyKey !== undefined && worldCapabilities.descriptors.some(descriptor => descriptor.id === capabilityId)) return apiError(400, 'idempotency_not_supported', 'This Capability does not support keyed retries; inspect the Resource after an uncertain result.')
+  const builtinDescriptor = worldCapabilities.descriptors.find(descriptor => descriptor.id === capabilityId)
+  if (invocation.idempotencyKey !== undefined && builtinDescriptor && !builtinDescriptor.acceptsIdempotencyKey) return apiError(400, 'idempotency_not_supported', 'This Capability does not support keyed retries; inspect the Resource after an uncertain result.')
 
   const release = invocation.resource?.type === 'world.simulation-run' && capabilityId !== 'world.simulation-run.delete'
     ? registry.acquireLease(requireSimulationRunResource(invocation), 'api') : undefined

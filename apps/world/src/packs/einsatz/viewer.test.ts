@@ -12,31 +12,31 @@ import { recommend } from './recommend.ts'
 import { refusalCode } from './refusal.ts'
 import { attributionOf, commandsUnit, inPicture, listText, openViewer, queuesTask, resolveViewer, type EinsatzViewer } from './viewer.ts'
 
-/** The fixture configuration with two operator roles: one commands the road carriers and queues load tasks, the other commands the flyers. */
-const authorityConfig = einsatzConfigSchema.parse({
+/** The fixture configuration on two sides with groups: North's ground and air crews; their roles command their units. */
+const groupConfig = einsatzConfigSchema.parse({
   ...fixture,
-  authority: [
-    { roleId: 'ground', units: { types: [types.roadCarrier] }, taskTemplates: [templates.load] },
-    { roleId: 'air', units: { types: [types.directCarrier] }, taskTemplates: [templates.load, templates.report] },
+  groups: [
+    { id: 'ground', label: 'Ground lead', category: 'Crews', side: 'north' },
+    { id: 'air', label: 'Air lead', category: 'Crews', side: 'north' },
   ],
 })
 
-/** The roles of a Run without sides: every role sees everything. */
+/** The roles of a sided Run: the groups' roles, an operator role that is no group's, and a controller. */
 const declared: ReadonlyArray<ScenarioRole> = [
-  { id: 'ground', label: 'Ground lead', class: 'operator' },
-  { id: 'air', label: 'Air lead', class: 'operator' },
-  { id: 'watch', label: 'Watch', class: 'operator' },
-  { id: 'control', label: 'Control', class: 'controller' },
+  { id: 'group:ground', label: 'Ground lead', class: 'operator', sees: ['north'] },
+  { id: 'group:air', label: 'Air lead', class: 'operator', sees: ['north'] },
+  { id: 'watch', label: 'Watch', class: 'operator', sees: ['north'] },
+  { id: 'control', label: 'Control', class: 'controller', sees: 'all' },
 ]
 
-const withAuthority = async (): Promise<EngineState> => {
-  let state = emptyEngineState({ config: authorityConfig, sides: [], timeMs: start })
+const withGroups = async (): Promise<EngineState> => {
+  let state = emptyEngineState({ config: groupConfig, sides: ['north'], timeMs: start })
   for (const intent of [
-    newUnit('c1', types.roadCarrier, at(0.001)),
-    newUnit('d1', types.directCarrier, at(0.002)),
-    newUnit('g1', types.pairServer, at(0.003)),
-    newTask('t1', templates.load, at(0), { [low]: 1 }),
-    newTask('n1', templates.report, at(0)),
+    newUnit('c1', types.roadCarrier, at(0.001), { side: 'north', group: 'ground' }),
+    newUnit('d1', types.directCarrier, at(0.002), { side: 'north', group: 'air' }),
+    newUnit('g1', types.pairServer, at(0.003), { side: 'north', group: 'air' }),
+    newTask('t1', templates.load, at(0), { [low]: 1 }, { side: 'north' }),
+    newTask('n1', templates.report, at(0), undefined, { side: 'north' }),
   ]) {
     const outcome = await executeIntent(state, intent, controller, ports)
     if (!outcome.ok) throw new Error(outcome.reason)
@@ -45,7 +45,7 @@ const withAuthority = async (): Promise<EngineState> => {
   return state
 }
 
-const operatorOf = (...roleIds: string[]): EinsatzViewer => resolveViewer({ roleIds, class: 'operator', sees: 'all' }, declared)
+const operatorOf = (...roleIds: string[]): EinsatzViewer => resolveViewer({ roleIds, class: 'operator', sees: ['north'] }, declared)
 const contextFor = (state: EngineState, viewer: EinsatzViewer): CommandContext => ({ state, viewer, roles: declared, by: attributionOf(viewer, 'actor:tester'), newId: kind => `${kind}:new` })
 const refusalOf = (state: EngineState, viewer: EinsatzViewer, kind: Parameters<typeof prepareCommand>[1], payload: unknown): string => {
   const prepared = prepareCommand(contextFor(state, viewer), kind, payload)
@@ -57,45 +57,44 @@ describe('Einsatz viewer', () => {
   test('no stamped viewer is open mode or the timeline, a truth view commanding everything; a stamped viewer holds its declared roles', () => {
     expect(resolveViewer(undefined, declared)).toBe(openViewer)
     expect(openViewer).toEqual({ class: 'controller', sees: 'all', roles: [] })
-    expect(resolveViewer({ roleIds: ['ground', 'air'], class: 'operator', sees: 'all' }, declared))
-      .toEqual({ class: 'operator', sees: 'all', roles: declared.slice(0, 2) })
+    expect(resolveViewer({ roleIds: ['group:ground', 'group:air'], class: 'operator', sees: ['north'] }, declared))
+      .toEqual({ class: 'operator', sees: ['north'], roles: declared.slice(0, 2) })
     expect(() => resolveViewer({ roleIds: ['ghost'], class: 'operator', sees: 'all' }, declared)).toThrow('The caller holds role ghost, which this Run does not declare')
   })
 
-  test('lastAction.by names the held roles by label, and the core actor only without roles', () => {
+  test('lastAction.by names the held roles by label, and the core actor only without roles, an AI agent marked as one', () => {
     expect(attributionOf(openViewer, 'actor:operator')).toBe('actor:operator')
-    expect(attributionOf(operatorOf('ground'), 'actor:operator')).toBe('Ground lead')
-    expect(attributionOf(operatorOf('ground', 'air', 'watch'), 'actor:operator')).toBe('Ground lead, Air lead and Watch')
+    expect(attributionOf(openViewer, 'actor:assistant', 'ai')).toBe('ai:actor:assistant')
+    expect(attributionOf(operatorOf('group:ground'), 'actor:operator', 'ai')).toBe('Ground lead')
+    expect(attributionOf(operatorOf('group:ground', 'group:air', 'watch'), 'actor:operator')).toBe('Ground lead, Air lead and Watch')
     expect(listText(['A', 'B'])).toBe('A and B')
   })
 
-  test('the commandable set and the queue follow the roles\' authority entries; a role-less operator commands nothing', async () => {
-    const state = await withAuthority()
+  test('the commandable set and the queue follow the groups\' roles; a role that is no group\'s, or none, commands nothing', async () => {
+    const state = await withGroups()
     const unit = (id: string) => state.units.get(id)!
     const task = (id: string) => state.tasks.get(id)!
     expect(['c1', 'd1', 'g1'].filter(id => commandsUnit(state.catalog, openViewer, unit(id)))).toEqual(['c1', 'd1', 'g1'])
-    expect(['c1', 'd1', 'g1'].filter(id => commandsUnit(state.catalog, operatorOf('ground'), unit(id)))).toEqual(['c1'])
-    expect(['c1', 'd1', 'g1'].filter(id => commandsUnit(state.catalog, operatorOf('ground', 'air'), unit(id)))).toEqual(['c1', 'd1'])
-    expect(['c1', 'd1', 'g1'].filter(id => commandsUnit(state.catalog, operatorOf(), unit(id)))).toEqual([])
-    expect(['t1', 'n1'].filter(id => queuesTask(state, operatorOf('ground'), task(id)))).toEqual(['t1'])
-    expect(['t1', 'n1'].filter(id => queuesTask(state, operatorOf('air'), task(id)))).toEqual(['t1', 'n1'])
+    expect(['c1', 'd1', 'g1'].filter(id => commandsUnit(state.catalog, operatorOf('group:ground'), unit(id)))).toEqual(['c1'])
+    expect(['c1', 'd1', 'g1'].filter(id => commandsUnit(state.catalog, operatorOf('group:ground', 'group:air'), unit(id)))).toEqual(['c1', 'd1', 'g1'])
+    expect(['c1', 'd1', 'g1'].filter(id => commandsUnit(state.catalog, operatorOf('watch'), unit(id)))).toEqual([])
+    expect(['t1', 'n1'].filter(id => queuesTask(state, operatorOf('group:ground'), task(id)))).toEqual(['t1'])
+    expect(['t1', 'n1'].filter(id => queuesTask(state, operatorOf('watch'), task(id)))).toEqual([])
   })
 
-  test('commands name the role a unit belongs to, send to tasks outside the queue but close only queued ones, and keep creating and adjusting to controllers', async () => {
-    const state = await withAuthority()
-    const ground = operatorOf('ground')
-    expect(refusalOf(state, ground, ids.send, { units: ['d1'], to: { taskId: 't1' } })).toBe('unit_not_authorized: Ground lead does not command D1. It belongs to Air lead: add that role to command it')
-    expect(refusalOf(state, operatorOf('watch'), ids.send, { units: ['c1', 'd1'], to: { taskId: 't1' } })).toBe('unit_not_authorized: Watch does not command C1. It belongs to Ground lead: add that role to command it')
-    expect(refusalOf(state, ground, ids.hold, { unitId: 'g1' })).toBe('unit_not_authorized: Ground lead does not command G1, and no operator role does')
-    expect(prepareCommand(contextFor(state, ground), ids.send, { units: ['c1'], to: { taskId: 'n1' } }).ok).toBe(true)
+  test('commands name the role a unit belongs to, order to tasks outside the queue but close only queued ones, and keep creating and adjusting to controllers', async () => {
+    const state = await withGroups()
+    const ground = operatorOf('group:ground')
+    expect(refusalOf(state, ground, ids.order, { units: ['d1'], stops: [{ taskId: 't1' }] })).toBe('unit_not_authorized: Ground lead does not command D1. It belongs to Air lead: add that role to command it')
+    expect(refusalOf(state, operatorOf('watch'), ids.order, { units: ['c1', 'd1'], stops: [{ taskId: 't1' }] })).toBe('unit_not_authorized: Watch does not command C1. It belongs to Ground lead: add that role to command it')
+    expect(prepareCommand(contextFor(state, ground), ids.order, { units: ['c1'], stops: [{ taskId: 'n1' }] }).ok).toBe(true)
     expect(refusalOf(state, ground, ids.taskClose, { taskId: 'n1' })).toBe('task_not_in_role_queue: N1 is not in the queue of Ground lead')
     expect(prepareCommand(contextFor(state, ground), ids.taskClose, { taskId: 't1' }).ok).toBe(true)
-    expect(prepareCommand(contextFor(state, operatorOf('air')), ids.taskClose, { taskId: 'n1' }).ok).toBe(true)
-    expect(refusalOf(state, ground, ids.send, { units: [], to: { taskId: 't1' } })).toStartWith('invalid_input: units: ')
+    expect(refusalOf(state, ground, ids.order, { units: [], stops: [{ taskId: 't1' }] })).toStartWith('invalid_input: units: ')
     expect(refusalOf(state, ground, ids.unitCreate, { type: types.roadCarrier, at: at(0) })).toBe('role_controller_only: Creating a unit needs a controller role')
     expect(refusalCode(refusalOf(state, ground, ids.taskCreate, { template: templates.load, at: at(0), loads: { [low]: 1 }, label: 'X' }))).toBe('role_controller_only')
     expect(refusalCode(refusalOf(state, ground, ids.unitAdjust, { unitId: 'c1', properties: { liftKg: 600 }, reason: 'Test' }))).toBe('role_controller_only')
-    const allowed = prepareCommand(contextFor(state, ground), ids.send, { units: ['c1'], to: { taskId: 't1' } })
+    const allowed = prepareCommand(contextFor(state, ground), ids.order, { units: ['c1'], stops: [{ taskId: 't1' }] })
     expect(allowed.ok && allowed.actor.commandable(state.units.get('d1')!)).toBe(false)
     const created = prepareCommand(contextFor(state, openViewer), ids.unitCreate, { type: types.roadCarrier, at: at(0) })
     expect(created.ok && created.intent).toMatchObject({ kind: 'unit.create', id: 'unit:new', label: 'Carrier 2' })
@@ -109,81 +108,31 @@ describe('Einsatz viewer', () => {
     ])
     const north = resolveViewer({ roleIds: ['north-ground'], class: 'operator', sees: ['north'] }, [{ id: 'north-ground', label: 'North ground', class: 'operator', sees: ['north'] }])
     expect(['n1', 's1', 'site'].filter(id => inPicture(state.catalog, north, state.units.get(id)!))).toEqual(['n1', 'site'])
-    expect(refusalOf(state, north, ids.hold, { unitId: 's1' })).toBe('not_in_picture: Not in your picture')
+    expect(refusalOf(state, north, ids.recall, { unitId: 's1' })).toBe('not_in_picture: Not in your picture')
   })
 
-  test('a side role never commands a public unit, though its selector names the type; a role seeing the truth and a controller do', async () => {
-    const config = einsatzConfigSchema.parse({
-      ...fixture,
-      authority: [
-        { roleId: 'north-ground', units: { types: [types.roadCarrier, types.publicSite] }, taskTemplates: [] },
-        { roleId: 'umpire', units: { types: [types.publicSite] }, taskTemplates: [] },
-      ],
-    })
-    let state = emptyEngineState({ config, sides: ['north', 'south'], timeMs: start })
-    for (const intent of [newUnit('n1', types.roadCarrier, at(0), { side: 'north' }), newUnit('site', types.publicSite, at(0.01))]) {
+  test('a side role never commands a public unit; a controller does', async () => {
+    let state = emptyEngineState({ config: groupConfig, sides: ['north'], timeMs: start })
+    for (const intent of [newUnit('n1', types.roadCarrier, at(0), { side: 'north', group: 'ground' }), newUnit('site', types.publicSite, at(0.01))]) {
       const outcome = await executeIntent(state, intent, controller, ports)
       if (!outcome.ok) throw new Error(outcome.reason)
       state = outcome.state
     }
-    const sidedRoles: ReadonlyArray<ScenarioRole> = [
-      { id: 'north-ground', label: 'North ground', class: 'operator', sees: ['north'] },
-      { id: 'umpire', label: 'Umpire', class: 'operator', sees: 'all' },
-      { id: 'control', label: 'Control', class: 'controller', sees: 'all' },
-    ]
-    const viewerOf = (roleId: string, sees: EinsatzViewer['sees'], kind: EinsatzViewer['class'] = 'operator') => resolveViewer({ roleIds: [roleId], class: kind, sees }, sidedRoles)
-    const north = viewerOf('north-ground', ['north'])
+    const north = operatorOf('group:ground')
     const site = state.units.get('site')!
     expect(inPicture(state.catalog, north, site)).toBe(true)
     expect(['n1', 'site'].filter(id => commandsUnit(state.catalog, north, state.units.get(id)!))).toEqual(['n1'])
-    expect(commandsUnit(state.catalog, viewerOf('umpire', 'all'), site)).toBe(true)
-    expect(commandsUnit(state.catalog, viewerOf('control', 'all', 'controller'), site)).toBe(true)
-    const prepared = prepareCommand({ state, viewer: north, roles: sidedRoles, by: attributionOf(north, 'actor:tester'), newId: kind => `${kind}:new` }, ids.siteSet, { siteId: 'site', accepting: false })
-    expect(prepared.ok ? null : prepared.reason).toBe('unit_not_authorized: North ground does not command SITE. It belongs to Umpire: add that role to command it')
-  })
-
-  test('a role set commands and queues the union of what each role commands within its own picture, never one role\'s selector across another\'s side', async () => {
-    const sidedConfig = einsatzConfigSchema.parse({
-      ...fixture,
-      authority: [
-        { roleId: 'north-ground', units: { types: [types.roadCarrier] }, taskTemplates: [templates.load] },
-        { roleId: 'south-air', units: { types: [types.directCarrier] }, taskTemplates: [templates.report] },
-      ],
-    })
-    let state = emptyEngineState({ config: sidedConfig, sides: ['north', 'south'], timeMs: start })
-    for (const intent of [
-      newUnit('nc', types.roadCarrier, at(0), { side: 'north' }),
-      newUnit('nd', types.directCarrier, at(0), { side: 'north' }),
-      newUnit('sc', types.roadCarrier, at(0), { side: 'south' }),
-      newUnit('sd', types.directCarrier, at(0), { side: 'south' }),
-      newTask('nl', templates.load, at(0), { [low]: 1 }, { side: 'north' }),
-      newTask('nr', templates.report, at(0), undefined, { side: 'north' }),
-      newTask('sl', templates.load, at(0), { [low]: 1 }, { side: 'south' }),
-      newTask('sr', templates.report, at(0), undefined, { side: 'south' }),
-    ]) {
-      const outcome = await executeIntent(state, intent, controller, ports)
-      if (!outcome.ok) throw new Error(outcome.reason)
-      state = outcome.state
-    }
-    const sidedRoles: ReadonlyArray<ScenarioRole> = [
-      { id: 'north-ground', label: 'North ground', class: 'operator', sees: ['north'] },
-      { id: 'south-air', label: 'South air', class: 'operator', sees: ['south'] },
-    ]
-    const both = resolveViewer({ roleIds: ['north-ground', 'south-air'], class: 'operator', sees: ['north', 'south'] }, sidedRoles)
-    expect(['nc', 'nd', 'sc', 'sd'].filter(id => commandsUnit(state.catalog, both, state.units.get(id)!))).toEqual(['nc', 'sd'])
-    expect(['nl', 'nr', 'sl', 'sr'].filter(id => queuesTask(state, both, state.tasks.get(id)!))).toEqual(['nl', 'sr'])
-    const prepared = prepareCommand({ state, viewer: both, roles: sidedRoles, by: attributionOf(both, 'actor:tester'), newId: kind => `${kind}:new` }, ids.hold, { unitId: 'sc' })
-    expect(prepared.ok ? null : prepared.reason).toBe('unit_not_authorized: North ground and South air do not command SC, and no operator role does')
+    expect(commandsUnit(state.catalog, resolveViewer({ roleIds: ['control'], class: 'controller', sees: 'all' }, declared), site)).toBe(true)
+    expect(refusalOf(state, north, ids.siteSet, { siteId: 'site', accepting: false })).toBe('unit_not_authorized: Ground lead does not command SITE, and no operator role does')
   })
 
   test('recommendations take candidates only from the viewer\'s commandable set', async () => {
-    const state = await withAuthority()
+    const state = await withGroups()
     const routing = createDirectRoutingAdapter()
-    const asGround = await recommend({ state, viewer: operatorOf('ground'), taskId: 't1', routing })
-    expect([...asGround.proposal.units, ...asGround.alternatives].map(entry => entry.unitId)).toEqual(['c1'])
-    const asBoth = await recommend({ state, viewer: operatorOf('ground', 'air'), taskId: 't1', routing })
-    expect([...asBoth.proposal.units, ...asBoth.alternatives].map(entry => entry.unitId).sort()).toEqual(['c1', 'd1'])
-    const outside = await recommend({ state, viewer: operatorOf('ground'), taskId: 'n1', routing }).then(() => '', (error: Error) => error.message)
+    const offered = (answer: Awaited<ReturnType<typeof recommend>>) => [...new Set([...answer.proposal?.units ?? [], ...answer.alternatives.flatMap(entry => entry.units)].map(entry => entry.unitId))].sort()
+    expect(offered(await recommend({ state, viewer: operatorOf('group:ground'), taskId: 't1', routing }))).toEqual(['c1'])
+    expect(offered(await recommend({ state, viewer: operatorOf('group:ground', 'group:air'), taskId: 't1', routing }))).toEqual(['c1', 'd1'])
+    const outside = await recommend({ state, viewer: operatorOf('group:ground'), taskId: 'n1', routing }).then(() => '', (error: Error) => error.message)
     expect(refusalCode(outside)).toBe('task_not_in_role_queue')
   })
 })

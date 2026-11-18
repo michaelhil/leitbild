@@ -30,6 +30,17 @@ const INSET_END = 4
 const MIN_SPAN_FRACTION = 0.04
 const PAD_FRACTION = 0.08
 
+/** The scale a line draws on, for a range of values. A line beside others passes theirs, so that a low one looks low. */
+export const sparklineScale = (range: { readonly min: number; readonly max: number }): { readonly min: number; readonly max: number } => {
+  const magnitude = Math.max(Math.abs(range.min), Math.abs(range.max))
+  const minimum = magnitude >= 1 ? Math.max(magnitude * MIN_SPAN_FRACTION, 1) : magnitude * MIN_SPAN_FRACTION
+  const middle = (range.min + range.max) / 2
+  const width = range.max - range.min
+  // A moving value is padded by a share of its width; one too steady to scale (a decayed power near zero) spans one unit.
+  const scaled = width >= minimum ? { min: range.min - width * PAD_FRACTION, max: range.max + width * PAD_FRACTION } : { min: middle - minimum / 2, max: middle + minimum / 2 }
+  return scaled.max - scaled.min > 0 && Number.isFinite(scaled.max - scaled.min) ? scaled : { min: middle - 1, max: middle + 1 }
+}
+
 /** Step and hold: each point holds until the next, its hold, the reading's going silent or the window's end, and breaks where the next comes after its hold. */
 const stepPath = (points: ReadonlyArray<SeriesPoint>, x: (t: number) => number, y: (v: number) => number, window: { readonly start: number; readonly end: number }, holdMs: number, silentFrom?: number): string => {
   const commands: string[] = []
@@ -78,20 +89,14 @@ const thinned = (points: ReadonlyArray<SeriesPoint>, x: (t: number) => number, h
  * holds until the next (the Historian's, served with the record); `silentFrom`: from when its reading measured nothing,
  * which its last value holds no further.
  */
-export const sparkline = (points: ReadonlyArray<SeriesPoint>, now: number, windowMs: number, size: { readonly width: number; readonly height: number }, holdMs: number, silentFrom?: number): Sparkline | null => {
+export const sparkline = (points: ReadonlyArray<SeriesPoint>, now: number, windowMs: number, size: { readonly width: number; readonly height: number }, holdMs: number, silentFrom?: number, scale?: { readonly min: number; readonly max: number }): Sparkline | null => {
   const start = now - windowMs
   const readings = points.filter(point => Number.isFinite(point.v) && point.t <= now)
   const until = (index: number): number => Math.min(readings[index + 1]?.t ?? (silentFrom !== undefined && silentFrom >= readings[index]!.t ? silentFrom : now), readings[index]!.t + holdMs, now)
   const drawn = readings.filter((_, index) => until(index) >= start)
   if (drawn.length === 0) return null
   const range = { min: Math.min(...drawn.map(point => point.v)), max: Math.max(...drawn.map(point => point.v)) }
-  const magnitude = Math.max(Math.abs(range.min), Math.abs(range.max))
-  const minimum = magnitude >= 1 ? Math.max(magnitude * MIN_SPAN_FRACTION, 1) : magnitude * MIN_SPAN_FRACTION
-  const middle = (range.min + range.max) / 2
-  const width = range.max - range.min
-  // A moving value is padded by a share of its width; one too steady to scale (a decayed power near zero) spans one unit.
-  const scaled = width >= minimum ? { min: range.min - width * PAD_FRACTION, max: range.max + width * PAD_FRACTION } : { min: middle - minimum / 2, max: middle + minimum / 2 }
-  const domain = scaled.max - scaled.min > 0 && Number.isFinite(scaled.max - scaled.min) ? scaled : { min: middle - 1, max: middle + 1 }
+  const domain = scale ?? sparklineScale(range)
   const x = (t: number): number => ((t - start) / windowMs) * (size.width - INSET_END)
   const y = (v: number): number => INSET_Y + (1 - (v - domain.min) / (domain.max - domain.min)) * (size.height - 2 * INSET_Y)
   const last = drawn.at(-1)!

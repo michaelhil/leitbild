@@ -31,12 +31,6 @@ const smallSource = () => scenarioDefinitionSchema.parse({
       { type: 'drone', id: 'drone:visible', label: 'Visible', position: [11.4, 59.1] },
       { type: 'drone', id: 'drone:hidden', label: 'Hidden drone', position: [11.4001, 59.1] },
     ] },
-    { id: 'ambulance', config: {}, items: [
-      { type: 'incident', id: 'incident:hidden', label: 'Hidden incident', summary: 'Hidden incident detail', dispatchUrgency: 'urgent', position: [11.4002, 59.1] },
-      { type: 'incident', id: 'incident:visible', label: 'Visible incident', summary: 'Visible detail', dispatchUrgency: 'ordinary', position: [11.4003, 59.1] },
-      { type: 'patient', id: 'patient:hidden', label: 'Hidden patient', incidentId: 'incident:hidden', summary: 'Test demand', assessedUrgency: 'urgent', needs: [] },
-      { type: 'ambulance', id: 'ambulance:visible', label: 'Busy visible unit', position: [11.4, 59.1], patientCapacity: 1, capabilities: [], crewReady: true, mobilizationSeconds: 120, sceneSeconds: 900 },
-    ] },
     { id: 'situation-monitor', config: { sources: [] }, items: [] },
   ],
 })
@@ -69,38 +63,25 @@ const withWorld = async (body: (context: {
   } finally { await workspaces.shutdown(); await rm(dataDir, { recursive: true, force: true }) }
 }
 
-test('published Pack reads filter before relations, contacts, totals and pages; safe source summaries and person reads remain usable', async () => withWorld(async ({ registry, invoke }) => {
+test('published Pack reads filter before relations, contacts and pages; safe source summaries and person reads remain usable', async () => withWorld(async ({ registry, invoke }) => {
   const source = smallSource()
   source.packs[0]!.items[0]!.modelId = 'incident-response-quadcopter'
   await registry.createScenario(source)
   const run = await registry.create({ scenarioId: source.id }); await run.setClock({ paused: true })
-  expect((await run.invokeCapability(operator, { capabilityId: 'world.ambulance.assign', input: { unitId: 'ambulance:visible', incidentId: 'incident:hidden', patientIds: ['patient:hidden'] } })).kind).toBe('command')
-  const observed = await run.invokeCapability(operator, { capabilityId: 'world.drone.observe-target', input: { droneId: 'drone:visible', targetId: 'incident:hidden' } })
+  const observed = await run.invokeCapability(operator, { capabilityId: 'world.drone.observe-target', input: { droneId: 'drone:visible', targetId: 'drone:hidden' } })
   expect(observed).toMatchObject({ kind: 'command', result: { ok: true } })
-  await run.setAgentRestrictions(operator, { operationIds: [], objects: ['drone:hidden', 'incident:hidden', 'patient:hidden'].map(id => ({ objectId: objectIdSchema.parse(id), deny: ['inspect'] })) }, 0)
+  await run.setAgentRestrictions(operator, { operationIds: [], objects: [{ objectId: objectIdSchema.parse('drone:hidden'), deny: ['inspect'] }] }, 0)
   for (const [id, input] of [
     ['world.drone.scene', {}], ['world.drone.controller-bindings', {}], ['world.drone.sensor-contacts', { droneId: 'drone:visible' }],
-    ['world.ambulance.dispatch-state', { limit: 1 }], ['world.ambulance.metrics', {}], ['world.simulation-run.objects.search', {}], ['world.simulation-run.inspect', {}], ['world.simulation-run.changes', { afterSequence: 0, limit: 500 }],
+    ['world.simulation-run.objects.search', {}], ['world.simulation-run.inspect', {}], ['world.simulation-run.changes', { afterSequence: 0, limit: 500 }],
   ] as const) {
     const answer = await invoke(run.id, id, input)
     expect(answer.status).toBe(200)
     expect(JSON.stringify(answer.body)).not.toContain('drone:hidden')
-    expect(JSON.stringify(answer.body)).not.toContain('incident:hidden')
-    expect(JSON.stringify(answer.body)).not.toContain('patient:hidden')
   }
-  const dispatch = (await invoke(run.id, 'world.ambulance.dispatch-state', {})).body.result
-  expect(dispatch.totals).toEqual({ units: 1, incidents: 1, patients: 0, careSites: 0 })
-  expect(dispatch.units[0].phase).toBe('mobilizing')
-  expect(dispatch.units[0].planRestricted).toBe(true)
-  expect(dispatch.units[0].activeStopIndex).toBeNull()
-  expect(dispatch.units[0].stops).toEqual([])
-  expect(dispatch.units[0].assignmentWarnings).toEqual([expect.stringContaining('restricted')])
-  expect((await invoke(run.id, 'world.ambulance.object', { objectId: 'incident:hidden' })).status).toBe(403)
-  expect((await invoke(run.id, 'world.ambulance.dispatch-state', { incidentId: 'incident:hidden' })).status).toBe(403)
-  expect((await invoke(run.id, 'world.simulation-run.read-object', { objectId: 'ambulance:visible' })).status).toBe(403)
-  const person = await invoke(run.id, 'world.ambulance.dispatch-state', {}, 'human')
-  expect(person.body.result.totals.incidents).toBe(2)
-  expect(JSON.stringify(person.body)).toContain('incident:hidden')
+  expect((await invoke(run.id, 'world.simulation-run.read-object', { objectId: 'drone:hidden' })).status).toBe(403)
+  const person = await invoke(run.id, 'world.drone.scene', {}, 'human')
+  expect(JSON.stringify(person.body)).toContain('drone:hidden')
   expect((await invoke(run.id, 'world.situation-monitor.status', {})).status).toBe(200)
   await registry.close(run.id)
   const restored = await registry.load(run.id)

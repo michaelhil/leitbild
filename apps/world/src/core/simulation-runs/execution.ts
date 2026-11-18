@@ -71,6 +71,16 @@ export type RunCopyOrigin = z.infer<typeof runCopyOriginSchema>
 export interface SimulationRunCopyCheckpoint {
   readonly snapshot: import('./state-store.ts').SimulationRunStateSnapshot
   readonly runtimeStates: Readonly<Record<string, unknown>>
+  /** Trusted owner reads acquired while the source is held at this checkpoint. */
+  readonly reads?: ReadonlyArray<unknown>
+}
+
+/** Private in-process/worker handoff. Never a public cross-Module wire payload. */
+export interface RunContinuationSeed {
+  readonly manifest: import('./manifest.ts').SimulationRunManifest
+  readonly definition: import('../scenarios/definition.ts').ScenarioDefinition
+  readonly compiledScenario: import('../model/scenario.ts').CompiledScenario
+  readonly checkpoint: SimulationRunCopyCheckpoint
 }
 
 // Pack-internal solvers retain their own fixed timesteps. A one-second Run

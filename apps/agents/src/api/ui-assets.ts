@@ -1,9 +1,11 @@
-export const agentsUiAssetPath = (asset: 'app.js' | 'styles.css'): string =>
+export const agentsUiAssetPath = (asset: 'app.js' | 'styles.css' | 'engineering.js' | 'engineering.css'): string =>
   `/assets/agents/${asset}`
 
 export const agentsUiAssetFromPath = (pathname: string): string | null => {
   if (pathname === agentsUiAssetPath('app.js')) return 'app.js'
   if (pathname === agentsUiAssetPath('styles.css')) return 'styles.css'
+  if (pathname === agentsUiAssetPath('engineering.js')) return 'engineering.js'
+  if (pathname === agentsUiAssetPath('engineering.css')) return 'engineering.css'
   const chunk = pathname.match(/^\/assets\/agents\/(chunk-[a-zA-Z0-9_-]+\.js)$/)
   if (chunk) return chunk[1]!
   return null

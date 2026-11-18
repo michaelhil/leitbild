@@ -726,7 +726,8 @@
         if (event.key === 'ArrowUp' || event.key === 'ArrowDown') { const delta = event.key === 'ArrowUp' ? -1 : 1; if (event.shiftKey && focused?.view.mode === '3d') next.tiltBy(-delta * 10); else next.panBy(0, delta * 40); event.preventDefault(); return }
       }
       if (event.key !== 'Escape') return
-      if (inspected !== null) closeInspection(true)
+      if (hover !== null) leave()
+      else if (inspected !== null) closeInspection(true)
       else if (focusLocations !== null || floorChoice !== null || scopeFloorChoice !== null) { focusLocations = null; floorChoice = null; scopeFloorChoice = null }
       else if (componentsOpen) componentsOpen = false
       else if (controls?.dismiss() || cameraControls?.dismiss()) { /* the active disclosure consumed Escape */ }
@@ -783,7 +784,12 @@
     </div>{/if}
 
   {:else if viewportFailure !== null}
-    <div class="layout-tools" style:top={`${toolsTop}px`}><p role="alert">{viewportFailure}</p></div>
+    <div class="layout-tools" style:top={`${toolsTop}px`}>
+      <section class="layout-components" data-layout-camera-cover aria-label="Physical layout">
+        <header><strong>Physical layout</strong><button type="button" aria-label="Close layout controls" onclick={() => { controlsOpen = false }}>×</button></header>
+        <p role="alert">{viewportFailure}</p>
+      </section>
+    </div>
   {/if}
   {#each badges as badge (`${badge.sceneId}:${badge.occurrenceId}:${badge.elementId}`)}
     <button class="layout-status" type="button" style:left={`${badge.point.x}px`} style:top={`${badge.point.y}px`} style:color={badge.color} title={`${badge.label}: ${badge.word}${badge.alarms > 0 ? ` · ${badge.alarms} alerts` : ''}`} aria-label={`Inspect ${badge.label}: ${badge.word}`} onclick={() => inspect(badge.sceneId, badge.elementId, badge.label, badge.occurrenceId)}><span>{badge.alarms > 0 ? badge.alarms : badge.chip}</span></button>
@@ -795,7 +801,7 @@
 <style>
   .explorer-overlay { position: absolute; inset: 0; pointer-events: none; container-type: inline-size; }.explorer-overlay.inactive { visibility: hidden; }
   .layout-plan-annotations { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; font-size: 12px; }
-  .layout-tools { position: absolute; left: 12px; z-index: 5; max-height: calc(100% - 24px); overflow-y: auto; overscroll-behavior: contain; pointer-events: none; color: var(--text); }.layout-tools :global([data-layout-camera-cover]) { pointer-events: auto; }
+  .layout-tools { position: absolute; left: 12px; z-index: 5; bottom: 8px; overflow-y: auto; overscroll-behavior: contain; pointer-events: none; color: var(--text); }.layout-tools :global([data-layout-camera-cover]) { pointer-events: auto; }
   button, input { min-height: 44px; box-sizing: border-box; font: inherit; }button { color: var(--text); background: var(--panel); border: 1px solid var(--border); border-radius: 7px; padding: 7px 10px; cursor: pointer; }button:focus-visible, input:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
   .layout-components { display: grid; gap: 6px; width: min(440px, 100%); margin-left: auto; max-height: min(52dvh, 560px); overflow: auto; box-sizing: border-box; margin-top: 6px; padding: 10px; border: 1px solid var(--border); border-radius: 8px; background: var(--panel); font-size: 12px; }.layout-components header { display: flex; justify-content: space-between; align-items: center; gap: 8px; }.layout-components header button { min-width: 44px; padding: 0; font-size: 20px; }.layout-components > label { display: grid; gap: 4px; }.layout-components p { margin: 3px 0; color: var(--muted); line-height: 1.5; font-size: 11px; }.layout-components input[type="search"] { min-width: 0; width: 100%; color: var(--text); background: var(--panel); border: 1px solid var(--border); border-radius: 6px; padding: 8px; }.layout-components .state-layer { display: flex; align-items: center; gap: 8px; }.state-layer input { min-height: 18px; width: 18px; accent-color: var(--accent); }
   .component-row { display: flex; align-items: center; gap: 5px; border-top: 1px solid var(--border); padding-top: 4px; }.component-row > span { flex: 1; min-width: 0; display: grid; gap: 3px; }.component-row strong, .component-row small { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }.component-row small { color: var(--muted); font-size: 10px; }.component-row button { flex: none; padding: 6px; }

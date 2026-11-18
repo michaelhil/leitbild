@@ -51,10 +51,17 @@ interface ExpectedSender {
 
 /**
  * Why this window cannot show a view, or null where it can: a plain switch on
- * the view type. It shows World's vignettes and dashboards about a Simulation Run.
+ * the view type. Owner evidence keeps its own Module and Resource identity.
  */
 export const listingRefusal = (envelope: EmbeddedViewEnvelope): string | null => {
   switch (envelope.viewType) {
+    case 'planning.schedule':
+      return envelope.moduleId === 'planning' && envelope.subject.moduleId === 'planning' && envelope.subject.type === 'planning.plan'
+        ? null : 'a schedule must belong to a Planning Plan'
+    case 'engineering.result':
+      return envelope.moduleId === 'agents' && envelope.subject.moduleId === 'agents' && envelope.subject.type === 'agents.room'
+        ? null : 'an engineering calculation must belong to an Agents Room'
+    case 'engineering.continuation':
     case VIGNETTE_VIEW_TYPE:
     case DASHBOARD_VIEW_TYPE:
       if (envelope.moduleId !== 'world') return `it is a ${envelope.viewType} view published by ${envelope.moduleId}, not by World`

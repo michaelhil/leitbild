@@ -45,7 +45,7 @@
             "guidance": {
               "id": "frequency-event-briefing",
               "title": "Winter peak before a unit trip",
-              "message": "Use Guide or inspect the starting frequency, allocated reserves and generator state directly. The model schedules a Kvilldal trip at +2 min. Shared time starts paused until a person advances or plays it.",
+              "message": "Use Guide or inspect the starting frequency, allocated reserves and generator state directly. The model schedules a Kvilldal trip at +2 min. Pause the clock if you need time to inspect the starting conditions.",
               "objectIds": ["grid:norway"],
               "dismissible": true,
               "tone": "default"

@@ -1,0 +1,265 @@
+import { describe, expect, test } from 'bun:test'
+import { applyEdits, requireAuthority, type EditContext } from './edits.ts'
+import { editSchema, type Edit } from './edit-schema.ts'
+import { planInputsSchema, type Plan, type PlanInputs } from './schema.ts'
+import { readiness } from './readiness.ts'
+import { changeLines, readinessText, statusSentence } from './summary.ts'
+
+const fixture = async (name: string): Promise<PlanInputs> => planInputsSchema.parse(await Bun.file(new URL(`./fixtures/${name}`, import.meta.url)).json())
+const trainA = await fixture('train-a.fragment.json')
+const supplyRun = await fixture('supply-run.case2.json')
+const planOf = (inputs: PlanInputs, drafts: readonly string[] = []): Plan => ({ id: crypto.randomUUID(), workspaceId: '5d1b0a9e-6c1e-4d5e-9f00-0000000000a3' as Plan['workspaceId'], revision: 1, createdAt: '2026-11-11T08:00:00Z', updatedAt: '2026-11-11T08:00:00Z', inputs, options: null, baselines: [], changes: [{ seq: 1, at: '2026-11-11T08:00:00Z', by: { kind: 'human' }, revision: 1, summary: 'Created', kinds: [] }], droppedChanges: 0, ...(drafts.length === 0 ? {} : { drafts: [...drafts] }) })
+const context: EditContext = { now: '2026-11-12T10:02:00+01:00', by: { kind: 'human', name: 'Planner' } }
+const edits = (...given: unknown[]): Edit[] => given.map(edit => editSchema.parse(edit))
+const apply = (inputs: PlanInputs, ...given: unknown[]) => applyEdits(inputs, edits(...given), context)
+const refusal = (work: () => unknown) => {
+  try { work() } catch (error) { return error as { status: number; code: string; message: string; details?: Record<string, unknown> } }
+  throw new Error('expected a refusal')
+}
+const job = (inputs: PlanInputs, key: string) => inputs.jobs.find(entry => entry.key === key)!
+const weakenings = (inputs: PlanInputs, ...given: unknown[]) => apply(inputs, ...given).weakens.map(weakening => [weakening.code, weakening.what, weakening.about[0]])
+
+// Keys from the fixture, never values: a tested work job, its supports, a covered item and the protected item.
+const protectedRule = trainA.rules.find(rule => rule.kind === 'protected')!
+const protectedItem = protectedRule.kind === 'protected' ? protectedRule.equipment[0]! : ''
+const spanRule = trainA.rules.find(rule => rule.kind === 'span-limit')!
+const supported = trainA.equipment.find(item => item.supportedBy.length > 0)!
+const groupedTagOut = trainA.jobs.find(entry => entry.kind === 'tag-out' && entry.equipment.some(key => trainA.equipment.find(item => item.key === key)?.group !== undefined))!
+const minimumTest = trainA.jobs.find(entry => entry.kind === 'test' && entry.minimum !== undefined)!
+const workJob = trainA.jobs.find(entry => entry.kind === 'work' && entry.isolation === 'inside')!
+
+describe('field-level edits (S1)', () => {
+  test('a given field replaces that field, null clears an optional one, an omitted field is kept', () => {
+    const target = trainA.jobs.find(entry => entry.duration.range !== undefined)!
+    const { inputs, changes } = apply(trainA, { edit: 'job', key: target.key, duration: { value: target.duration.value! + 6 } }, { edit: 'job', key: target.key, duration: { range: null } })
+    const after = job(inputs, target.key)
+    expect(after.duration.value).toBe(target.duration.value! + 6)
+    expect(after.duration.range).toBeUndefined()
+    expect(after.duration.unit).toBe(target.duration.unit)
+    expect(after.needs).toEqual(target.needs)
+    expect(changes.map(change => [change.verb, change.what, change.key])).toEqual([['changed', 'job', target.key], ['changed', 'job', target.key]])
+    expect(job(trainA, target.key).duration.value).toBe(target.duration.value)   // the input is never mutated
+  })
+
+  test('a new key needs every required field; a missing estimate is asked for, never defaulted', () => {
+    const missing = refusal(() => apply(trainA, { edit: 'job', key: 'NEW', title: 'New job', kind: 'work', isolation: 'none' }))
+    expect([missing.status, missing.code]).toEqual([400, 'invalid_request'])
+    expect(missing.message).toContain('needs duration')
+    expect((missing.details?.expected as { fields: string[] }).fields).toContain('duration')
+    const noIsolation = refusal(() => apply(trainA, { edit: 'job', key: 'NEW', title: 'New job', kind: 'work', duration: { value: 2, unit: 'h', calendar: 'working' } }))
+    expect(noIsolation.message).toContain('isolation')
+    const created = apply(trainA, { edit: 'job', key: 'NEW', title: 'New job', kind: 'work', isolation: 'none', duration: { value: 2, unit: 'h', calendar: 'working' } })
+    expect(job(created.inputs, 'NEW')).toMatchObject({ needs: [], tags: [], continuous: false, duration: { origin: { by: 'planner' } } })
+  })
+
+  test('a link is named by (from, to, type) and a removed job takes its links with it', () => {
+    const pairs = trainA.jobs.flatMap(from => trainA.jobs.filter(to => to !== from).map(to => [from, to] as const))
+    const [first, second] = pairs.find(([from, to]) => !trainA.links.some(link => link.from === from.key && link.to === to.key))!
+    const linked = apply(trainA, { edit: 'link', from: first!.key, to: second!.key, type: 'FS' })
+    expect(linked.inputs.links.filter(link => link.from === first!.key && link.to === second!.key && link.type === 'FS')).toEqual([{ from: first!.key, to: second!.key, type: 'FS', lag: { value: 0, unit: 'h' } }])
+    const removed = apply(linked.inputs, { edit: 'remove', what: 'job', key: second!.key })
+    expect(removed.inputs.links.some(link => link.from === second!.key || link.to === second!.key)).toBe(false)
+    expect(removed.changes.filter(change => change.what === 'link' && change.verb === 'removed').length).toBe(linked.inputs.links.filter(link => link.from === second!.key || link.to === second!.key).length)
+  })
+
+  test('every key a plan names must exist', () => {
+    const unknown = refusal(() => apply(trainA, { edit: 'job', key: workJob.key, needs: [{ anyOf: ['nobody'] }] }))
+    expect([unknown.status, unknown.code, unknown.details?.about]).toEqual([400, 'unknown_reference', [workJob.key, 'nobody']])
+    expect(refusal(() => apply(trainA, { edit: 'remove', what: 'calendar', key: trainA.resources[0]!.calendar })).code).toBe('unknown_reference')
+    expect(refusal(() => apply(trainA, { edit: 'equipment', key: supported.supportedBy[0]!, supportedBy: [supported.key] })).message).toContain('cycle')
+  })
+
+  test('linking a Run stores only its reference and clears copies of another Run', () => {
+    const read = { ...supplyRun, settings: { ...supplyRun.settings, run: { id: 'run-1', linkedAt: '2026-09-03T08:00:00Z' } }, world: { refreshedAt: '2026-09-03T08:00:05Z', facts: [{ id: 'f', label: 'f', quantity: 'state', value: true, basis: 'observed' as const, at: '2026-09-03T08:00:00Z', locator: 'einsatz/unit/x' }] } }
+    const linked = apply(read, { edit: 'plan', run: 'run-2' })
+    expect(linked.inputs.settings.run).toEqual({ id: 'run-2', linkedAt: '2026-11-12T09:02:00Z' })
+    expect(linked.inputs.world).toEqual({ refreshedAt: null, facts: [] })
+    expect(linked.runChanged).toBe(true)
+  })
+
+  test('a World value is stored as references, never as a number; a unit Planning cannot convert is refused', () => {
+    const truck = supplyRun.resources.find(resource => resource.attributes.some(attribute => attribute.origin.by === 'world'))!
+    const attribute = truck.attributes.find(entry => entry.origin.by === 'world')!
+    const ref = attribute.origin.by === 'world' ? attribute.origin.refs[0]! : undefined!
+    const kept = apply(supplyRun, { edit: 'resource', key: truck.key, attributes: [{ key: attribute.key, label: attribute.label, unit: attribute.unit, fromWorld: ref }] })
+    expect(kept.inputs.resources.find(resource => resource.key === truck.key)!.attributes[0]).toMatchObject({ value: null, origin: { by: 'world', refs: [ref] } })
+    const read = { ...supplyRun, world: { refreshedAt: '2026-09-03T08:00:05Z', facts: [{ id: ref.fact, label: 'Payload', quantity: 'payloadKg', unit: 'lb', value: 700, basis: 'configured' as const, at: '2026-09-03T08:00:00Z', locator: ref.locator }] } }
+    const unit = refusal(() => apply(read, { edit: 'resource', key: truck.key, attributes: [{ key: attribute.key, label: attribute.label, unit: attribute.unit, fromWorld: ref }] }))
+    expect([unit.code, unit.message.includes('"lb"')]).toEqual(['invalid_request', true])
+  })
+})
+
+describe('automatic bracketing (walk fix 9, T0p)', () => {
+  test('work on equipment with no tag-out or test drafts both, as assumptions; existing ones are reused', () => {
+    const blank = planInputsSchema.parse({ ...trainA, jobs: [], links: [], rules: [] })
+    const item = blank.equipment[0]!
+    const work = { edit: 'job', key: 'SEAL', title: 'Replace the seal', kind: 'work', isolation: 'inside', equipment: [item.key], duration: { value: 10, unit: 'h', calendar: 'working' } }
+    const drafted = apply(blank, work)
+    const drafts = drafted.inputs.jobs.filter(job => job.key !== 'SEAL')
+    expect(drafts.map(job => [job.kind, job.equipment, job.title, job.duration.origin.by])).toEqual([
+      ['tag-out', [item.key], `Tag out ${item.label}`, 'assumption'],
+      ['test', [item.key], `Return ${item.label} to service and test`, 'assumption'],
+    ])
+    expect(drafted.changes.filter(change => change.fields.includes('drafted')).map(change => change.key)).toEqual(drafts.map(job => job.key))
+    // Draft status is the Module's own list (Plan.drafts), never a note an edit could write.
+    expect(drafted.drafts).toEqual(drafts.map(job => job.key).sort())
+    // With its own tag-out already there, only the test is drafted; the drafts never block the save.
+    const tagged = apply(blank, { edit: 'job', key: 'TAG', title: 'Tag out', kind: 'tag-out', equipment: [item.key], duration: { value: 2, unit: 'h', calendar: 'working' } }, work)
+    expect(tagged.inputs.jobs.filter(job => job.kind === 'test').map(job => job.equipment)).toEqual([[item.key]])
+    expect(tagged.inputs.jobs.filter(job => job.kind === 'tag-out').map(job => job.key)).toEqual(['TAG'])
+    // A drafted bracket has no crew yet: readiness says so in words, and Generate's refusal names it (adversary item 25).
+    const noCrew = readiness(planOf(drafted.inputs, drafted.drafts), { staleOptions: [], now: '2026-11-12T09:00:00Z' }).filter(entry => entry.code === 'no-crew' && entry.words === 'drafted')
+    expect(noCrew.length === 2 && noCrew.every(entry => entry.blocks)).toBe(true)
+    expect(noCrew.map(entry => readinessText(entry, drafted.inputs))).toEqual([`The drafted tag-out 'Tag out ${item.label}' needs a crew: add one.`, `The drafted return-to-service test 'Return ${item.label} to service and test' needs a crew: add one.`])
+    expect(statusSentence({ word: 'invalid input', problems: [{ about: [drafts[0]!.key], code: 'working_time_without_resource' }] }, drafted.inputs)).toBe(`Invalid input: Tag out ${item.label} needs a crew: add one.`)
+    // Work done off the item (isolation none) needs no bracket.
+    expect(apply(blank, { ...work, isolation: 'none' }).inputs.jobs.map(job => job.key)).toEqual(['SEAL'])
+  })
+
+  test('walk 2 R2-2: a later edit in the same list gives a draft its crew; a bracket added later replaces the draft', () => {
+    const blank = planInputsSchema.parse({ ...trainA, jobs: [], links: [], rules: [] })
+    const item = blank.equipment[0]!
+    const crew = blank.resources[0]!.key
+    const work = { edit: 'job', key: 'SEAL', title: 'Replace the seal', kind: 'work', isolation: 'inside', equipment: [item.key], duration: { value: 10, unit: 'h', calendar: 'working' } }
+    const crewed = apply(blank, work, { edit: 'job', key: `${item.key}-TAG`, needs: [{ anyOf: [crew], amount: 1 }] }, { edit: 'job', key: `${item.key}-RTS`, needs: [{ anyOf: [crew], amount: 1 }] })
+    expect(crewed.inputs.jobs.map(job => [job.key, job.needs.flatMap(need => need.anyOf)])).toEqual([['SEAL', []], [`${item.key}-TAG`, [crew]], [`${item.key}-RTS`, [crew]]])
+    // Giving a draft its crew makes it the planner's job (adversary recheck 1).
+    expect(crewed.drafts).toEqual([])
+    expect(readiness(planOf(crewed.inputs), { staleOptions: [], now: '2026-11-12T09:00:00Z' }).filter(entry => entry.code === 'no-crew').map(entry => entry.about[0])).toEqual(['SEAL'])
+    // A manual tag-out later in the list: the draft it makes redundant is dropped, with its change line.
+    const manual = apply(blank, work, { edit: 'job', key: 'TAG', title: 'Tag out', kind: 'tag-out', equipment: [item.key], duration: { value: 2, unit: 'h', calendar: 'working' } })
+    expect(manual.inputs.jobs.map(job => job.key)).toEqual(['SEAL', `${item.key}-RTS`, 'TAG'])
+    expect(manual.changes.filter(change => change.fields.includes('drafted')).map(change => change.key)).toEqual([`${item.key}-RTS`])
+    expect(manual.drafts).toEqual([`${item.key}-RTS`])
+  })
+
+  test('walk 2 R2-2, adversary recheck 1: only a bracket on the Module\'s draft list is removed without authority', () => {
+    const blank = planInputsSchema.parse({ ...trainA, jobs: [], links: [], rules: [] })
+    const item = blank.equipment.find(entry => entry.group !== undefined)!
+    const outcome = apply(blank, { edit: 'job', key: 'SEAL', title: 'Replace the seal', kind: 'work', isolation: 'inside', equipment: [item.key], duration: { value: 10, unit: 'h', calendar: 'working' } })
+    const drafts = new Set(outcome.drafts)
+    const remove = edits({ edit: 'remove', what: 'job', key: `${item.key}-TAG` })
+    const removed = applyEdits(outcome.inputs, remove, { ...context, drafts })
+    expect([removed.weakens, removed.drafts]).toEqual([[], [`${item.key}-RTS`]])
+    // Not on the list (a baseline cleared it, or it was never drafted): removing it needs authority.
+    expect(applyEdits(outcome.inputs, remove, context).weakens.map(weakening => weakening.what)).toEqual(['covering-job'])
+    // Any edit to a draft ends it, even one in the same list as the removal.
+    const timed = applyEdits(outcome.inputs, edits({ edit: 'job', key: `${item.key}-TAG`, duration: { value: 2, unit: 'h', calendar: 'working' } }, ...remove), { ...context, drafts })
+    expect(timed.weakens.map(weakening => weakening.what)).toEqual(['covering-job'])
+    // Writing the draft note on a real test claims nothing (the adversary's relabel chain).
+    const relabel = edits({ edit: 'job', key: `${item.key}-RTS`, duration: { source: { by: 'assumption', note: `Drafted with the work on ${item.label}; set its real duration` } } }, { edit: 'remove', what: 'job', key: `${item.key}-RTS` })
+    expect(applyEdits(outcome.inputs, relabel, context).weakens.map(weakening => weakening.what)).toEqual(['covering-job'])
+  })
+})
+
+describe('the plan window and whole-window availability (walk 3, R3-1, N-C-05)', () => {
+  test('aligning the window moves every calendar that is exactly the old window; shifts and partial periods stay', () => {
+    const old = { start: '2026-11-12T06:00:00Z', end: '2026-11-17T06:00:00Z' }
+    const base = planInputsSchema.parse({
+      settings: { title: 'Supply', timeZone: 'Europe/Oslo', window: old, dataDate: null, grid: '30s', currency: 'NOK', run: null },
+      equipment: [], groups: [], purchases: [], methods: [], jobs: [], links: [], rules: [], goals: [{ metric: 'finish', tolerance: { value: 0, unit: 'h' } }], world: { refreshedAt: null, facts: [] },
+      calendars: [
+        { key: 'whole', label: 'Available for the whole window', weekly: [], periods: [old], except: [], source: { by: 'planner' } },
+        { key: 'shift', label: 'Day shift', weekly: [{ days: ['thu'], from: '07:00', to: '19:00' }], periods: [], except: [], source: { by: 'planner' } },
+        { key: 'part', label: 'First day', weekly: [], periods: [{ start: old.start, end: '2026-11-13T06:00:00Z' }], except: [], source: { by: 'planner' } },
+      ],
+      resources: [], 
+    })
+    const aligned = { start: '2026-09-03T08:00:00Z', end: '2026-09-08T08:00:00Z' }
+    const outcome = apply(base, { edit: 'plan', window: aligned, dataDate: aligned.start })
+    expect(outcome.inputs.calendars.map(calendar => [calendar.key, calendar.periods])).toEqual([['whole', [aligned]], ['shift', []], ['part', [{ start: old.start, end: '2026-11-13T06:00:00Z' }]]])
+    expect(changeLines(outcome.changes, outcome.inputs)).toEqual(['Changed calendar Available for the whole window: moved with the plan window', "Changed the plan: window, the plan's now"])
+    // The same window again moves nothing.
+    expect(apply(outcome.inputs, { edit: 'plan', window: aligned }).changes).toEqual([])
+  })
+})
+
+describe('hard rules: protection, authority and minimums (A2, adversary item 8)', () => {
+  test('a job on protected equipment is refused, with or without authority', () => {
+    const refused = refusal(() => apply(trainA, { edit: 'job', key: workJob.key, equipment: [protectedItem] }))
+    expect([refused.status, refused.code, refused.details?.about]).toEqual([409, 'protected_equipment', [workJob.key, protectedItem, protectedRule.key]])
+  })
+
+  test('each weakening edit is named and needs authority; adding a rule needs none', () => {
+    expect(weakenings(trainA, { edit: 'equipment', key: supported.key, supportedBy: [] })).toEqual([['needs_authority', 'support', supported.key]])
+    const grouped = trainA.equipment.find(item => item.group === (spanRule.kind === 'span-limit' ? spanRule.group : ''))!
+    expect(weakenings(trainA, { edit: 'equipment', key: grouped.key, group: null })).toEqual([['needs_authority', 'group', grouped.key]])
+    expect(weakenings(trainA, { edit: 'job', key: groupedTagOut.key, kind: 'work', isolation: 'none' })).toEqual([['needs_authority', 'job-kind', groupedTagOut.key]])
+    expect(weakenings(trainA, { edit: 'rule', key: spanRule.key, limit: { value: 96, unit: 'h' } })).toEqual([['needs_authority', 'rule', spanRule.key]])
+    expect(weakenings(trainA, { edit: 'remove', what: 'rule', key: protectedRule.key })).toEqual([['needs_authority', 'rule', protectedRule.key]])
+    const unworked = trainA.equipment.find(item => item.group !== undefined && !trainA.jobs.some(entry => entry.equipment.includes(item.key)) && !trainA.equipment.some(other => other.supportedBy.includes(item.key)))
+    if (unworked !== undefined) expect(weakenings(trainA, { edit: 'remove', what: 'equipment', key: unworked.key })).toEqual([['needs_authority', 'equipment', unworked.key]])
+    expect(weakenings(trainA, { edit: 'remove', what: 'job', key: minimumTest.key })).toEqual([['needs_authority', 'covering-job', minimumTest.key]])
+    const multi = trainA.jobs.find(entry => entry.kind === 'test' && entry.equipment.length > 1)
+    if (multi !== undefined) expect(weakenings(trainA, { edit: 'job', key: multi.key, equipment: multi.equipment.slice(0, 1) })).toEqual([['needs_authority', 'covering-equipment', multi.key]])
+    expect(weakenings(trainA, { edit: 'rule', key: 'R9', kind: 'keep-in-service', members: [supported.key, supported.supportedBy[0]!], atLeast: 1, words: 'Keep one in service.' })).toEqual([])
+  })
+
+  test('a function key: adding it needs none; changing or clearing it on covered equipment needs authority', () => {
+    const covered = trainA.equipment.find(item => item.function !== undefined && item.group === (spanRule.kind === 'span-limit' ? spanRule.group : ''))!
+    expect(weakenings(trainA, { edit: 'equipment', key: covered.key, function: 'other-function' })).toEqual([['needs_authority', 'function', covered.key]])
+    expect(weakenings(trainA, { edit: 'equipment', key: covered.key, function: null })).toEqual([['needs_authority', 'function', covered.key]])
+    expect(weakenings(trainA, { edit: 'equipment', key: covered.key, function: covered.function })).toEqual([])
+    const unkeyed = trainA.equipment.find(item => item.function === undefined)!
+    const added = apply(trainA, { edit: 'equipment', key: unkeyed.key, function: 'new-function', source: { by: 'planner', note: 'train membership' } })
+    expect(added.weakens).toEqual([])
+    expect(added.inputs.equipment.find(item => item.key === unkeyed.key)).toMatchObject({ function: 'new-function', source: { by: 'planner', note: 'train membership' } })
+  })
+
+  test('a due rule: adding it needs none; moving its time later or removing it needs authority', () => {
+    const window = trainA.settings.window!
+    const at = (fraction: number) => new Date(Date.parse(window.start) + (Date.parse(window.end) - Date.parse(window.start)) * fraction).toISOString()
+    const due = { edit: 'rule', key: 'D1', kind: 'due', job: minimumTest.key, finishBy: at(0.5), words: 'Surveillance due', source: { by: 'reference', note: 'Technical specification surveillance' } }
+    const added = apply(trainA, due)
+    expect(added.weakens).toEqual([])
+    expect(added.inputs.rules.find(rule => rule.key === 'D1')).toEqual({ kind: 'due', key: 'D1', job: minimumTest.key, finishBy: at(0.5).replace('.000Z', 'Z'), words: 'Surveillance due', source: { by: 'reference', note: 'Technical specification surveillance' } })
+    expect(weakenings(added.inputs, { edit: 'rule', key: 'D1', finishBy: at(0.75) })).toEqual([['needs_authority', 'rule', 'D1']])
+    expect(weakenings(added.inputs, { edit: 'remove', what: 'rule', key: 'D1' })).toEqual([['needs_authority', 'rule', 'D1']])
+    expect(refusal(() => requireAuthority(apply(added.inputs, { edit: 'rule', key: 'D1', finishBy: at(0.75) }).weakens, undefined, added.inputs)).code).toBe('needs_authority')
+    expect(refusal(() => apply(trainA, { ...due, job: 'nothing' })).code).toBe('unknown_reference')
+    expect(refusal(() => apply(trainA, { ...due, group: 'COOL-A' })).code).toBe('invalid_request')
+  })
+
+  test('removing protected equipment needs authority; with it the edit is saved and can then touch the item', () => {
+    const remaining = protectedRule.kind === 'protected' ? protectedRule.equipment.slice(1) : []
+    const edit = remaining.length === 0 ? { edit: 'remove', what: 'rule', key: protectedRule.key } : { edit: 'rule', key: protectedRule.key, equipment: remaining }
+    const outcome = apply(trainA, edit)
+    expect(() => requireAuthority(outcome.weakens, undefined, trainA)).toThrow('Name the person who agreed and their reason, as authority. Ask them; never fill this in yourself.')
+    expect(refusal(() => requireAuthority(outcome.weakens, undefined, trainA)).code).toBe('needs_authority')
+    expect(() => requireAuthority(outcome.weakens, { name: "Shift supervisor", reason: "Train B work moved to this week" }, trainA)).not.toThrow()
+  })
+
+  test('a test may not run shorter than its minimum by any path: its own estimate or a crew-specific one', () => {
+    const minimum = minimumTest.minimum!
+    const crew = minimumTest.needs.flatMap(need => need.anyOf)[0]!
+    const shorter = apply(trainA, { edit: 'job', key: minimumTest.key, durationWith: [{ resource: crew, value: minimum.value / 5 }] })
+    expect(shorter.weakens.map(weakening => [weakening.code, weakening.about[0]])).toEqual([['below_minimum', minimumTest.key]])
+    expect(apply(trainA, { edit: 'job', key: minimumTest.key, durationWith: [{ resource: crew, value: minimum.value * 2 }] }).weakens).toEqual([])
+  })
+
+  test('one World item is one piece of equipment; re-pointing covered equipment needs authority', () => {
+    const located = trainA.equipment.find(item => item.key === protectedItem)!
+    const twin = refusal(() => apply(trainA,
+      { edit: 'equipment', key: 'SWB2', label: 'Another name for the same pump', locator: located.locator! },
+      { edit: 'job', key: 'TAG-TWIN', title: 'Tag out the twin', kind: 'tag-out', equipment: ['SWB2'], duration: { value: 1, unit: 'h', calendar: 'working' } }))
+    expect([twin.code, twin.details?.about]).toEqual(['invalid_request', [protectedItem, 'SWB2']])
+    const covered = trainA.equipment.find(item => item.locator !== undefined && item.group !== undefined)!
+    expect(weakenings(trainA, { edit: 'equipment', key: covered.key, locator: 'process-plant/plant%3Aother/pump' })).toEqual([['needs_authority', 'locator', covered.key]])
+    expect(weakenings(trainA, { edit: 'equipment', key: covered.key, locator: null })).toEqual([['needs_authority', 'locator', covered.key]])
+  })
+
+  test('removing a precondition needs authority', () => {
+    const checked = trainA.jobs.find(entry => entry.checks.length > 0)!
+    expect(weakenings(trainA, { edit: 'job', key: checked.key, checks: [] })).toEqual([['needs_authority', 'precondition', checked.key]])
+    expect(weakenings(trainA, { edit: 'job', key: checked.key, checks: checked.checks })).toEqual([])
+  })
+
+  test('a test estimated below its minimum is below_minimum; lowering or clearing the minimum needs authority; minimum is for tests only', () => {
+    const minimum = minimumTest.minimum!
+    const below = apply(trainA, { edit: 'job', key: minimumTest.key, duration: { value: minimum.value / 2, unit: minimum.unit } })
+    expect(below.weakens.map(weakening => weakening.code)).toEqual(['below_minimum'])
+    expect(refusal(() => requireAuthority(below.weakens, undefined, trainA)).code).toBe('below_minimum')
+    expect(weakenings(trainA, { edit: 'job', key: minimumTest.key, minimum: null })).toEqual([['needs_authority', 'minimum', minimumTest.key]])
+    expect(refusal(() => apply(trainA, { edit: 'job', key: workJob.key, minimum: { value: 1, unit: 'h', words: 'not a test' } })).code).toBe('invalid_request')
+  })
+})

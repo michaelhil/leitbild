@@ -5,6 +5,7 @@ import {
 } from '@leitbild/contracts'
 import type { ProcedureTag } from '../../core/model/index.ts'
 import type { ProcedureTagValidation, ProcedureTagValue } from './procedure-client.ts'
+import { procedureDisplayReading } from './procedure-view.ts'
 
 // What a clicked procedure tag's dialog shows, decided before anything is
 // drawn: a tag the unit's model does not hold says so; otherwise World's
@@ -58,4 +59,4 @@ export const procedureTagDeclared = (tag: Pick<ProcedureTag, 'description' | 'un
 
 /** A reading as the dialog states it: a two-state signal names what it says ("Reactor trip breaker A closed: no"), a number its value and unit. */
 export const procedureTagReadingText = (reading: { readonly label: string; readonly value: unknown; readonly formatted: string }): string =>
-  typeof reading.value === 'boolean' ? `${reading.label}: ${reading.value ? 'yes' : 'no'}` : reading.formatted
+  typeof reading.value === 'boolean' ? `${reading.label}: ${reading.value ? 'yes' : 'no'}` : procedureDisplayReading(reading.formatted)

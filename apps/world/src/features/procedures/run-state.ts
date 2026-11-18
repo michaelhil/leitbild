@@ -9,7 +9,7 @@ import {
   procedureRunTransitionPayloadSchema, procedureRunRequestInputPayloadSchema,
 } from '../../core/model/index.ts'
 import {
-  assertAiDecisionEvidence, assertAiDrives, assertAiMayDrive, assertAiWorksCurrentStep,
+  aiBranchRefusal, assertAiDrives, assertAiMayDrive, assertAiStatesBasis, assertAiWorksCurrentStep,
   procedureDriver, sameProcedureDriver, type ProcedureActorKind,
 } from './driver-rules.ts'
 import { assessProcedureBranches, readProcedureBranchEvidence } from './branch-assessment.ts'
@@ -175,6 +175,10 @@ export const prepareProcedureCommand = async (config: {
           ? [driverChanged(context, existing.runId, actorDriver(context, 'ai'), 'started')] : []
         return [...takeover, resumed, ...aiDrives]
       }
+      // A person returns to a finished marked procedure, such as a second FR-H.3 entry. The journal keeps the first pass.
+      if (existing?.status === 'completed' && context.actorKind === 'person' && document.annotations?.['ai-workable'] === 'true') {
+        return [{ ...base(context), type: 'procedure.run.reset', sourceId: document.source.sourceId, procedureId: payload.procedureId, scope: payload.scope, resetAt: context.at, resetBy: command.actorId }, started(context, document, payload.scope)]
+      }
       if (existing) {
         throw new Error(`procedure ${payload.procedureId} already has current run state for ${payload.scope.plantId}; reset it before starting another run`)
       }
@@ -229,11 +233,7 @@ export const prepareProcedureCommand = async (config: {
       throw new Error(`procedure ${targetDocument.procedureId} does not contain destination step ${branch.targetStepId}`)
     }
     const preparedTarget = targetDocument ? currentRunFor(config.procedures, preparedRun.sourceId, targetDocument.procedureId, preparedRun.scope) : undefined
-    // Citations are bounded by this pinned step's declared tag identities, not an arbitrary count.
     const evidenceTagIds = payload.evidenceTagIds ?? []
-    if (new Set(evidenceTagIds).size !== evidenceTagIds.length) throw new Error('evidenceTagIds name a tag more than once')
-    const uncited = evidenceTagIds.filter(tagId => !step.tagIds.includes(tagId))
-    const uncitedEvidence = uncited.length === 0 ? undefined : new Error(`${uncited.map(tagId => `«${tagId}»`).join(', ')} are not cited in step ${step.label}; evidence must name its declared tags.`)
     return async context => {
       const run = activeRunFor(context.procedures, payload.runId)
       assertDocumentScope(context, document, run.scope)
@@ -242,7 +242,6 @@ export const prepareProcedureCommand = async (config: {
         assertAiDrives(run, command.actorId)
         assertAiWorksCurrentStep(run, step)
       }
-      if (uncitedEvidence !== undefined) throw uncitedEvidence
       const acquired = await readProcedureBranchEvidence({
         observations: () => {
           if (context.observations === undefined) throw new Error('Commit-local procedure observations are unavailable')
@@ -250,17 +249,16 @@ export const prepareProcedureCommand = async (config: {
         }, document, step, branchIndex: payload.branchIndex, run, ...(context.events === undefined ? {} : { events: context.events }),
       })
       const { reads } = acquired
-      const criterion = assessProcedureBranches({ step, reads, observations: acquired.observations, plantId: run.scope.plantId, simulationTime: context.clock?.() ?? context.simulationTime ?? context.at })[payload.branchIndex]!
-      if (context.actorKind === 'ai' && criterion.status !== 'supported') {
-        throw Object.assign(new Error(`Branch ${payload.branchIndex} of step ${step.label} is ${criterion.status}: ${criterion.reasons.join(' ') || 'the current evidence contradicts its declared criterion'}`), {
+      const criterion = assessProcedureBranches({ document, step, reads, observations: acquired.observations, plantId: run.scope.plantId, simulationTime: context.clock?.() ?? context.simulationTime ?? context.at })[payload.branchIndex]!
+      const refusal = context.actorKind === 'ai' ? aiBranchRefusal({ document, step, branchIndex: payload.branchIndex, criterion, reads, plantId: run.scope.plantId }) : undefined
+      if (refusal !== undefined) {
+        throw Object.assign(new Error(refusal), {
           code: 'procedure_branch_not_supported', details: { runId: run.runId, sourceId: run.sourceId, sourceRevision: run.sourceRevision, sourcePath: run.sourcePath, procedureId: run.procedureId, stepId: step.id, branchIndex: payload.branchIndex, assessment: criterion },
         })
       }
-      const evidenceReads = reads.filter(read => evidenceTagIds.includes(read.tagId))
-      const evidence = evidenceReads.map(read => ({ tagId: read.tagId, reading: procedureEvidenceReadingText(read) }))
-      if (context.actorKind === 'ai') {
-        assertAiDecisionEvidence({ step, ...(payload.basis === undefined ? {} : { basis: payload.basis }), reads: evidenceReads })
-      }
+      // A marked document asks nobody to record anything: its decisions keep every reading of the step.
+      const evidence = reads.filter(read => document.annotations?.['ai-workable'] === 'true' || evidenceTagIds.includes(read.tagId)).map(read => ({ tagId: read.tagId, reading: procedureEvidenceReadingText(read) }))
+      if (context.actorKind === 'ai') assertAiStatesBasis(payload.basis)
       // Deliberate off-path decisions remain possible, but asynchronously prepared
       // requests must not race another operator's newly accepted navigation.
       if (run.currentStepId !== preparedRun.currentStepId) throw new Error('procedure current step changed; refresh before selecting this branch')
@@ -305,7 +303,8 @@ export const prepareProcedureCommand = async (config: {
         ...(run.observations?.find(item => item.stepId === step.id) === undefined ? {} : {
           observation: run.observations!.find(item => item.stepId === step.id)!,
         }) })
-      const assessment = branch.outcome === 'normal' ? 'complete' as const : branch.outcome === 'rno' ? 'failed' as const : branch.outcome === 'unknown' ? 'unknown' as const : undefined
+      // A press against a contradicted criterion must not leave a completed mark.
+      const assessment = branch.outcome === 'normal' ? criterion.status === 'contradicted' ? 'failed' as const : 'complete' as const : branch.outcome === 'rno' ? 'failed' as const : branch.outcome === 'unknown' ? 'unknown' as const : undefined
       const currentStepId = branch.targetKind === 'step' ? branch.target : step.id
       result.push(
         { ...base(context), type: 'procedure.step.updated', runId: run.runId, stepId: step.id,
