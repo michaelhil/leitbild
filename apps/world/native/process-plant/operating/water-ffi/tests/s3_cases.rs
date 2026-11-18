@@ -650,12 +650,21 @@ const C4_R3_SHA256: &str = "6b4958c8aff62554f88ee90e4143df86336a36df049d87333567
 const C4_R4: &str = include_str!("s3_harness/fixtures/ld01-s3-cases-c4-r4.json");
 const C4_R4_FENCE: &str = "ld01-s3-cases-c4-r4";
 const C4_R4_SHA256: &str = "44eab84f6ead4ed811d1ff9302e749ef416e38bc50ef92ec0c562e9a1ebfdb1c";
-/// Revision 5 (R4-C4-REV5, owner-approved after result): C4 runs on it.
+/// Revision 5 (R4-C4-REV5, owner-approved after result): its verdicts stay on
+/// record.
 const C4_R5: &str = include_str!("s3_harness/fixtures/ld01-s3-cases-c4-r5.json");
+const C4_R5_FENCE: &str = "ld01-s3-cases-c4-r5";
 const C4_R5_SHA256: &str = "9863cfb39cb3405c75e659411013ba530266ae32c91ff7b21e16a6c0d6497526";
+/// Revision 6 (R4-C4-R2-F, owner 18 November): C4 runs on it.
+const C4_R6: &str = include_str!("s3_harness/fixtures/ld01-s3-cases-c4-r6.json");
+const C4_R6_SHA256: &str = "f19c3df00b42d13aa3f03942463effb0580ba8cd2a748e90217e7833bb7c76dd";
 /// C4-I (owner-approved 7 November): its own block on C4's drive.
 const C4I_R1: &str = include_str!("s3_harness/fixtures/ld01-s3-cases-c4i.json");
+const C4I_R1_FENCE: &str = "ld01-s3-cases-c4i";
 const C4I_R1_SHA256: &str = "d5354e11ec7fa1267d102cfcf140a881d3e3a555df562ca4a5db31bbf049d1a7";
+/// C4-I revision 2 (R4-C4-R2-F, owner 18 November): C4-I runs on it.
+const C4I_R2: &str = include_str!("s3_harness/fixtures/ld01-s3-cases-c4i-r2.json");
+const C4I_R2_SHA256: &str = "a562447b73bf47f2fbabbf18ee6d99954995610790d59665bc01fc90410309c3";
 /// The revisions the r8 wiki supersedes, refused by name.
 const SUPERSEDED: [(&str, &str, &str); 2] = [
     (
@@ -670,7 +679,7 @@ const SUPERSEDED: [(&str, &str, &str); 2] = [
     ),
 ];
 /// The pin a block must carry for a gate run on the r8 wiki, by fence.
-const REQUIRED: [(&str, &str, &str); 5] = [
+const REQUIRED: [(&str, &str, &str); 7] = [
     (
         "ld01-s3-cases-c1c3",
         C1C3_R3_8_SHA256,
@@ -678,8 +687,10 @@ const REQUIRED: [(&str, &str, &str); 5] = [
     ),
     ("ld01-s3-cases-c4", C4_R3_SHA256, "RP1-pin-s3-c4-r3"),
     (C4_R4_FENCE, C4_R4_SHA256, "RP1-pin-s3-c4-r4"),
-    (s3_harness::c4::FENCE, C4_R5_SHA256, "RP1-pin-s3-c4-r5"),
-    (s3_harness::c4i::FENCE, C4I_R1_SHA256, "RP1-pin-s3-c4i"),
+    (C4_R5_FENCE, C4_R5_SHA256, "RP1-pin-s3-c4-r5"),
+    (s3_harness::c4::FENCE, C4_R6_SHA256, "RP1-pin-s3-c4-r6"),
+    (C4I_R1_FENCE, C4I_R1_SHA256, "RP1-pin-s3-c4i"),
+    (s3_harness::c4i::FENCE, C4I_R2_SHA256, "RP1-pin-s3-c4i-r2"),
 ];
 
 /// Refuses a superseded block revision by name, and any C1–C3 or C4 block
@@ -1160,14 +1171,14 @@ fn c4_revision_4_pins_and_names_the_owner_approved_changes() {
 /// Block r5 (R4-C4-REV5): the owner's three rulings on E, and the stepping.
 #[test]
 fn c4_revision_5_pins_the_rulings_and_the_c4i_block_is_its_own() {
-    let b = Block::from_json(s3_harness::c4::FENCE, C4_R5).unwrap();
+    let b = Block::from_json(C4_R5_FENCE, C4_R5).unwrap();
     assert_eq!(guards::declared_sha256(&b).unwrap(), C4_R5_SHA256);
     assert_eq!(b.whole("/cases/C4/stepping/record"), "free");
     assert!(b.whole("/cases/C4/windows").get("maxStep_s").is_none());
     let rule = b.whole("/cases/C4/gates/refinement");
     let rule = rule.as_str().unwrap();
     assert!(rule.contains("operator grade") && rule.contains("Recorded, not judged"));
-    let i = Block::from_json(s3_harness::c4i::FENCE, C4I_R1).unwrap();
+    let i = Block::from_json(C4I_R1_FENCE, C4I_R1).unwrap();
     assert_eq!(guards::declared_sha256(&i).unwrap(), C4I_R1_SHA256);
     assert_eq!(i.whole("/cases/C4I/closeAt_s"), json!([30, 47]));
     assert!(
@@ -1178,6 +1189,46 @@ fn c4_revision_5_pins_the_rulings_and_the_c4i_block_is_its_own() {
     );
     let lines = i.whole("/cases/C4I/lines");
     assert_eq!(lines.as_object().unwrap().len(), 12);
+}
+
+/// Revision 6 and C4-I revision 2 (R4-C4-R2-F, owner 18 November): family F
+/// reads R2 beside the series; every other entry is revision 5's and revision
+/// 1's.
+#[test]
+fn c4_revision_6_and_c4i_revision_2_add_rule_f_s_r2_only() {
+    let strip = |v: &Value, case: &str| {
+        let mut v = v.clone();
+        for k in ["revision", "scope", "from"] {
+            v.as_object_mut().unwrap().remove(k);
+        }
+        v["cases"][case]["gates"]
+            .as_object_mut()
+            .unwrap()
+            .remove("smoothness");
+        if case == "C4I" {
+            v["cases"]["C4I"]["gates"]["refinement"] = Value::Null;
+        }
+        v
+    };
+    let r5 = Block::from_json(C4_R5_FENCE, C4_R5).unwrap();
+    let r6 = Block::from_json(s3_harness::c4::FENCE, C4_R6).unwrap();
+    assert_eq!(guards::declared_sha256(&r6).unwrap(), C4_R6_SHA256);
+    assert_eq!(r6.whole("/revision"), json!("6"));
+    assert_eq!(strip(&r6.value, "C4"), strip(&r5.value, "C4"));
+    let f = r6.whole("/cases/C4/gates/smoothness");
+    let f = f.as_str().unwrap();
+    assert!(f.contains("R2") && f.contains("family F alone") && f.contains("R4-C4-R2-F"));
+    let i1 = Block::from_json(C4I_R1_FENCE, C4I_R1).unwrap();
+    let i2 = Block::from_json(s3_harness::c4i::FENCE, C4I_R2).unwrap();
+    assert_eq!(guards::declared_sha256(&i2).unwrap(), C4I_R2_SHA256);
+    assert_eq!(i2.whole("/revision"), json!("2"));
+    assert_eq!(strip(&i2.value, "C4I"), strip(&i1.value, "C4I"));
+    assert!(
+        i2.whole("/cases/C4I/gates/smoothness")
+            .as_str()
+            .unwrap()
+            .contains("C4's R2")
+    );
 }
 
 #[test]
@@ -3565,12 +3616,12 @@ fn s3_case_run() {
         |e| json!({"pinned": false, "error": e, "declared_sha256": guards::declared_sha256(&d.block).ok()}),
     );
     let tbd = d.tbd().unwrap();
-    // C4 runs on its pinned block r5 only (RP1-pin-s3-c4-r5).
+    // C4 runs on its pinned block r6 only (RP1-pin-s3-c4-r6).
     if case == Case::C4 {
         assert_eq!(
             guards::declared_sha256(&d.block).ok().as_deref(),
-            Some(C4_R5_SHA256),
-            "the C4 block is not RP1-pin-s3-c4-r5"
+            Some(C4_R6_SHA256),
+            "the C4 block is not RP1-pin-s3-c4-r6"
         );
     }
     let mut refusals = declaration::case_refusals(case, &pin, &tbd);
@@ -3856,6 +3907,8 @@ fn s3_case_run() {
     let mut not_implemented: Vec<&str> = Vec::new();
     let mut repeat_driven = None;
     let mut references: Vec<(String, Driven)> = Vec::new();
+    // R4-C4-R2-F: C4's R2 for family F alone, apart from the references E reads.
+    let mut f_reference: Option<(String, Driven)> = None;
     if let Some(g) = gate.as_ref() {
         let og = run.observer.gates.as_ref().unwrap();
         let units_bound = g.s2.gates.number("/ledger/boundLocalToleranceUnits");
@@ -3976,8 +4029,15 @@ fn s3_case_run() {
         let series_on = case == Case::C4
             || (std::env::var("LD01_PHYS_SERIES").as_deref() == Ok("1")
                 && matches!(case, Case::C2 | Case::C3 | Case::C5));
-        let asks = if series_on {
-            [10., 30., 100.]
+        // R4-C4-R2-F (owner, 18 November 2026): beside the series, C4 (and
+        // C4-I) runs its declared R2, which family F alone reads.
+        let (asks, f_ask) = if series_on {
+            let f_ask = if case == Case::C4 {
+                asks.into_iter().find(|a| a.0 == "R2")
+            } else {
+                None
+            };
+            let series = [10., 30., 100.]
                 .into_iter()
                 .map(|k: f64| {
                     let s = s3::Scaling {
@@ -3986,9 +4046,10 @@ fn s3_case_run() {
                     };
                     (format!("rtol/{k}"), s, None, 0., end)
                 })
-                .collect()
+                .collect();
+            (series, f_ask)
         } else {
-            asks
+            (asks, None)
         };
         let only = std::env::var("LD01_S3_GATES_REFERENCES").ok();
         let mut comparisons = Vec::new();
@@ -4120,6 +4181,36 @@ fn s3_case_run() {
                     "boundary_band_states": leitbild_operating_water::boundary_band_states()}));
             }
         }
+        // R4-C4-R2-F: C4's R2, driven as the declared references are; family F
+        // reads it, and no comparison, series, check or level does.
+        f_reference = f_ask
+            .filter(|(name, ..)| {
+                only.as_deref()
+                    .is_none_or(|o| o.split(',').any(|x| x == name))
+            })
+            .map(|(name, scaling, max_step, _, to)| {
+                let r = drive(
+                    case,
+                    &d,
+                    &spec,
+                    &inputs,
+                    &state,
+                    &state_path,
+                    span.min(to + 1.),
+                    Some(g),
+                    &Ask {
+                        label: &name,
+                        scaling,
+                        max_step,
+                        credited_from: 0.,
+                        window_state: None,
+                        observation_s: None,
+                        f_tolerances: false,
+                        config,
+                    },
+                );
+                (name, r)
+            });
         // R11-3a's series: each completed level against the next looser
         // completed one, by the same E0 comparison (looser minus tighter).
         let series = series_on.then(|| {
@@ -4305,6 +4396,7 @@ fn s3_case_run() {
                 };
                 let r2 = references
                     .iter()
+                    .chain(&f_reference)
                     .find(|(n, _)| n == "R2")
                     .and_then(|(_, r)| r.observer.gates.as_ref())
                     .filter(|rg| rg.credited_error.is_none())
@@ -4677,7 +4769,7 @@ fn s3_case_run() {
         "gates_not_yet_implemented": gates_not_yet,
         "run": run.record,
         "repeat": repeat_driven.as_ref().map(|r| json!({"failure": r.failure, "cpu": r.record["cpu"], "record": r.repeat_record})),
-        "references": references.iter().map(|(n, r)| json!({"reference": n, "failure": r.failure, "rule_i_exit_after_zero_s": r.exit_after_zero,
+        "references": references.iter().chain(&f_reference).map(|(n, r)| json!({"reference": n, "failure": r.failure, "rule_i_exit_after_zero_s": r.exit_after_zero,
             "configuration": r.record["configuration"], "cpu": r.record["cpu"], "counts_by_class": r.record["counts_by_class"]})).collect::<Vec<_>>(),
         "process_cpu_s": process_cpu_s() - process0,
     });
