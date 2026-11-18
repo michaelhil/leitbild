@@ -277,7 +277,7 @@ test('the scoped engineering agent produces an inspectable calculation beside th
 
 test('plain deadline questions produce checked success and refusal visualizations', async ({ page }) => {
   test.skip(process.env.LEITBILD_E2E_ENGINEERING_AGENT !== '1', 'Enable LEITBILD_E2E_ENGINEERING_AGENT=1 with the actual configured provider for agent acceptance.')
-  test.setTimeout(600_000)
+  test.setTimeout(900_000)
   await withNuclearPlanning(page, async (planning, workspace) => {
     await planning.getByLabel('Ask about the deadline', { exact: true }).fill('Can we complete maintenance by 18:00? Show me how, or explain why not.')
     await planning.getByRole('button', { name: 'Ask Assistant', exact: true }).click()
@@ -285,7 +285,7 @@ test('plain deadline questions produce checked success and refusal visualization
     const agents = page.frameLocator('iframe[title="Agents room"]')
     const displays = agents.getByRole('button', { name: /^(Show|Hide) the planning schedule in this answer:/ })
 
-    const checkedDisplay = async (after: number, deadline: string, status: string) => {
+    const checkedDisplay = async (after: number, deadline: string, status: string, expectedCost?: number) => {
       await expect.poll(() => displays.count(), { timeout: 240_000 }).toBeGreaterThan(after)
       await expect(agents.locator('[data-live-view="preparing"]')).toHaveCount(0, { timeout: 30_000 })
       const count = await displays.count()
@@ -310,7 +310,8 @@ test('plain deadline questions produce checked success and refusal visualization
         await saveEvidence(`planning-publication-${after}-${index}`, { envelope, publication })
         const schedule = publication.schedule
         if (schedule.deadline === null || Date.parse(schedule.deadline.finishBy) !== Date.parse(deadline)
-          || schedule.option.status.word !== status) continue
+          || schedule.option.status.word !== status
+          || expectedCost !== undefined && schedule.option.cost !== expectedCost) continue
         expect(schedule.option.fresh).toBe(true)
         expect(schedule.deadline.job).toBe('restore')
         const result = frame.contentFrame()
@@ -321,7 +322,7 @@ test('plain deadline questions produce checked success and refusal visualization
       throw new Error(`The Assistant did not publish a ${status} Planning schedule for ${deadline}.`)
     }
 
-    const fits = await checkedDisplay(0, '2026-11-18T17:00:00Z', 'validated feasible')
+    const fits = await checkedDisplay(0, '2026-11-18T17:00:00Z', 'validated feasible', 12_000)
     expect(Date.parse(fits.schedule.option.finish)).toBe(Date.parse('2026-11-18T15:00:00Z'))
     expect(fits.schedule.option.cost).toBe(12_000)
     await expect(fits.result.getByText(/Requested finish by 18:00/)).toBeVisible()
@@ -345,6 +346,18 @@ test('plain deadline questions produce checked success and refusal visualization
     await expect(refuses.result.getByText('Highlighted work belongs to the infeasibility proof.', { exact: true })).toBeVisible()
     await expect(refuses.result.getByRole('rowheader').last()).toContainText('16:00')
     await saveEvidenceImage('deadline-15', path => refuses.result.locator('body').screenshot({ path }))
+
+    const displaysBeforeLaterDeadline = await displays.count()
+    await followup.fill('Can we complete by 19:30 using the existing crew, with no extra crew booking?')
+    await agents.getByRole('button', { name: 'Send', exact: true }).click()
+    const existingCrew = await checkedDisplay(displaysBeforeLaterDeadline, '2026-11-18T18:30:00Z', 'validated feasible', 0)
+    expect(existingCrew.plan).toBe(fits.plan)
+    expect(Date.parse(existingCrew.schedule.option.finish)).toBe(Date.parse('2026-11-18T18:00:00Z'))
+    expect(existingCrew.schedule.option.cost).toBe(0)
+    await expect(existingCrew.result.getByText(/Requested finish by 19:30/)).toBeVisible()
+    await expect(existingCrew.result.getByText('Meets the requested deadline.', { exact: false })).toBeVisible()
+    await expect(existingCrew.result.getByRole('rowheader').last()).toContainText('19:00')
+    await saveEvidenceImage('deadline-19-30-existing-crew', path => existingCrew.result.locator('body').screenshot({ path }))
 
     // A question must remain a what-if; the authored return target is unchanged.
     const jobs = await page.request.post(`/api/workspaces/${workspace}/capabilities/planning.plan.read/invoke`, {
