@@ -77,6 +77,53 @@ test('nuclear planning compares actual crew schedules without opening the editor
   })
 })
 
+test('one schedule viewer changes from an 18:00 success to the actual 15:00 refusal', async ({ page }) => {
+  await withNuclearPlanning(page, async (planning, workspace) => {
+    const fullPlan = new URL((await planning.getByRole('link', { name: 'Open full plan', exact: true }).getAttribute('href'))!, page.url())
+    const plan = fullPlan.searchParams.get('planning')!
+    const resource = { workspaceId: workspace, moduleId: 'planning', type: 'planning.plan', id: plan }
+    const invoke = async (capability: string, input: unknown, expectedRevision?: number) => {
+      const response = await page.request.post(`/api/workspaces/${workspace}/capabilities/${capability}/invoke`, {
+        data: { resource, input, actor: { kind: 'human' }, ...(expectedRevision === undefined ? {} : { expectedRevision }) },
+      })
+      expect(response.ok()).toBe(true)
+      return (await response.json()).result
+    }
+    const summary = await invoke('planning.plan.read', { section: 'summary' })
+    const revision = summary.sections.find((section: { id: string }) => section.id === 'summary').data.plan.revision
+    for (const [time, finishBy, status] of [
+      ['18:00', '2026-11-18T17:00:00Z', 'validated feasible'],
+      ['15:00', '2026-11-18T14:00:00Z', 'proven infeasible'],
+    ]) {
+      const due = { kind: 'due', key: `requested-${time!.replace(':', '-')}`, job: 'restore', finishBy, words: `Requested finish by ${time}`, source: { by: 'assumption', note: 'Browser acceptance deadline question.' } }
+      const generated = await invoke('planning.plan.generate', {
+        seconds: 5, keep: true, variants: [{ label: `Extra crew by ${time}`, buy: ['extra-maintenance-crew'], also: [due] }],
+      }, revision)
+      const option = generated.options.find((candidate: { label: string }) => candidate.label === `Extra crew by ${time}`)
+      expect(option.status.word).toBe(status)
+      const published = await invoke('planning.plan.display', { option: option.key })
+      expect(published.schedule.option.fresh).toBe(true)
+      const envelope = { moduleId: 'planning', subject: resource, ...published.view }
+      // The second navigation changes only the fragment, as the shared display
+      // window does when another retained option is opened in the same frame.
+      await page.goto(`/workspaces/${workspace}/planning/embed/planning.schedule#view=${encodeURIComponent(JSON.stringify(envelope))}`)
+      await expect(page.getByText(new RegExp(`Requested finish by ${time}`))).toBeVisible({ timeout: 30_000 })
+      await expect(page.getByRole('region', { name: 'Checked schedule', exact: true })).toBeVisible()
+      await expect(page.getByRole('rowheader')).toHaveCount(5)
+      await expect(page.getByRole('rowheader').last()).toContainText('16:00')
+      if (time === '18:00') {
+        await expect(page.getByText('Meets the requested deadline.', { exact: false })).toBeVisible()
+        expect(published.schedule.option.cost).toBe(12_000)
+      } else {
+        await expect(page.getByText('The requested deadline is proven infeasible for this option.', { exact: true })).toBeVisible()
+        await expect(page.getByText('Highlighted work belongs to the infeasibility proof.', { exact: true })).toBeVisible()
+        await expect(page.getByText(/Requested finish by 18:00/)).toHaveCount(0)
+        expect(published.schedule.certificate).toMatchObject({ kind: 'chain', workHours: 7, availableHours: 6 })
+      }
+    }
+  })
+})
+
 test('the scoped engineering agent produces an inspectable calculation beside the plan', async ({ page }) => {
   test.skip(process.env.LEITBILD_E2E_ENGINEERING_AGENT !== '1', 'Enable LEITBILD_E2E_ENGINEERING_AGENT=1 with the actual configured provider for agent acceptance.')
   test.setTimeout(300_000)
