@@ -166,13 +166,47 @@ test('nuclear planning coordinates real crews, task handoffs and an unsaved esti
     await previewView.getByRole('button', { name: 'Discard preview', exact: true }).click()
     await expect(details.getByLabel('Duration (h)', { exact: true })).toHaveValue('2')
 
-    await details.getByRole('link', { name: 'Inspect Component Cooling Heat Exchanger A in World', exact: true }).click()
-    const world = page.frameLocator('iframe[title="World simulations"]')
-    await expect(world.locator('body')).toContainText('Component Cooling Heat Exchanger A', { timeout: 30_000 })
-    await world.getByRole('link', { name: 'Back to planning demo', exact: true }).click()
-    const returned = page.frameLocator('iframe[title="Planning"]')
-    await expect(returned.getByRole('button', { name: /^With HX contractor\b/ })).toHaveAttribute('aria-pressed', 'true')
-    await expect(returned.getByRole('region', { name: 'Task details', exact: true })).toContainText('Clean HX A tubes')
+    for (const asset of [
+      { key: 'hxa', task: 'Clean HX A tubes', label: 'Component Cooling Heat Exchanger A', element: 'componentCoolingHeatExchangerA', view: 'Tasks' },
+      { key: 'ccwa', task: 'Service the CCW A pump seal', label: 'Component Cooling Water Pump A', element: 'componentCoolingWaterPumpA', view: 'Crews and tools' },
+      { key: 'swa', task: 'Service the SW A discharge strainer', label: 'Service Water Pump A', element: 'serviceWaterPumpA', view: 'Tasks' },
+    ]) {
+      const current = page.frameLocator('iframe[title="Planning"]')
+      await current.getByRole('button', { name: 'Tasks', exact: true }).click()
+      await current.getByRole('table', { name: 'With HX contractor maintenance schedule', exact: true }).getByRole('button', { name: asset.task, exact: true }).click()
+      const inspector = current.getByRole('region', { name: 'Task details', exact: true })
+      await expect(inspector.getByRole('heading', { name: asset.task, exact: true })).toBeVisible()
+      await current.getByRole('button', { name: asset.view, exact: true }).click()
+      const subject = `plant:maintenance#${asset.element}`
+      const [displayResponse] = await Promise.all([
+        page.waitForResponse(response => response.request().method() === 'POST'
+          && new URL(response.url()).pathname.endsWith('/displays/default')
+          && response.request().postDataJSON()?.subject === subject, { timeout: 30_000 }),
+        inspector.getByRole('link', { name: `Inspect ${asset.label} in World`, exact: true }).click(),
+      ])
+      expect(displayResponse.ok()).toBe(true)
+      const display = (await displayResponse.json()).result.view
+      const state = JSON.parse(display.state)
+      await saveEvidence(`world-${asset.key}-display`, { request: displayResponse.request().postDataJSON(), display, state })
+      const title = `Fictional reference PWR · ${asset.label}`
+      expect(display.title).toBe(title)
+      expect(state.title).toBe(title)
+      expect(state.views).toEqual(expect.arrayContaining([
+        expect.objectContaining({ kind: 'values', lead: { objectId: 'plant:maintenance', element: asset.element } }),
+        expect.objectContaining({ kind: 'topology', objectId: 'plant:maintenance', request: expect.objectContaining({ around: [asset.element] }) }),
+      ]))
+      const world = page.frameLocator('iframe[title="World simulations"]')
+      await expect(world.locator('.display-window-title strong')).toHaveText(title, { timeout: 30_000 })
+      const ownerView = world.frameLocator(`iframe[title^="${title}"]`)
+      await expect(ownerView.getByRole('article', { name: title, exact: true })).toBeVisible({ timeout: 30_000 })
+      await expect(ownerView.getByRole('group', { name: 'Flow topology', exact: true })).toBeVisible({ timeout: 30_000 })
+      await saveEvidenceImage(`world-${asset.key}-detail`, path => page.screenshot({ path }))
+      await world.getByRole('link', { name: 'Back to planning demo', exact: true }).click()
+      const returned = page.frameLocator('iframe[title="Planning"]')
+      await expect(returned.getByRole('button', { name: /^With HX contractor\b/ })).toHaveAttribute('aria-pressed', 'true', { timeout: 30_000 })
+      await expect(returned.getByRole('region', { name: 'Task details', exact: true }).getByRole('heading', { name: asset.task, exact: true })).toBeVisible()
+      await expect(returned.getByRole('button', { name: asset.view, exact: true })).toHaveAttribute('aria-pressed', 'true')
+    }
     await page.reload()
     const reopened = page.frameLocator('iframe[title="Planning"]')
     await expect(reopened.getByRole('region', { name: 'Maintenance schedule', exact: true })).toBeVisible({ timeout: 30_000 })
