@@ -87,8 +87,10 @@ describe('preview re-timing repairs the option, never re-solves it', () => {
   }, 300_000)
 
   // Two options of the flagship, two kinds of seal: on day shifts (seed 1, 1,500 evaluations; the longer seal
-  // breaks the 72 h span R2, 82 h) and in bought time (lane K's case, the adversary's item 22: seed 2,
-  // 15,000 evaluations, span 49 h; the repair moves the seal's start later and R2 holds, 65.5 h). Only what
+  // breaks the 72 h span R2, 82 h) and in bought time (lane K's case, the adversary's item 22: Swap, seed 2,
+  // 15,000 evaluations; the repair can move the seal's start later). Select Swap explicitly for the bought
+  // case: this tests its saved schedule's repair, not a comparison with Rebuild. Searching both methods
+  // divides the fixed CPU budget and can end before the bought-seal fixture is found. Only what
   // must hold for any option is asserted: only forced jobs move, nothing earlier; each moved job carries the
   // edit as its cause; the checker's verdict on the previewed rows is the preview's.
   for (const { name, seed, evals, bought } of [
@@ -96,7 +98,8 @@ describe('preview re-timing repairs the option, never re-solves it', () => {
     { name: 'the seal in bought time (lane K\'s case)', seed: 2, evals: 15_000, bought: true },
   ]) test(`a seal estimate +6 h, ${name}: only what it forces moves, each moved job carries the edit, the checker's verdict is the preview's`, async () => {
     const inputs = trainAInputs({ read: true })
-    const { optionSet, option } = await generated(inputs, undefined, seed, evals)
+    const variants = bought ? [{ label: 'Swap', methods: [{ choice: 'SWA-method', option: 'swap' }] }] : undefined
+    const { optionSet, option } = await generated(inputs, variants, seed, evals)
     const before = new Map(option.rows.map(row => [row.job, row]))
     expect(before.get('CCWA-SEAL')!.uses.some(use => use.purchase !== undefined)).toBe(bought)
     const seal = inputs.jobs.find(job => job.key === 'CCWA-SEAL')!
