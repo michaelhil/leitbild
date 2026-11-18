@@ -20,6 +20,7 @@ import { parseViewFenceBody, viewRefFor } from '../../../apps/agents/src/core/re
 import { createDeploymentRuntime } from '../../../apps/agents/src/core/deployment-runtime.ts'
 import { createGetTimeTool, createPlaceResolveTool, createProductKnowledgeTools, createSampleChangesTool } from '../../../apps/agents/src/tools/built-in/index.ts'
 import { createAgentsModuleState } from '../../../apps/agents/src/core/workspaces/module-state.ts'
+import { loadSkills } from '../../../apps/agents/src/skills/loader.ts'
 import type { ChatRequest, LLMProvider } from '../../../apps/agents/src/core/types/llm.ts'
 import type { ToolExecutor } from '../../../apps/agents/src/core/types/tool.ts'
 import { createTurnCardsReader, frozenCard, itemOf } from '../../../apps/agents/src/ui/modules/live-view/cards.ts'
@@ -39,8 +40,9 @@ afterEach(async () => {
 })
 
 const json = async <T>(response: Response): Promise<T> => {
-  expect(response.status).toBe(200)
-  return await response.json() as T
+  const body: unknown = await response.json()
+  if (response.status !== 200) throw new Error(`Expected HTTP 200, received ${response.status}: ${JSON.stringify(body)}`)
+  return body as T
 }
 
 /** World, Agents and the Host on real servers, with an assistance Room on a started fixture Run. */
@@ -90,9 +92,7 @@ const startChain = async () => {
   cleanup.push(() => hostServer.stop(true))
   const baseUrl = `http://127.0.0.1:${hostServer.port}`
   const deployment = createDeploymentRuntime()
-  for (const name of ['leitbild-assistance', 'operator-displays', 'procedure-runner']) {
-    deployment.sharedSkillStore.register({ name, description: `Test ${name}`, body: 'Test skill.', tools: [], allowedToolNames: [], dirPath: leitbildHome })
-  }
+  await loadSkills(join(import.meta.dir, '../../../apps/agents/skills'), deployment.sharedSkillStore, deployment.sharedToolRegistry)
   deployment.sharedToolRegistry.registerAll(createProductKnowledgeTools())
   deployment.sharedToolRegistry.register(createPlaceResolveTool())
   deployment.sharedToolRegistry.register(createSampleChangesTool())
