@@ -1,9 +1,14 @@
 import type { GenerateInput } from './api.ts'
-import type { DatedRow, OptionView, PlanModel } from './model.ts'
+import { planOptions, type DatedRow, type OptionView, type PlanModel } from './model.ts'
 
 export const maintenanceDefinitionId = 'nuclear-maintenance-planning'
 export const maintenancePlantId = 'plant:maintenance'
 export const extraMaintenanceCrew = 'extra-maintenance-crew'
+
+/** Explicit navigation authored for this demonstration; Planning fact locators remain opaque. */
+export const maintenanceEquipmentElement = (key: string): string | null => ({
+  SWA: 'serviceWaterPumpA', CCWA: 'componentCoolingWaterPumpA', CCWHXA: 'componentCoolingHeatExchangerA',
+} as Readonly<Record<string, string>>)[key] ?? null
 
 export const maintenanceVariants: GenerateInput = {
   seconds: 5,
@@ -11,6 +16,16 @@ export const maintenanceVariants: GenerateInput = {
     { label: 'One crew', methods: [], buy: [] },
     { label: 'Extra crew', methods: [], buy: [extraMaintenanceCrew] },
   ],
+}
+
+/** Existing demonstrations retain their actual labels; contractor work windows name the intervention. */
+export const maintenanceVariantsFor = (model: PlanModel): GenerateInput => {
+  const existing = planOptions(model)
+  const contractor = model.inputs.purchases.find(purchase => purchase.key === extraMaintenanceCrew)?.label.toLowerCase().includes('contractor') ?? false
+  return { seconds: 5, variants: [
+    { label: existing.find(option => !option.variant.purchases.includes(extraMaintenanceCrew))?.label ?? (contractor ? 'Existing crews' : 'One crew'), methods: [], buy: [] },
+    { label: existing.find(option => option.variant.purchases.includes(extraMaintenanceCrew))?.label ?? (contractor ? 'With HX contractor' : 'Extra crew'), methods: [], buy: [extraMaintenanceCrew] },
+  ] }
 }
 
 export const maintenanceFinish = (rows: readonly DatedRow[]): number | null =>
