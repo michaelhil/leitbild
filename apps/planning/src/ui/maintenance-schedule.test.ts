@@ -47,6 +47,10 @@ describe('maintenance schedule interaction boundaries', () => {
     const earlier = trainAPlanned()
     expect(scheduleTaskGroups(earlier, earlier.rows['opt-1']!).flatMap(group => group.jobs).map(job => job.key)).toEqual(earlier.rows['opt-1']!.map(row => row.job))
     expect(scheduleTaskGroups(model, rows.slice(0, 2)).flatMap(group => group.jobs)).toHaveLength(2)
+    const groups = scheduleTaskGroups(model, rows, 'Shared gates and return to service')
+    expect(groups.slice(0, -1).map(group => group.label).sort()).toEqual(['Service Water Pump A', 'Component Cooling Water Pump A', 'Component Cooling Heat Exchanger A'].sort())
+    expect(groups.at(-1)!.label).toBe('Shared gates and return to service')
+    expect(groups.flatMap(group => group.jobs)).toHaveLength(16)
     expect(maintenanceVariantsFor(model).variants!.map(variant => variant.label)).toEqual(['Existing crews', 'With HX contractor'])
   })
 

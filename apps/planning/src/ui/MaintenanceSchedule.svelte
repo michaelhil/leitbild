@@ -9,12 +9,13 @@
   import { layoutTimeline } from './timeline-layout.ts'
   import { durationView } from './rules-text.ts'
 
-  let { client, model, option, rows, label, target = null, targetLabel = 'Target', proofJobs = new Set<string>(), equipmentHref, previewEnabled = false, clearPreview = 0, rememberKey, validate, onInvalid }: {
+  let { client, model, option, rows, label, sharedLabel = 'Shared work', target = null, targetLabel = 'Target', proofJobs = new Set<string>(), equipmentHref, previewEnabled = false, clearPreview = 0, rememberKey, validate, onInvalid }: {
     client: PlanningClient
     model: PlanModel
     option: string
     rows: readonly DatedRow[]
     label: string
+    sharedLabel?: string
     target?: string | null
     targetLabel?: string
     proofJobs?: ReadonlySet<string>
@@ -51,7 +52,7 @@
   const context = $derived({ inputs: model.inputs, names, format: time })
   const layout = $derived(layoutTimeline(model.inputs, rows, time))
   const axis = $derived(layout === null ? { days: [], ticks: [] } : scheduleAxis(layout.from, layout.to, time))
-  const groups = $derived(scheduleTaskGroups(model, rows))
+  const groups = $derived(scheduleTaskGroups(model, rows, sharedLabel))
   const job = $derived(model.inputs.jobs.find(item => item.key === selected))
   const row = $derived(rows.find(item => item.job === selected))
   const duration = $derived(job === undefined ? null : durationView(job, model.inputs.world.facts, time))
@@ -161,7 +162,7 @@
     </div>
     <button type="button" class="finish-button" aria-pressed={chainOpen} disabled={chainReading} onclick={() => void finish()}>{chainReading ? 'Reading finish chain…' : 'What sets the finish'}</button>
   </div>
-  <p class="chart-help">Select a task to inspect its dependencies, assigned crew and start constraints.</p>
+  <p class="chart-help">{view === 'tasks' ? 'Select a task to inspect its dependencies, assigned crew and start constraints.' : 'Crew rows show scheduled use and off-shift periods. Select work in Tasks to inspect its start constraints.'}</p>
   {#if error}<p class="error" role="alert">{error}</p>{/if}
   {#if layout}
     <div class="schedule-grid" class:inspecting={selected !== null}>

@@ -29,18 +29,18 @@ export const scheduleAxis = (from: number, to: number, time: TimeFormat): { days
 }
 
 /** Each scheduled task appears once, with shared gates apart from the asset work. */
-export const scheduleTaskGroups = (model: PlanModel, rows: readonly DatedRow[]): readonly { readonly label: string; readonly jobs: readonly Job[] }[] => {
+export const scheduleTaskGroups = (model: PlanModel, rows: readonly DatedRow[], sharedLabel = 'Shared work'): readonly { readonly label: string; readonly jobs: readonly Job[] }[] => {
   const scheduled = new Set(rows.map(row => row.job))
-  const groups = new Map<string, Job[]>()
+  const groups = new Map<string | null, { label: string; jobs: Job[] }>()
   for (const job of model.inputs.jobs) {
     if (!scheduled.has(job.key)) continue
     const equipment = job.equipment.length === 1 ? model.inputs.equipment.find(item => item.key === job.equipment[0]) : undefined
-    const label = equipment?.label ?? 'Shared gates and return to service'
-    const jobs = groups.get(label) ?? []
-    jobs.push(job)
-    groups.set(label, jobs)
+    const key = equipment?.key ?? null
+    const group = groups.get(key) ?? { label: equipment?.label ?? sharedLabel, jobs: [] }
+    group.jobs.push(job)
+    groups.set(key, group)
   }
-  return [...groups].map(([label, jobs]) => ({ label, jobs }))
+  return [...groups].sort(([left], [right]) => Number(left === null) - Number(right === null)).map(([, group]) => group)
 }
 
 export const activeScheduleLinks = (model: PlanModel, option: string, rows: readonly DatedRow[]): PlanModel['inputs']['links'] => {

@@ -7,6 +7,7 @@
   import { loadPlan, loadRows } from './read-plan.ts'
   import type { DatedRow, PlanModel } from './model.ts'
   import MaintenanceSchedule from './MaintenanceSchedule.svelte'
+  import { maintenanceDefinitionId } from './maintenance-demo.ts'
 
   let { client, workspaceId }: { client: PlanningClient; workspaceId: string } = $props()
   let reading = $state<ScheduleDisplayResult['schedule'] | null>(null)
@@ -116,7 +117,7 @@
       <section aria-label="Checked schedule" class="gantt">
         {#if shown && guard}
           {#key `${publication?.digest}:${shown.key}`}
-            <MaintenanceSchedule {client} {model} option={shown.key} {rows} label="Checked work schedule" target={reading.deadline?.finishBy ?? null} targetLabel="Requested deadline" proofJobs={certificateJobs} validate={guard.validate} onInvalid={guard.invalid} />
+            <MaintenanceSchedule {client} {model} option={shown.key} {rows} label="Checked work schedule" sharedLabel={model.inputs.settings.scenario?.id === maintenanceDefinitionId ? 'Shared gates and return to service' : 'Shared work'} target={reading.deadline?.finishBy ?? null} targetLabel="Requested deadline" proofJobs={certificateJobs} validate={guard.validate} onInvalid={guard.invalid} />
           {/key}
         {/if}
       </section>

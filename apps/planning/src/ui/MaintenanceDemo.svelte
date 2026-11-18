@@ -184,7 +184,7 @@
           <span>{time.day(start)} · {time.zone}</span>
         </div>
         {#key `${selected.key}:${model.revision}:${model.options?.at}`}
-          <MaintenanceSchedule {client} {model} option={selected.key} {rows} label={`${selected.label} maintenance schedule`} target={target ?? null} previewEnabled {clearPreview} equipmentHref={key => { const element = maintenanceEquipmentElement(key); return element === null ? null : worldHref(maintenancePlantId, element, selected.key) }} rememberKey={`maintenance:${client.workspaceId}:${model.id}:${selected.key}`} />
+          <MaintenanceSchedule {client} {model} option={selected.key} {rows} label={`${selected.label} maintenance schedule`} sharedLabel="Shared gates and return to service" target={target ?? null} previewEnabled {clearPreview} equipmentHref={key => { const element = maintenanceEquipmentElement(key); return element === null ? null : worldHref(maintenancePlantId, element, selected.key) }} rememberKey={`maintenance:${client.workspaceId}:${model.id}:${selected.key}`} />
         {/key}
         <p class="schedule-result" aria-live="polite">
           {#if savedTime !== null && savedTime > 0 && selected.variant.purchases.includes(extraMaintenanceCrew)}
