@@ -210,6 +210,15 @@ impl RodClient {
             position_m: self.lagged[2],
         }
     }
+    /// The law's Tavg and its program reference at the last frame (K), for
+    /// observation: the delivered (lagged) Tavg the law compares, and `Tref`
+    /// at the delivered (lagged) load by the law's own [`Law::tref_k`] on the
+    /// bits [`Controller::frame`] read there, so equal to its decision's
+    /// `tref_k`. Formed every frame; the law acts on them only in AUTO.
+    pub fn tavg_and_reference_k(&self) -> [f64; 2] {
+        let e = self.deliver();
+        [e.tavg_k, self.controller.law().tref_k(e.load)]
+    }
 }
 
 impl<S: JoinedSystem> Client<S> for RodClient {
