@@ -3,7 +3,7 @@
   "title": "Nuclear maintenance and outage planning",
   "description": "Coordinate a planned A-train equipment outage at a fictional reference pressurised-water reactor. Sixteen tasks cover service water, component cooling, electrical work, independent verification, inspection and return-to-service testing. Compare existing crews with a qualified HX contractor against working shifts and a booked inspection window. Both B pumps are protected from planned work. Work scope, durations, qualifications, gates, costs and deadlines are authored exercise assumptions. World supplies the pre-maintenance plant readings.",
   "objectives": [
-    "Coordinate sixteen tasks across three A-train assets and qualified crews while protecting Train B.",
+    "Coordinate sixteen tasks across three A-train assets and qualified crews while protecting both B pumps from work.",
     "Compare checked schedules, inspect crew contention and see which handoffs set the finish.",
     "Ask the Assistant whether maintenance can finish by a chosen deadline and inspect its checked schedule or refusal.",
     "Preview an estimate change and optionally calculate heat transport from current pump flow and explicit assumptions."

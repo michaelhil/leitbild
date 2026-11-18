@@ -3,6 +3,7 @@ import { mkdir, writeFile } from 'node:fs/promises'
 import { join, resolve } from 'node:path'
 
 const demo = 'nuclear-maintenance-planning'
+const completionTitle = 'Restore, test and accept the A cooling train'
 const evidenceRun = new Date().toISOString().replaceAll(':', '-')
 const evidenceDirectory = (): string | null => {
   const destination = process.env.LEITBILD_E2E_EVIDENCE_DIR
@@ -71,7 +72,7 @@ const withNuclearPlanning = async (page: Page, play: (planning: FrameLocator, wo
   }
   await page.goto(`/workspaces?demos=world%3A${demo}`)
   const carousel = page.getByRole('dialog')
-  await expect(carousel.getByRole('heading', { name: 'Nuclear planning: a pump maintenance window' })).toBeVisible()
+  await expect(carousel.getByRole('heading', { name: 'Nuclear maintenance and outage planning' })).toBeVisible()
   const [created] = await Promise.all([
     page.waitForResponse(response => response.status() === 201
       && response.request().method() === 'POST'
@@ -89,7 +90,7 @@ const withNuclearPlanning = async (page: Page, play: (planning: FrameLocator, wo
     await compare.click()
     const planning = page.frameLocator('iframe[title="Planning"]')
     await expect(planning.getByRole('heading', { name: 'Nuclear maintenance planning', exact: true })).toBeVisible()
-    await expect(planning.getByRole('button', { name: /^One crew\b/ })).toBeVisible({ timeout: 30_000 })
+    await expect(planning.getByRole('button', { name: /^Existing crews\b/ })).toBeVisible({ timeout: 30_000 })
     await play(planning, workspace.id, run!)
   } finally {
     try {
@@ -103,41 +104,84 @@ const withNuclearPlanning = async (page: Page, play: (planning: FrameLocator, wo
 }
 
 const schedules = async (planning: FrameLocator) => {
-  await expect(planning.getByLabel('Ask about the deadline', { exact: true })).toHaveValue('Can we complete maintenance by 17:00?')
+  await expect(planning.getByLabel('Ask about the deadline', { exact: true })).toHaveValue(/21:00/)
   await expect(planning.getByRole('button', { name: /Generate/ })).toHaveCount(0)
-  const one = planning.getByRole('button', { name: /^One crew\b/ })
-  const extra = planning.getByRole('button', { name: /^Extra crew\b/ })
+  const one = planning.getByRole('button', { name: /^Existing crews\b/ })
+  const extra = planning.getByRole('button', { name: /^With HX contractor\b/ })
   await expect(one).toHaveAttribute('aria-pressed', 'true')
   const schedule = planning.getByRole('region', { name: 'Maintenance schedule', exact: true })
   await expect(schedule).toBeVisible()
   const jobs = schedule.getByRole('rowheader')
-  await expect(schedule.getByRole('table')).toHaveAccessibleName('One crew maintenance schedule')
-  await expect(schedule.getByRole('row')).toHaveCount(6)
-  await expect(jobs).toHaveCount(5)
-  await expect(jobs.last()).toContainText('19:00')
+  await expect(schedule.getByRole('table')).toHaveAccessibleName('Existing crews maintenance schedule')
+  await expect(jobs).toHaveCount(16)
+  await expect(jobs.filter({ hasText: completionTitle })).toContainText('12:00')
   await extra.click()
   await expect(extra).toHaveAttribute('aria-pressed', 'true')
-  await expect(schedule.getByRole('table')).toHaveAccessibleName('Extra crew maintenance schedule')
-  await expect(jobs.last()).toContainText('16:00')
-  await expect(jobs.last()).not.toContainText('19:00')
-  await expect(planning.getByText(/12[,.\s]000/).first()).toBeVisible()
+  await expect(schedule.getByRole('table')).toHaveAccessibleName('With HX contractor maintenance schedule')
+  await expect(jobs.filter({ hasText: completionTitle })).toContainText('20:00')
+  await expect(jobs.filter({ hasText: completionTitle })).not.toContainText('12:00')
+  await expect(planning.getByText(/24[,.\s]000/).first()).toBeVisible()
   await one.click()
-  await expect(jobs.last()).toContainText('19:00')
+  await expect(jobs.filter({ hasText: completionTitle })).toContainText('12:00')
 }
 
-test('nuclear planning compares actual crew schedules without opening the editor', async ({ page }) => {
-  await withNuclearPlanning(page, async planning => {
+test('nuclear planning coordinates real crews, task handoffs and an unsaved estimate preview', async ({ page }) => {
+  await withNuclearPlanning(page, async (planning, workspace) => {
     await schedules(planning)
+    await planning.getByRole('button', { name: /^With HX contractor\b/ }).click()
+    const table = planning.getByRole('table', { name: 'With HX contractor maintenance schedule', exact: true })
+    await table.getByRole('button', { name: 'Clean HX A tubes', exact: true }).click()
+    const details = planning.getByRole('region', { name: 'Task details', exact: true })
+    await expect(details.getByRole('heading', { name: 'Clean HX A tubes', exact: true })).toBeVisible()
+    await expect(details.getByText('Why it starts then', { exact: true })).toBeVisible({ timeout: 30_000 })
+    await expect(details).toContainText('Qualified HX contractor')
+    await expect(details.getByRole('button', { name: 'Open HX A channel heads', exact: true })).toBeVisible()
+    await expect(details.getByRole('button', { name: 'HX A specialist inspection and QA acceptance', exact: true })).toBeVisible()
+    await planning.getByRole('button', { name: 'What sets the finish', exact: true }).click()
+    const chain = planning.getByRole('region', { name: 'Returned finish chain', exact: true })
+    await expect.poll(() => chain.getByRole('listitem').count()).toBeGreaterThan(7)
+
+    await planning.getByRole('button', { name: 'Crews and tools', exact: true }).click()
+    const crewTable = planning.getByRole('table', { name: 'Crew and tool schedule', exact: true })
+    await expect(crewTable).toContainText('Station mechanical crew')
+    await expect(crewTable).toContainText('Qualified HX contractor')
+    await saveEvidenceImage('crew-assignments', path => crewTable.screenshot({ path }))
+    await planning.getByRole('button', { name: 'Tasks', exact: true }).click()
+    await details.getByLabel('Duration (h)', { exact: true }).fill('3')
+    const [previewResponse] = await Promise.all([
+      page.waitForResponse(response => response.request().method() === 'POST'
+        && new URL(response.url()).pathname === `/api/workspaces/${workspace}/capabilities/planning.plan.edit/invoke`),
+      details.getByRole('button', { name: 'Preview impact', exact: true }).click(),
+    ])
+    expect(previewResponse.ok()).toBe(true)
+    const preview = (await previewResponse.json()).result
+    await saveEvidence('estimate-preview', preview)
+    expect(preview.preview.saved).toBe(false)
+    expect(preview.preview.violations.join(' ')).toMatch(/15:00|1 h|deadline/)
+    const previewView = details.getByRole('region', { name: 'Estimate preview', exact: true })
+    await expect(previewView).toContainText('16:00')
+    await expect(table.getByRole('rowheader').filter({ hasText: completionTitle })).toContainText('20:00')
+    await saveEvidenceImage('estimate-preview', path => planning.locator('body').screenshot({ path }))
+    await previewView.getByRole('button', { name: 'Discard preview', exact: true }).click()
+    await expect(details.getByLabel('Duration (h)', { exact: true })).toHaveValue('2')
+
+    await details.getByRole('link', { name: 'Inspect Component Cooling Heat Exchanger A in World', exact: true }).click()
+    const world = page.frameLocator('iframe[title="World simulations"]')
+    await expect(world.locator('body')).toContainText('Component Cooling Heat Exchanger A')
+    await world.getByRole('link', { name: 'Back to planning demo', exact: true }).click()
+    const returned = page.frameLocator('iframe[title="Planning"]')
+    await expect(returned.getByRole('button', { name: /^With HX contractor\b/ })).toHaveAttribute('aria-pressed', 'true')
+    await expect(returned.getByRole('region', { name: 'Task details', exact: true })).toContainText('Clean HX A tubes')
     await page.reload()
     const reopened = page.frameLocator('iframe[title="Planning"]')
     await expect(reopened.getByRole('region', { name: 'Maintenance schedule', exact: true })).toBeVisible({ timeout: 30_000 })
     await expect(reopened.getByRole('button', { name: /Generate/ })).toHaveCount(0)
-    await reopened.getByRole('button', { name: /^Extra crew\b/ }).click()
-    await expect(reopened.getByRole('region', { name: 'Maintenance schedule', exact: true }).getByRole('row').last()).toContainText('16:00')
+    await reopened.getByRole('button', { name: /^With HX contractor\b/ }).click()
+    await expect(reopened.getByRole('rowheader').filter({ hasText: completionTitle })).toContainText('20:00')
   })
 })
 
-test('one schedule viewer changes from an 18:00 success to the actual 15:00 refusal', async ({ page }) => {
+test('one schedule viewer changes from a Wednesday 20:00 success to the actual 19:00 refusal', async ({ page }) => {
   await withNuclearPlanning(page, async (planning, workspace) => {
     const fullPlan = new URL((await planning.getByRole('link', { name: 'Open full plan', exact: true }).getAttribute('href'))!, page.url())
     const plan = fullPlan.searchParams.get('planning')!
@@ -152,14 +196,14 @@ test('one schedule viewer changes from an 18:00 success to the actual 15:00 refu
     const summary = await invoke('planning.plan.read', { section: 'summary' })
     const revision = summary.sections.find((section: { id: string }) => section.id === 'summary').data.plan.revision
     for (const [time, finishBy, status] of [
-      ['18:00', '2026-11-18T17:00:00Z', 'validated feasible'],
-      ['15:00', '2026-11-18T14:00:00Z', 'proven infeasible'],
+      ['20:00', '2026-11-18T19:00:00Z', 'validated feasible'],
+      ['19:00', '2026-11-18T18:00:00Z', 'proven infeasible'],
     ]) {
       const due = { kind: 'due', key: `requested-${time!.replace(':', '-')}`, job: 'restore', finishBy, words: `Requested finish by ${time}`, source: { by: 'assumption', note: 'Browser acceptance deadline question.' } }
       const generated = await invoke('planning.plan.generate', {
-        seconds: 5, keep: true, variants: [{ label: `Extra crew by ${time}`, buy: ['extra-maintenance-crew'], also: [due] }],
+        seconds: 5, keep: true, variants: [{ label: `HX contractor by ${time}`, buy: ['extra-maintenance-crew'], also: [due] }],
       }, revision)
-      const option = generated.options.find((candidate: { label: string }) => candidate.label === `Extra crew by ${time}`)
+      const option = generated.options.find((candidate: { label: string }) => candidate.label === `HX contractor by ${time}`)
       expect(option.status.word).toBe(status)
       const published = await invoke('planning.plan.display', { option: option.key })
       expect(published.schedule.option.fresh).toBe(true)
@@ -167,18 +211,18 @@ test('one schedule viewer changes from an 18:00 success to the actual 15:00 refu
       // The second navigation changes only the fragment, as the shared display
       // window does when another retained option is opened in the same frame.
       await page.goto(`/workspaces/${workspace}/planning/embed/planning.schedule#view=${encodeURIComponent(JSON.stringify(envelope))}`)
-      await expect(page.getByText(new RegExp(`Requested finish by ${time}`))).toBeVisible({ timeout: 30_000 })
+      await expect(page.getByText(new RegExp(`Requested finish by .*${time}`))).toBeVisible({ timeout: 30_000 })
       await expect(page.getByRole('region', { name: 'Checked schedule', exact: true })).toBeVisible()
-      await expect(page.getByRole('rowheader')).toHaveCount(5)
-      await expect(page.getByRole('rowheader').last()).toContainText('16:00')
-      if (time === '18:00') {
+      await expect(page.getByRole('rowheader')).toHaveCount(16)
+      await expect(page.getByRole('rowheader').filter({ hasText: completionTitle })).toContainText('20:00')
+      if (time === '20:00') {
         await expect(page.getByText('Meets the requested deadline.', { exact: false })).toBeVisible()
-        expect(published.schedule.option.cost).toBe(12_000)
+        expect(published.schedule.option.cost).toBe(24_000)
       } else {
         await expect(page.getByText('The requested deadline is proven infeasible for this option.', { exact: true })).toBeVisible()
         await expect(page.getByText('Highlighted work belongs to the infeasibility proof.', { exact: true })).toBeVisible()
-        await expect(page.getByText(/Requested finish by 18:00/)).toHaveCount(0)
-        expect(published.schedule.certificate).toMatchObject({ kind: 'chain', workHours: 7, availableHours: 6 })
+        await expect(page.getByText(/Requested finish by .*20:00/)).toHaveCount(0)
+        expect(published.schedule.certificate).toMatchObject({ kind: 'chain', workHours: 13, availableHours: 12 })
       }
     }
   })
@@ -189,14 +233,14 @@ test('the scoped engineering agent produces an inspectable calculation beside th
   test.setTimeout(300_000)
   await withNuclearPlanning(page, async (planning, workspace, run) => {
     await expect(planning.getByRole('heading', { name: 'Estimate heat transport', exact: true })).toBeVisible()
-    await planning.getByRole('button', { name: /^Extra crew\b/ }).click()
+    await planning.getByRole('button', { name: /^With HX contractor\b/ }).click()
     await planning.getByRole('button', { name: 'Ask Assistant to calculate', exact: true }).click()
     await expect.poll(() => new URL(page.url()).searchParams.get('agents')).toBeTruthy()
     const room = new URL(page.url()).searchParams.get('agents')!
     expect(new URL(page.url()).searchParams.get('run')).toBe(run)
     await expect(planning.getByRole('heading', { name: 'Nuclear maintenance planning', exact: true })).toBeVisible()
-    await expect(planning.getByRole('button', { name: /^Extra crew\b/ })).toHaveAttribute('aria-pressed', 'true')
-    await expect(planning.getByRole('region', { name: 'Maintenance schedule', exact: true }).getByRole('row').last()).toContainText('16:00')
+    await expect(planning.getByRole('button', { name: /^With HX contractor\b/ })).toHaveAttribute('aria-pressed', 'true')
+    await expect(planning.getByRole('rowheader').filter({ hasText: completionTitle })).toContainText('20:00')
     const agents = page.frameLocator('iframe[title="Agents room"]')
     const show = agents.getByRole('button', { name: /^Show the engineering calculation in this answer:/ }).first()
     await expect(show).toBeVisible({ timeout: 240_000 })
@@ -274,7 +318,7 @@ test('plain deadline questions produce checked success and refusal visualization
   test.skip(process.env.LEITBILD_E2E_ENGINEERING_AGENT !== '1', 'Enable LEITBILD_E2E_ENGINEERING_AGENT=1 with the actual configured provider for agent acceptance.')
   test.setTimeout(900_000)
   await withNuclearPlanning(page, async (planning, workspace) => {
-    await planning.getByLabel('Ask about the deadline', { exact: true }).fill('Can we complete maintenance by 18:00? Show me how, or explain why not.')
+    await planning.getByLabel('Ask about the deadline', { exact: true }).fill('Can we complete maintenance by 20:00 on Wednesday 18 November? Show me how, or explain why not.')
     await planning.getByRole('button', { name: 'Ask Assistant', exact: true }).click()
     await expect.poll(() => new URL(page.url()).searchParams.get('agents')).toBeTruthy()
     const agents = page.frameLocator('iframe[title="Agents room"]')
@@ -313,52 +357,52 @@ test('plain deadline questions produce checked success and refusal visualization
         expect(schedule.deadline.job).toBe('restore')
         const result = frame.contentFrame()
         await expect(result.getByRole('region', { name: 'Checked schedule', exact: true })).toBeVisible({ timeout: 30_000 })
-        await expect(result.getByRole('table', { name: 'Checked work schedule', exact: true }).getByRole('rowheader')).toHaveCount(5)
+        await expect(result.getByRole('table', { name: 'Checked work schedule', exact: true }).getByRole('rowheader')).toHaveCount(16)
         return { result, schedule, state, plan: state.plan }
       }
       throw new Error(`The Assistant did not publish a ${status} Planning schedule for ${deadline}.`)
     }
 
-    const fits = await checkedDisplay(0, '2026-11-18T17:00:00Z', 'validated feasible', 12_000)
-    expect(Date.parse(fits.schedule.option.finish)).toBe(Date.parse('2026-11-18T15:00:00Z'))
-    expect(fits.schedule.option.cost).toBe(12_000)
-    await expect(fits.result.getByText(/Requested finish by 18:00/)).toBeVisible()
+    const fits = await checkedDisplay(0, '2026-11-18T19:00:00Z', 'validated feasible', 24_000)
+    expect(Date.parse(fits.schedule.option.finish)).toBe(Date.parse('2026-11-18T19:00:00Z'))
+    expect(fits.schedule.option.cost).toBe(24_000)
+    await expect(fits.result.getByText(/Requested finish by .*20:00/)).toBeVisible()
     await expect(fits.result.getByText('Meets the requested deadline.', { exact: false })).toBeVisible()
-    await expect(fits.result.getByRole('rowheader').last()).toContainText('16:00')
-    await saveEvidenceImage('deadline-18', path => fits.result.locator('body').screenshot({ path }))
+    await expect(fits.result.getByRole('rowheader').filter({ hasText: completionTitle })).toContainText('20:00')
+    await saveEvidenceImage('deadline-wednesday-20', path => fits.result.locator('body').screenshot({ path }))
 
     const previousDisplays = await displays.count()
     const followup = agents.getByPlaceholder('Type a message... (Shift+Enter for newline)', { exact: true })
     await expect(followup).toBeEnabled()
-    await followup.fill('What about 15:00? Show why it can or cannot finish by then.')
+    await followup.fill('What about 19:00 on Wednesday? Show why it can or cannot finish by then.')
     await agents.getByRole('button', { name: 'Send', exact: true }).click()
-    const refuses = await checkedDisplay(previousDisplays, '2026-11-18T14:00:00Z', 'proven infeasible')
+    const refuses = await checkedDisplay(previousDisplays, '2026-11-18T18:00:00Z', 'proven infeasible')
     expect(refuses.plan).toBe(fits.plan)
-    expect(refuses.schedule.certificate).toMatchObject({ kind: 'chain', workHours: 7, availableHours: 6 })
-    expect(refuses.schedule.certificate.jobs).toEqual(expect.arrayContaining(['isolate', 'pump-work', 'inspect', 'restore']))
+    expect(refuses.schedule.certificate).toMatchObject({ kind: 'chain', workHours: 13, availableHours: 12 })
+    expect(refuses.schedule.certificate.jobs).toEqual(expect.arrayContaining(['isolate', 'hx-work', 'hx-nde', 'sw-restore', 'restore']))
     expect(refuses.schedule.reference.fresh).toBe(true)
-    expect(Date.parse(refuses.schedule.reference.finish)).toBe(Date.parse('2026-11-18T15:00:00Z'))
-    await expect(refuses.result.getByText(/Requested finish by 15:00/)).toBeVisible()
+    expect(Date.parse(refuses.schedule.reference.finish)).toBe(Date.parse('2026-11-18T19:00:00Z'))
+    await expect(refuses.result.getByText(/Requested finish by .*19:00/)).toBeVisible()
     await expect(refuses.result.getByText('The requested deadline is proven infeasible for this option.', { exact: true })).toBeVisible()
     await expect(refuses.result.getByText('Highlighted work belongs to the infeasibility proof.', { exact: true })).toBeVisible()
-    await expect(refuses.result.getByRole('rowheader').last()).toContainText('16:00')
-    await saveEvidenceImage('deadline-15', path => refuses.result.locator('body').screenshot({ path }))
+    await expect(refuses.result.getByRole('rowheader').filter({ hasText: completionTitle })).toContainText('20:00')
+    await saveEvidenceImage('deadline-wednesday-19', path => refuses.result.locator('body').screenshot({ path }))
 
     const displaysBeforeLaterDeadline = await displays.count()
-    await followup.fill('Can we complete by 19:30 using the existing crew, with no extra crew booking?')
+    await followup.fill('Can we complete by 12:00 on Thursday 19 November using the existing crews, with no contractor or extra crew booking?')
     await agents.getByRole('button', { name: 'Send', exact: true }).click()
-    const existingCrew = await checkedDisplay(displaysBeforeLaterDeadline, '2026-11-18T18:30:00Z', 'validated feasible', 0)
+    const existingCrew = await checkedDisplay(displaysBeforeLaterDeadline, '2026-11-19T11:00:00Z', 'validated feasible', 0)
     expect(existingCrew.plan).toBe(fits.plan)
-    expect(Date.parse(existingCrew.schedule.option.finish)).toBe(Date.parse('2026-11-18T18:00:00Z'))
+    expect(Date.parse(existingCrew.schedule.option.finish)).toBe(Date.parse('2026-11-19T11:00:00Z'))
     expect(existingCrew.schedule.option.cost).toBe(0)
-    await expect(existingCrew.result.getByText(/Requested finish by 19:30/)).toBeVisible()
+    await expect(existingCrew.result.getByText(/Requested finish by .*12:00/)).toBeVisible()
     await expect(existingCrew.result.getByText('Meets the requested deadline.', { exact: false })).toBeVisible()
-    await expect(existingCrew.result.getByRole('rowheader').last()).toContainText('19:00')
-    await saveEvidenceImage('deadline-19-30-existing-crew', path => existingCrew.result.locator('body').screenshot({ path }))
+    await expect(existingCrew.result.getByRole('rowheader').filter({ hasText: completionTitle })).toContainText('12:00')
+    await saveEvidenceImage('deadline-thursday-noon-existing-crews', path => existingCrew.result.locator('body').screenshot({ path }))
 
     // Later current-state reads and new options must not replace the evidence
     // behind the earlier success/refusal while those options remain retained.
-    for (const [label, earlier] of [['18', fits], ['15', refuses]] as const) {
+    for (const [label, earlier] of [['wednesday-20', fits], ['wednesday-19', refuses]] as const) {
       const response = await page.request.post(`/api/workspaces/${workspace}/capabilities/planning.plan.display/invoke`, {
         data: {
           resource: { workspaceId: workspace, moduleId: 'planning', type: 'planning.plan', id: earlier.plan },
@@ -377,16 +421,22 @@ test('plain deadline questions produce checked success and refusal visualization
     }
 
     // A question must remain a what-if; the authored return target is unchanged.
-    const jobs = await page.request.post(`/api/workspaces/${workspace}/capabilities/planning.plan.read/invoke`, {
-      data: {
-        resource: { workspaceId: workspace, moduleId: 'planning', type: 'planning.plan', id: fits.plan },
-        input: { section: 'jobs' }, actor: { kind: 'human' },
-      },
-    })
-    expect(jobs.ok()).toBe(true)
-    const section = (await jobs.json()).result.sections.find((entry: { id: string }) => entry.id === 'jobs')
-    const restoration = section.data.items.find((entry: { job?: { key: string } }) => entry.job?.key === 'restore').job
-    expect(Date.parse(restoration.target.finishBy)).toBe(Date.parse('2026-11-18T16:00:00Z'))
+    const authoredJobs: Array<{ job?: { key: string; target?: { finishBy: string } } }> = []
+    let cursor: string | undefined
+    do {
+      const jobs = await page.request.post(`/api/workspaces/${workspace}/capabilities/planning.plan.read/invoke`, {
+        data: {
+          resource: { workspaceId: workspace, moduleId: 'planning', type: 'planning.plan', id: fits.plan },
+          input: { section: 'jobs', ...(cursor === undefined ? {} : { cursor }) }, actor: { kind: 'human' },
+        },
+      })
+      expect(jobs.ok()).toBe(true)
+      const section = (await jobs.json()).result.sections.find((entry: { id: string }) => entry.id === 'jobs')
+      authoredJobs.push(...section.data.items)
+      cursor = section.data.more
+    } while (cursor !== undefined)
+    const restoration = authoredJobs.find(entry => entry.job?.key === 'restore')!.job!
+    expect(Date.parse(restoration.target!.finishBy)).toBe(Date.parse('2026-11-18T20:00:00Z'))
     await page.reload()
     await expect(page.frameLocator('iframe[title="Planning"]').getByRole('region', { name: 'Compare crew schedules', exact: true }).getByRole('button')).toHaveCount(2, { timeout: 30_000 })
   })
