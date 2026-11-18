@@ -35,7 +35,7 @@ describe('installed Mermaid loader', () => {
       const first = loader.ensureMermaid(), second = loader.ensureMermaid()
       const api = await first
       const initial = mermaid.mermaidAPI.getConfig()
-      const initialConfig = { securityLevel: initial.securityLevel, theme: initial.theme, startOnLoad: initial.startOnLoad, suppressErrorRendering: initial.suppressErrorRendering }
+      const initialConfig = { securityLevel: initial.securityLevel, theme: initial.theme, startOnLoad: initial.startOnLoad, suppressErrorRendering: initial.suppressErrorRendering, maxTextSize: initial.maxTextSize, maxEdges: initial.maxEdges }
       dark = true
       loader.reinitMermaid()
       const updated = mermaid.mermaidAPI.getConfig()
@@ -46,7 +46,7 @@ describe('installed Mermaid loader', () => {
       samePromise: true,
       sameApi: true,
       initializations: 2,
-      initialConfig: { securityLevel: 'strict', theme: 'neutral', startOnLoad: false, suppressErrorRendering: true },
+      initialConfig: { securityLevel: 'strict', theme: 'neutral', startOnLoad: false, suppressErrorRendering: true, maxTextSize: 50_000, maxEdges: 500 },
       updatedTheme: 'dark',
       updatedSecurity: 'strict',
     })
@@ -68,6 +68,47 @@ describe('installed Mermaid loader', () => {
 })
 
 describe('renderQueued', () => {
+  test('hands a reserved slot to its waiter before a newly arriving microtask', async () => {
+    let active = 0
+    let maxActive = 0
+    const order: string[] = []
+    let finishFirst!: () => void
+    const mockApi: MermaidApi = {
+      initialize: () => {},
+      render: (id) => {
+        active += 1
+        maxActive = Math.max(maxActive, active)
+        order.push(id)
+        return new Promise((resolve) => {
+          const finish = () => { active -= 1; resolve({ svg: `<svg id="${id}"/>` }) }
+          if (id === 'first') finishFirst = finish
+          else queueMicrotask(finish)
+        })
+      },
+    }
+    const first = renderQueued(mockApi, 'first', 'source')
+    const waiting = renderQueued(mockApi, 'waiting', 'source')
+    finishFirst()
+    const newcomer = new Promise((resolve, reject) => queueMicrotask(() => {
+      renderQueued(mockApi, 'newcomer', 'source').then(resolve, reject)
+    }))
+    await Promise.all([first, waiting, newcomer])
+    expect(maxActive).toBe(1)
+    expect(order).toEqual(['first', 'waiting', 'newcomer'])
+  })
+
+  test('rejects empty or non-SVG results and releases the next slot', async () => {
+    const mockApi: MermaidApi = {
+      initialize: () => {},
+      render: async (id) => ({ svg: id === 'empty' ? '' : id === 'html' ? '<div>error</div>' : '<svg/>' }),
+    }
+    const results = await Promise.allSettled(['empty', 'html', 'valid'].map(id => renderQueued(mockApi, id, 'source')))
+    expect(results.map(result => result.status)).toEqual(['rejected', 'rejected', 'fulfilled'])
+    for (const result of results.slice(0, 2)) {
+      if (result.status === 'rejected') expect(result.reason.message).toBe('Mermaid returned an empty or invalid SVG.')
+    }
+  })
+
   test('serializes concurrent renders — no re-entrant overlap', async () => {
     let active = 0
     let maxActive = 0

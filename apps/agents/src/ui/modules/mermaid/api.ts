@@ -12,6 +12,8 @@
 // auto-retry. The visible diagram fallback preserves the source; reloading
 // the page obtains the current release entry point and its chunk names.
 
+import { MAX_MERMAID_SOURCE, MAX_MERMAID_EDGES } from '../../../core/render-validators/mermaid-limits.ts'
+
 export type MermaidApi = {
   render: (id: string, source: string) => Promise<{ svg: string }>
   initialize: (config: Record<string, unknown>) => void
@@ -28,6 +30,9 @@ const initConfig = () => ({
   securityLevel: 'strict' as const,
   theme: mermaidThemeForCurrentMode(),
   suppressErrorRendering: true,
+  // Keep these host limits explicit and stable across dependency releases.
+  maxTextSize: MAX_MERMAID_SOURCE,
+  maxEdges: MAX_MERMAID_EDGES,
 })
 
 export const ensureMermaid = (): Promise<MermaidApi | null> => {
@@ -79,10 +84,19 @@ export const renderQueued = async (
   if (mermaidBusy) await new Promise<void>((resolve) => mermaidWaiters.push(resolve))
   mermaidBusy = true
   try {
-    return await api.render(id, source)
+    const result = await api.render(id, source)
+    // A resolved render is not necessarily successful: Mermaid's shared
+    // workspace has previously produced empty strings without rejecting.
+    if (typeof result.svg !== 'string' || !/^\s*<svg\b[^>]*>/i.test(result.svg)) {
+      throw new Error('Mermaid returned an empty or invalid SVG.')
+    }
+    return result
   } finally {
-    mermaidBusy = false
-    mermaidWaiters.shift()?.()
+    const next = mermaidWaiters.shift()
+    // Transfer ownership directly. Clearing busy before waking a waiter
+    // lets a newly queued microtask enter before that waiter resumes.
+    if (next) next()
+    else mermaidBusy = false
   }
 }
 

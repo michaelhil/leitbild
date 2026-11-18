@@ -11,7 +11,7 @@ export type FallbackReason = 'render-failed' | 'too-large' | 'unavailable'
 
 const REASON_TEXT: Record<FallbackReason, string> = {
   'render-failed': "Diagram couldn't render — showing source.",
-  'too-large': 'Diagram too large (>50 KB) — showing truncated source.',
+  'too-large': 'Diagram source exceeds the rendering limit — showing the full source.',
   'unavailable': 'Diagram rendering unavailable. Reload the page to try again.',
 }
 
