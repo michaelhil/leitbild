@@ -25,9 +25,9 @@ const saveEvidenceImage = async (name: string, capture: (path: string) => Promis
   await capture(path)
   await test.info().attach(name, { path, contentType: 'image/png' })
 }
-const captureRoomEvidence = async (page: Page, workspace: string): Promise<void> => {
+const captureRoomEvidence = async (page: Page, workspace: string, playFailed = false): Promise<void> => {
   if (evidenceDirectory() === null) return
-  await saveEvidence('test-context', { workspace, url: page.url(), capturedAt: new Date().toISOString(), status: test.info().status })
+  await saveEvidence('test-context', { workspace, url: page.url(), capturedAt: new Date().toISOString(), status: playFailed ? 'failed' : test.info().status })
   if (!page.isClosed()) await saveEvidenceImage('workspace-final', path => page.screenshot({ path, fullPage: true }))
   const room = new URL(page.url()).searchParams.get('agents')
   if (room === null) return
@@ -42,9 +42,11 @@ const captureRoomEvidence = async (page: Page, workspace: string): Promise<void>
   expect(conversation.status).toBe(200)
   const turns: Array<{ id: string; startedAt: number }> = []
   let next: { id: string; startedAt: number } | undefined
+  let indexPage = 0
   do {
     const query = new URLSearchParams({ limit: '100', ...(next === undefined ? {} : { beforeId: next.id, beforeStartedAt: String(next.startedAt) }) })
     const index = await read(`${base}/executions?${query}`)
+    await saveEvidence(`execution-index-page-${indexPage++}`, index)
     expect(index.status).toBe(200)
     turns.push(...index.body.turns)
     next = index.body.next
@@ -52,6 +54,7 @@ const captureRoomEvidence = async (page: Page, workspace: string): Promise<void>
   await saveEvidence('execution-index', { room, turns })
   for (const turn of turns) {
     const execution = await read(`${base}/executions/${encodeURIComponent(turn.id)}`)
+    await saveEvidence(`execution-${turn.id}-summary`, execution)
     expect(execution.status).toBe(200)
     const calls = await Promise.all(execution.body.calls.map(async (call: { id: string }) => read(`${base}/executions/${encodeURIComponent(turn.id)}/calls/${encodeURIComponent(call.id)}`)))
     await saveEvidence(`execution-${turn.id}`, { ...execution, calls })
@@ -80,7 +83,16 @@ const withNuclearPlanning = async (page: Page, play: (planning: FrameLocator, wo
     carousel.getByRole('button', { name: 'Start demo', exact: true }).click(),
   ])
   const { workspace } = await created.json() as { workspace: { id: string } }
+  let playFailed = false
+  let playFailure: unknown
   try {
+    const qaName = `QA nuclear planning verification ${evidenceRun} ${test.info().title.replace(/[^a-zA-Z0-9]+/g, '-').slice(0, 90)}`
+    const renamed = await page.request.patch(`/api/workspaces/${encodeURIComponent(workspace.id)}`, { data: { name: qaName } })
+    const renameText = await renamed.text()
+    await saveEvidence('workspace-label', { workspace: workspace.id, name: qaName, status: renamed.status(), body: renameText })
+    const renameBody = JSON.parse(renameText)
+    expect(renamed.ok()).toBe(true)
+    expect(renameBody.workspace).toMatchObject({ id: workspace.id, name: qaName })
     const world = page.frameLocator('iframe[title="World simulations"]')
     await expect(world.locator('canvas.maplibregl-canvas')).toBeVisible({ timeout: 90_000 })
     const compare = world.getByRole('link', { name: 'Compare maintenance schedules', exact: true })
@@ -90,17 +102,35 @@ const withNuclearPlanning = async (page: Page, play: (planning: FrameLocator, wo
     await compare.click()
     const planning = page.frameLocator('iframe[title="Planning"]')
     await expect(planning.getByRole('heading', { name: 'Nuclear maintenance planning', exact: true })).toBeVisible()
+    await expect(page.locator('.workspace-name')).toHaveText(qaName)
     await expect(planning.getByRole('button', { name: /^Existing crews\b/ })).toBeVisible({ timeout: 30_000 })
     await play(planning, workspace.id, run!)
+  } catch (error) {
+    playFailed = true
+    playFailure = error
   } finally {
-    try {
-      await captureRoomEvidence(page, workspace.id)
-    } finally {
-      if (!page.isClosed()) await page.goto('about:blank')
+    const finalizationErrors: Array<{ stage: string; error: unknown }> = []
+    const finalize = async (stage: string, work: () => Promise<void>) => {
+      try { await work() } catch (error) { finalizationErrors.push({ stage, error }) }
+    }
+    await finalize('capture evidence', () => captureRoomEvidence(page, workspace.id, playFailed))
+    await finalize('leave Workspace', async () => { if (!page.isClosed()) await page.goto('about:blank') })
+    await finalize('delete owned Workspace', async () => {
       const deleted = await page.request.delete(`/api/workspaces/${encodeURIComponent(workspace.id)}`)
-      expect(deleted.ok()).toBe(true)
+      const text = await deleted.text()
+      await saveEvidence('workspace-cleanup', { workspace: workspace.id, status: deleted.status(), body: text })
+      const body = text === '' ? null : JSON.parse(text)
+      const alreadyGone = deleted.status() === 404 && body?.error?.code === 'workspace_not_found'
+      expect(deleted.ok() || alreadyGone).toBe(true)
+    })
+    if (finalizationErrors.length > 0) {
+      const details = finalizationErrors.map(({ stage, error }) => ({ stage, error: error instanceof Error ? { name: error.name, message: error.message, stack: error.stack } : String(error) }))
+      test.info().annotations.push({ type: 'finalization errors', description: JSON.stringify(details) })
+      await saveEvidence('finalization-errors', details).catch(error => console.error('Could not retain finalization errors', error))
+      if (!playFailed) throw new AggregateError(finalizationErrors.map(entry => entry.error), 'Nuclear demo evidence capture or cleanup failed')
     }
   }
+  if (playFailed) throw playFailure
 }
 
 const schedules = async (planning: FrameLocator) => {
@@ -167,9 +197,9 @@ test('nuclear planning coordinates real crews, task handoffs and an unsaved esti
     await expect(details.getByLabel('Duration (h)', { exact: true })).toHaveValue('2')
 
     for (const asset of [
-      { key: 'hxa', task: 'Clean HX A tubes', label: 'Component Cooling Heat Exchanger A', element: 'componentCoolingHeatExchangerA', view: 'Tasks' },
-      { key: 'ccwa', task: 'Service the CCW A pump seal', label: 'Component Cooling Water Pump A', element: 'componentCoolingWaterPumpA', view: 'Crews and tools' },
-      { key: 'swa', task: 'Service the SW A discharge strainer', label: 'Service Water Pump A', element: 'serviceWaterPumpA', view: 'Tasks' },
+      { key: 'hxa', task: 'Clean HX A tubes', label: 'Component Cooling Heat Exchanger A', element: 'componentCoolingHeatExchangerA', view: 'Tasks', flow: 350 },
+      { key: 'ccwa', task: 'Service the CCW A pump seal', label: 'Component Cooling Water Pump A', element: 'componentCoolingWaterPumpA', view: 'Crews and tools', flow: 350 },
+      { key: 'swa', task: 'Service the SW A discharge strainer', label: 'Service Water Pump A', element: 'serviceWaterPumpA', view: 'Tasks', flow: 450 },
     ]) {
       const current = page.frameLocator('iframe[title="Planning"]')
       await current.getByRole('button', { name: 'Tasks', exact: true }).click()
@@ -200,6 +230,17 @@ test('nuclear planning coordinates real crews, task handoffs and an unsaved esti
       const ownerView = world.frameLocator(`iframe[title^="${title}"]`)
       await expect(ownerView.getByRole('article', { name: title, exact: true })).toBeVisible({ timeout: 30_000 })
       await expect(ownerView.getByRole('group', { name: 'Flow topology', exact: true })).toBeVisible({ timeout: 30_000 })
+      // The owner shell can mount before its first sample. A known reading
+      // qualifies the capture even when the user has paused the Run.
+      const readings = ownerView.locator('obc-readout-list-item')
+      await expect.poll(() => readings.evaluateAll((items, flow) => items.some(item => {
+        const reading = item as HTMLElement & { value: unknown; unit: unknown }
+        return reading.value === flow && reading.unit === 'kg/s'
+      }), asset.flow), { timeout: 30_000 }).toBe(true)
+      await saveEvidence(`world-${asset.key}-readings`, await readings.evaluateAll(items => items.map(item => {
+        const reading = item as HTMLElement & { value: unknown; unit: unknown }
+        return { label: item.closest('.row')?.querySelector('.full')?.textContent, value: reading.value, unit: reading.unit }
+      })))
       await saveEvidenceImage(`world-${asset.key}-detail`, path => page.screenshot({ path }))
       await world.getByRole('link', { name: 'Back to planning demo', exact: true }).click()
       const returned = page.frameLocator('iframe[title="Planning"]')
