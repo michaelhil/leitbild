@@ -1,6 +1,7 @@
 import { createHash } from 'node:crypto'
 import { planningError } from '../errors.ts'
 import type { Plan } from '../plan/schema.ts'
+import { inputsDigest } from '../plan/store.ts'
 import { resultLimitBytes, type StatusOut } from './contract.ts'
 import { scheduleDisplayResultSchema, type ScheduleDisplayResult } from './schedule-display-contract.ts'
 
@@ -15,23 +16,35 @@ export const scheduleDisplay = (config: {
   fresh: (option: Option) => boolean
   status: (option: Option) => StatusOut
   expectedDigest?: string
+  reference?: string | null
 }): ScheduleDisplayResult => {
   const { plan, option } = config
   const finish = (candidate: Option): string | null => candidate.rows.reduce<string | null>((last, row) => last === null || Date.parse(row.finish) > Date.parse(last) ? row.finish : last, null)
   const costGoal = plan.inputs.goals.findIndex(goal => goal.metric === 'extra-cost')
   const cost = (candidate: Option): number | null => candidate.metrics.find(metric => metric.id === (costGoal < 0 ? 'extra-cost' : `goal:${costGoal}`))?.value ?? null
   const fresh = config.fresh(option)
-  const referenceOption = fresh && option.status.word !== 'validated feasible'
+  let referenceOption = config.reference === undefined && fresh && option.status.word !== 'validated feasible'
     ? (plan.options?.options ?? []).filter(candidate => config.fresh(candidate) && candidate.status.word === 'validated feasible' && finish(candidate) !== null)
       .sort((left, right) => Date.parse(finish(left)!) - Date.parse(finish(right)!)
         || Number(left.variant.also !== undefined || left.variant.lead !== undefined) - Number(right.variant.also !== undefined || right.variant.lead !== undefined)
         || left.key.localeCompare(right.key))[0]
     : undefined
+  if (config.reference !== undefined && config.reference !== null) {
+    const retained = plan.options?.options.find(candidate => candidate.key === config.reference)
+    if (!fresh || option.status.word === 'validated feasible' || retained === undefined
+      || !config.fresh(retained) || retained.status.word !== 'validated feasible' || finish(retained) === null) {
+      throw planningError(409, 'schedule_display_changed', 'The published reference schedule is no longer available and fresh. Ask for a new schedule view.')
+    }
+    referenceOption = retained
+  }
   const due = option.variant.also?.find(rule => rule.kind === 'due')
-  const digest = createHash('sha256').update(JSON.stringify({ revision: plan.revision, inputs: plan.inputs, option, fresh, reference: referenceOption ?? null })).digest('hex')
+  // Match the store's scheduling-input identity: a new read time or label
+  // does not change a schedule's basis. Values, units, bases, authored inputs,
+  // exact rows/proof and freshness remain bound to this publication.
+  const digest = createHash('sha256').update(JSON.stringify({ revision: plan.revision, inputs: inputsDigest(plan.inputs), option, fresh, reference: referenceOption ?? null })).digest('hex')
   if (config.expectedDigest !== undefined && config.expectedDigest !== digest) throw planningError(409, 'schedule_display_changed', 'This published schedule no longer matches its retained evidence. Ask for a new schedule view.')
   const result = scheduleDisplayResultSchema.parse({
-    view: { viewType: 'planning.schedule', title: `${option.label}: schedule`.slice(0, 120), height: 650, state: JSON.stringify({ plan: plan.id, option: option.key, digest }) },
+    view: { viewType: 'planning.schedule', title: `${option.label}: schedule`.slice(0, 120), height: 650, state: JSON.stringify({ plan: plan.id, option: option.key, reference: referenceOption?.key ?? null, digest }) },
     schedule: {
       plan: { id: plan.id, title: plan.inputs.settings.title, revision: plan.revision, timeZone: plan.inputs.settings.timeZone, window: plan.inputs.settings.window, currency: plan.inputs.settings.currency },
       option: { key: option.key, label: option.label, inputsRevision: option.inputsRevision, fresh, status: config.status(option), cost: cost(option), finish: finish(option) },

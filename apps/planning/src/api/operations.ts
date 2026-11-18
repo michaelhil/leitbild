@@ -781,7 +781,8 @@ export const createPlanningOperations = (ports: PlanningOperationsPorts) => {
       const plan = await store.read(workspaceId, planId)
       const option = findOption(plan, input.option)
       return scheduleDisplay({ plan, option, fresh: candidate => !optionState(plan, candidate).stale,
-        status: candidate => statusOut(optionState(plan, candidate).shown), ...(input.digest === undefined ? {} : { expectedDigest: input.digest }) })
+        status: candidate => statusOut(optionState(plan, candidate).shown), ...(input.digest === undefined ? {} : { expectedDigest: input.digest }),
+        ...(input.reference === undefined ? {} : { reference: input.reference }) })
     },
 
     explain: async (workspaceId: WorkspaceId, planId: string, input: z.infer<typeof explainInputSchema>): Promise<ExplainResult> => {

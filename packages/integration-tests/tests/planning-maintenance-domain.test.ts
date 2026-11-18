@@ -1,6 +1,7 @@
 import { afterAll, expect, test } from 'bun:test'
 import { createPlanningClient } from '../../../apps/planning/src/ui/api.ts'
 import { checkForSolver } from '../../../apps/planning/src/solve/lane-k-ports.ts'
+import { inputsDigest } from '../../../apps/planning/src/plan/store.ts'
 import { createPlanningStack } from './planning-stack.ts'
 
 const stack = await createPlanningStack()
@@ -55,6 +56,162 @@ test('the maintenance plan reads both actual pumps and computes the crew trade w
   expect(stack.runEvents(run)).toBe(journal)
 }, 60_000)
 
+test('pinned 18:00 and 15:00 charts survive renewed source reads but reject a changed backup condition', async () => {
+  const run = await stack.start('world.scenario', 'nuclear-maintenance-planning', 'world.scenario.start')
+  const created = await client.createDemo(definition, run)
+  const planId = created.result.plan.id, revision = created.result.plan.revision
+  const invoke = async (operationId: string, moduleId: string, type: string, id: string, input: unknown) => {
+    const response = await transport(`/api/workspaces/${stack.workspaceId}/capabilities/${operationId}/invoke`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ resource: { workspaceId: stack.workspaceId, moduleId, type, id }, input }),
+    })
+    return { status: response.status, body: await response.json() as any }
+  }
+  const display = (option: string, digest?: string, reference?: string | null) => invoke('planning.plan.display', 'planning', 'planning.plan', planId, { option, ...(digest === undefined ? {} : { digest, reference }) })
+  const advance = async (previousAt: string) => {
+    const stepped = await invoke('world.simulation-run.execution.advance', 'world', 'world.simulation-run', run, { minutes: 1 / 60, onComplete: 'pause' })
+    expect(stepped.status).toBe(200)
+    for (let attempt = 0; attempt < 100; attempt++) {
+      const answer = await client.facts(run, { subjects: ['process-plant/plant%3Amaintenance/componentCoolingWaterPumpB'] })
+      const at = answer.items[0]!.facts.find(fact => fact.id.endsWith('/runningState'))!.at
+      if (Date.parse(at) > Date.parse(previousAt)) return
+      await Bun.sleep(20)
+    }
+    throw new Error('The World source did not advance')
+  }
+  await client.generate(planId, revision, { variants: [{ label: 'One crew', buy: [] }, { label: 'Extra crew', buy: ['extra-maintenance-crew'] }] })
+  const generated = await client.generate(planId, revision, { keep: true, variants: [
+    { label: 'Extra crew by 18:00', buy: ['extra-maintenance-crew'], also: [{ kind: 'due', key: 'by-18', job: 'restore', finishBy: '2026-11-18T17:00:00Z', words: 'Requested by 18:00', source: { by: 'assumption' } }] },
+    { label: 'Extra crew by 15:00', buy: ['extra-maintenance-crew'], also: [{ kind: 'due', key: 'by-15', job: 'restore', finishBy: '2026-11-18T14:00:00Z', words: 'Requested by 15:00', source: { by: 'assumption' } }] },
+  ] })
+  const pins = [] as Array<{ option: string; digest: string; reference: string | null; word: string }>
+  for (const label of ['Extra crew by 18:00', 'Extra crew by 15:00']) {
+    const option = generated.options.find(candidate => candidate.label === label)!
+    const published = await display(option.key)
+    expect(published.status).toBe(200)
+    pins.push({ option: option.key, digest: published.body.result.schedule.digest, reference: published.body.result.schedule.reference?.key ?? null, word: option.status.word })
+  }
+  const before = await stack.store.read(stack.workspaceId, planId)
+  const sourceAt = (plan: typeof before) => plan.inputs.world.facts.find(fact => fact.id.endsWith('/componentCoolingWaterPumpB/runningState'))!.at
+  await advance(sourceAt(before))
+  await client.refresh(planId, revision)
+  const renewed = await stack.store.read(stack.workspaceId, planId)
+  expect(sourceAt(renewed)).not.toBe(sourceAt(before))
+  expect(renewed.revision).toBe(revision)
+  expect(inputsDigest(renewed.inputs)).toBe(inputsDigest(before.inputs))
+  expect(renewed.options).toEqual(before.options)
+  // Labels are also read metadata, not a changed scheduling quantity.
+  await stack.store.update(stack.workspaceId, planId, { expectedRevision: revision, required: true }, current => ({
+    ...current, inputs: { ...current.inputs, world: { ...current.inputs.world, facts: current.inputs.world.facts.map(fact => ({ ...fact, label: `Renewed ${fact.label}` })) } },
+  }))
+  for (const pin of pins) {
+    const checked = await display(pin.option, pin.digest, pin.reference)
+    expect(checked.status).toBe(200)
+    expect(checked.body.result.schedule.digest).toBe(pin.digest)
+    expect(checked.body.result.schedule.option).toMatchObject({ fresh: true, status: { word: pin.word } })
+  }
+  const stopped = await invoke('world.process-plant.control.write', 'world', 'world.simulation-run', run, { plantId: 'plant:maintenance', path: 'componentCoolingWaterPumpB.running', value: false })
+  expect(stopped.status).toBe(200)
+  await advance(sourceAt(renewed))
+  await client.refresh(planId, revision)
+  const changed = await stack.store.read(stack.workspaceId, planId)
+  expect(changed.revision).toBe(revision + 1)
+  expect(changed.inputs.world.facts.find(fact => fact.id.endsWith('/componentCoolingWaterPumpB/runningState'))!.value).toBe(false)
+  for (const pin of pins) {
+    const checked = await display(pin.option, pin.digest, pin.reference)
+    expect(checked.status).toBe(409)
+    expect(checked.body.error.code).toBe('schedule_display_changed')
+  }
+}, 60_000)
+
+test('pinned schedule rejects an actual row replacement even on the same input revision', async () => {
+  const run = await stack.start('world.scenario', 'nuclear-maintenance-planning', 'world.scenario.start')
+  const created = await client.createDemo(definition, run)
+  const planId = created.result.plan.id, revision = created.result.plan.revision
+  const generated = await client.generate(planId, revision, { variants: [{ label: 'Extra crew', buy: ['extra-maintenance-crew'] }] })
+  const option = generated.options[0]!
+  const display = async (digest?: string) => {
+    const response = await transport(`/api/workspaces/${stack.workspaceId}/capabilities/planning.plan.display/invoke`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ resource: { workspaceId: stack.workspaceId, moduleId: 'planning', type: 'planning.plan', id: planId }, input: { option: option.key, ...(digest === undefined ? {} : { digest, reference: null }) } }),
+    })
+    return { status: response.status, body: await response.json() as any }
+  }
+  const published = await display()
+  expect(published.status).toBe(200)
+  // An equally feasible retained candidate can move the non-driving HX work
+  // within its float. Qualify those rows with the real checker before replacing
+  // the owner store's candidate, as another solver result could do.
+  await stack.store.update(stack.workspaceId, planId, { expectedRevision: revision, required: true }, current => ({
+    ...current, options: { ...current.options!, options: current.options!.options.map(candidate => {
+      if (candidate.key !== option.key) return candidate
+      const later = (at: string) => new Date(Date.parse(at) + 3_600_000).toISOString()
+      const rows = candidate.rows.map(row => row.job !== 'hx-work' ? row : { ...row, start: later(row.start), finish: later(row.finish), uses: row.uses.map(use => ({ ...use, from: later(use.from), to: later(use.to) })) })
+      expect(checkForSolver({ inputs: current.inputs, variant: candidate.variant, rows }).violations).toEqual([])
+      return { ...candidate, rows }
+    }) },
+  }))
+  const replaced = await display(published.body.result.schedule.digest)
+  expect(replaced.status).toBe(409)
+  expect(replaced.body.error.code).toBe('schedule_display_changed')
+  const current = await display()
+  expect(current.status).toBe(200)
+  expect(current.body.result.schedule.option).toMatchObject({ inputsRevision: revision, fresh: true })
+}, 60_000)
+
+test('a published refusal pins its exact reference or no reference across independent deadline questions', async () => {
+  const run = await stack.start('world.scenario', 'nuclear-maintenance-planning', 'world.scenario.start')
+  const created = await client.createDemo(definition, run)
+  const planId = created.result.plan.id, revision = created.result.plan.revision
+  const generate = async (label: string, finishBy: string, buy: string[]) => client.generate(planId, revision, { keep: true, variants: [{
+    label, buy, also: [{ kind: 'due', key: label.replaceAll(' ', '-'), job: 'restore', finishBy, words: label, source: { by: 'assumption' } }],
+  }] })
+  const display = async (input: Record<string, unknown>) => {
+    const response = await transport(`/api/workspaces/${stack.workspaceId}/capabilities/planning.plan.display/invoke`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ resource: { workspaceId: stack.workspaceId, moduleId: 'planning', type: 'planning.plan', id: planId }, input }),
+    })
+    return { status: response.status, body: await response.json() as any }
+  }
+  const fifteen = await generate('Extra by 15', '2026-11-18T14:00:00Z', ['extra-maintenance-crew'])
+  const option = fifteen.options.find(candidate => candidate.label === 'Extra by 15')!
+  expect(option.status.word).toBe('proven infeasible')
+  const withoutReference = await display({ option: option.key })
+  expect(withoutReference.status).toBe(200)
+  const noReferenceState = JSON.parse(withoutReference.body.result.view.state)
+  expect(noReferenceState.reference).toBeNull()
+  expect((await display({ option: option.key, digest: noReferenceState.digest })).status).toBe(400)
+  expect((await display({ option: option.key, reference: null })).status).toBe(400)
+  await generate('One by 1930', '2026-11-18T18:30:00Z', [])
+  const referencePublication = await display({ option: option.key })
+  const original = referencePublication.body.result.schedule.reference
+  const originalState = JSON.parse(referencePublication.body.result.view.state)
+  expect(original.finish).toBe('2026-11-18T18:00:00.000Z')
+  expect(originalState.reference).toBe(original.key)
+  // A subsequent independent question obtains an earlier checked candidate.
+  // It may improve a new publication, but cannot replace the chart an older
+  // answer published while its own reference is still retained.
+  await generate('Extra by 18', '2026-11-18T17:00:00Z', ['extra-maintenance-crew'])
+  const newPublication = await display({ option: option.key })
+  expect(newPublication.body.result.schedule.reference.finish).toBe('2026-11-18T15:00:00.000Z')
+  expect(newPublication.body.result.schedule.reference.key).not.toBe(original.key)
+  const pinnedOriginal = await display({ option: originalState.option, digest: originalState.digest, reference: originalState.reference })
+  expect(pinnedOriginal.status).toBe(200)
+  expect(pinnedOriginal.body.result.schedule.reference).toEqual(original)
+  const pinnedNone = await display({ option: noReferenceState.option, digest: noReferenceState.digest, reference: noReferenceState.reference })
+  expect(pinnedNone.status).toBe(200)
+  expect(pinnedNone.body.result.schedule.reference).toBeNull()
+  await stack.store.update(stack.workspaceId, planId, { expectedRevision: revision, required: true }, current => ({
+    ...current, options: { ...current.options!, options: current.options!.options.filter(candidate => candidate.key !== original.key) },
+  }))
+  const missing = await display({ option: originalState.option, digest: originalState.digest, reference: originalState.reference })
+  expect(missing.status).toBe(409)
+  expect(missing.body.error.code).toBe('schedule_display_changed')
+  // The remaining earlier candidate is available only for a new publication;
+  // it is never a fallback for the removed published reference.
+  expect((await display({ option: option.key })).body.result.schedule.reference.finish).toBe('2026-11-18T15:00:00.000Z')
+}, 60_000)
+
 test('a stopped backup pump refuses reopening rather than copying a stale running precheck', async () => {
   const run = await stack.start('world.scenario', 'nuclear-maintenance-planning', 'world.scenario.start')
   const created = await client.createDemo(definition, run)
@@ -85,14 +242,14 @@ test('arbitrary deadlines retain real proofs and publish the exact option with a
   const created = await client.createDemo(definition, run)
   const planId = created.result.plan.id, revision = created.result.plan.revision
   await client.generate(planId, revision, { variants: [{ label: 'One crew', buy: [] }, { label: 'Extra crew', buy: ['extra-maintenance-crew'] }] })
-  const display = async (option: string, digest?: string) => {
+  const display = async (option: string, digest?: string, reference?: string | null) => {
     const response = await transport(`/api/workspaces/${stack.workspaceId}/capabilities/planning.plan.display/invoke`, {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ resource: { workspaceId: stack.workspaceId, moduleId: 'planning', type: 'planning.plan', id: planId }, input: { option, ...(digest === undefined ? {} : { digest }) } }),
+      body: JSON.stringify({ resource: { workspaceId: stack.workspaceId, moduleId: 'planning', type: 'planning.plan', id: planId }, input: { option, ...(digest === undefined ? {} : { digest, reference }) } }),
     })
     return { status: response.status, body: await response.json() as any }
   }
-  let pinned: { option: string; digest: string } | undefined
+  let pinned: { option: string; digest: string; reference: string | null } | undefined
   for (const [label, finishBy, expected] of [
     ['18:00', '2026-11-18T17:00:00Z', ['unresolved', 'validated feasible']],
     ['15:00', '2026-11-18T14:00:00Z', ['proven infeasible', 'proven infeasible']],
@@ -110,7 +267,7 @@ test('arbitrary deadlines retain real proofs and publish the exact option with a
       const { view, schedule } = published.body.result
       expect(Buffer.byteLength(JSON.stringify(published.body.result))).toBeLessThanOrEqual(4096)
       expect(view.viewType).toBe('planning.schedule')
-      expect(JSON.parse(view.state)).toEqual({ plan: planId, option: option.key, digest: schedule.digest })
+      expect(JSON.parse(view.state)).toEqual({ plan: planId, option: option.key, reference: schedule.reference?.key ?? null, digest: schedule.digest })
       expect(schedule.deadline).toEqual({ job: 'restore', finishBy })
       expect(schedule.option.fresh).toBe(true)
       expect(schedule.option.status.word).toBe(expected[index])
@@ -118,7 +275,7 @@ test('arbitrary deadlines retain real proofs and publish the exact option with a
         expect(schedule.certificate).not.toBeNull()
         expect(schedule.reference.finish).toBe('2026-11-18T15:00:00.000Z')
         expect(schedule.reference.fresh).toBe(true)
-        pinned = { option: option.key, digest: schedule.digest }
+        pinned = { option: option.key, digest: schedule.digest, reference: schedule.reference?.key ?? null }
       }
       if (label === '18:00' && index === 1) {
         expect(schedule.option.finish).toBe('2026-11-18T15:00:00.000Z')
@@ -129,10 +286,10 @@ test('arbitrary deadlines retain real proofs and publish the exact option with a
   const untouched = await stack.store.read(stack.workspaceId, planId)
   expect(untouched.revision).toBe(revision)
   expect(untouched.inputs.jobs.find(job => job.key === 'restore')!.target!.finishBy).toBe('2026-11-18T16:00:00Z')
-  const first = await display(pinned!.option, pinned!.digest)
+  const first = await display(pinned!.option, pinned!.digest, pinned!.reference)
   expect(first.status).toBe(200)
   await client.edit(planId, revision, { edits: [{ edit: 'job', key: 'pump-work', duration: { value: 5, unit: 'h', calendar: 'working', source: { by: 'assumption', note: 'Found work for the publication invalidation check.' } } }] })
-  const stale = await display(pinned!.option, pinned!.digest)
+  const stale = await display(pinned!.option, pinned!.digest, pinned!.reference)
   expect(stale.status).toBe(409)
   expect(stale.body.error.code).toBe('schedule_display_changed')
 }, 60_000)
