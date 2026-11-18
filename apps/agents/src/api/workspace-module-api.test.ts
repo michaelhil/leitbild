@@ -59,7 +59,11 @@ const withAssistantCatalog = (deployment: DeploymentRuntime): DeploymentRuntime 
     name: 'procedure-runner', description: 'Test procedure Skill', body: 'Step through procedures.',
     tools: [], allowedToolNames: ['workspace_explore', 'workspace_call'], dirPath: home,
   })
-  for (const name of ['product_search', 'product_read', 'place_resolve', 'get_time']) {
+  deployment.sharedSkillStore.register({
+    name: 'engineering-advice', description: 'Test engineering Skill', body: 'Run recorded calculations with explicit input provenance.',
+    tools: [], allowedToolNames: ['engineering_describe', 'engineering_calculate', 'engineering_run'], dirPath: home,
+  })
+  for (const name of ['product_search', 'product_read', 'place_resolve', 'get_time', 'engineering_describe', 'engineering_calculate', 'engineering_run']) {
     deployment.sharedToolRegistry.register({
       name,
       description: `Test ${name}`,
@@ -203,7 +207,7 @@ describe('Agents Workspace Module API', () => {
     assistant.updateMaxToolIterations(20)
     // The default model brings its own effort when the definition names neither.
     expect(assistant.getConfig()).toMatchObject({ model: DEFAULT_MODEL_ID, reasoningEffort: DEFAULT_REASONING_EFFORT })
-    expect(assistant.getSkills()).toEqual(['leitbild-assistance', 'operator-displays', 'procedure-runner'])
+    expect(assistant.getSkills()).toEqual(['leitbild-assistance', 'operator-displays', 'procedure-runner', 'engineering-advice'])
 
     const reused = await open('Now create a scenario.')
     expect(reused.status).toBe(200)

@@ -41,7 +41,7 @@ test('default Assistant in a World-only Room exposes its tools and executes calc
   for (const name of ['product_search', 'product_read', 'place_resolve']) {
     deployment.sharedToolRegistry.register({ name, description: name, parameters: { type: 'object' }, execute: async () => ({ success: true }) })
   }
-  for (const name of ['leitbild-assistance', 'operator-displays', 'procedure-runner']) {
+  for (const name of ['leitbild-assistance', 'operator-displays', 'procedure-runner', 'engineering-advice']) {
     deployment.sharedSkillStore.register({ name, description: name, body: 'Test fixture.', tools: [], allowedToolNames: [], dirPath: directory })
   }
   const state = createAgentsModuleState()
@@ -74,7 +74,7 @@ test('default Assistant in a World-only Room exposes its tools and executes calc
     const support = await buildToolSupport(effectiveAgentToolSelection(assistant.getConfig()), runtime.toolRegistry, assistant, runtime.llm,
       roomId => roomId === room.profile.id ? room : undefined)
     expect(support.resolveToolDefinitions!(room.profile.id)!.map(tool => tool.function.name).sort()).toEqual([
-      'context_checkpoint', 'conversation_read', 'pass', 'place_resolve', 'product_read', 'product_search', 'sample_changes', 'wiki_lookup', 'workspace_call', 'workspace_explore',
+      'context_checkpoint', 'conversation_read', 'engineering_calculate', 'engineering_describe', 'engineering_run', 'pass', 'place_resolve', 'product_read', 'product_search', 'sample_changes', 'wiki_lookup', 'workspace_call', 'workspace_explore',
     ])
     const before = { messages: room.getRecent(100), scope: structuredClone(room.profile.scope), agents: runtime.team.listAgents().map(agent => agent.id) }
     const calculated = await support.toolExecutor!([{ tool: 'sample_changes', arguments: input }], room.profile.id)
