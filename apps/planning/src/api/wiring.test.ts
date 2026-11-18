@@ -12,6 +12,10 @@ import { createRealSolver } from './wiring.ts'
 import { checkPlan } from '../check/check.ts'
 import { verifyCertificate } from '../check/certificate.ts'
 import { verifyOptimality } from '../check/optimal.ts'
+import { preconditionFacts } from '../solve/fixtures/train-a-case.ts'
+import { compiled, scheduleOf } from '../solve/preview.ts'
+import { makeExplainer, type ExplainItem } from '../solve/explain.ts'
+import { totalFloat } from '../solve/float.ts'
 
 const pool = createSolverPool()
 const harness = await createHarness({ solver: createRealSolver(pool) })
@@ -41,6 +45,51 @@ type GeneratedOption = { key: string; label: string; status: { word: string; goa
 const summary = (options: GeneratedOption[]) => options.map(option => ({ label: option.label, word: option.status.word, span: option.span, cost: option.cost, goals: option.status.goals.map(goal => `${goal.value} ${goal.unit} (${goal.word})`), warnings: option.warnings.length }))
 
 describe('the operations on the real solver and checker', () => {
+  test('the maintenance campaign pages every cause in its existing finish walk without loss, and refuses invalid or stale pages', async () => {
+    const base = bundledPlanDefinitions.find(definition => definition.id === 'nuclear-maintenance-planning')!.inputs
+    const facts = preconditionFacts(base)
+    const id = await planOf({ ...base, world: { refreshedAt: facts[0]!.at, facts } })
+    const generated = await harness.call('planning.plan.generate', { resource: id, expectedRevision: 1, input: { seconds: 5, variants: [
+      { label: 'Existing crews', buy: [] }, { label: 'With HX contractor', buy: ['extra-maintenance-crew'] },
+    ] } })
+    expect(generated.status).toBe(200)
+    const stored = await harness.store.read(harness.workspaceId, id)
+    let pagedOptions = 0
+    for (const option of stored.options!.options) {
+      expect(option.status.word).toBe('validated feasible')
+      const { index, prep } = compiled(stored.inputs, option)
+      const schedule = scheduleOf(prep, index, option)
+      const dataDateSlot = (Date.parse(stored.inputs.settings.dataDate!) - index.origin) / index.slotMs
+      const raw = makeExplainer({ prep, index, schedule, floats: totalFloat(prep, index, schedule), purchases: option.variant.purchases, inputs: stored.inputs, dataDateSlot }).finishChain(index.jobs.indexOf('restore'))
+      const items: ExplainItem[] = []
+      let cursor: string | undefined, pages = 0
+      do {
+        const answer = await harness.call('planning.plan.explain', { resource: id, input: { ask: 'finish', job: 'restore', option: option.key, ...(cursor === undefined ? {} : { cursor }) } })
+        expect(answer.status).toBe(200)
+        small(answer)
+        const result = answer.body.result
+        expect(result.lines).toHaveLength(result.items.length)
+        if (cursor !== undefined) expect(result.limiting).toBeUndefined()
+        items.push(...result.items)
+        cursor = result.more
+        expect(++pages).toBeLessThan(10)
+      } while (cursor !== undefined)
+      if (pages > 1) pagedOptions++
+      expect(items).toEqual(raw)
+      expect(new Set(items.map(item => item.job)).size).toBe(raw.length)
+      for (const cursor of ['', '-1', '0.5', 'not-a-page', '999']) {
+        const bad = await harness.call('planning.plan.explain', { resource: id, input: { ask: 'finish', job: 'restore', option: option.key, cursor } })
+        expect([bad.status, bad.body.error.code]).toEqual([400, 'invalid_request'])
+      }
+    }
+    expect(pagedOptions).toBeGreaterThan(0)
+    const option = stored.options!.options[0]!
+    const edited = await harness.call('planning.plan.edit', { resource: id, expectedRevision: 1, input: { edits: [{ edit: 'job', key: 'hx-work', duration: { value: 3 } }] } })
+    expect(edited.status).toBe(200)
+    const stale = await harness.call('planning.plan.explain', { resource: id, input: { ask: 'finish', job: 'restore', option: option.key, cursor: '1' } })
+    expect([stale.status, stale.body.error.code]).toEqual([409, 'option_stale'])
+  }, 30_000)
+
   test('the flagship case: Generate, explain and the schedule read, every status re-checked', async () => {
     const id = await planOf(refreshedFlagship())
     const generated = await harness.call('planning.plan.generate', { resource: id, input: {}, expectedRevision: 1 })
