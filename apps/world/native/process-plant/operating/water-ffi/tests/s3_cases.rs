@@ -509,7 +509,7 @@ struct Recorder {
     /// LD01_PERF_PROFILE=1 (with LD01_OU_FRAME_COST=1).
     profile: Option<Vec<ProfileFrame>>,
     /// HOOK (PHYS X1): the protection's observed quantities at each frame
-    /// of a gated run, when LD01_PHYS_OPERATOR_FRAMES=1 (never in `frames`).
+    /// of a run, when LD01_PHYS_OPERATOR_FRAMES=1 (never in `frames`).
     /// The observed quantities and their references ride along once.
     operator: Option<(leitbild_operating_water::ic::Readings, Value, Vec<Value>)>,
     /// HOOK (FEED, plan r4 X4.1): with the packet's feed train, each loop's
@@ -1732,9 +1732,8 @@ fn drive(
         rows: Vec::new(),
         cost: (std::env::var("LD01_OU_FRAME_COST").as_deref() == Ok("1")).then(Vec::new),
         profile: leitbild_operating_plant::cost::active().then(Vec::new),
-        operator: (gate.is_some()
-            && std::env::var("LD01_PHYS_OPERATOR_FRAMES").as_deref() == Ok("1"))
-        .then(|| (protection.readings(), protection.observed(), Vec::new())),
+        operator: (std::env::var("LD01_PHYS_OPERATOR_FRAMES").as_deref() == Ok("1"))
+            .then(|| (protection.readings(), protection.observed(), Vec::new())),
         legs: packet_json["secondary"]["feedTrain"].is_object().then(|| {
             let ids: Vec<String> = packet_json["mechanics"]["regions"]
                 .as_array()
