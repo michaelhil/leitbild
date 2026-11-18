@@ -18,6 +18,9 @@ const LEITBILD_ASSISTANCE_BODY_MAX_CHARS = 8_000
 // The procedure runner rides along in every Assistant prompt, not only while a procedure runs.
 // If an honest need exceeds this, raise the cap; do not move the rule into a procedure.
 const PROCEDURE_RUNNER_BODY_MAX_CHARS = 1_000
+// Paged work packages, human authorization and unsaved retiming need explicit
+// boundaries alongside deadline advice; this remains one ordinary Assistant skill.
+const PLANNING_ADVICE_BODY_MAX_CHARS = 4_400
 const DESCRIPTION_MAX_CHARS = 1_024
 
 describe('Leitbild Assistant skills', () => {
@@ -71,13 +74,31 @@ describe('Leitbild Assistant skills', () => {
     await loadSkills(join(import.meta.dir, '..', '..', 'skills'), store, createToolRegistry())
     expect(assistantRoom.room.agents[0]!.skills).toContain('planning-advice')
     const planning = store.get('planning-advice')!
-    expect(planning.body.length).toBeLessThanOrEqual(3_600)
+    expect(planning.body.length).toBeLessThanOrEqual(PLANNING_ADVICE_BODY_MAX_CHARS)
     expect(planning.body.indexOf('planning.sources.refresh')).toBeGreaterThan(0)
     expect(planning.body.indexOf('planning.sources.refresh')).toBeLessThan(planning.body.indexOf('planning.plan.generate'))
     expect(planning.body).toContain('Unless the question is explicitly historical')
     expect(planning.body).toContain('`expectedRevision` beside `input` on each refresh/generate call')
-    expect(planning.body).toContain('Use its owner-localized `lines` for reported starts and finishes.')
+    expect(planning.body).toContain('Ground reported times in its owner-localized `lines` and actual schedule rows.')
     expect(planning.body).toContain("ISO timestamps ending `Z` are UTC; convert them to the plan's time zone")
     expect(planning.body).not.toMatch(/17:00|job:\s*["']restore|extra-maintenance-crew|nuclear-maintenance-planning/)
+  })
+
+  test('richer planning advice distinguishes scheduled gates, current-order previews and owner explanations', async () => {
+    const store = createSkillStore()
+    await loadSkills(join(import.meta.dir, '..', '..', 'skills'), store, createToolRegistry())
+    const planning = store.get('planning-advice')!
+    expect(planning.body).toContain('Scheduled reviews, releases and acceptance tasks are forecasts')
+    expect(planning.body).toContain('Follow needed `more` pages with `cursor`')
+    expect(planning.body).toContain('Follow its `more` pages with `cursor`')
+    expect(planning.body).toContain('calendars and each crew\'s permitted work')
+    expect(planning.body).toContain('do not infer all critical work from zero float')
+    expect(planning.body).toContain('treat missing `limiting` as no gain')
+    expect(planning.body).toContain('Resource gain is a diagnosis, not a permitted purchase.')
+    expect(planning.body).toContain('`planning.plan.edit` with `preview:true` on the selected option')
+    expect(planning.body).toContain('not a new optimization')
+    expect(planning.body).toContain('never invent omitted rows')
+    expect(planning.body).toContain('Do not save an assumption change just to answer a what-if or supply a person\'s authority')
+    expect(planning.body).toContain('saved schedule, not this unsaved preview')
   })
 })
