@@ -100,7 +100,7 @@
         {:else if reading.option.status.word === 'proven infeasible'}{deadline === null ? 'This option is proven infeasible under the recorded constraints.' : 'The requested deadline is proven infeasible for this option.'}
         {:else}{reading.option.status.word}{/if}
       </p>
-      {#if shown?.cost !== null && shown?.cost !== undefined}<p class="cost">Extra cost {moneyText(shown.cost, reading.plan.currency)}</p>{/if}
+      {#if shown?.cost !== null && shown?.cost !== undefined}<p class="cost">{reading.reference === null ? 'Extra cost' : 'Reference schedule extra cost'} {moneyText(shown.cost, reading.plan.currency)}</p>{/if}
     </header>
 
     {#if reasons.length > 0}<ul class="reasons">{#each reasons as reason}<li>{reason}</li>{/each}</ul>{/if}
