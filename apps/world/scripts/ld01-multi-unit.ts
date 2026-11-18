@@ -756,13 +756,10 @@ const runEngines = async (config: Config, artifact: Ld01UnitArtifact, records: R
       const deadline = t0 + (k + 1) * stepMs
       const settled = await Promise.allSettled(records.map(async (record, index) => {
         const engine = engines[index]!
-        // The engine forms `requested + advanceMs` and goes to the last frame at or before it; adding exactly stepMs can
-        // fall short of the next frame by rounding (no exchange this tick, two frames the next). Keep the request on the
-        // next frame instant so every tick is one exchange of `exchangeMs`; the unit makes the same steps either way.
-        // Past a named end the Run's time goes on and the unit's does not, so the correction no longer applies.
-        const onGrid = engine.ended() === null ? stepMs + (engine.runtime.elapsedMs() - engine.runtime.advancedMs()) + 1e-4 : stepMs
+        // The engine counts the Run's whole milliseconds in frames (R4-GRID's frame rule), so each tick of `exchangeMs`
+        // is one exchange of exactly that many frames.
         const sentAt = performance.now()
-        const receipt = await engine.advance(onGrid)
+        const receipt = await engine.advance(stepMs)
         const doneAt = performance.now()
         if (Number.isNaN(record.commandT) && receipt.frame !== null) record.commandT = receipt.frame.t - stepS
         noteFrame(config, load, record, k, receipt.frame, receipt.cost, sentAt, doneAt, Math.max(0, (doneAt - deadline) / 1_000), stepS, null)
