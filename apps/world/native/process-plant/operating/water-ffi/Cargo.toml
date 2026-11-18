@@ -33,5 +33,11 @@ required-features = ["quadratures"]
 serde = { version = "=1.0.229", features = ["derive"] }
 serde_json = "=1.0.151"
 
+# Fat LTO over the plant, water and host crates. Only instruction counts
+# move: every trajectory digest equals the default profile's (R4-FRAME).
+[profile.release]
+lto = "fat"
+codegen-units = 1
+
 [lints.clippy]
 all = "warn"

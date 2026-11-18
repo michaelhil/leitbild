@@ -108,12 +108,17 @@ pub struct Report {
 
 /// R4-CLIMB: a start's `dF/dy` and `dF/dy'`, kept for the climb after a restart
 /// while a regular cell is in equilibrium mode. No case without vapor outside
-/// the PZR reads them.
+/// the PZR reads them. R4-CLIMB-SEAT: also after a restart that seats rods
+/// with the relief shut ([`Integrated::climb_matrix`]).
 #[derive(Clone, Debug)]
 pub struct ClimbMatrices {
     a: Vec<f64>,
     b: Vec<f64>,
     last_cj: f64,
+    /// R4-CLIMB-SEAT: this climb follows a rod seat, and the next full matrix
+    /// re-anchors `a`.
+    seat: bool,
+    anchor: bool,
 }
 
 /// The correction of the coordinates a start exempts from its WRMS guard:
@@ -201,6 +206,9 @@ pub struct Analyses {
     /// PZR, and the passes a start on them may take.
     retained: Option<Retained>,
     kept_passes: usize,
+    /// R4-CLIMB-SEAT: this start seats rods, so it leaves its matrices for the
+    /// climb after it.
+    seat_climb: bool,
 }
 /// R4-CLIMB-START: dF/dy and dF/dy' of the last start, and the differential
 /// identity they were read under.
@@ -228,6 +236,11 @@ impl Analyses {
     /// close by a factor at each pass, not quadratically.
     pub fn keep_passes(&mut self, passes: usize) {
         self.kept_passes = passes;
+    }
+    /// R4-CLIMB-SEAT: whether the next start leaves its matrices for a rod
+    /// seat's climb.
+    pub fn keep_for_seat(&mut self, seat: bool) {
+        self.seat_climb = seat;
     }
 }
 
@@ -697,11 +710,14 @@ pub fn consistent_start_exempting<P: Properties + WaterProperties>(
             differential: differential.to_vec(),
         });
     }
-    if equilibrium && matches!(matrices, Matrices::Blocks { .. }) {
+    let seat = matches!(&matrices, Matrices::Blocks { analyses, .. } if analyses.seat_climb);
+    if (equilibrium || seat) && matches!(matrices, Matrices::Blocks { .. }) {
         report.climb = Some(ClimbMatrices {
             a: a.clone(),
             b: ab.iter().zip(&a).map(|(x, y)| x - y).collect(),
             last_cj: f64::INFINITY,
+            seat,
+            anchor: false,
         });
     }
     // Each row's magnitude of terms from its linearization at the state:
@@ -1726,6 +1742,14 @@ mod integrated {
                 restart.transaction_passes
             };
         analyses.keep_passes(restart.transaction_passes);
+        // R4-CLIMB-SEAT: a located root that seats rods, with the relief shut.
+        let relief_shut = joined
+            .network
+            .pzr_boundary()
+            .is_none_or(|(b, _)| b.relief.as_ref().is_none_or(|r| r.lift.value == 0.));
+        analyses.keep_for_seat(
+            matches!(discrete, Discrete::Roots(_)) && transacted.contains(&"rods") && relief_shut,
+        );
         let matrices = match assembly {
             Assembly::Blocks(structure) => Matrices::Blocks {
                 structure,
@@ -2428,6 +2452,15 @@ mod integrated {
         /// the climb's first state. A request that does not lower `cj`, Newton's
         /// own retry after a failed solve among them, ends the climb and
         /// assembles in full. Returns whether `data` is filled.
+        ///
+        /// R4-CLIMB-SEAT: after a restart that seats rods, the rods' columns are
+        /// the ones refreshed at the first state, and a request that does not
+        /// lower `cj` takes a full matrix that re-anchors the kept `A`
+        /// (`A = M - cj B`, stock `B`'s rows being the rate terms), so the climb
+        /// lasts until the next restart. Error steps, a failed Newton solve and
+        /// a failed factorization all come back here as a request that does
+        /// not lower `cj`; an error in the limited assembly falls back to a full
+        /// one at once ([`Integrated::forget_kept_matrices`] at a copy point).
         fn climb_matrix(
             &mut self,
             time: f64,
@@ -2442,7 +2475,15 @@ mod integrated {
             let Assembly::Blocks(structure) = &self.assembly else {
                 return Ok(false);
             };
-            if cj >= climb.last_cj || climb.a.len() != data.len() {
+            if climb.a.len() != data.len() {
+                return Ok(false);
+            }
+            if cj >= climb.last_cj {
+                if climb.seat {
+                    climb.anchor = true;
+                    climb.last_cj = cj;
+                    self.climb = Some(climb);
+                }
                 return Ok(false);
             }
             if climb.last_cj.is_finite() {
@@ -2450,7 +2491,24 @@ mod integrated {
                     *d = a + cj * b;
                 }
             } else {
-                let columns = self.joined.network.equilibrium_columns(y.len());
+                let mut columns = self.joined.network.equilibrium_columns(y.len());
+                if climb.seat {
+                    let o = self.joined.offsets();
+                    for refreshed in &mut columns[o.rods..o.pzr] {
+                        *refreshed = true;
+                    }
+                }
+                // R4-JAC-BASE's rule: on a seat's climb the residual's evaluation
+                // at this very state stands while the relief is shut.
+                let on_base =
+                    climb.seat
+                        && self
+                            .base
+                            .matches(time, y, yp, self.joined.counters.residuals)
+                        && self.joined.network.pzr_boundary().is_none_or(|(b, _)| {
+                            b.relief.as_ref().is_none_or(|r| r.lift.value == 0.)
+                        });
+                let reuse = on_base.then(|| self.joined.network.reuse());
                 crate::basis_assembly(true);
                 leitbild_operating_plant::network::heaters::hold_endpoints(true);
                 let result = jacobian_blocks_start(
@@ -2461,11 +2519,16 @@ mod integrated {
                     y,
                     yp,
                     data,
-                    None,
+                    reuse,
                     Some(&columns),
                 );
                 crate::basis_assembly(false);
                 leitbild_operating_plant::network::heaters::hold_endpoints(false);
+                // R4-CLIMB-SEAT: a refused limited assembly falls back to a full
+                // one; the kept matrices are not used again.
+                if climb.seat && result.is_err() {
+                    return Ok(false);
+                }
                 result.map_err(failure)?;
                 for (j, refreshed) in columns.iter().enumerate() {
                     let q = self.pointers[j] as usize..self.pointers[j + 1] as usize;
@@ -2651,7 +2714,17 @@ mod integrated {
                     result
                 }
             }
-            .map_err(failure)
+            .map_err(failure)?;
+            // R4-CLIMB-SEAT: a full matrix inside a seat's climb is its new anchor.
+            if let Some(c) = self.climb.as_mut()
+                && c.anchor
+            {
+                for (a, (d, b)) in c.a.iter_mut().zip(data.iter().zip(&c.b)) {
+                    *a = d - cj * b;
+                }
+                c.anchor = false;
+            }
+            Ok(())
         }
     }
     /// One borrowed handle on an [`Integrated`] system, for a stock solve
