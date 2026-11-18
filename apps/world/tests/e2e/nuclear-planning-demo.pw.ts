@@ -240,7 +240,7 @@ test('the scoped engineering agent produces an inspectable calculation beside th
 
     const rise = receipt.request.input.bindings.find((binding: { kind: string; value: number }) => binding.kind === 'assumption' && binding.value === 10)
     expect(rise).toBeTruthy()
-    await result.getByLabel(`${rise.name} (${rise.unit})`, { exact: true }).fill('5')
+    await result.getByLabel(`${rise.name} (${rise.unit})`, { exact: false }).fill('5')
     const [rerun] = await Promise.all([
       page.waitForResponse(response => response.request().method() === 'POST'
         && new URL(response.url()).pathname === `/api/workspaces/${workspace}/agents/rooms/${room}/engineering`),
