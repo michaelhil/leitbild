@@ -167,7 +167,7 @@ test('nuclear planning coordinates real crews, task handoffs and an unsaved esti
 
     await details.getByRole('link', { name: 'Inspect Component Cooling Heat Exchanger A in World', exact: true }).click()
     const world = page.frameLocator('iframe[title="World simulations"]')
-    await expect(world.locator('body')).toContainText('Component Cooling Heat Exchanger A')
+    await expect(world.locator('body')).toContainText('Component Cooling Heat Exchanger A', { timeout: 30_000 })
     await world.getByRole('link', { name: 'Back to planning demo', exact: true }).click()
     const returned = page.frameLocator('iframe[title="Planning"]')
     await expect(returned.getByRole('button', { name: /^With HX contractor\b/ })).toHaveAttribute('aria-pressed', 'true')
@@ -178,6 +178,24 @@ test('nuclear planning coordinates real crews, task handoffs and an unsaved esti
     await expect(reopened.getByRole('button', { name: /Generate/ })).toHaveCount(0)
     await reopened.getByRole('button', { name: /^With HX contractor\b/ }).click()
     await expect(reopened.getByRole('rowheader').filter({ hasText: completionTitle })).toContainText('20:00')
+
+    const recheckCalls: string[] = []
+    const rememberRecheck = (request: { method: () => string; url: () => string }) => {
+      const path = new URL(request.url()).pathname
+      if (request.method() === 'POST' && /\/capabilities\/planning\.(sources\.refresh|plan\.generate)\/invoke$/.test(path)) recheckCalls.push(path)
+    }
+    page.on('request', rememberRecheck)
+    const [refreshed, regenerated] = await Promise.all([
+      page.waitForResponse(response => response.request().method() === 'POST' && new URL(response.url()).pathname.endsWith('/capabilities/planning.sources.refresh/invoke')),
+      page.waitForResponse(response => response.request().method() === 'POST' && new URL(response.url()).pathname.endsWith('/capabilities/planning.plan.generate/invoke')),
+      reopened.getByRole('button', { name: 'Recalculate comparison', exact: true }).click(),
+    ])
+    page.off('request', rememberRecheck)
+    expect(refreshed.ok()).toBe(true)
+    expect(regenerated.ok()).toBe(true)
+    expect(recheckCalls.map(path => path.split('/capabilities/')[1])).toEqual(['planning.sources.refresh/invoke', 'planning.plan.generate/invoke'])
+    expect(regenerated.request().postDataJSON().expectedRevision).toBe((await refreshed.json()).result.plan.revision)
+    await expect(reopened.getByRole('region', { name: 'Maintenance schedule', exact: true })).toBeVisible()
   })
 })
 
@@ -211,7 +229,7 @@ test('one schedule viewer changes from a Wednesday 20:00 success to the actual 1
       // The second navigation changes only the fragment, as the shared display
       // window does when another retained option is opened in the same frame.
       await page.goto(`/workspaces/${workspace}/planning/embed/planning.schedule#view=${encodeURIComponent(JSON.stringify(envelope))}`)
-      await expect(page.getByText(new RegExp(`Requested finish by .*${time}`))).toBeVisible({ timeout: 30_000 })
+      await expect(page.locator('header .requested')).toContainText(time!, { timeout: 30_000 })
       await expect(page.getByRole('region', { name: 'Checked schedule', exact: true })).toBeVisible()
       await expect(page.getByRole('rowheader')).toHaveCount(16)
       await expect(page.getByRole('rowheader').filter({ hasText: completionTitle })).toContainText('20:00')
@@ -220,8 +238,8 @@ test('one schedule viewer changes from a Wednesday 20:00 success to the actual 1
         expect(published.schedule.option.cost).toBe(24_000)
       } else {
         await expect(page.getByText('The requested deadline is proven infeasible for this option.', { exact: true })).toBeVisible()
-        await expect(page.getByText('Highlighted work belongs to the infeasibility proof.', { exact: true })).toBeVisible()
-        await expect(page.getByText(/Requested finish by .*20:00/)).toHaveCount(0)
+        await expect(page.getByText('Red outlines mark tasks named by the infeasibility proof.', { exact: true })).toBeVisible()
+        await expect(page.locator('header .requested')).not.toContainText('20:00')
         expect(published.schedule.certificate).toMatchObject({ kind: 'chain', workHours: 13, availableHours: 12 })
       }
     }
@@ -366,7 +384,7 @@ test('plain deadline questions produce checked success and refusal visualization
     const fits = await checkedDisplay(0, '2026-11-18T19:00:00Z', 'validated feasible', 24_000)
     expect(Date.parse(fits.schedule.option.finish)).toBe(Date.parse('2026-11-18T19:00:00Z'))
     expect(fits.schedule.option.cost).toBe(24_000)
-    await expect(fits.result.getByText(/Requested finish by .*20:00/)).toBeVisible()
+    await expect(fits.result.locator('header .requested')).toContainText('20:00')
     await expect(fits.result.getByText('Meets the requested deadline.', { exact: false })).toBeVisible()
     await expect(fits.result.getByRole('rowheader').filter({ hasText: completionTitle })).toContainText('20:00')
     await saveEvidenceImage('deadline-wednesday-20', path => fits.result.locator('body').screenshot({ path }))
@@ -382,9 +400,9 @@ test('plain deadline questions produce checked success and refusal visualization
     expect(refuses.schedule.certificate.jobs).toEqual(expect.arrayContaining(['isolate', 'hx-work', 'hx-nde', 'sw-restore', 'restore']))
     expect(refuses.schedule.reference.fresh).toBe(true)
     expect(Date.parse(refuses.schedule.reference.finish)).toBe(Date.parse('2026-11-18T19:00:00Z'))
-    await expect(refuses.result.getByText(/Requested finish by .*19:00/)).toBeVisible()
+    await expect(refuses.result.locator('header .requested')).toContainText('19:00')
     await expect(refuses.result.getByText('The requested deadline is proven infeasible for this option.', { exact: true })).toBeVisible()
-    await expect(refuses.result.getByText('Highlighted work belongs to the infeasibility proof.', { exact: true })).toBeVisible()
+    await expect(refuses.result.getByText('Red outlines mark tasks named by the infeasibility proof.', { exact: true })).toBeVisible()
     await expect(refuses.result.getByRole('rowheader').filter({ hasText: completionTitle })).toContainText('20:00')
     await saveEvidenceImage('deadline-wednesday-19', path => refuses.result.locator('body').screenshot({ path }))
 
@@ -395,7 +413,7 @@ test('plain deadline questions produce checked success and refusal visualization
     expect(existingCrew.plan).toBe(fits.plan)
     expect(Date.parse(existingCrew.schedule.option.finish)).toBe(Date.parse('2026-11-19T11:00:00Z'))
     expect(existingCrew.schedule.option.cost).toBe(0)
-    await expect(existingCrew.result.getByText(/Requested finish by .*12:00/)).toBeVisible()
+    await expect(existingCrew.result.locator('header .requested')).toContainText('12:00')
     await expect(existingCrew.result.getByText('Meets the requested deadline.', { exact: false })).toBeVisible()
     await expect(existingCrew.result.getByRole('rowheader').filter({ hasText: completionTitle })).toContainText('12:00')
     await saveEvidenceImage('deadline-thursday-noon-existing-crews', path => existingCrew.result.locator('body').screenshot({ path }))
