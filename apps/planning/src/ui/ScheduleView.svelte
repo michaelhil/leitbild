@@ -15,6 +15,7 @@
   let error = $state<string | null>(null)
   let loading = $state(true)
   let root: HTMLElement
+  let readSequence = 0
 
   const time = $derived(createTimeFormat(reading?.plan.timeZone ?? null))
   const deadline = $derived(reading?.deadline === null || reading?.deadline === undefined ? null : Date.parse(reading.deadline.finishBy))
@@ -31,6 +32,7 @@
   const rowFor = (key: string): DatedRow | undefined => rows.find(row => row.job === key)
 
   const read = async (): Promise<void> => {
+    const sequence = ++readSequence
     loading = true
     error = null
     try {
@@ -51,26 +53,33 @@
       // Jobs and rows use Planning's existing paged reads. Recheck the exact
       // publication after reading them so a changed option cannot mix dates.
       await client.display(state.plan, { option: state.option, digest: state.digest })
+      if (sequence !== readSequence) return
       model = next
       rows = dated
       reasons = explanation
       reading = schedule
     } catch (cause) {
-      error = refusalText(cause)
+      if (sequence === readSequence) error = refusalText(cause)
     } finally {
-      loading = false
+      if (sequence === readSequence) loading = false
     }
   }
 
   onMount(() => {
     void read()
+    const changed = (): void => { void read() }
+    window.addEventListener('hashchange', changed)
     const observer = new ResizeObserver(() => {
       if (window.parent === window) return
       const height = Math.max(120, Math.min(960, Math.ceil(root.getBoundingClientRect().height)))
       window.parent.postMessage(embeddedViewHeightMessageSchema.parse({ type: 'leitbild:view-height', height }), location.origin)
     })
     observer.observe(root)
-    return () => observer.disconnect()
+    return () => {
+      readSequence += 1
+      window.removeEventListener('hashchange', changed)
+      observer.disconnect()
+    }
   })
 </script>
 

@@ -842,7 +842,7 @@
     onkeydown={windowKeydown}
   >
     <header class="display-window-header">
-      {#if planningDemoHref}<a class="display-window-back" href={planningDemoHref} target="_top">Back to planning demo</a>{/if}
+      {#if planningDemoHref}<a class="display-window-back" href={planningDemoHref} target="_top" aria-label="Back to planning demo">← Planning</a>{/if}
       <!-- ←/→/Home/End step while focus is on any navigation control. -->
       <!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
       <div class="display-window-nav" role="group" aria-label="Displays" onkeydown={navigationKeydown}>

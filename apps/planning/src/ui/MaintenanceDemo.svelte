@@ -167,7 +167,7 @@
           {#if done !== null}
             <span class="finish-time">Finish {time.time(done)}</span>
             <span class="target-result" class:late={targetTime !== null && done > targetTime}>
-              {#if targetTime !== null}{spanText(Math.abs(done - targetTime))} {done > targetTime ? 'past target' : 'before target'}{/if}
+              {#if targetTime !== null}{spanText(Math.abs(done - targetTime))} {done > targetTime ? 'after' : 'before'} {time.time(targetTime)}{/if}
             </span>
           {:else}<span>{option.status.word}</span>{/if}
           <span class="cost">{cost === null ? 'Cost unavailable' : cost === 0 ? 'Existing crew · no extra booking' : `+ ${moneyText(cost, model.inputs.settings.currency)}`}</span>
