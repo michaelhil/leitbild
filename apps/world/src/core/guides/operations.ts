@@ -232,6 +232,7 @@ const guideView = async (call: GuidanceCall, attempt: GuideAttempt, recipient?: 
   return {
     available: true, title: guide.title, attemptId: attempt.id, revision: attempt.revision, status: attempt.status,
     ...(guide.planningDefinitionId === undefined ? {} : { planningDefinitionId: guide.planningDefinitionId }),
+    ...(guide.planningLabel === undefined ? {} : { planningLabel: guide.planningLabel }),
     stepAttemptId: attempt.stepAttemptId,
     // No future instructions, trigger metadata, hidden step count, or another learner's progress.
     step: { id: step.id, title: step.title, instruction: step.instruction, ...(step.help === undefined ? {} : { help: step.help }), completion: step.completion.kind, effects },
@@ -269,6 +270,7 @@ export const runGuideOperation = async (kind: keyof typeof guideInputs, raw: unk
     if (input.attemptId === undefined) return {
       available: true, title: guide.title, ...(guide.description === undefined ? {} : { description: guide.description }),
       ...(guide.planningDefinitionId === undefined ? {} : { planningDefinitionId: guide.planningDefinitionId }),
+      ...(guide.planningLabel === undefined ? {} : { planningLabel: guide.planningLabel }),
     }
     const attempt = await call.registry.guideFile(call.runId, input.attemptId).read()
     if (attempt === null) throw guideFailure('guide_attempt_unavailable', 'This guide attempt is not available in this Run', 404)

@@ -85,6 +85,7 @@
           "kind": "acknowledge"
         }
       }
-    ]
+    ],
+    "planningLabel": "Compare maintenance schedules"
   }
 }

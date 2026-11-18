@@ -27,7 +27,7 @@
     ScenarioExecutionState,
     SimulationClockState,
   } from '../../core/model/index.ts'
-  import { deleteObjectCommandKind, objectIdSchema, roleClassForRoleSet, runRolesOf, viewerForRoleSet } from '../../core/model/index.ts'
+  import { deleteObjectCommandKind, idSchema, objectIdSchema, roleClassForRoleSet, runRolesOf, viewerForRoleSet } from '../../core/model/index.ts'
   import { createPackPresentationComposer } from '../../core/packs/presentation-composer.ts'
   import type { PackCreateObjectType, PackMapFeatureQuery, PackObjectPresentation, PackObjectPresentationTier, PackObjectStatusPresentation, PackPresentationContribution, PackProcedureContribution, PackSurfacePanelContribution, PackTargetContext, PackTargetPreview } from '../../core/packs/protocol.ts'
   import type { PackLiveMapLayerBinding } from '../map-runtime/pack-live-layer.ts'
@@ -267,6 +267,7 @@
   let guidancePreferences = $state<RunViewPreferences['guidance']>(initialRunViewPreferences().guidance)
   let timedCardRequested = $state(false)
   const routeFocus = objectIdSchema.safeParse(new URLSearchParams(location.search).get('focus')).data ?? null
+  const routeElement = idSchema.safeParse(new URLSearchParams(location.search).get('element')).data ?? null
   let focusedMapObjectId = $state<ObjectId | null>(null)
   let mapFocusRequested = false
   let planningGuideOpened = false
@@ -274,6 +275,11 @@
     const definition = guidanceScreen.guide?.planningDefinitionId
     if (!definition || !simulationRunId) return null
     const params = new URLSearchParams({ planning: 'demo', definition, run: simulationRunId })
+    const current = new URLSearchParams(location.search)
+    for (const key of ['agents', 'option']) {
+      const value = idSchema.safeParse(current.get(key)).data
+      if (value !== undefined) params.set(key, value)
+    }
     return `/workspaces/${encodeURIComponent(activeWorkspaceId())}?${params}`
   })
   const structuredGuideVisible = $derived(Boolean(guidanceScreen.guide && !guidanceScreen.explored && (!guidanceScreen.guide.attemptId || guidanceScreen.guide.status === 'active')))
@@ -514,6 +520,13 @@
       setCategoryMapVisibility(presentationFor(object).categoryId, true)
       focusedMapObjectId = object.id
       focusOnMapObject(object.spatial.position.point.coordinates)
+      if (routeElement !== null) {
+        if (!observedAssetObjects.some(asset => asset.id === object.id)) {
+          commandFeedback = noteAction(commandFeedback, 'The requested object has no available equipment display.')
+          return
+        }
+        requestDisplayWindow({ kind: 'asset', objectId: object.id, select: routeElement }, false)
+      }
     })
   })
 

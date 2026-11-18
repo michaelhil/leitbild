@@ -69,10 +69,12 @@ export const guideDefinitionSchema = z.object({
   startPaused: z.boolean().default(true),
   /** Optional, explicitly opened Planning template for the current simulation. */
   planningDefinitionId: idSchema.optional(),
+  planningLabel: z.string().trim().min(1).max(64).optional(),
   // An initial-state lesson can explicitly refuse a copied checkpoint after its introduction is no longer true.
   entry: guideConditionSchema.optional(),
   steps: z.array(guideStepSchema).min(1),
 }).strict().superRefine((guide, ctx) => {
+  if (guide.planningLabel !== undefined && guide.planningDefinitionId === undefined) ctx.addIssue({ code: 'custom', path: ['planningLabel'], message: 'A Planning action label needs a Planning Definition' })
   const indices = new Map<string, number>()
   guide.steps.forEach((step, index) => {
     if (indices.has(step.id)) ctx.addIssue({ code: 'custom', path: ['steps', index, 'id'], message: 'Guide step identities must be unique' })
