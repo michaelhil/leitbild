@@ -410,7 +410,8 @@ const noteRow = (config: Config, load: LoadSampler, record: UnitRecord, row: Row
   if (config.rollupS === null) return
   const interval = record.interval
   interval.frames += 1
-  interval.walls.push(wall)
+  // A unit that died in this tick has no counters for it (NaN): its failure is the stop, not a frame figure.
+  if (Number.isFinite(wall)) interval.walls.push(wall)
   interval.exchangeWorst = Math.max(interval.exchangeWorst, exchangeWall)
   interval.lagWorst = Math.max(interval.lagWorst, lag)
   if (lag > 0) interval.lagging += 1
@@ -427,8 +428,8 @@ const noteRow = (config: Config, load: LoadSampler, record: UnitRecord, row: Row
   const sample = load.latest()
   const entry: WorstEntry = [k, row[c('t_unit_s')]!, wall, exchangeWall, lag, instructions, row[c('p_instructions')]!, cpuS, row[c('runnable_s')]!,
     sample?.tS ?? Number.NaN, sample?.load1 ?? Number.NaN, sample?.pressure ?? Number.NaN, sample?.busy ?? []]
-  keepWorst(record.byWall, entry, 2)
-  keepWorst(record.byInstructions, entry, 5)
+  if (Number.isFinite(wall)) keepWorst(record.byWall, entry, 2)
+  if (Number.isFinite(instructions)) keepWorst(record.byInstructions, entry, 5)
 }
 
 /** One unit's reply folded into its record: the same rows whichever transport produced it. */
