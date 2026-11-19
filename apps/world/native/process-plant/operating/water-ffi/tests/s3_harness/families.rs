@@ -1584,6 +1584,7 @@ pub fn electrical_e0(
     from: f64,
     to: f64,
     dt: f64,
+    grid_end: crate::compare::GridEnd,
     cutoff_hz: f64,
     extension: &Value,
 ) -> Value {
@@ -1600,8 +1601,8 @@ pub fn electrical_e0(
         return json!({"verdict": "not executable", "reason": "accuracyExtension declares no budgets"});
     };
     let (ra, rb) = match (
-        run.grid(origin, from, to, dt),
-        reference.grid(origin, from, to, dt),
+        run.grid_ending(origin, from, to, dt, grid_end),
+        reference.grid_ending(origin, from, to, dt, grid_end),
     ) {
         (Ok(a), Ok(b)) => (a, b),
         (ea, eb) => {
@@ -2761,15 +2762,48 @@ mod tests {
         };
         let run = series(30_000., 1.0e9);
         let close = series(30_005., 1.0e9 + 5e5);
-        let e = electrical_e0(Case::C2, &run, &close, 100., 0., 1., 0.002, 2., &ext);
+        let e = electrical_e0(
+            Case::C2,
+            &run,
+            &close,
+            100.,
+            0.,
+            1.,
+            0.002,
+            crate::compare::GridEnd::Rounded,
+            2.,
+            &ext,
+        );
         assert_eq!(e["verdict"], "pass", "{e}");
         let far = series(30_020., 1.0e9);
         assert_eq!(
-            electrical_e0(Case::C2, &run, &far, 100., 0., 1., 0.002, 2., &ext)["verdict"],
+            electrical_e0(
+                Case::C2,
+                &run,
+                &far,
+                100.,
+                0.,
+                1.,
+                0.002,
+                crate::compare::GridEnd::Rounded,
+                2.,
+                &ext
+            )["verdict"],
             "fail"
         );
         assert_eq!(
-            electrical_e0(Case::C1, &run, &far, 100., 0., 1., 0.002, 2., &ext)["verdict"],
+            electrical_e0(
+                Case::C1,
+                &run,
+                &far,
+                100.,
+                0.,
+                1.,
+                0.002,
+                crate::compare::GridEnd::Rounded,
+                2.,
+                &ext
+            )["verdict"],
             "not applicable"
         );
     }

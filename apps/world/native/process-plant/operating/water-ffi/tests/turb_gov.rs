@@ -547,7 +547,16 @@ fn turb_gov_run() {
                         && a.failure.is_none()
                         && b.failure.is_none() =>
                 {
-                    compare::compare(&x.credited, &y.credited, a.t0, 0., span, &g.budgets)
+                    // R4-E-GRID-END: both runs completed, so `span` is their end.
+                    compare::compare_ending(
+                        &x.credited,
+                        &y.credited,
+                        a.t0,
+                        0.,
+                        span,
+                        &g.budgets,
+                        compare::GridEnd::RunEnd,
+                    )
                 }
                 _ => {
                     json!({"evaluable": false, "looser_failure": a.failure, "tighter_failure": b.failure,

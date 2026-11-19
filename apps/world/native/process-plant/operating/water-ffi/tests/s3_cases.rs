@@ -3754,6 +3754,15 @@ fn s3_case_run() {
     );
     // The declared part's end after zero: rule I's exit or the run's end.
     let end = run.exit_after_zero.unwrap_or(run.end_after_zero);
+    // R4-E-GRID-END (owner, 19 November 2026): a comparison span that ends at
+    // the run's end ends E's grid at its last instant at or before it.
+    let grid_end = |to: f64| {
+        if to == end {
+            compare::GridEnd::RunEnd
+        } else {
+            compare::GridEnd::Rounded
+        }
+    };
     let budgets_block = d.block.whole(&d.common("/budgets_cpu_s_per_s"));
     let recovery_s = gate
         .as_ref()
@@ -4086,9 +4095,15 @@ fn s3_case_run() {
             );
             let rg = r.observer.gates.as_ref().unwrap();
             let e0 = match (&og.credited_error, &rg.credited_error) {
-                (None, None) => {
-                    compare::compare(&og.credited, &rg.credited, run.zero, from, to, &g.budgets)
-                }
+                (None, None) => compare::compare_ending(
+                    &og.credited,
+                    &rg.credited,
+                    run.zero,
+                    from,
+                    to,
+                    &g.budgets,
+                    grid_end(to),
+                ),
                 (a, b) => json!({"evaluable": false, "run": a, "reference": b, "within": false}),
             };
             // E′ (S3-D23): the electrical outputs, for the cases it names.
@@ -4100,6 +4115,7 @@ fn s3_case_run() {
                 from,
                 to,
                 g.budgets.observation_s,
+                grid_end(to),
                 g.budgets.cutoff_hz,
                 // C4 (r1) declares no accuracy extension: E′ names C2 and C5.
                 &if case == Case::C4 {
@@ -4165,7 +4181,15 @@ fn s3_case_run() {
                 .collect();
             for (name, from, to) in spans {
                 let e0 = match &og.credited_error {
-                    None => compare::compare(&og.credited, &other, run.zero, from, to, &g.budgets),
+                    None => compare::compare_ending(
+                        &og.credited,
+                        &other,
+                        run.zero,
+                        from,
+                        to,
+                        &g.budgets,
+                        grid_end(to),
+                    ),
                     Some(e) => json!({"evaluable": false, "run": e, "within": false}),
                 };
                 let verdict = if e0["evaluable"] == json!(false) {
@@ -4225,7 +4249,7 @@ fn s3_case_run() {
                                 && ga.credited_error.is_none()
                                 && gb.credited_error.is_none() =>
                         {
-                            compare::compare(&ga.credited, &gb.credited, run.zero, 0., end, &g.budgets)
+                            compare::compare_ending(&ga.credited, &gb.credited, run.zero, 0., end, &g.budgets, compare::GridEnd::RunEnd)
                         }
                         _ => json!({"evaluable": false, "looser_failure": ra.failure, "tighter_failure": rb.failure}),
                     };
