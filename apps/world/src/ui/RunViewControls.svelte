@@ -200,7 +200,7 @@
   {#if open === 'view'}
     <section id="run-view-sheet" class="view-sheet" aria-label="Run view" tabindex="-1" bind:this={sheet}>
       <header><h2>View</h2><button class="close" type="button" aria-label="Close View controls" onclick={() => close(true)}>×</button></header>
-      {@render cameraButtons(cameraActions.quick)}
+      {@render cameraButtons(cameraActions)}
       {#if panels.length > 0}
         <div class="view-section">
           <h3>Panels</h3>
@@ -210,12 +210,10 @@
       {#if layers.length > 0}
         <details class="view-section"><summary>Map layers</summary>{@render viewChoices(layers)}</details>
       {/if}
-      <details class="view-section">
-        <summary>More view controls</summary>
-        {@render cameraButtons(cameraActions.more)}
-        <button type="button" disabled={Boolean(resetDisabledReason)} onclick={reset}>Reset local view</button>
+      <div class="view-section">
+        <button type="button" disabled={Boolean(resetDisabledReason)} onclick={reset}>Reset view</button>
         <small>{resetDisabledReason ?? 'Restore the default map view, layers and panels.'}</small>
-      </details>
+      </div>
     </section>
   {:else if open === 'guide'}
     <section id="run-guide-options" class="view-sheet guide-options" aria-label="Guide" tabindex="-1" bind:this={sheet}>
@@ -263,9 +261,7 @@
   .close { font-size: 20px; line-height: 1; min-width: 38px; padding: 2px 8px; background: transparent; }
   .view-section { border-top: 1px solid var(--border); margin-top: 10px; padding-top: 9px; }
   .camera-actions { display: flex; flex-wrap: wrap; gap: 7px; }
-  .camera-actions:empty { display: none; }
   .camera-actions button { flex: 1 1 92px; }
-  .view-section .camera-actions { margin-bottom: 7px; }
   label { display: flex; align-items: flex-start; gap: 10px; padding: 8px 4px; min-height: 24px; cursor: pointer; border-radius: 6px; }
   label:hover { background: var(--panel-strong); }
   label:has(input:disabled) { cursor: default; }

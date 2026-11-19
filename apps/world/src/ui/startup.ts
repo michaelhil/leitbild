@@ -127,6 +127,18 @@ export const resetStartupStepsAfter = (
   ))
 }
 
+/**
+ * The steps startup waits for and fails with. A page that shows a screen's
+ * surface needs nothing from the base map, so its map step is left out: the
+ * map still starts and reports under the surface, but neither holds readiness
+ * back nor fails it. Every other step counts on every page.
+ */
+export const startupStepsAwaited = (
+  steps: ReadonlyArray<StartupStep>,
+  config: { readonly map: boolean },
+): ReadonlyArray<StartupStep> =>
+  config.map ? steps : steps.filter(step => step.id !== 'map')
+
 export const startupIsReady = (steps: ReadonlyArray<StartupStep>): boolean =>
   steps.find(step => step.id === 'ready')?.status === 'done'
   && !startupHasFailed(steps)

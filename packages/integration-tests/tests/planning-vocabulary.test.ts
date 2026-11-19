@@ -47,18 +47,21 @@ const controls: ReadonlyArray<readonly [string, string, ReadonlyArray<string>]> 
   ['H20', "Get rid of the test schedule I made this morning, I don't need it.", ['planning.plan.delete']],
 ]
 
+// One search at a time, with a timeout for the whole set: this scores ranking, not speed, and 20 searches at
+// once on a loaded machine piled up past a server's 10 s idle limit (deployer runs, 19 Nov, load 60–150).
 test('the controls phrasings find their Planning operation: at least 17 of 20 first and all 20 in the top three', async () => {
-  const ranks = await Promise.all(controls.map(async ([id, phrasing, expected]) => {
+  const ranks: Array<{ id: string; rank: number; first: string | undefined }> = []
+  for (const [id, phrasing, expected] of controls) {
     const found = await search(phrasing)
-    return { id, rank: found.findIndex(operationId => expected.includes(operationId)) + 1, first: found[0] }
-  }))
+    ranks.push({ id, rank: found.findIndex(operationId => expected.includes(operationId)) + 1, first: found[0] })
+  }
   console.log('controls ranks:', ranks.map(({ id, rank, first }) => `${id} ${rank === 0 ? '-' : rank}${rank === 1 ? '' : ` (${first})`}`).join(', '))
   const top1 = ranks.filter(({ rank }) => rank === 1).length
   const top3 = ranks.filter(({ rank }) => rank >= 1 && rank <= 3).length
   console.log(`controls: top-1 ${top1}/20, top-3 ${top3}/20`)
   expect(top1).toBeGreaterThanOrEqual(17)
   expect(top3).toBe(20)
-})
+}, 120_000)
 
 // World's and Agents' operations searched for in their own words (written for this check, not by their
 // Modules): Planning's vocabulary must not put a Planning operation above any of them.
@@ -92,4 +95,4 @@ test('World and Agents operations still rank above every Planning operation for 
     const planning = found.findIndex(operationId => operationId.startsWith('planning.'))
     expect({ query, own: own >= 0, planningFirst: planning >= 0 && planning < own }).toEqual({ query, own: true, planningFirst: false })
   }
-})
+}, 120_000)

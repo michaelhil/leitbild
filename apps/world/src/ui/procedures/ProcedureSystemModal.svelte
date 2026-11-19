@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { BookOpen, Bug, Check, ChevronLeft, ChevronRight, ExternalLink, GripVertical, Info, MessageSquare, MoreHorizontal, Play, RefreshCw, Star, X } from 'lucide-svelte'
+  import { BookOpen, Bug, Check, ChevronLeft, ChevronRight, ExternalLink, GripVertical, Info, MessageSquare, MonitorUp, MoreHorizontal, Play, RefreshCw, Star, X } from 'lucide-svelte'
   import { tick, untrack } from 'svelte'
   import type { ProcedureSession } from './procedure-session.ts'
   import { currentProcedureInput, procedureInputDocumentMatches, procedureInputFocusFor, resolveProcedureInputFocus, type ProcedureInputFocus } from './procedure-input.ts'
@@ -116,6 +116,10 @@
     readonly selectUnit: (objectId: ObjectId) => void
     /** Opens a display in the Workspace's process display window, where it can be operated. */
     readonly openDisplay?: (listing: EmbeddedViewListing) => void
+    /** The page shows this window as a screen's surface (surface-route.ts): its bounds are the pane's, and it neither moves, resizes nor closes. */
+    readonly asSurface?: boolean
+    /** Asks the Host to show this unit's procedures on another screen; absent on a page that is itself a screen's surface. */
+    readonly placeOnScreen?: (() => void) | undefined
     readonly close: () => void
   }
 
@@ -183,6 +187,8 @@
     aiStart = undefined,
     selectUnit,
     openDisplay = undefined,
+    asSurface = false,
+    placeOnScreen = undefined,
     close,
   }: Props = $props()
 
@@ -520,6 +526,8 @@
 
   const clampWindowBounds = (bounds: FloatingWindowBounds): FloatingWindowBounds => {
     if (typeof window === 'undefined') return bounds
+    // A surface is the pane: it follows every pane resize and keeps no bounds of its own.
+    if (asSurface) return { x: 0, y: 0, width: window.innerWidth, height: window.innerHeight }
     return normalizeFloatingWindowBounds(bounds, {
       width: window.innerWidth,
       height: window.innerHeight,
@@ -551,7 +559,7 @@
   }
 
   const startWindowDrag = (event: PointerEvent, mode: FloatingWindowDragMode): void => {
-    if (event.button !== 0) return
+    if (event.button !== 0 || asSurface) return
     const target = event.target
     if (target instanceof Element && target.closest('button, a, textarea, input, .procedure-cross-unit-strip, .procedure-csf-shell, .procedure-run-badges')) return
     event.preventDefault()
@@ -2085,12 +2093,13 @@
         role="toolbar"
         tabindex="0"
         aria-label="Units and procedure window controls"
+        style:cursor={asSurface ? 'default' : undefined}
         onpointerdown={(event) => startWindowDrag(event, 'move')}
         onpointermove={updateWindowDrag}
         onpointerup={finishWindowDrag}
         onpointercancel={finishWindowDrag}
       >
-        <span class="procedure-grip" aria-hidden="true" title="Drag to move"><GripVertical size={16} /></span>
+        {#if !asSurface}<span class="procedure-grip" aria-hidden="true" title="Drag to move"><GripVertical size={16} /></span>{/if}
         <div class="procedure-cross-unit-strip" aria-label="Units and their procedures">
           {#each procedureUnits as unit (unit.plantId)}
             {@const unitStatusPresentation = statusForUnit(unit)}
@@ -2124,9 +2133,16 @@
           <button type="button" title="Refresh procedure source" aria-label="Refresh procedure source" onclick={() => void loadCatalogAndRuns(true)}>
             <RefreshCw size={16} aria-hidden="true" />
           </button>
+          {#if placeOnScreen}
+            <button type="button" title="Open on another screen…" aria-label="Open {displayUnitName}'s procedures on another screen…" onclick={placeOnScreen}>
+              <MonitorUp size={16} aria-hidden="true" />
+            </button>
+          {/if}
+          {#if !asSurface}
           <button type="button" title="Close procedures" aria-label="Close procedures" onclick={close}>
             <X size={18} aria-hidden="true" />
           </button>
+          {/if}
         </div>
       </div>
 
@@ -2478,6 +2494,7 @@
         {procedureToast.message}
       </div>
     {/if}
+    {#if !asSurface}
     <div
       class="procedure-resize-handle north"
       role="separator"
@@ -2554,6 +2571,7 @@
       onpointerup={finishWindowDrag}
       onpointercancel={finishWindowDrag}
     ></div>
+    {/if}
   </div>
 </div>
 
