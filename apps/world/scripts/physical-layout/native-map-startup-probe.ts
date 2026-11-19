@@ -33,12 +33,12 @@ try {
   const target=await(await fetch(`http://127.0.0.1:${port}/json/new?about:blank`,{method:'PUT'})).json();socket=new WebSocket(target.webSocketDebuggerUrl);await new Promise<void>((resolve,reject)=>{socket!.onopen=()=>resolve();socket!.onerror=reject});socket.onmessage=event=>{const value=JSON.parse(String(event.data)),request=pending.get(value.id);if(request){pending.delete(value.id);value.error?request.reject(value.error):request.resolve(value.result)}else if(value.method==='Runtime.exceptionThrown')errors.push(value.params.exceptionDetails)}
   await call('Runtime.enable');await call('Page.enable');await call('Target.setDiscoverTargets',{discover:true});await call('Emulation.setDeviceMetricsOverride',{width:1440,height:913,deviceScaleFactor:1,mobile:false})
   await call('Page.navigate',{url:a.url});const firstReady=await ready(),initial=await snapshot();phases.push({name:'fresh-offsite-a',initial,controls:firstReady.initial});await shot('fresh-offsite-map.png');assertDefaults(initial,firstReady)
-  const notification=initial.alarmEntry,panelLabel=firstReady.initial.find((control:any)=>control.label!=='Physical layout controls')?.label
+  const notification=initial.alarmEntry,panelLabel=firstReady.initial.find((control:any)=>control.label!=='Layout controls')?.label
   if(!panelLabel)throw Error('Expected a declared Pack panel')
   // Non-dismissible cards have no local X, but global Pause/Resume always works.
   if(initial.dismiss)throw Error('The admitted non-dismissible initial card has a local X')
   await guide('Pause');await wait(`return !d.querySelector('.scenario-guidance')`,'global Pause');await guide('Resume');await wait(`return Boolean(d.querySelector('.scenario-guidance'))`,'reopened guidance')
-  for(const label of ['Physical layout controls',panelLabel])await set(label,true)
+  for(const label of ['Layout controls',panelLabel])await set(label,true)
   await alarms(true)
   await wait(`return Boolean(d.querySelector('.alert-strip')&&d.querySelector('.explorer-controls')&&d.querySelector('[aria-label="Close grid overview panel"]'))`,'explicitly requested panels')
   const allShown=await snapshot();if(allShown.alarmEntry!==notification.replace('show','hide'))throw Error('Showing read-only panels changed the alarm count');phases.push({name:'explicitly-opened',state:allShown});await shot('explicit-panels.png')
