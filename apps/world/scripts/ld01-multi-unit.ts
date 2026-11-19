@@ -28,13 +28,14 @@
  * protection read macOS):
  * - rollups.ndjson: per unit per rollup interval: frames, worst and p99 unit wall, worst tick wall, worst lag,
  *   frames lagging, worst-frame and total instructions, CPU, resident and footprint at the interval's end, the
- *   worst admission valve position, the Tavg range, the worst |TAVG − TREF| of the rod law, the bank range, the
- *   machine's mean busy and load.
+ *   worst admission valve position, the Tavg range, the worst |TAVG − TREF| of the rod law, the frames outside its
+ *   dead band and those not corrected by the bank, the bank range, the machine's mean busy and load.
  * - channels.ndjson: per unit every --channel-log-s (and at the start and the stop): the channels the drift line names.
  * - worst.json: per unit the 200 worst frames by unit wall and by instructions, each with its machine-load sample.
- * - start.json (at connect: each unit's composition read from its delivered channels, the rod line's dead band) and
- *   run.json (at the stop, with each unit's rod line: |LD01.CORE.BANK.TAVG − LD01.CORE.BANK.TREF| ≤ deadBand_K of the
- *   wiki block ld01-rod-control the unit reads, every frame read, and the bank moved at least once).
+ * - start.json (at connect: each unit's composition read from its delivered channels, the rod line's numbers) and
+ *   run.json (at the stop, with each unit's rod line, soak rule r2 amendment A2, e = LD01.CORE.BANK.TAVG − .TREF: every
+ *   frame |e| ≤ deadBand_K or the bank corrects that frame, every frame |e| < maximumSpeedError_K, and the bank moves at
+ *   least once; both numbers from the wiki block ld01-rod-control the unit reads).
  * It stops, keeps every receipt and restarts nothing on: a unit's failure (child death, refused exchange, the 10 s
  * ADVANCE limit, time-stopped), a named end, a refused advance, the stop file (checked once per rollup interval),
  * machine protection (free disk under 2 GiB, or memory pressure critical for 60 s: r2 A1, the Mac), or the span's end.
@@ -304,7 +305,61 @@ const unitWall = (row: Row): number => {
 }
 
 /** One frame's soak readings: the admission valve, Tavg in the rod law's form, the bank. */
-interface FrameReading { readonly admPos: number; readonly tavg: number; readonly rodError: number; readonly bank: number }
+interface FrameReading { readonly admPos: number; readonly tavg: number; readonly rodE: number; readonly bank: number }
+
+/** The rod law's two numbers the line judges by (ld01-rod-control, as the unit reads it). */
+export interface RodLaw { readonly deadBandK: number; readonly maximumSpeedErrorK: number }
+
+/**
+ * Soak rule r2's rod line with amendment A2, e = Tavg − Tref as the rod law forms them. A frame passes when |e| ≤ deadBand_K, or
+ * when the bank moves in the direction that reduces |e| (withdraws for e < 0, inserts for e > 0) in the motion the frame's own
+ * decision puts in force: the law samples at frame k and acts at k + 1 (R4-ROD-DELAY), so frame k is judged on the travel change
+ * from k to k + 1, one frame later. Every frame also needs |e| < maximumSpeedError_K, and the bank must move at least once.
+ */
+export const createRodLine = (law: RodLaw) => {
+  let pending: { readonly k: number; readonly e: number; readonly bank: number } | null = null
+  const totals = { framesRead: 0, outsideBand: 0, notCorrecting: 0, atOrOverMaximum: 0, worstAbsE: -Infinity, worstAtK: -1, bankMin: Infinity, bankMax: -Infinity }
+  let interval = { outsideBand: 0, notCorrecting: 0 }
+  let firstMove: { readonly k: number; readonly direction: 'withdraw' | 'insert'; readonly fromM: number; readonly toM: number } | null = null
+  return {
+    note: (k: number, e: number, bank: number): void => {
+      totals.framesRead += 1
+      const size = Math.abs(e)
+      if (size > totals.worstAbsE) { totals.worstAbsE = size; totals.worstAtK = k }
+      if (!(size < law.maximumSpeedErrorK)) totals.atOrOverMaximum += 1
+      totals.bankMin = Math.min(totals.bankMin, bank)
+      totals.bankMax = Math.max(totals.bankMax, bank)
+      if (pending !== null) {
+        const moved = bank - pending.bank
+        if (firstMove === null && moved !== 0) firstMove = { k, direction: moved > 0 ? 'withdraw' : 'insert', fromM: pending.bank, toM: bank }
+        if (Math.abs(pending.e) > law.deadBandK) {
+          totals.outsideBand += 1
+          interval.outsideBand += 1
+          if (!(moved !== 0 && Math.sign(moved) === -Math.sign(pending.e))) { totals.notCorrecting += 1; interval.notCorrecting += 1 }
+        }
+      }
+      pending = { k, e, bank }
+    },
+    /** The counts judged since the last call (a frame is judged when the next one arrives). */
+    takeInterval: (): { readonly outsideBand: number; readonly notCorrecting: number } => {
+      const taken = interval
+      interval = { outsideBand: 0, notCorrecting: 0 }
+      return taken
+    },
+    summary: (frames: number) => {
+      const unjudged = pending !== null && Math.abs(pending.e) > law.deadBandK
+      const bankMoved = totals.bankMax > totals.bankMin
+      return {
+        dead_band_k: law.deadBandK, maximum_speed_error_k: law.maximumSpeedErrorK, frames, frames_read: totals.framesRead,
+        frames_outside_band: totals.outsideBand, frames_outside_band_not_correcting: totals.notCorrecting, frames_at_or_over_maximum_speed_error: totals.atOrOverMaximum,
+        final_frame_outside_band_unjudged: unjudged, worst_abs_e_k: totals.worstAbsE, worst_at_k: totals.worstAtK, first_bank_move: firstMove,
+        bank_min: totals.bankMin, bank_max: totals.bankMax, bank_moved: bankMoved,
+        holds: totals.framesRead === frames && totals.notCorrecting === 0 && totals.atOrOverMaximum === 0 && !unjudged && bankMoved,
+      }
+    },
+  }
+}
+type RodLine = ReturnType<typeof createRodLine>
 
 interface Extreme { value: number; k: number }
 const highest = (): Extreme => ({ value: -Infinity, k: -1 })
@@ -354,9 +409,8 @@ interface UnitRecord {
   readonly fiveWorst: Extreme
   readonly five: number[]
   readonly admWorst: Extreme
-  /** The rod line: the worst |TAVG − TREF|, the frames read and those outside the dead band, the bank's range. */
-  readonly rodErrorWorst: Extreme
-  rod: { framesRead: number; outOfBand: number; bankMin: number; bankMax: number }
+  /** The rod line (A2), fed every frame read; null without the rod law's numbers (not a soak). */
+  readonly rodLine: RodLine | null
   totals: { instructions: number; pInstructions: number; userS: number; systemS: number; cpuHeaderS: number; runnableS: number; steps: number; jacobians: number; restartsR: number }
   readonly resident: { first: number | null; max: number; last: number | null }
   readonly footprint: { first: number | null; max: number; last: number | null }
@@ -365,11 +419,11 @@ interface UnitRecord {
   readonly byInstructions: WorstEntry[]
 }
 
-const newRecord = (index: number, spec: UnitSpec, plantId: string): UnitRecord => ({
+const newRecord = (index: number, spec: UnitSpec, plantId: string, law: RodLaw | null): UnitRecord => ({
   index, plantId, spec, pid: 0, connectCost: null, rows: [], frameInstructions: [], instants: [],
   hasher: new Bun.CryptoHasher('sha256'), eventsHasher: new Bun.CryptoHasher('sha256'),
   firstFrameT: Number.NaN, commandT: null, failure: null, ended: null, last: null, first: null,
-  frames: 0, lastT: Number.NaN, wallWorst: highest(), exchangeWorst: highest(), lagWorst: highest(), lagging: 0, instructionsWorst: highest(), fiveWorst: highest(), five: [], admWorst: highest(), rodErrorWorst: highest(), rod: { framesRead: 0, outOfBand: 0, bankMin: Infinity, bankMax: -Infinity },
+  frames: 0, lastT: Number.NaN, wallWorst: highest(), exchangeWorst: highest(), lagWorst: highest(), lagging: 0, instructionsWorst: highest(), fiveWorst: highest(), five: [], admWorst: highest(), rodLine: law === null ? null : createRodLine(law),
   totals: { instructions: 0, pInstructions: 0, userS: 0, systemS: 0, cpuHeaderS: 0, runnableS: 0, steps: 0, jacobians: 0, restartsR: 0 },
   resident: { first: null, max: -Infinity, last: null }, footprint: { first: null, max: -Infinity, last: null },
   interval: newInterval(), byWall: [], byInstructions: [],
@@ -378,7 +432,7 @@ const newRecord = (index: number, spec: UnitSpec, plantId: string): UnitRecord =
 const finiteOr0 = (value: number): number => (Number.isFinite(value) ? value : 0)
 
 /** Every frame's row enters here: the whole-run figures, the rollup interval, the worst lists, and the rows if kept. */
-const noteRow = (config: Config, load: LoadSampler, record: UnitRecord, row: Row, reading: FrameReading | null, deadBandK: number): void => {
+const noteRow = (config: Config, load: LoadSampler, record: UnitRecord, row: Row, reading: FrameReading | null): void => {
   if (config.exchangeRows) record.rows.push(row)
   const k = row[0]!
   const stepS = config.exchangeMs / 1_000
@@ -415,11 +469,7 @@ const noteRow = (config: Config, load: LoadSampler, record: UnitRecord, row: Row
   }
   if (reading !== null) {
     raise(record.admWorst, reading.admPos, k)
-    raise(record.rodErrorWorst, reading.rodError, k)
-    record.rod.framesRead += 1
-    if (!(reading.rodError <= deadBandK)) record.rod.outOfBand += 1
-    record.rod.bankMin = Math.min(record.rod.bankMin, reading.bank)
-    record.rod.bankMax = Math.max(record.rod.bankMax, reading.bank)
+    record.rodLine?.note(k, reading.rodE, reading.bank)
   }
   if (config.rollupS === null) return
   const interval = record.interval
@@ -436,7 +486,7 @@ const noteRow = (config: Config, load: LoadSampler, record: UnitRecord, row: Row
     interval.admWorst = Math.max(interval.admWorst, reading.admPos)
     interval.tavgMin = Math.min(interval.tavgMin, reading.tavg)
     interval.tavgMax = Math.max(interval.tavgMax, reading.tavg)
-    interval.rodErrorWorst = Math.max(interval.rodErrorWorst, reading.rodError)
+    interval.rodErrorWorst = Math.max(interval.rodErrorWorst, Math.abs(reading.rodE))
     interval.bankMin = Math.min(interval.bankMin, reading.bank)
     interval.bankMax = Math.max(interval.bankMax, reading.bank)
   }
@@ -471,7 +521,7 @@ const noteFrame = (config: Config, load: LoadSampler, record: UnitRecord, k: num
     delta(after, before, 'userS'), delta(after, before, 'systemS'), delta(after, before, 'pUserS'), delta(after, before, 'pSystemS'), delta(after, before, 'runnableS'),
     after?.residentBytes ?? Number.NaN, after?.footprintBytes ?? Number.NaN,
     Number(counts.steps), Number(counts.residuals), Number(counts.jacobians), Number(counts.r_instants), Number(counts.s_instants),
-  ], reading, Number.NaN)
+  ], reading)
   if (after !== null && config.exchangeRows) record.frameInstructions.push([frame.t, after.instructions])
 }
 
@@ -488,7 +538,7 @@ const judgeReceipt = (record: UnitRecord, stepS: number) => ({
   frame_s: stepS,
 })
 
-const summarize = (record: UnitRecord, stepS: number, deadBandK: number): Record<string, unknown> => {
+const summarize = (record: UnitRecord, stepS: number): Record<string, unknown> => {
   const walls = record.rows.map(unitWall)
   const totals = record.totals
   return {
@@ -522,13 +572,8 @@ const summarize = (record: UnitRecord, stepS: number, deadBandK: number): Record
       p_core_instruction_share: totals.instructions === 0 ? null : totals.pInstructions / totals.instructions,
     },
     admission_valve_worst: record.admWorst.k < 0 ? null : { value: record.admWorst.value, at_k: record.admWorst.k },
-    // Soak rule r2: rods act (the bank moves at least once) and hold Tavg in band (|TAVG − TREF| ≤ deadBand_K, every frame).
-    rod_line: record.rod.framesRead === 0 ? null : {
-      dead_band_k: deadBandK, worst_abs_tavg_minus_tref_k: record.rodErrorWorst.value, worst_at_k: record.rodErrorWorst.k,
-      frames: record.frames, frames_read: record.rod.framesRead, frames_out_of_band: record.rod.outOfBand,
-      bank_min: record.rod.bankMin, bank_max: record.rod.bankMax, bank_moved: record.rod.bankMax > record.rod.bankMin,
-      holds: record.rod.framesRead === record.frames && record.rod.outOfBand === 0 && record.rod.bankMax > record.rod.bankMin,
-    },
+    // Soak rule r2's rod line with amendment A2 (createRodLine).
+    rod_line: record.rodLine?.summary(record.frames) ?? null,
     cpu_s_total_by_rusage: totals.userS + totals.systemS,
     cpu_s_total_by_child_header: totals.cpuHeaderS,
     runnable_wait_s_total: totals.runnableS,
@@ -617,7 +662,7 @@ const compositionOf = async (byChannel: ReadonlyMap<string, VariablePath>, read:
 /** The soak's receipts on disk: written as the run goes, so a stop at any point keeps them. */
 const createSoakFiles = (config: Config, records: ReadonlyArray<UnitRecord>, load: LoadSampler, stepS: number) => {
   const rollupColumns = ['unit', 'interval', 'end_k', 't_unit_s', 'frames', 'unit_wall_worst_s', 'unit_wall_p99_s', 'exchange_wall_worst_s', 'lag_worst_s', 'frames_lagging',
-    'instructions_worst_frame', 'instructions_total', 'cpu_s', 'resident_bytes', 'footprint_bytes', 'adm_pos_worst', 'tavg_min', 'tavg_max', 'rod_error_worst_k', 'bank_min', 'bank_max', 'core_busy_mean', 'load1'] as const
+    'instructions_worst_frame', 'instructions_total', 'cpu_s', 'resident_bytes', 'footprint_bytes', 'adm_pos_worst', 'tavg_min', 'tavg_max', 'rod_error_worst_k', 'rod_frames_outside_band', 'rod_frames_not_correcting', 'bank_min', 'bank_max', 'core_busy_mean', 'load1'] as const
   const rollups = join(config.out, 'rollups.ndjson')
   const channels = join(config.out, 'channels.ndjson')
   writeFileSync(rollups, `${JSON.stringify({ columns: rollupColumns, rollup_s: config.rollupS, unit_wall_basis: 'the unit\'s CPU plus runnable time over the tick (proc_pid_rusage); the exchange wall bounds it', exchange_wall_basis: 'the tick: every unit\'s exchange at once, then the commit to every Pack' })}\n`)
@@ -627,11 +672,12 @@ const createSoakFiles = (config: Config, records: ReadonlyArray<UnitRecord>, loa
     const lines = records.map(record => {
       const figures = record.interval
       record.interval = newInterval()
+      const rod = record.rodLine?.takeInterval() ?? null
       const finite = (value: number): number | null => (Number.isFinite(value) ? rounded(value) : null)
       return JSON.stringify([record.index, interval, k, rounded(record.lastT), figures.frames,
         finite(Math.max(...figures.walls)), figures.walls.length === 0 ? null : rounded(percentile(figures.walls, 0.99)), rounded(figures.exchangeWorst), rounded(figures.lagWorst), figures.lagging,
         figures.instructionsWorst, figures.instructions, rounded(figures.cpuS), record.resident.last, record.footprint.last,
-        finite(figures.admWorst), finite(figures.tavgMin), finite(figures.tavgMax), finite(figures.rodErrorWorst), finite(figures.bankMin), finite(figures.bankMax), rounded(machineInterval.busyMean), rounded(machineInterval.load1)])
+        finite(figures.admWorst), finite(figures.tavgMin), finite(figures.tavgMax), finite(figures.rodErrorWorst), rod?.outsideBand ?? null, rod?.notCorrecting ?? null, finite(figures.bankMin), finite(figures.bankMax), rounded(machineInterval.busyMean), rounded(machineInterval.load1)])
     })
     appendFileSync(rollups, `${lines.join('\n')}\n`)
     interval += 1
@@ -698,7 +744,7 @@ const readFrame = async (read: UnitReader, byChannel: ReadonlyMap<string, Variab
   const values = await read(frameChannels.map(channel => pathOf(byChannel, channel)))
   if (values === null) return null
   const byId = new Map<string, number>(frameChannels.map(channel => [channel, Number(values.get(pathOf(byChannel, channel))?.value)]))
-  return { admPos: byId.get('LD01.TG.ADM.POS')!, tavg: tavgOf(byId), rodError: Math.abs(byId.get('LD01.CORE.BANK.TAVG')! - byId.get('LD01.CORE.BANK.TREF')!), bank: byId.get('LD01.ROD.TRAVEL.MEAN')! }
+  return { admPos: byId.get('LD01.TG.ADM.POS')!, tavg: tavgOf(byId), rodE: byId.get('LD01.CORE.BANK.TAVG')! - byId.get('LD01.CORE.BANK.TREF')!, bank: byId.get('LD01.ROD.TRAVEL.MEAN')! }
 }
 
 const connectEngine = async (config: Config, artifact: Ld01UnitArtifact, record: UnitRecord): Promise<NativeProcessPlantEngine> => {
@@ -809,7 +855,7 @@ const ld01Halden = async (units: number, grid: boolean) => {
 }
 
 // The real Pack adapters through the World's runtime hub: per-unit rusage and the tick wall, no reply header.
-const runAdapter = async (config: Config, artifact: Ld01UnitArtifact, records: ReadonlyArray<UnitRecord>, onConnected: OnConnected, rodDeadBandK: number): Promise<Record<string, unknown>> => {
+const runAdapter = async (config: Config, artifact: Ld01UnitArtifact, records: ReadonlyArray<UnitRecord>, onConnected: OnConnected): Promise<Record<string, unknown>> => {
   process.env[ld01UnitArtifactEnv] = config.artifact
   const { scenario, resolved } = await ld01Halden(records.length, config.grid)
   const startsAt = scenario.world.startsAt
@@ -931,7 +977,7 @@ const runAdapter = async (config: Config, artifact: Ld01UnitArtifact, records: R
           delta(after, prior, 'instructions'), delta(after, prior, 'pInstructions'), delta(after, prior, 'cycles'), delta(after, prior, 'pCycles'),
           delta(after, prior, 'userS'), delta(after, prior, 'systemS'), delta(after, prior, 'pUserS'), delta(after, prior, 'pSystemS'), delta(after, prior, 'runnableS'),
           after?.residentBytes ?? Number.NaN, after?.footprintBytes ?? Number.NaN, Number.NaN, Number.NaN, Number.NaN, Number.NaN, Number.NaN,
-        ], readings[index] ?? null, rodDeadBandK)
+        ], readings[index] ?? null)
         if (record.first === null) record.first = prior
         record.last = after
       })
@@ -957,13 +1003,15 @@ const runAdapter = async (config: Config, artifact: Ld01UnitArtifact, records: R
   return { exchanges_columns: ['k', 'scheduled_s', 'started_s', 'ended_s', 'overrun_s'], exchanges, commanded, failed: stop?.kind === 'refusal' ? stop.message : null, stop: stop ?? { kind: 'span end', message: `${count} exchanges`, atK: count - 1, atIso: new Date().toISOString() }, signals, via_adapter: true, load: load.samples, host_cpu_s: hostAtStart === null || hostAtEnd === null ? null : (hostAtEnd.userS + hostAtEnd.systemS) - (hostAtStart.userS + hostAtStart.systemS), host_instructions_g: hostAtStart === null || hostAtEnd === null ? null : (hostAtEnd.instructions - hostAtStart.instructions) / 1e9 }
 }
 
-/** deadBand_K of the wiki block ld01-rod-control in the wiki the unit reads (its LOAD inputs' wiki root), as the unit reads it. */
-const rodDeadBand = (artifact: Ld01UnitArtifact) => {
+/** deadBand_K and maximumSpeedError_K of the wiki block ld01-rod-control in the wiki the unit reads (its LOAD inputs' wiki root). */
+const rodLawOf = (artifact: Ld01UnitArtifact) => {
   const page = join(artifact.load.inputs.wiki_root, 'world/packs/process-plant/reference-designs/ld-01/systems/reactor/control-and-verification.md')
   const text = readFileSync(page, 'utf8')
-  const deadBandK = (configurationBlock(text, 'ld01-rod-control') as { readonly deadBand_K?: unknown }).deadBand_K
+  const block = configurationBlock(text, 'ld01-rod-control') as { readonly deadBand_K?: unknown; readonly maximumSpeedError_K?: unknown }
+  const deadBandK = block.deadBand_K, maximumSpeedErrorK = block.maximumSpeedError_K
   if (typeof deadBandK !== 'number' || !Number.isFinite(deadBandK) || deadBandK <= 0) throw new Error(`ld01-rod-control in ${page}: deadBand_K ${String(deadBandK)} is not a positive number`)
-  return { dead_band_k: deadBandK, block: 'ld01-rod-control', page: relative(artifact.directory, page), page_sha256: new Bun.CryptoHasher('sha256').update(text).digest('hex') }
+  if (typeof maximumSpeedErrorK !== 'number' || !Number.isFinite(maximumSpeedErrorK) || !(maximumSpeedErrorK > deadBandK)) throw new Error(`ld01-rod-control in ${page}: maximumSpeedError_K ${String(maximumSpeedErrorK)} is not above deadBand_K`)
+  return { dead_band_k: deadBandK, maximum_speed_error_k: maximumSpeedErrorK, block: 'ld01-rod-control', page: relative(artifact.directory, page), page_sha256: new Bun.CryptoHasher('sha256').update(text).digest('hex') }
 }
 
 const bytesUnder = (directory: string): number => readdirSync(directory).reduce((total, name) => total + statSync(join(directory, name)).size, 0)
@@ -973,12 +1021,13 @@ const main = async (): Promise<void> => {
   mkdirSync(config.out, { recursive: true })
   process.env[ld01UnitArtifactEnv] = config.artifact
   const artifact = loadLd01UnitArtifact(config.artifact)
-  const records = config.units.map((spec, index) => newRecord(index, spec, config.via === 'adapter' ? `plant:halden-${index + 1}` : `plant:ld01-multi-${index}`))
+  const rodLine = config.rollupS === null ? null : rodLawOf(artifact)
+  const law: RodLaw | null = rodLine === null ? null : { deadBandK: rodLine.dead_band_k, maximumSpeedErrorK: rodLine.maximum_speed_error_k }
+  const records = config.units.map((spec, index) => newRecord(index, spec, config.via === 'adapter' ? `plant:halden-${index + 1}` : `plant:ld01-multi-${index}`, law))
   const startedIso = new Date().toISOString()
   const loadAtStart = loadavg()
   const memoryAtStart = { totalBytes: totalmem(), freeBytes: freemem() }
   const stepS = config.exchangeMs / 1_000
-  const rodLine = config.rollupS === null ? null : rodDeadBand(artifact)
   const identity = {
     config: { ...config, units: config.units.map(unit => unit.text) }, artifact_manifest_sha256: artifact.manifestSha256, rod_line: rodLine,
     artifact_load: { ic: basename(artifact.load.inputs.ic), state: basename(artifact.load.state), packet: basename(artifact.load.inputs.packet), elec: basename(artifact.load.inputs.elec), solver: artifact.load.solver },
@@ -993,10 +1042,10 @@ const main = async (): Promise<void> => {
       load_at_start: loadAtStart, memory_at_start: memoryAtStart,
     }, null, 1)}\n`)
   }
-  const run = config.via === 'engine' ? await runEngines(config, artifact, records) : await runAdapter(config, artifact, records, onConnected, rodLine?.dead_band_k ?? Number.NaN)
+  const run = config.via === 'engine' ? await runEngines(config, artifact, records) : await runAdapter(config, artifact, records, onConnected)
   const load = run.load as ReadonlyArray<LoadSample>
   const coreBusyMean = load.length === 0 ? [] : load[0]!.busy.map((_, core) => load.reduce((sum, sample) => sum + sample.busy[core]!, 0) / load.length)
-  const summaries = records.map(record => summarize(record, stepS, rodLine?.dead_band_k ?? Number.NaN))
+  const summaries = records.map(record => summarize(record, stepS))
   const stop = run.stop as Stop
   const receipt = {
     format: 'ld01-multi-unit-run', basis: 'NOT-EVIDENCE: contention on this host only; instructions are cost, wall clock is lag', platform: process.platform,
@@ -1016,4 +1065,5 @@ const main = async (): Promise<void> => {
   process.exit(failed && exitCodeOf(stop) === 0 ? 1 : exitCodeOf(stop))
 }
 
-await main()
+// The line's logic is imported by this script's own tests; the run starts only when the script is run.
+if (import.meta.main) await main()

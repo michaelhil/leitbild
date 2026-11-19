@@ -552,13 +552,15 @@ pub fn judge_hold(
         "hold.maxResidualsPerStep (IDAGetNumResEvals per IDAGetNumSteps)",
     ));
     if let Some(r) = reference {
-        let m = compare::compare(
+        // R4-E-GRID-END: the hold's span ends at a run's own end.
+        let m = compare::compare_ending(
             &hold.credited,
             &r.credited,
             hold.origin,
             from,
             duration.min(r.record.reached_s),
             &h.budgets,
+            compare::GridEnd::RunEnd,
         );
         let within = m["within"] == json!(true);
         comparisons.insert(
@@ -896,14 +898,16 @@ pub fn judge_trip(
                       r: &Run,
                       from: f64,
                       to: f64,
+                      end: compare::GridEnd,
                       comparisons: &mut serde_json::Map<String, Value>| {
-        let m = compare::compare(
+        let m = compare::compare_ending(
             &trip.credited,
             &r.credited,
             trip.origin,
             from,
             to,
             &h.budgets,
+            end,
         );
         let within = m["within"] == json!(true);
         comparisons.insert(
@@ -924,9 +928,13 @@ pub fn judge_trip(
     let mut evaluated = 0;
     for (name, reference, after_window) in [("R1", r1, false), ("R2", r2, true)] {
         let Some(r) = reference else { continue };
+        // R4-E-GRID-END: a span that ends where either run's part ends, or
+        // at the trip's declared end.
+        let ends = [reached(trip).min(reached(r)), duration];
         for (from, to) in reference_spans(window, duration, reached(trip), reached(r), after_window)
         {
-            accuracy &= compare_to(name, r, from, to, comparisons);
+            let end = compare::GridEnd::of(to, &ends);
+            accuracy &= compare_to(name, r, from, to, end, comparisons);
         }
         evaluated += 1;
     }
@@ -940,13 +948,15 @@ pub fn judge_trip(
         "E0 against R1, R2",
     ));
     if let (Some(a), Some(b)) = (r1, r2) {
-        let m = compare::compare(
+        let to = window.min(reached(a)).min(reached(b));
+        let m = compare::compare_ending(
             &a.credited,
             &b.credited,
             a.origin,
             0.,
-            window.min(reached(a)).min(reached(b)),
+            to,
             &h.budgets,
+            compare::GridEnd::of(to, &[reached(a), reached(b)]),
         );
         comparisons.insert(
             "R1_vs_R2_window".into(),
