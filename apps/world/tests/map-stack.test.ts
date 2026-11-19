@@ -5,7 +5,7 @@ import { createMapFeatureStore } from '../src/ui/map-runtime/map-feature-store.t
 import { createOperationalDeckLayers } from '../src/ui/map-runtime/operational-deck-layers.ts'
 import { operationalIconPx, statusDiskRadiusPx } from '../src/ui/map-runtime/symbol-kit.ts'
 import type { OperationalPointFeature, Position3 } from '../src/ui/map-runtime/types.ts'
-import { objectsUnder, stackPick } from '../src/ui/map/map-stack.ts'
+import { objectsUnder, stackPick, stackTap } from '../src/ui/map/map-stack.ts'
 
 const at = '2026-10-12T08:00:00.000Z' as IsoTimestamp
 /** One screen px is 0.00001° here, east right and north up, from the origin. */
@@ -65,6 +65,32 @@ describe('objects stacked under one tap', () => {
     expect(stackPick([unit, task], true, controls)).toBeNull()
     expect(stackPick([unit, other, task], false, controls)).toBeNull()
     expect(stackPick([task, objectOf('site')], false, object => object.id === 'unit')).toBeNull()
+  })
+
+  test('armed with its valid targets known, a stack asks among its valid targets only, even one, whatever lies on top; with none, the tap is on the object it landed on', () => {
+    const [armed, dimmed, valid, other] = [objectOf('unit'), objectOf('dimmed-call'), objectOf('valid-call'), objectOf('valid-site')]
+    const controls = (object: OperationalObject): boolean => object.id === 'unit'
+    const targets = new Set(['valid-call', 'valid-site'])
+    // A dimmed object on top of one valid target: the chooser names the valid one; the tap never orders to it by itself.
+    expect(stackTap([dimmed, valid], targets, true, controls)).toEqual({ kind: 'chooser', objects: [valid] })
+    // The armed unit standing on a valid target: the chooser too, never an order the finger did not choose.
+    expect(stackTap([armed, valid], targets, true, controls)).toEqual({ kind: 'chooser', objects: [valid] })
+    // The valid target on top asks the same way, and several valid targets are all offered, top first.
+    expect(stackTap([valid, dimmed], targets, true, controls)).toEqual({ kind: 'chooser', objects: [valid] })
+    expect(stackTap([other, dimmed, valid], targets, true, controls)).toEqual({ kind: 'chooser', objects: [other, valid] })
+    // No valid target in the stack: the tap is on what it landed on, and the server refuses it.
+    expect(stackTap([dimmed, armed], targets, true, controls)).toEqual({ kind: 'tapped' })
+    // One icon under the finger is a plain tap, valid or not.
+    expect(stackTap([valid], targets, true, controls)).toEqual({ kind: 'tapped' })
+    expect(stackTap([dimmed], targets, true, controls)).toEqual({ kind: 'tapped' })
+  })
+
+  test('with no armed targets known, a stack asks among all its objects unless it holds exactly one controller and none is highlighted', () => {
+    const [task, unit] = [objectOf('task'), objectOf('unit')]
+    const controls = (object: OperationalObject): boolean => object.id === 'unit'
+    expect(stackTap([task, unit], null, true, controls)).toEqual({ kind: 'chooser', objects: [task, unit] })
+    expect(stackTap([task, unit], null, false, controls)).toEqual({ kind: 'picked', object: unit })
+    expect(stackTap([task], null, false, controls)).toEqual({ kind: 'tapped' })
   })
 
   test('the disk a stack is judged by is the one the map draws beneath each icon, which covers its glyph', () => {

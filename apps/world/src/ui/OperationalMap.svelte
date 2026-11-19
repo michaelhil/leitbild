@@ -42,7 +42,7 @@
   import type { MapCover } from './surface-panel-contract.ts'
   import { createMapPromptController } from './map/map-prompt.ts'
   import { createMapStackChooser } from './map/map-stack-chooser.ts'
-  import { objectsUnder, stackPick } from './map/map-stack.ts'
+  import { objectsUnder, stackTap } from './map/map-stack.ts'
   import { disksPickFor, hoverCardsFor, pickingRadiusFor } from './map/map-pointer.ts'
   import { operationalIconPx } from './map-runtime/symbol-kit.ts'
   import { createReferenceLayerController } from './map-runtime/reference-layer-controller.ts'
@@ -287,12 +287,10 @@
     const next = tagAnchorsNow()
     if (next.size !== tagAnchors.size || [...next].some(([id, anchor]) => tagAnchors.get(id) !== anchor)) tagAnchors = next
   }
-  /** The objects of a tapped stack a chooser offers: while an order is armed whose targets are known, only its valid targets. */
-  const stackChoices = (stack: ReadonlyArray<OperationalObject>): ReadonlyArray<OperationalObject> => {
-    if (targeting === null || !targeting.complete) return stack
-    const valid = new Set(targeting.targets.filter(target => target.tone !== 'refused').map(target => target.id as string))
-    return stack.filter(object => valid.has(object.id))
-  }
+  /** The armed order's valid targets, once they are known; null while nothing is armed or its targets are still read. */
+  const armedValidIds = (): ReadonlySet<string> | null => targeting === null || !targeting.complete
+    ? null
+    : new Set(targeting.targets.filter(target => target.tone !== 'refused').map(target => target.id as string))
   /** Whether a line follows the pointer: a panel's armed order while the pointer is a mouse. */
   const pointerLineWanted = (pointerType: string | null): boolean => targeting !== null && hoverCardsFor(pointerType)
 
@@ -420,20 +418,11 @@
     onObjectSelected: object => {
       clickHandled = true
       objectTookClick = true
-      const under = stackUnderPointer()
-      // While an order is armed a stack offers its valid targets only; with none, the tap is on the object it landed on, and the panel's server decides.
-      const stack = under.length > 1 ? stackChoices(under) : under
-      if (stack.length === 1 && under.length > 1) {
-        onObjectSeen(stack[0]!)
-        return onObjectSelected(stack[0]!)
-      }
-      if (stack.length > 1) {
-        const picked = stackPick(stack, controllerHighlighted, isController)
-        if (picked === null) return showStackChooser(stack)
-        onObjectSeen(picked)
-        return onObjectSelected(picked)
-      }
-      onObjectSelected(object)
+      const tap = stackTap(stackUnderPointer(), armedValidIds(), controllerHighlighted, isController)
+      if (tap.kind === 'chooser') return showStackChooser(tap.objects)
+      if (tap.kind === 'tapped') return onObjectSelected(object)
+      onObjectSeen(tap.object)
+      onObjectSelected(tap.object)
     },
     onObjectSeen: object => onObjectSeen(object),
     onObjectHover: object => {
