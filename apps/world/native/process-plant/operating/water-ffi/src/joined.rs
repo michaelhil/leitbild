@@ -2497,18 +2497,25 @@ mod integrated {
         }
         /// R4-CLIMB: while `cj` falls after a restart, the iteration matrix is
         /// the start's `A + cj B`, with the equilibrium columns refreshed at
-        /// the climb's first state. A request that does not lower `cj`, Newton's
-        /// own retry after a failed solve among them, ends the climb and
-        /// assembles in full. Returns whether `data` is filled.
+        /// the climb's first state. A request that does not lower `cj` (stock
+        /// IDA's step retry after an error-test or Newton failure raises `cj`)
+        /// ends the climb and assembles in full. Returns whether `data` is
+        /// filled.
         ///
-        /// R4-CLIMB-SEAT: after a restart that seats rods, the rods' columns are
-        /// the ones refreshed at the first state, and a request that does not
-        /// lower `cj` takes a full matrix that re-anchors the kept `A`
-        /// (`A = M - cj B`, stock `B`'s rows being the rate terms), so the climb
-        /// lasts until the next restart. Error steps, a failed Newton solve and
-        /// a failed factorization all come back here as a request that does
-        /// not lower `cj`; an error in the limited assembly falls back to a full
-        /// one at once ([`Integrated::forget_kept_matrices`] at a copy point).
+        /// R4-CLIMB-SEAT: after a restart that seats rods, every request that
+        /// lowers `cj`, the first and each kept request after it, refreshes the
+        /// rods' and the equilibrium columns at its own state with the limited
+        /// assembly and re-anchors those columns of the kept `A` (`A = M - cj B`,
+        /// stock `B`'s rows being the rate terms); every other column is the
+        /// kept `A + cj B`. A request that does not lower `cj` takes a full
+        /// matrix that re-anchors all of `A`, so the climb lasts until the next
+        /// restart. Stock IDA's step retries (an error-test failure, a failed
+        /// Newton solve, a failed factorization) raise `cj` and so come back here
+        /// as requests that do not lower `cj`; Newton's own retry within a step
+        /// comes at the step's `cj` and, when that lowers `cj`, is a kept request
+        /// like any other. An error in the limited assembly falls back to a full
+        /// one at once and ends the climb ([`Integrated::forget_kept_matrices`]
+        /// at a copy point).
         fn climb_matrix(
             &mut self,
             time: f64,
@@ -2534,7 +2541,9 @@ mod integrated {
                 }
                 return Ok(false);
             }
-            if climb.last_cj.is_finite() {
+            // R4-CLIMB-SEAT: a seat's climb refreshes its columns at every request
+            // that lowers `cj`; R4-CLIMB's only at the first.
+            if climb.last_cj.is_finite() && !climb.seat {
                 for (d, (a, b)) in data.iter_mut().zip(climb.a.iter().zip(&climb.b)) {
                     *d = a + cj * b;
                 }
