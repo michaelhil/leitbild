@@ -317,10 +317,15 @@
     props.onFocusMap({ kind: 'point', center: [point.coordinates[0], point.coordinates[1]] })
   }
 
-  /** A map click while one of the Pack's units is selected: the surface hands every one to the panel and never sends. */
+  /**
+   * A map click while one of the Pack's units is selected: the surface hands every one to the panel and never sends.
+   * One within the double-click interval of a row tap or a command is that double-click's second half: the lists
+   * folded under the pointer, so it lands on the map, and it does nothing.
+   */
   const onMapTarget = (selectedId: ObjectId, target: PackMapTarget): void => {
     const shown = selection.selection
     if (shown.kind !== 'unit' || shown.unitId !== selectedId) return
+    if (!activationActs(quietFromMs, Date.now())) return
     if (target.kind === 'point') {
       send({ kind: 'click', on: { kind: 'ground', point: target.point }, atMs: Date.now() })
       return
@@ -481,9 +486,9 @@
       </div>
       {#if lists !== null}
         <div class="lists">
-          <OverviewLists view={lists} {icon} open={openRow} />
+          <OverviewLists view={lists} {icon} open={act(openRow)} />
           {#if lists.contacts && !lists.folded}
-            <ContactsSection heading={neutralLexicon.tracks} empty={neutralLexicon.noTracks} rows={contacts} {icon} open={openRow} />
+            <ContactsSection heading={neutralLexicon.tracks} empty={neutralLexicon.noTracks} rows={contacts} {icon} open={act(openRow)} />
           {/if}
         </div>
       {/if}

@@ -804,6 +804,21 @@ describe('Dispatch panel click counts', () => {
     })
   })
 
+  test('a double-click on a unit\'s row opens its card once: the second click, which lands on the map where the folded lists were, does nothing', async () => {
+    await scene(async ({ run, screen, situation, answer }) => {
+      const unitId = chosenCarrier(situation, answer)
+      const [east, north] = lonLatOf(run.object(unitId)!)
+      await screen.row({ id: unitId, kind: 'unit' })
+      expect(screen.card()).toMatchObject({ kind: 'unit', id: unitId, targetsLoading: false })
+      await screen.groundTap([east + 0.004, north + 0.002], 150)
+      expect([screen.selection(), screen.decision(), screen.feedback()]).toEqual([{ kind: 'unit', unitId }, null, null])
+      // A tap after the interval is a target again.
+      await screen.groundTap([east + 0.004, north + 0.002])
+      expect(screen.decision()).toMatchObject({ kind: 'order', target: { point: geoPointFromLonLat(east + 0.004, north + 0.002) } })
+      expect(screen.calls).toEqual([])
+    })
+  })
+
   test('a ground move stays pending until confirmed or cancelled', async () => {
     await scene(async ({ run, screen, situation, answer }) => {
       const unitId = chosenCarrier(situation, answer)

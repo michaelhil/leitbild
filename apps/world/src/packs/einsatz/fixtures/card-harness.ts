@@ -311,7 +311,9 @@ export const openCardScreen = async (run: OpenRun, options: { readonly actor?: A
     return { controller: selected !== null && targeting.isController(selected) ? selected : null, selectedObjectId: selected?.id ?? null, targeting, context, panel, closedMapTargetPanels: [], opensDisplay: () => false }
   }
 
+  /** As the panel: a map target in the double-click interval of a row tap or a command is that double-click's second half. */
   const onMapTarget = async (target: PackMapTarget): Promise<void> => {
+    if (!activationActs(quietFromMs, wallMs)) return
     if (target.kind === 'point') return await send({ kind: 'click', on: { kind: 'ground', point: target.point }, atMs: wallMs })
     const kind = kindOf(target.objectId)
     if (kind === null) return
