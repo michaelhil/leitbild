@@ -1,6 +1,7 @@
 <script lang="ts">
   import { onDestroy, onMount, tick, untrack } from 'svelte'
   import {
+    WORKSPACE_SURFACE_PARAMETER,
     workspaceResourceReferenceSchema,
     type FeaturedDefinitionCatalog,
     type InspectionView,
@@ -78,6 +79,8 @@
   let selectedWorldFocus = $state(initialSelection.get('focus'))
   let selectedWorldElement = $state(initialSelection.get('element'))
   let selectedWorldOption = $state(initialSelection.get('option'))
+  // One surface of the Run's page (a unit's overview, its procedures). The string is World's: it is forwarded, never read.
+  let selectedWorldSurface = $state(initialSelection.get(WORKSPACE_SURFACE_PARAMETER))
   let selectedAgentsRoomId = $state(initialSelection.get('agents'))
   let agentsVisible = $state(initialAgentsVisible)
   // A conversation the Getting started guide opened links back to it (plan v2 §2).
@@ -185,8 +188,10 @@
       url.searchParams.delete('world')
       url.searchParams.delete('focus')
       url.searchParams.delete('element')
+      url.searchParams.delete(WORKSPACE_SURFACE_PARAMETER)
       selectedWorldFocus = null
       selectedWorldElement = null
+      selectedWorldSurface = null
     }
     if (selectedPlanningId) url.searchParams.set('planning', selectedPlanningId)
     else url.searchParams.delete('planning')
@@ -592,6 +597,7 @@
     selectedWorldFocus = null
     selectedWorldElement = null
     selectedWorldOption = null
+    selectedWorldSurface = null
     const nextRun = resources.find(candidate => candidate.ref.type === 'world.simulation-run' && candidate.ref.id === runId)
     if (selectedAgentsResource && nextRun && !roomServesRun(selectedAgentsResource, nextRun)) {
       selectedAgentsRoomId = null
@@ -605,6 +611,7 @@
     url.searchParams.delete('focus')
     url.searchParams.delete('element')
     url.searchParams.delete('option')
+    url.searchParams.delete(WORKSPACE_SURFACE_PARAMETER)
     if (selectedAgentsRoomId) url.searchParams.set('agents', selectedAgentsRoomId)
     else url.searchParams.delete('agents')
     if (replace) history.replaceState(null, '', url)
@@ -643,6 +650,7 @@
     selectedWorldFocus = selection.get('focus')
     selectedWorldElement = selection.get('element')
     selectedWorldOption = selection.get('option')
+    selectedWorldSurface = selection.get(WORKSPACE_SURFACE_PARAMETER)
     selectedAgentsRoomId = selection.get('agents')
     agentsVisible = selectedAgentsRoomId !== null
     // Back to a Run or conversation deleted since is the Workspace page, not a dead view.
@@ -896,7 +904,7 @@
     {#each catalogFailures as outcome (outcome.moduleId)}{#if outcome.status === 'failed'}<p class="notice error" role="alert">{moduleTitle(outcome.moduleId)}: {outcome.failure.message}</p>{/if}{/each}
     {#if refreshError}<p class="notice error" role="alert">Catalog refresh failed: {refreshError}</p>{/if}
     {#if showingComposer}
-    <WorkspaceComposer workspaceId={workspace.id} worldRunId={selectedWorldRunId} worldFocus={selectedWorldFocus} worldElement={selectedWorldElement} worldOption={selectedWorldOption} {planningPath} planningResource={selectedPlanningResource?.ref ?? null}
+    <WorkspaceComposer workspaceId={workspace.id} worldRunId={selectedWorldRunId} worldFocus={selectedWorldFocus} worldElement={selectedWorldElement} worldOption={selectedWorldOption} worldSurface={selectedWorldSurface} {planningPath} planningResource={selectedPlanningResource?.ref ?? null}
       onResourceCatalogChange={() => { void refreshResources(workspace!.id).catch(cause => { refreshError = String(cause) }) }}
       {focusedSubjects} agentsRoomId={selectedAgentsRoomId} {agentsVisible} onShowAgents={showRunAssistant}
       {runRefusal} onOpenRun={runId => switchWorldRun(runId)} {runAssistantAvailable} onOpenRunAssistant={openRunAssistant}

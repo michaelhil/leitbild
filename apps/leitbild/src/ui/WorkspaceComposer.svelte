@@ -1,6 +1,6 @@
 <script lang="ts">
   import { onDestroy, untrack, tick } from 'svelte'
-  import type { EmbeddedViewListing, WorkspaceResourceReference, WorkspaceSubjectReference } from '@leitbild/contracts'
+  import { WORKSPACE_SURFACE_PARAMETER, type EmbeddedViewListing, type WorkspaceResourceReference, type WorkspaceSubjectReference } from '@leitbild/contracts'
   import { embeddedViewFragment, embeddedViewPath } from '@leitbild/contracts/embedded-view-route'
   import Modal from './Modal.svelte'
   import { closeEmbeddedViewOnEscape } from './embedded-view-keyboard.ts'
@@ -17,6 +17,8 @@
     readonly worldFocus?: string | null
     readonly worldElement?: string | null
     readonly worldOption?: string | null
+    /** One surface of the Run's page, a string World owns: forwarded into its frame as it is. */
+    readonly worldSurface?: string | null
     readonly planningPath?: string | null
     readonly planningResource?: WorkspaceResourceReference | null
     readonly onResourceCatalogChange: () => void
@@ -44,7 +46,7 @@
   const minimumOpenShare = 20
 
   let {
-    workspaceId, worldRunId, worldFocus = null, worldElement = null, worldOption = null, planningPath = null, planningResource = null, onResourceCatalogChange, focusedSubjects, agentsRoomId, agentsVisible, onShowAgents, runRefusal, onOpenRun,
+    workspaceId, worldRunId, worldFocus = null, worldElement = null, worldOption = null, worldSurface = null, planningPath = null, planningResource = null, onResourceCatalogChange, focusedSubjects, agentsRoomId, agentsVisible, onShowAgents, runRefusal, onOpenRun,
     runAssistantAvailable, onOpenRunAssistant, onError, worldPane = $bindable(null),
   }: Props = $props()
   let splitPercent = $state(initialSplit)
@@ -59,11 +61,14 @@
   let ownedView = $state<EmbeddedViewListing | null>(null)
   let ownedViewOpen = $state(false)
   const primaryOpen = $derived(planningPath !== null || worldRunId !== null)
-  const worldQuery = $derived(worldFocus === null ? '' : new URLSearchParams({
-    focus: worldFocus,
-    ...(worldElement === null ? {} : { element: worldElement }),
-    ...(worldOption === null ? {} : { option: worldOption }),
-    ...(agentsRoomId === null || !agentsVisible ? {} : { agents: agentsRoomId }),
+  const worldQuery = $derived(new URLSearchParams({
+    ...(worldFocus === null ? {} : {
+      focus: worldFocus,
+      ...(worldElement === null ? {} : { element: worldElement }),
+      ...(worldOption === null ? {} : { option: worldOption }),
+      ...(agentsRoomId === null || !agentsVisible ? {} : { agents: agentsRoomId }),
+    }),
+    ...(worldSurface === null ? {} : { [WORKSPACE_SURFACE_PARAMETER]: worldSurface }),
   }).toString())
   // The process display window asked for the whole area and the chat was collapsed for it.
   let windowMaximised = $state(false)
