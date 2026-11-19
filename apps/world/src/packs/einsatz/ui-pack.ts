@@ -184,7 +184,7 @@ export const einsatzPackView = {
     id: einsatzPackId,
     version: '1.0.0',
     name: 'Einsatz',
-    description: 'Dispatch and command of configured units: unit types, typed properties, task templates, load classes and wording are scenario data. Units move by road or in straight lines, serve and carry counted demand to receiving sites, and follow closed standing orders. An open Run declares no roles or sides; declaring roles makes the Run refuse AI. Valid icon ids come from world.map.symbols. world.scenario.create validates, so world.scenario.preview is optional.',
+    description: 'Dispatch and command of configured units: unit types, typed properties, task templates, load classes and wording are scenario data. Units move by road or in straight lines, serve and carry counted demand to receiving sites, and follow closed standing orders. An open Run declares no roles or sides; declaring roles makes the Run refuse AI. Valid icon ids come from world.map.symbols.',
     contributions: ['runtime', 'knowledge', 'scenario', 'presentation', 'targeting', 'interactions'],
   }),
   runtime: {
