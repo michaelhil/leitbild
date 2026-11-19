@@ -38,8 +38,32 @@ describe('the Run page as a screen\'s surface', () => {
     expect(route).not.toMatch(/['"`](display|procedures):/)
   })
 
+  test('a surface page\'s startup does not depend on the base map: it neither waits for it nor fails with it', () => {
+    expect(route).toContain('const startupAwaitsMap = $derived(mapVisible && !surfaceMode)')
+    expect(route).toContain('const awaitedStartupSteps = $derived(startupStepsAwaited(startupSteps, { map: !surfaceMode }))')
+    // Readiness and the step before it wait for the map only where startup awaits it; no bare wait is left in either.
+    const completion = route.slice(route.indexOf('const completeReadyWhenReady'), route.indexOf('const loadSurfaceForScenario'))
+    expect(completion.match(/startupAwaitsMap && !mapReady/g)).toHaveLength(3)
+    expect(completion).not.toContain('mapVisible')
+    expect(completion).toContain("startupSteps.find(step => step.id === 'objects')?.status !== 'done' || startupHasFailed(awaitedStartupSteps)")
+    expect(completion).not.toContain('startupHasFailed(startupSteps)')
+    // A failed map step does not bring the startup dialog back over the surface; the dialog still lists every step.
+    expect(route).toMatch(/startupModalShouldShow\(\{\s*routeMode,\s*dismissed: startupDismissed,\s*steps: awaitedStartupSteps,\s*\}\)/)
+    expect(markup).toMatch(/<StartupModal\s+steps=\{startupSteps\}/)
+    // The surface's window waits for the join, the snapshot and the Packs, and for nothing of the map.
+    const presentation = route.slice(route.indexOf('const surfacePresentation = $derived('), route.indexOf('const surfaceRefusal'))
+    expect(presentation).not.toMatch(/mapReady|mapVisible/)
+    // The map still mounts underneath: there is no map-less mode.
+    expect(markup).toMatch(/\{#if effectiveMapConfig && OperationalMap\}\s*<OperationalMap\b/)
+    expect(markup).not.toMatch(/\{#if [^}]*surfaceMode[^}]*\}\s*<OperationalMap\b/)
+  })
+
   test('the display window fills the pane for good: no restore, no close, and the Host keeps its split', () => {
     const window = source('ui/process-display/DisplayWindow.svelte')
+    // Its bounds are the pane's, following every resize, with no window edge; a maximised window keeps its margin.
+    expect(window).toMatch(/const effectiveBounds = \$derived<ProcessDisplayWindowBounds>\(asSurface\s*\? \{ x: 0, y: 0, width: Math\.max\(1, viewport\.width\), height: Math\.max\(1, viewport\.height\) \}\s*: maximised\s*\? \{\s*x: windowConstraints\.margin,\s*y: windowConstraints\.margin,/)
+    expect(window).toContain('class:as-surface={asSurface}')
+    expect(source('ui/style.css').match(/\.display-window\.as-surface\s*\{[^}]*\}/)?.[0].replace(/\s+/g, ' ')).toBe('.display-window.as-surface { border: 0; border-radius: 0; box-shadow: none; }')
     expect(markup).toContain("asSurface={surfaceRoute.kind === 'surface' && surfaceRoute.surface.kind !== 'procedures'}")
     expect(window).toContain('let maximised = $state(untrack(() => asSurface))')
     expect(window).toContain('if (asSurface || maximised === next) return')
