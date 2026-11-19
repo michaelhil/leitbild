@@ -31,7 +31,6 @@
     open = $bindable(false),
     demo = null,
     view: openView = 'demos',
-    startStopped = false,
     launcher,
     remembered = null,
     api,
@@ -47,8 +46,6 @@
     demo?: string | null
     /** `?scenarios` opens the More scenarios list. */
     view?: DemosView
-    /** Opened by keyboard or deep link: the carousel starts stopped. */
-    startStopped?: boolean
     launcher: DemoLauncher
     /** The remembered Workspace, already checked to exist. */
     remembered?: Workspace | null
@@ -471,8 +468,9 @@
       {:else}
         {#if initial.notice}<p class="notice" role="status">{initial.notice}</p>{/if}
         {#key demos.length}
+          <!-- Opens stopped: the slide never moves while someone reads it or reaches for a picker; Play rotates. -->
           <Carousel bind:this={carousel} items={demos} label="Demos" itemTitle={featured => featured.title} {slide} {thumb} {credit}
-            nav="thumbs" variant="panel" noun="demo" {startStopped} navigationStops initialIndex={initial.index}
+            nav="thumbs" variant="panel" noun="demo" startStopped navigationStops initialIndex={initial.index}
             onindexchange={(index, featured) => { active = index; ondemochange?.(demoKey(featured.definition)) }} />
         {/key}
       {/if}

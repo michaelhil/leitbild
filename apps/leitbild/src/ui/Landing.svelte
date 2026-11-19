@@ -41,7 +41,6 @@
   let stopped = $state('')
 
   let route = $state<ModalRoute>(modalUrl.route())
-  let openedBy = $state<'keyboard' | 'pointer' | 'link'>('link')
   let demosOpen = $state(false)
   let guideOpen = $state(false)
   let manageOpen = $state(false)
@@ -84,9 +83,8 @@
     }
   }
 
-  /** Opening a modal pushes its parameter; how it was opened decides whether Demos rotates. */
-  const openRoute = (next: ModalRoute, event?: MouseEvent): void => {
-    openedBy = event === undefined ? 'link' : event.detail === 0 ? 'keyboard' : 'pointer'
+  /** Opening a modal pushes its parameter. */
+  const openRoute = (next: ModalRoute): void => {
     stopped = ''
     modalUrl.open(next)
     route = next
@@ -95,7 +93,7 @@
   const onRouteClick = (next: ModalRoute) => (event: MouseEvent): void => {
     if (event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return
     event.preventDefault()
-    openRoute(next, event)
+    openRoute(next)
   }
   // × / Esc / backdrop remove the parameter; Back already did when the close is programmatic.
   const onModalClose = (reason: ModalCloseReason): void => {
@@ -113,15 +111,14 @@
       rememberedNotice = null
     }
   }
-  const fromMenu = (next: ModalRoute) => (event: MouseEvent): void => {
+  const fromMenu = (next: ModalRoute) => (): void => {
     menuOpen = false
-    openRoute(next, event)
+    openRoute(next)
   }
 
   onMount(() => {
     document.title = LANDING_TITLE
     const unsubscribe = modalUrl.subscribe(next => {
-      openedBy = 'link'
       route = next
     })
     if (hinted) refreshRemembered()
@@ -166,7 +163,7 @@
 <header class="bar">
   <Wordmark tone="dark" mark href="/workspaces" label="Leitbild.ai home" />
   <span class="sep" aria-hidden="true"></span>
-  <WorkspaceSwitcher current={remembered} {api} {memory} onmanage={event => openRoute({ kind: 'manage' }, event)} />
+  <WorkspaceSwitcher current={remembered} {api} {memory} onmanage={() => openRoute({ kind: 'manage' })} />
   <nav class="nav" aria-label="Main">
     <div class="wide">
       <a class="nav-link" href={routeHref({ kind: 'guide', page: 'start', card: null })} aria-haspopup="dialog"
@@ -239,7 +236,7 @@
 
 {#if DemosModal}
   <DemosModal bind:open={demosOpen} demo={route.kind === 'demos' ? route.demo : null} view={route.kind === 'scenarios' ? 'scenarios' : 'demos'}
-    startStopped={openedBy !== 'pointer'} {launcher} {remembered} {api} {memory} onclose={onDemosClosed} fallbackFocus={() => tryButton}
+    {launcher} {remembered} {api} {memory} onclose={onDemosClosed} fallbackFocus={() => tryButton}
     ondemochange={(key: string) => { if (isDemosModalRoute(route)) modalUrl.replace({ kind: 'demos', demo: key }) }}
     onviewchange={(next: ModalRoute) => { if (isDemosModalRoute(route)) modalUrl.replace(next) }}
     onstopped={(text: string | null) => { stopped = text ?? '' }} />
@@ -250,9 +247,8 @@
 {#if GuideModal}
   <GuideModal bind:open={guideOpen} page={route.kind === 'guide' ? route.page : 'start'} card={route.kind === 'guide' ? route.card : null}
     onpagechange={(page: string) => { if (route.kind === 'guide') modalUrl.replace({ kind: 'guide', page, card: null }) }}
-    ontrydemo={(demo: string | null, how: { keyboard: boolean }) => {
+    ontrydemo={(demo: string | null) => {
       const next: ModalRoute = { kind: 'demos', demo }
-      openedBy = how.keyboard ? 'keyboard' : 'pointer'
       modalUrl.replace(next)
       route = next
     }}
