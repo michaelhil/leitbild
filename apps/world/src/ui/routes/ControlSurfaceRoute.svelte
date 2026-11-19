@@ -473,10 +473,6 @@
     theme = toggleThemeMode()
   }
 
-  const toggleWeatherLayer = (): void => {
-    weatherLayerVisible = !weatherLayerVisible
-  }
-
   const setCategoryMapVisibility = (categoryId: string, visible: boolean): void => {
     if ((categoryMapVisibility[categoryId] ?? true) === visible) return
     categoryMapVisibility = {
@@ -613,7 +609,7 @@
   }
 
   const viewPanels = $derived<ReadonlyArray<RunViewChoice>>([
-    ...(activePhysicalLayoutBindings.length > 0 ? [{ id: 'layout-controls', label: 'Physical layout controls', visible: layoutControlsVisible }] : []),
+    ...(activePhysicalLayoutBindings.length > 0 ? [{ id: 'layout-controls', label: 'Layout controls', visible: layoutControlsVisible }] : []),
     // The open map-target panel stays while it arms an order, which it shows by its targeting (plan B.10: only in SA).
     ...surfacePanels.map(panel => ({ id: `panel:${panel.id}`, label: panel.label, visible: isSurfacePanelOpen(panel), ...(mapTargetPanelContribution?.id === panel.id && panelMapTargetings[panel.id] != null ? { disabledReason: 'Finish or cancel the armed order before hiding this panel' } : {}) })),
   ])
@@ -627,7 +623,6 @@
     { id: 'home', label: 'Home', ...(!mapReady ? { disabledReason: 'Map is not ready' } : {}) },
     { id: 'fit-selected', label: 'Fit selection', ...(!mapReady ? { disabledReason: 'Map is not ready' } : !fitSelectedTarget ? { disabledReason: 'Select an object with a map position' } : {}) },
     { id: 'fit-visible', label: 'Fit all visible', ...(!mapReady ? { disabledReason: 'Map is not ready' } : !objects.some(object => object.spatial.position !== undefined && !hiddenObjectCategoryIds.includes(presentationFor(object).categoryId)) ? { disabledReason: 'No visible object positions' } : {}) },
-    { id: 'north', label: 'North up', ...(!mapReady || !panelMapView ? { disabledReason: 'Map is not ready' } : {}) },
   ])
   const viewResetDisabledReason = $derived(viewPanels.find(panel => panel.disabledReason)?.disabledReason)
   const viewAlarmCount = $derived(alertRows(objects, object => ({ label: object.label, categoryId: presentationFor(object).categoryId })).filter(row => row.priority !== 'none' && unacknowledged(row)).length)
@@ -637,7 +632,7 @@
     try { writeRunViewPreferences(sessionStorage, key, { guidance: guidancePreferences, alarms: alarmStripVisible, layout: layoutControlsVisible, panels: surfacePanelOpen }) } catch { /* A denied storage getter must not prevent local presentation. */ }
   })
   const actOnView = (id: string): void => {
-    if (['home', 'fit-selected', 'fit-visible', 'north'].includes(id)) guidanceSession?.manualCamera()
+    if (['home', 'fit-selected', 'fit-visible'].includes(id)) guidanceSession?.manualCamera()
     if (id === 'home' && mapConfig) focusMapTarget(homeMapTarget(mapConfig))
     else if (id === 'fit-selected' && fitSelectedTarget) focusMapTarget(fitSelectedTarget)
     else if (id === 'fit-visible') {
@@ -645,7 +640,6 @@
       if (!target) throw new Error('No visible object positions')
       focusMapTarget(target)
     }
-    else if (id === 'north' && panelMapView) focusMapTarget({ kind: 'view', center: panelMapView.center, zoom: panelMapView.zoom, bearing: 0 })
     else throw new Error(`View action is unavailable: ${id}`)
   }
   const setViewChoice = (id: string, visible: boolean): void => {
@@ -2599,12 +2593,9 @@
 {#if settingsModalOpen && SettingsModal}
   <SettingsModal
     {theme}
-    weatherLayerAvailable={mapConfig?.layers.includes('weather') ?? false}
-    {weatherLayerVisible}
     close={closeSettings}
     {goToStartPage}
     {toggleTheme}
-    {toggleWeatherLayer}
     resetScenario={controllerControls ? resetScenario : null}
   />
 {/if}

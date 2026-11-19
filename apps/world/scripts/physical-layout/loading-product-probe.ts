@@ -26,7 +26,7 @@ const evaluate = async (expression: string) => { const response = await call('Ru
 const W = `document.querySelector('iframe[src*="/world/runs/"]').contentWindow`
 const world = (body: string) => evaluate(`(()=>{const w=${W},d=w.document.querySelector('.layout-browser')??w.document,q=w.__loadingProof;${body}})()`)
 const until = async (body: string, label: string) => { const started = performance.now(); while (performance.now() - started < 45000) { if (await world(body)) return; await Bun.sleep(50) }; throw Error(`Timed out: ${label}`) }
-const selected = `{mode:d.querySelector('.modes button[aria-pressed=true]')?.textContent.trim()==='3D'?'3d':'2d',levelId:d.querySelector('select[aria-label="Layout level"]')?.value}`
+const selected = `{mode:d.querySelector('.view-mode-control')?.getAttribute('aria-pressed')==='true'?'3d':'2d',levelId:d.querySelector('select[aria-label="Layout level"]')?.value}`
 const actions: any[] = [], gc: any[] = []
 const action = async (name: string, setup: string, dispatch: string, expected = selected, surface = 'layout-canvas') => {
   const value = await world(`${setup};q.begin(${JSON.stringify(name)},${expected},${JSON.stringify(surface)});${dispatch};return q.current.promise`)
@@ -35,6 +35,7 @@ const action = async (name: string, setup: string, dispatch: string, expected = 
   actions.push(value); await writeFile(join(folder, 'partial.json'), JSON.stringify({ actions, gc }, null, 2)); console.log(name, JSON.stringify({ firstDrawMs: value.actionToFirstDrawMs, gpuCompleteMs: value.actionToGpuCompletedMs, preparedAfterAction: value.preparedAfterAction, prepares: value.jobs.filter((job: any) => job.kind === 'prepare').length, expected: value.expected, key: value.firstDraw.key }))
 }
 const button = async (label: string, name: string, expected = selected, surface = 'layout-canvas') => action(name, `const b=[...d.querySelectorAll('button')].find(b=>b.textContent.trim()===${JSON.stringify(label)}&&b.getBoundingClientRect().width>0);if(!b)throw Error('Missing button '+${JSON.stringify(label)})`, 'b.click()', expected, surface)
+const mode = async (next: '2d' | '3d', name: string, expected = selected, surface = 'layout-canvas') => action(name, `const b=d.querySelector('.view-mode-control');if(!b)throw Error('Missing 3D switch');if((b.getAttribute('aria-pressed')==='true')===${next === '3d'})throw Error('3D switch already shows '+${JSON.stringify(next)})`, 'b.click()', expected, surface)
 const floor = (label: string, name: string) => action(name, `const input=d.querySelector('select[aria-label="Layout level"]'),option=[...input.options].find(o=>o.text.toLowerCase().includes(${JSON.stringify(label.toLowerCase())}));if(!option)throw Error('Missing floor '+${JSON.stringify(label)})`, `input.value=option.value;input.dispatchEvent(new w.Event('change',{bubbles:true}))`, `{...${selected},levelId:option.value}`)
 const collect = async (name: string) => { const before = await world('return {jobs:q.jobs.length,sources:q.sources.length,at:w.performance.now()}'); await call('HeapProfiler.collectGarbage'); await world('return new Promise(resolve=>w.requestAnimationFrame(resolve))'); gc.push({ name, before, after: await world('return {jobs:q.jobs.length,sources:q.sources.length,at:w.performance.now()}') }) }
 const scope = async () => {
@@ -45,9 +46,9 @@ const scope = async () => {
   await action('first-turbine-hall-focus', `const b=[...d.querySelectorAll('.scopes button[title]')].find(b=>b.title===${JSON.stringify(path)})`, 'b.click()')
 }
 const cutaway = async (enabled: boolean, name: string) => {
-  await world(`const b=[...d.querySelectorAll('button')].find(b=>b.textContent.trim()==='View');b.click()`)
+  await world(`const b=[...d.querySelectorAll('button')].find(b=>b.textContent.trim()==='Options');b.click()`)
   await action(name, `const input=[...d.querySelectorAll('.settings label')].find(l=>l.textContent.includes('Inspection cutaway')).querySelector('input');if(input.checked===${enabled})throw Error('Cutaway action would be a no-op')`, 'input.click()', `{...${selected},cutaway:${enabled}}`)
-  await world(`const b=[...d.querySelectorAll('button')].find(b=>b.textContent.trim()==='View');b.click()`)
+  await world(`const b=[...d.querySelectorAll('button')].find(b=>b.textContent.trim()==='Options');b.click()`)
 }
 try {
   let port = 0
@@ -63,18 +64,18 @@ try {
   const mounted = { navigationToControlsMs: performance.now() - navigationStarted, world: await world('return {at:w.performance.now(),pending:q.pending,jobs:q.jobs.length,sources:q.sources.length}') }
   await world(`d.querySelector('button[aria-label="Close grid overview panel"]')?.click()`)
   await button('Open layout browser', 'open-browser-cold', `{mode:'3d',levelId:'all',readyCount:5}`)
-  await button('3D', 'site-3d', `{mode:'3d',readyCount:5}`)
+  await mode('3d', 'site-3d', `{mode:'3d',readyCount:5}`)
   await scope()
   await floor('Turbine and main control', 'first-operating-3d')
   await floor('Stack', 'first-stack-3d')
   await collect('before-operating-return'); await floor('Turbine and main control', 'gc-return-operating-3d')
   await collect('before-stack-return'); await floor('Stack', 'gc-return-stack-3d')
   await cutaway(false, 'first-uncut-stack'); await collect('before-cutaway-return'); await cutaway(true, 'gc-return-cutaway-stack')
-  await button('Plan', 'first-plan', `{mode:'2d'}`)
+  await mode('2d', 'first-plan', `{mode:'2d'}`)
   await floor('Turbine and main control', 'first-plan-operating')
   await floor('Lower', 'first-plan-lower')
   await collect('before-plan-return'); await floor('Turbine and main control', 'gc-return-plan-operating')
-  await button('3D', 'return-3d-operating', `{mode:'3d',levelId:'operating'}`)
+  await mode('3d', 'return-3d-operating', `{mode:'3d',levelId:'operating'}`)
   await world(`const b=[...d.querySelectorAll('button')].find(b=>b.textContent.trim()==='Back to map');b.click()`); await until(`return !w.document.querySelector('.layout-browser') && !!d.querySelector('button')`, 'browser owner closed onto map'); const ownerBoundary = await world(`return {at:w.performance.now(),evidence:d.querySelector('.explorer-controls .evidence')?.textContent,pending:q.pending}`)
   await collect('before-fresh-browser-owner'); await button('Open layout browser', 'gc-fresh-browser-owner', `{mode:'3d',levelId:'all',readyCount:5}`)
   const shot = await call('Page.captureScreenshot', { format: 'png' }); await writeFile(join(folder, 'final-browser.png'), Buffer.from(shot.data, 'base64'))

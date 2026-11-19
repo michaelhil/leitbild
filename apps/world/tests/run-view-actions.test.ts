@@ -20,9 +20,6 @@ test('camera recovery stays in reach and Fit selection appears only for an actio
   const home = { id: 'home', label: 'Home' }
   const fit = { id: 'fit-visible', label: 'Fit all visible', disabledReason: 'No visible object positions' }
   const selection = { id: 'fit-selected', label: 'Fit selection' }
-  const north = { id: 'north', label: 'North up' }
-  expect(arrangeRunViewCamera([home, { ...selection, disabledReason: 'Select an object with a map position' }, fit, north]))
-    .toEqual({ quick: [home, fit], more: [north] })
-  expect(arrangeRunViewCamera([home, selection, fit, north]))
-    .toEqual({ quick: [home, selection, fit], more: [north] })
+  expect(arrangeRunViewCamera([home, { ...selection, disabledReason: 'Select an object with a map position' }, fit])).toEqual([home, fit])
+  expect(arrangeRunViewCamera([home, selection, fit])).toEqual([home, selection, fit])
 })
