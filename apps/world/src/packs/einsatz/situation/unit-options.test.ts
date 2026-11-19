@@ -55,7 +55,16 @@ describe('Einsatz unit options', () => {
     expect((await run(state, { kind: 'order', units: ['c1'], stops: [{ taskId: 'near' }], when: 'after' })).units.get('c1')!.orders).toHaveLength(2)
   })
 
-  test('T7: a carrier taking its load to a site takes no call now, but a call after its delivery is valid; a site to deliver to is valid now', async () => {
+  test('a target only "after" takes is timed from where and when the plan ends: the job done, then the trip from there', async () => {
+    const state = await run(await field(), send(['c1'], { taskId: 'far' }))
+    const answer = await options(state, 'c1')
+    const near = answer.targets.find(target => target.label === 'NEAR')!
+    // From where C1 stands now NEAR is the nearest call; after FAR, C1 first finishes FAR and delivers what it picks up there.
+    const fromHere = (await options(await field(), 'c1')).targets.find(target => target.label === 'NEAR')!.etaS
+    expect(near.etaS).toBeGreaterThan(answer.busy!.freeInS! + fromHere)
+  })
+
+  test('T7: a carrier taking its load to a site takes no call now, but a call after its delivery is valid, timed from the site once it has handed over; a site to deliver to is valid now', async () => {
     let state = await run(await field(), send(['c1'], { taskId: 'near' }))
     state = await advance(state, arrivalAt(state, 'c1') + 10_000)
     expect(unitOf(state, 'c1')).toMatchObject({ phase: 'transporting', load: { [top]: 1 } })
@@ -65,6 +74,8 @@ describe('Einsatz unit options', () => {
     expect(answer.targets.find(target => target.label === 'CLINIC')).toMatchObject({ verb: 'deliver', now: true })
     const far = answer.targets.find(target => target.label === 'FAR')!
     expect(far).toMatchObject({ verb: 'pick-up', now: false })
+    // The call waits until C1 reaches the clinic and hands over, then C1 drives from there.
+    expect(far.etaS).toBeGreaterThan(answer.targets.find(target => target.label === 'CLINIC')!.etaS)
     expect((await refusalOf(state, send(['c1'], { taskId: 'far' }))).code).toBe('unit_loaded')
     const after = await run(state, { kind: 'order', units: ['c1'], stops: [{ taskId: 'far' }], when: 'after' })
     expect(unitOf(after, 'c1').orders.map(step => [step.kind, step.state])).toEqual([['deliver', 'active'], ['serve', 'queued']])

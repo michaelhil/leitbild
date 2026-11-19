@@ -1,12 +1,13 @@
 import type { GeoJsonPoint, ScenarioRole } from '../../../core/model/index.ts'
 import { capabilityRejection } from '../../../simulation/capability-rejection.ts'
 import { etasFrom, turnoutFor, type TablePort } from '../eta.ts'
-import { loadAfter } from '../engine/chain.ts'
+import { deliversByOrder, loadAfter } from '../engine/chain.ts'
+import { nearestAcceptingSite } from '../engine/delivery.ts'
 import { planIntent } from '../engine/engine.ts'
-import { freeInS } from '../engine/estimates.ts'
+import { freeInS, stopDoneInS } from '../engine/estimates.ts'
 import type { EngineActor } from '../engine/intents.ts'
 import { taskIn } from '../engine/draft.ts'
-import { motionOf, priorityOf, unitTypeOf, type EngineState } from '../engine/model.ts'
+import { motionOf, priorityOf, unitTypeOf, type EngineState, type UnitRecord } from '../engine/model.ts'
 import { isBusy } from '../engine/plan-order.ts'
 import { hasLoad, isDestroyed } from '../engine/rules.ts'
 import { total } from '../engine/values.ts'
@@ -29,12 +30,85 @@ import { stopVerb } from './situation.ts'
  * busy unit one with `when: 'now'`, dropping that job, for any other one
  * without `when`. A target only an order "after" takes (`now: false`) is
  * valid too: a busy unit's next job, or a loaded carrier's call once it has
- * delivered. ETAs are routed for road units in one router request, as an
- * order would route them; a target the router cannot reach is refused with
- * that refusal. Points on open ground are not listed: any may be named.
+ * delivered. ETAs are routed for road units as an order would route them, a
+ * target an order takes now in one router request from where the unit is;
+ * a target only "after" takes from where and when its plan ends
+ * (`planEnd`). A target the router cannot reach is refused with that
+ * refusal. Points on open ground are not listed: any may be named.
  */
 
 const messageOf = (reason: string): string => reason.slice(refusalCode(reason).length + 2)
+
+/** Seconds a unit spends handing its load over at a site. */
+const handoverAt = (state: EngineState, siteId: string): number => {
+  const receiving = unitTypeOf(state.catalog, state.units.get(siteId)!).components.receiving
+  if (receiving === undefined) throw new Error(`${siteId} takes no delivery`)
+  return receiving.handoverS
+}
+
+type PlanEnd = { readonly point: GeoJsonPoint; readonly inS: number } | { readonly reason: string }
+
+/**
+ * Where a stop given "after" a unit's plan starts, and in how many seconds:
+ * once its active stop is done (`stopDoneInS`, with the handover of a
+ * delivery not yet handing over), then each queued stop in turn, with a
+ * task's turnout and time on task and a delivery's handover; and the
+ * deliveries its deliver standing order makes, before any stop it cannot
+ * take loaded and after the plan, to the nearest accepting site, as the
+ * engine resolves them (`nearestAcceptingSite`). Each leg is timed as an
+ * order would time it now (`etasFrom`); a leg that cannot be timed gives its
+ * reason.
+ */
+const planEnd = async (state: EngineState, unit: UnitRecord, routing: TablePort): Promise<PlanEnd> => {
+  const type = unitTypeOf(state.catalog, unit)
+  const mobilizeS = type.components.mobility!.mobilizeS
+  const onSceneS = type.components.service?.onSceneS ?? 0
+  const delivers = deliversByOrder(state, unit)
+  let point = motionOf(state, unit.id).point
+  let inS = 0
+  const head = unit.orders[0]
+  const first = head?.state === 'active' ? 1 : 0
+  if (head !== undefined && first === 1) {
+    const done = stopDoneInS(state, unit)
+    if (done === undefined) return { reason: refusal('routing_unavailable', `${unit.label} is stopped`) }
+    const handingOver = unit.phase === 'at-site' && unit.phaseDueMs !== undefined
+    inS = done + ('siteId' in head.target && hasLoad(unit) && !handingOver ? handoverAt(state, head.target.siteId) : 0)
+    point = stopPoint(state, head.target) ?? point
+  }
+  /** Travels to `to` after `turnoutS`; the reason when the leg cannot be timed. */
+  const travel = async (to: GeoJsonPoint, turnoutS: number): Promise<string | undefined> => {
+    const eta = (await etasFrom(state, unit, point, [{ point: to, turnoutS }], routing))[0]!
+    if (eta.kind === 'unavailable') return eta.reason
+    inS += eta.seconds
+    point = to
+    return undefined
+  }
+  /** The deliver order's delivery of what the unit holds once its first `count` stops are done. */
+  const deliverAfter = async (count: number): Promise<string | undefined> => {
+    const load = loadAfter(state, unit, count)
+    if (!delivers || total(load) === 0) return undefined
+    const site = nearestAcceptingSite(state, unit, point, load)
+    if (site === undefined) return refusal('site_not_accepting', `No site accepts what ${unit.label} will carry`)
+    const failed = await travel(motionOf(state, site.id).point, 0)
+    inS += handoverAt(state, site.id)
+    return failed
+  }
+  for (let index = first; index < unit.orders.length; index++) {
+    const step = unit.orders[index]!
+    const target = step.target
+    if (!('siteId' in target)) {
+      const failed = await deliverAfter(index)
+      if (failed !== undefined) return { reason: failed }
+    }
+    const to = stopPoint(state, target)
+    const failed = to === undefined ? undefined : await travel(to, 'taskId' in target ? mobilizeS : 0)
+    if (failed !== undefined) return { reason: failed }
+    if ('taskId' in target) inS += onSceneS
+    if ('siteId' in target && total(loadAfter(state, unit, index)) > 0) inS += handoverAt(state, target.siteId)
+  }
+  const failed = await deliverAfter(unit.orders.length)
+  return failed === undefined ? { point, inS } : { reason: failed }
+}
 
 export const readUnitOptions = async (input: {
   readonly state: EngineState
@@ -102,7 +176,14 @@ export const readUnitOptions = async (input: {
   if (type.components.mobility === undefined) {
     for (const entry of accepted) listed(entry, 0)
   } else {
-    await timed(accepted, motionOf(state, unit.id).point, target => turnoutFor(state, unit, 'taskId' in target), 0)
+    await timed(accepted.filter(entry => entry.now), motionOf(state, unit.id).point, target => turnoutFor(state, unit, 'taskId' in target), 0)
+    const later = accepted.filter(entry => !entry.now)
+    if (later.length > 0) {
+      const end = await planEnd(state, unit, input.routing)
+      if ('reason' in end) for (const entry of later) refuse(entry.target, end.reason)
+      // The unit stands at the end of its plan, so a task takes its full turnout.
+      else await timed(later, end.point, target => 'taskId' in target ? type.components.mobility!.mobilizeS : 0, end.inS)
+    }
   }
   targets.sort((a, b) => a.etaS - b.etaS || a.label.localeCompare(b.label, 'en', { numeric: true }))
   return { unitId: unit.id, busy, targets, refused }

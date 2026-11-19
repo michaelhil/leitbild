@@ -144,7 +144,7 @@ export const einsatzCapabilities: ReadonlyArray<SimulationCapability> = [
   command({
     id: einsatzCommandIds.order,
     title: 'Order units',
-    description: 'Give units a plan, all or nothing. Example (pick up, then deliver): `{units:[\'unit:a4\'], stops:[{taskId:\'task:c-1\'},{siteId:\'unit:clinic\'}]}`. For a busy unit, set `when`: `after` appends; `now` replaces its job and needs `drops` = its current task. A carrier with no site stop delivers to the nearest accepting site. Refusals: `when_required`, `drops_mismatch`, `requirement_unmet`, `site_not_accepting`, `divert_after_arrival`, `unit_loaded`, `chain_full`.',
+    description: 'Give units a plan, all or nothing. Example (pick up, then deliver): `{units:[\'unit:a4\'], stops:[{taskId:\'task:c-1\'},{siteId:\'unit:clinic\'}]}`. For a busy unit, set `when`: `after` appends; `now` replaces its job and needs `drops` = its current task. A carrier under a deliver standing order with no site stop delivers to the nearest accepting site. Refusals: `when_required`, `drops_mismatch`, `requirement_unmet`, `site_not_accepting`, `divert_after_arrival`, `unit_loaded`, `chain_full`.',
     searchTerms: [...dispatchTerms, 'order', 'move', 'plan', 'stops', 'divert'],
     idempotent: false,
     targets: input => objectIds(...input.units),
