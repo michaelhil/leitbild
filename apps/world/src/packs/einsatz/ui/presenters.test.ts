@@ -12,7 +12,6 @@ import {
   countsLine,
   dispatchKindOf,
   einsatzRecordsKey,
-  dispatchWords,
   edgeTabText,
   emptySelectionText,
   maxReceipts,
@@ -34,6 +33,7 @@ import {
   type PinnedProposal,
 } from './presenters.ts'
 import type { Selection } from './selection.ts'
+import { dispatchWords } from './dispatch-words.ts'
 
 /**
  * The Dispatch panel's view models over a situation written in words no

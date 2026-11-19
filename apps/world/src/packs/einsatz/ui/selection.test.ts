@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'bun:test'
 import { answersLastTap, initialSelection, optionsAnswer, planExpectation, reduceSelection, type ClickedObject, type SelectionEvent, type SelectionState } from './selection.ts'
 import type { UnitOptions } from '../situation/schema.ts'
-import { dispatchWords } from './presenters.ts'
+import { dispatchWords } from './dispatch-words.ts'
 
 const free = { id: 'unit:a', status: { word: 'Free', tone: 'free' as const }, commandedBy: null, carry: null, plan: [] }
 const unit = { kind: 'unit', id: free.id } as const

@@ -3,7 +3,8 @@
   import { einsatzColors } from '../colors.ts'
   import type { Stop, UnitOrderInput } from '../order-schema.ts'
   import { svgImageSource } from './einsatz-client.ts'
-  import { dispatchWords, type CardView, type PlanStopView } from './presenters.ts'
+  import { dispatchWords } from './dispatch-words.ts'
+  import type { CardView, PlanStopView } from './presenters.ts'
 
   /**
    * The unit card keeps the plan and map selection controls in reach.

@@ -9,12 +9,12 @@
   import type { Stop, UnitOrderInput } from '../order-schema.ts'
   import type { Situation, SituationCall, UnitOptions } from '../situation/schema.ts'
   import { dispatchMapCover, panelBottomClearancePx, panelEdgeGapPx, panelLayoutFor, panelTopClearancePx, sheetOpen, shownClearOfPanel } from './dispatch-layout.ts'
+  import { dispatchWords } from './dispatch-words.ts'
   import { createIconCache, runEinsatzClient, situationIconIds, type CommandOutcome } from './einsatz-client.ts'
   import {
     cardFor,
     contactRows,
     dispatchKindOf,
-    dispatchWords,
     edgeTabText,
     einsatzRecordsKey,
     emptySelectionText,

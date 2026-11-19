@@ -1,7 +1,7 @@
 import type { GeoJsonPoint } from '../../../core/model/index.ts'
 import type { Stop, UnitOrderInput } from '../order-schema.ts'
 import type { SituationUnit, UnitOptions } from '../situation/schema.ts'
-import { dispatchWords } from './presenters.ts'
+import { dispatchWords } from './dispatch-words.ts'
 
 /** Opening an asset selects it for dispatch; only a subsequent target selection may issue an order. */
 export const doubleClickMs = 500

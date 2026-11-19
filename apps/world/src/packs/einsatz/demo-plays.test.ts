@@ -18,7 +18,8 @@ import type { RecommendAnswer } from './recommendation-schema.ts'
 import type { Situation, UnitOptions } from './situation/schema.ts'
 import { einsatzPackView } from './ui-pack.ts'
 import { dispatchMapCover, panelBottomClearancePx, panelLayoutFor, panelTopClearancePx } from './ui/dispatch-layout.ts'
-import { dispatchWords, einsatzRecordsKey, receiptUndoMs } from './ui/presenters.ts'
+import { dispatchWords } from './ui/dispatch-words.ts'
+import { einsatzRecordsKey, receiptUndoMs } from './ui/presenters.ts'
 import { planExpectation } from './ui/selection.ts'
 
 /**
