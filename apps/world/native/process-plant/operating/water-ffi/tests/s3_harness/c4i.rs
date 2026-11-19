@@ -5,7 +5,7 @@
 //! pressure the hold must reach.
 use serde_json::{Value, json};
 
-pub const FENCE: &str = "ld01-s3-cases-c4i";
+pub const FENCE: &str = "ld01-s3-cases-c4i-r2";
 
 /// The cells C4I.N1 leaves out: the block's excluded cells and the head.
 const NOT_CORE_OR_LOOP: [&str; 4] = ["SURGE", "PZR", "HOUSING.MAIN", "HOUSING.NECK"];
