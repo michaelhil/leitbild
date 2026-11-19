@@ -36,7 +36,7 @@ import type { Grid } from '../time/units.ts'
 import { scheduleDisplay } from './schedule-display.ts'
 import type { scheduleDisplayInputSchema } from './schedule-display-contract.ts'
 import {
-  compactLineLength, explainResultSchema, generateResultSchema, resultLimitBytes, sectionDataSchemas, writeResultSchema, type ItemStatus,
+  compactLineLength, explainResultSchema, generateResultSchema, resultLimitBytes, sectionDataSchemas, staleRefusalPreface, writeResultSchema, type ItemStatus,
   type baselineInputSchema, type createInputSchema, type editInputSchema, type explainInputSchema, type generateInputSchema, type readInputSchema, type StatusOut,
 } from './contract.ts'
 
@@ -176,7 +176,7 @@ export const storedActor = (access: AccessContext): StoredActor => {
 export const planReference = (workspaceId: WorkspaceId, planId: string): WorkspaceResourceReference =>
   workspaceResourceReferenceSchema.parse({ workspaceId, moduleId: 'planning', type: 'planning.plan', id: planId })
 
-const runReference = (workspaceId: WorkspaceId, runId: string): WorkspaceResourceReference =>
+export const runReference = (workspaceId: WorkspaceId, runId: string): WorkspaceResourceReference =>
   workspaceResourceReferenceSchema.parse({ workspaceId, moduleId: 'world', type: 'world.simulation-run', id: runId })
 
 /** One guided plan per Run, including when the launcher retries an interrupted request. */
@@ -824,7 +824,7 @@ export const createPlanningOperations = (ports: PlanningOperationsPorts) => {
       if (ask === 'refusal' && option.status.word === 'validated feasible') throw planningError(409, 'option_not_feasible', `Option ${option.label} was not refused; ask why a job starts then or what sets the finish`, { about: [option.key] })
       const answer = await solver.explain({ inputs: plan.inputs, option, ask, job: input.job, cursor: input.cursor })
       if (ask !== 'refusal' || !stale) return resultOf(explainResultSchema, answer)
-      return resultOf(explainResultSchema, withinResult({ ...answer, lines: ['On the plan before your latest change: generate again to know for the plan as it is now.', ...answer.lines].slice(0, 20) }))
+      return resultOf(explainResultSchema, withinResult({ ...answer, lines: [staleRefusalPreface, ...answer.lines].slice(0, 20) }))
     },
 
     read: async (workspaceId: WorkspaceId, planId: string, input: z.infer<typeof readInputSchema>): Promise<InspectionView> => {

@@ -65,7 +65,7 @@ export const createHarness = async (options: {
     return { id: answer.body.result.plan.id as string, revision: answer.body.result.plan.revision as number, answer }
   }
   return {
-    workspaceId, store, journal, request, call, create, operations,
+    root, workspaceId, store, journal, request, call, create, operations,
     close: () => rm(root, { recursive: true, force: true }),
   }
 }

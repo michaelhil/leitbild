@@ -3,7 +3,7 @@
 // validated with the exact schemas; what is published is stripForPublication(exact).
 import { z } from 'zod'
 import {
-  inspectionViewSchema, moduleActivitySchema, moduleCapabilityInvocationSchema, moduleIdSchema, moduleResourceDescriptorSchema,
+  ABOUT_RELATION, inspectionViewSchema, moduleActivitySchema, moduleCapabilityInvocationSchema, moduleIdSchema, moduleResourceDescriptorSchema,
   workspaceIdSchema, workspaceModuleManifestSchema,
   type ModuleCapabilityInvocation, type ModuleResourceDescriptor, type WorkspaceId,
 } from '@leitbild/contracts'
@@ -17,7 +17,8 @@ import {
   baselineInputSchema, createInputSchema, deleteInputSchema, editInputSchema, explainInputSchema, explainResultSchema,
   generateInputSchema, generateResultSchema, publishedInputSchema, readInputSchema, refreshInputSchema, writeResultSchema,
 } from './contract.ts'
-import { planReference, type PlanningOperations } from './operations.ts'
+import { planReference, runReference, type PlanningOperations } from './operations.ts'
+import { createRunLinks } from './run-link.ts'
 import type { PlanDefinitionsPort } from '../definitions/index.ts'
 import { scheduleDisplayInputSchema, scheduleDisplayResultSchema } from './schedule-display-contract.ts'
 
@@ -47,6 +48,9 @@ export interface PlanningCallContext {
   readonly signal: AbortSignal
 }
 
+/** A place in an input that names a World Simulation Run by id: a caller bound to a Scope may name only a Run in it. */
+const worldRunAt = (path: string) => ({ path, moduleId: 'world', type: 'world.simulation-run' }) as const
+
 interface Operation<T> {
   readonly id: string
   readonly kind: 'command' | 'query'
@@ -56,6 +60,7 @@ interface Operation<T> {
   readonly description: string
   readonly searchTerms: readonly string[]
   readonly publishes?: ReadonlyArray<'embedded-view'>
+  readonly resourceInputs?: ReadonlyArray<ReturnType<typeof worldRunAt>>
   readonly input: z.ZodType<T>
   readonly output: z.ZodType
   readonly invoke: (context: PlanningCallContext, invocation: ModuleCapabilityInvocation, input: T) => Promise<{ readonly result: unknown; readonly created?: unknown }>
@@ -74,6 +79,7 @@ export const planningOperations: ReadonlyArray<Operation<any>> = [
     title: 'Create a plan',
     description: 'Start a new plan from a template. The standard start leaves the plan unlinked so you can choose its World simulation later. Optional edits use the same words as changing a plan and are applied as it is made. For a guided planning demo, pass its matching World Run as demoRun to create or reopen that run’s plan with World values already read. Starting a plan only reads World.',
     searchTerms: ['new', 'blank', 'empty', 'template', 'example', 'demo', 'start', 'outage', 'maintenance', 'work week'],
+    resourceInputs: [worldRunAt('demoRun'), worldRunAt('edits[].run')],
     input: createInputSchema, output: writeResultSchema,
     invoke: async ({ operations, signal }, invocation, input: z.infer<typeof createInputSchema>) => {
       const definition = invocation.definition!
@@ -86,6 +92,7 @@ export const planningOperations: ReadonlyArray<Operation<any>> = [
     title: 'Change a plan',
     description: 'Change a plan with named edits: add, change or remove a job and its estimate, crew, equipment, link, shift calendar, purchase such as overtime, method choice, rule or goal order, or lock a job to a start time. A field you give replaces that field; null clears it. All edits apply together or not at all. With preview nothing is saved: you see what moves and which rule breaks. Removing or weakening a hard rule, a support, a precondition or a test minimum is a person\'s change: an Assistant is refused and asks a person to make it in the plan screen. Needs the plan\'s current revision.',
     searchTerms: ['job', 'activity', 'crew', 'shift', 'calendar', 'buy', 'scope', 'supported by', 'tag-out', 'link', 'FS', 'SS', 'FF', 'lag', 'protected', 'off limits', 'keep in service', 'at least one', 'available', 'finish on or before', 'data date', 'simulation run', 'schedule'],
+    resourceInputs: [worldRunAt('edits[].run')],
     input: editInputSchema, output: writeResultSchema,
     invoke: async ({ operations, signal }, invocation, input: z.infer<typeof editInputSchema>) => ({ result: await operations.edit(invocation.workspaceId, planIdOf(invocation), input, invocation.expectedRevision, invocation.access, signal) }),
   },
@@ -175,6 +182,7 @@ const registrationFor = (operation: Operation<unknown>): CapabilityRegistration<
     title: operation.title, description: operation.description, searchTerms: [...operation.searchTerms],
     risk: operation.risk, idempotent: operation.kind === 'query',
     ...(operation.publishes === undefined ? {} : { publishes: [...operation.publishes] }),
+    ...(operation.resourceInputs === undefined ? {} : { resourceInputs: [...operation.resourceInputs] }),
     inputSchema: publishedInputSchema(operation.input),
     outputSchema: z.toJSONSchema(operation.output, { unrepresentable: 'any' }) as Record<string, unknown>,
   },
@@ -194,19 +202,27 @@ const statusLabel = (plan: PlanSummary): string => {
 export const createPlanningModuleApi = (config: {
   readonly operations: PlanningOperations
   readonly definitions: PlanDefinitionsPort
-  readonly store: Pick<PlanStore, 'hasWorkspace' | 'provision' | 'removeWorkspace'>
+  readonly store: Pick<PlanStore, 'hasWorkspace' | 'provision' | 'removeWorkspace' | 'read'>
 }) => {
+  // One per Module API, so it lives as long as the service: the Run each linked plan is about.
+  const runLinks = createRunLinks(config.store.read)
   const registry = createModuleCapabilityRegistry<PlanningCallContext, Response>(moduleId, planningOperations.map(registrationFor))
   const planCapabilities = registry.idsForResourceType(planType)
   const definitionCapabilities = registry.idsForDefinitionType(planDefinitionType)
 
   const resourcesFor = async (workspaceId: WorkspaceId): Promise<ModuleResourceDescriptor[]> => {
     const { plans, damaged } = await config.operations.list(workspaceId)
+    const runs = await runLinks.forListing(workspaceId, plans)
+    const linksOf = (planId: string) => {
+      const runId = runs.get(planId)
+      return runId === undefined ? {} : { links: [{ rel: ABOUT_RELATION, ref: runReference(workspaceId, runId) }] }
+    }
     const observedAt = new Date().toISOString()
     return [
       ...plans.map(plan => moduleResourceDescriptorSchema.parse({
         ref: planReference(workspaceId, plan.id), title: plan.title,
         ...(plan.purpose === undefined ? {} : { description: plan.purpose }),
+        ...linksOf(plan.id),
         uiPath: `/workspaces/${workspaceId}/planning?plan=${plan.id}`,
         capabilityIds: planCapabilities, inspectionCapabilityId: 'planning.plan.read', deleteCapabilityId: 'planning.plan.delete',
         summary: [
@@ -243,7 +259,7 @@ export const createPlanningModuleApi = (config: {
           if (input.workspaceId !== workspaceId) throw planningError(409, 'workspace_scope_mismatch', 'Lifecycle body belongs to another Workspace')
           return json({ workspaceId, moduleId: 'planning' }, await config.store.provision(workspaceId) ? 201 : 200)
         }
-        if (request.method === 'DELETE') { await config.store.removeWorkspace(workspaceId); return new Response(null, { status: 204 }) }
+        if (request.method === 'DELETE') { await config.store.removeWorkspace(workspaceId); runLinks.forgetWorkspace(workspaceId); return new Response(null, { status: 204 }) }
       }
       if (!await config.store.hasWorkspace(workspaceId)) throw planningError(404, 'workspace_not_found', 'Planning is not provisioned in this Workspace')
       if (collection === 'definitions' && request.method === 'GET') return json({ definitions: definitionDescriptors(workspaceId, config.definitions, definitionCapabilities) })

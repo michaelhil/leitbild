@@ -11,7 +11,7 @@ const contentType = (path: string): string => path.endsWith('.js') ? 'applicatio
 export const createPlanningServer = (config: {
   readonly operations: PlanningOperations
   readonly definitions: PlanDefinitionsPort
-  readonly store: Pick<PlanStore, 'hasWorkspace' | 'provision' | 'removeWorkspace'>
+  readonly store: Pick<PlanStore, 'hasWorkspace' | 'provision' | 'removeWorkspace' | 'read'>
   readonly port?: number
   readonly host?: string
   readonly uiDistPath?: string

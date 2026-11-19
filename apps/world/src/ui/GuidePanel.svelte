@@ -86,7 +86,7 @@
   {#if primary || planningDemoHref}
     <div class="actions">
       {#if planningDemoHref}<a class="primary" href={planningDemoHref} target="_top">{guide?.planningLabel ?? 'Open planning demo'}</a>{/if}
-      {#if primary && (!planningDemoHref || primary.action !== 'start')}
+      {#if primary}
         <button class:primary={!planningDemoHref && !(isPrompt && primary.action === 'read')} class:quiet={isPrompt && primary.action === 'read'} type="button" bind:this={primaryButton} aria-disabled={screen.busy || !session} onclick={runPrimary}>{primary.label}</button>
       {/if}
       {#if guide && (!guide.attemptId || finished)}

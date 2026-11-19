@@ -3,7 +3,7 @@
 // (definitions/fidelity.test.ts keeps them equal), and hold no schedule numbers.
 import { createHash } from 'node:crypto'
 import { z } from 'zod'
-import { moduleDefinitionCollectionSchema, type ModuleDefinitionDescriptor, type WorkspaceId } from '@leitbild/contracts'
+import { ABOUT_RELATION, moduleDefinitionCollectionSchema, type ModuleDefinitionDescriptor, type WorkspaceId } from '@leitbild/contracts'
 import { stableJson } from '@leitbild/module-runtime'
 import { keySchema, labelSchema, planInputsSchema, type PlanInputs } from '../plan/schema.ts'
 import blank from './blank.plan-definition.json' with { type: 'json' }
@@ -18,6 +18,8 @@ export { deliveryDemoDefinitionId, maintenanceDemoDefinitionId }
 export const guidedPlanDefinitionIds = new Set([deliveryDemoDefinitionId, maintenanceDemoDefinitionId])
 
 export const planDefinitionType = 'planning.plan-definition'
+/** World's Scenario Definition type: a guided plan Definition is about the Scenario its settings name. */
+const worldScenarioDefinitionType = 'world.scenario'
 
 export interface PlanDefinition {
   readonly id: string
@@ -52,6 +54,13 @@ export const bundledPlanDefinitions: readonly PlanDefinition[] = [blank, mainten
 
 export const createPlanDefinitions = (definitions: readonly PlanDefinition[] = bundledPlanDefinitions): PlanDefinitionsPort => ({ list: () => definitions })
 
+// Only a guided plan opens beside a Run of its Scenario, so only it is about that Scenario. The other
+// Definitions name a Scenario to start and link to nothing.
+const scenarioLinks = (workspaceId: WorkspaceId, definition: PlanDefinition) => {
+  const scenario = guidedPlanDefinitionIds.has(definition.id) ? definition.inputs.settings.scenario : undefined
+  return scenario === undefined ? {} : { links: [{ rel: ABOUT_RELATION, ref: { workspaceId, moduleId: 'world', type: worldScenarioDefinitionType, id: scenario.id } }] }
+}
+
 export const definitionDescriptors = (workspaceId: WorkspaceId, definitions: PlanDefinitionsPort, capabilityIds: readonly string[]): ModuleDefinitionDescriptor[] =>
   moduleDefinitionCollectionSchema.parse({ definitions: definitions.list().map(definition => ({
     ref: { workspaceId, moduleId: 'planning', type: planDefinitionType, id: definition.id },
@@ -61,4 +70,5 @@ export const definitionDescriptors = (workspaceId: WorkspaceId, definitions: Pla
     currentRevisionId: definition.revisionId,
     capabilityIds: [...capabilityIds],
     ...(guidedPlanDefinitionIds.has(definition.id) ? {} : { primaryCapabilityId: 'planning.plan.create' }),
+    ...scenarioLinks(workspaceId, definition),
   })) }).definitions

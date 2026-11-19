@@ -3,7 +3,7 @@
 // World is only read, through its planning-facts query.
 import type { PlanningSubject } from '@leitbild/contracts'
 import type { Edit } from '../plan/edit-schema.ts'
-import type { VersusFacts } from '../api/contract.ts'
+import { staleRefusalPreface, type VersusFacts } from '../api/contract.ts'
 import { isRequestError, refusalAuthority, refusalNearest, refusalText, RUN, type ExplainResult, type GenerateInput, type PlanningClient } from './api.ts'
 import type { BuysPage } from './ladder.ts'
 import { whatIfRequest, type WhatIfVariant } from './what-if.ts'
@@ -65,11 +65,18 @@ const pause = (ms: number, signal: AbortSignal): Promise<void> => new Promise(do
 })
 
 export const createPlanActions = (client: PlanningClient, planId: string, progress: Progress = () => {}) => {
-  /** Every current option the Module proved impossible, with its refusal in words and hours. */
+  /**
+   * Every option of the plan's own the Module proved impossible, with its refusal in words and hours, as stored:
+   * one made before the latest change keeps the words it had (re-walk N4, live check 19 Nov), never re-worded
+   * from its bare cause. Its row already says it is out of date, so the Module's preface saying so is dropped.
+   */
   const refusalsOf = async (model: PlanModel): Promise<PlanModel['refusals']> => {
     // A what-if's refusal is its causes by method on its card (walk V1, adversary B3): only the plan's own options are asked.
-    const refused = planOptions(model).filter(item => item.fresh && item.status.word === 'proven infeasible')
-    const answers = await Promise.all(refused.map(async item => [item.key, (await client.explain(planId, { ask: 'refusal', option: item.key })).lines] as const))
+    const refused = planOptions(model).filter(item => item.status.word === 'proven infeasible')
+    const answers = await Promise.all(refused.map(async item => {
+      const lines = (await client.explain(planId, { ask: 'refusal', option: item.key })).lines
+      return [item.key, !item.fresh && lines[0] === staleRefusalPreface ? lines.slice(1) : lines] as const
+    }))
     return Object.fromEntries(answers)
   }
   const load = async (keep: string | null, notice: string | null = null): Promise<Shown> => {

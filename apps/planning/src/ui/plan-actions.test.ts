@@ -166,14 +166,15 @@ describe('plan screen actions', () => {
     expect(large.error).toBe(words)
   })
 
-  test('T5-01, T5-02: reading the plan also reads why each current refused option is impossible', async () => {
+  test('T5-01, T5-02: reading the plan also reads why each refused option is impossible, one made before the latest change included (re-walk N4)', async () => {
     const base = trainAPlanned()
     const refused = status({ word: 'proven infeasible', run: runBasis(base.inputs.settings.grid), cause: { kind: 'chain', jobs: ['SWA-RTS'], workHours: 37, calendars: ['day'], availableHours: 32, from: '2026-11-16T06:00:00Z', by: '2026-11-20T14:00:00Z' } })
     const start: PlanModel = { ...base, options: { at: base.options!.at, recommended: null, items: [optionOf('v1', 'Rebuild, days only', refused), optionOf('old', 'Earlier', refused, { fresh: false })] } }
     const double = host(start)
     const shown = await double.actions.load(null)
-    expect(shown.model.refusals).toEqual({ v1: ['Not possible: v1 needs 37 h of work, but only 32 h exist.'] })
-    expect(double.calls.filter(call => call.capability === 'planning.plan.explain').map(call => call.input)).toEqual([{ ask: 'refusal', option: 'v1' }])
+    // An option made before the latest change keeps its stored refusal words instead of being re-worded from its cause.
+    expect(shown.model.refusals).toEqual({ v1: ['Not possible: v1 needs 37 h of work, but only 32 h exist.'], old: ['Not possible: old needs 37 h of work, but only 32 h exist.'] })
+    expect(double.calls.filter(call => call.capability === 'planning.plan.explain').map(call => call.input)).toEqual([{ ask: 'refusal', option: 'v1' }, { ask: 'refusal', option: 'old' }])
   })
 
   test('across every action the screen calls only the nine operations, and the only World one is the facts query', async () => {

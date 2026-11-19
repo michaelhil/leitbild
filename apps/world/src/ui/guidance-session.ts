@@ -243,6 +243,8 @@ export const createGuidanceSession = (config: {
         const request = hostRequests.get(parsed.data.requestId), guide = screen.guide
         const effect = guide?.step?.effects.find(effect => effect.requestId === parsed.data.requestId)
         if (!request || request.action.kind !== 'draft' || !owned(request) || parsed.data.recipient.leaseId !== request.recipient.leaseId || !guide?.attemptId || !guide.stepAttemptId || !effect) return
+        // Only a step that waits for the Assistant's reply records the sent prompt; World refuses the link on any other step.
+        if (guide.step?.completion !== 'prompt-response') return
         const result = await call('guide', 'prompt', { attemptId: guide.attemptId, stepAttemptId: guide.stepAttemptId, effectId: effect.id, recipient: screen.recipient, room: parsed.data.room, requestId: parsed.data.requestId, messageId: parsed.data.messageId })
         update({ guide: guideReadingSchema.parse(result), error: null })
       }).catch(error => update({ error: errorText(error) }))

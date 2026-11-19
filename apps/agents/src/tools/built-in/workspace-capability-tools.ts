@@ -2,6 +2,7 @@ import { z } from 'zod'
 import { viewRefFor } from '../../core/render-validators/view-fence.ts'
 import { embeddedViewFor } from '../../core/render-validators/view-envelope.ts'
 import {
+  ABOUT_RELATION,
   capabilityIdSchema,
   definitionTypeSchema,
   moduleIdSchema,
@@ -195,22 +196,39 @@ export const resolveScope = (
   const references = scope.kind === 'resource'
     ? [scope.resource]
     : [scope.collection, ...selectedCollectionMembers(scope, resources)]
-  const resourceKeys = new Set(references.map(referenceKey))
-  const scopedResources = resources.filter(resource => resourceKeys.has(referenceKey(resource.ref)))
-  const definitionKeys = new Set(scopedResources.flatMap(resource => resource.sourceDefinition ? [referenceKey(resource.sourceDefinition)] : []))
+  const namedKeys = new Set(references.map(referenceKey))
+  const named = resources.filter(resource => namedKeys.has(referenceKey(resource.ref)))
+  const listedNamedKeys = new Set(named.map(resource => referenceKey(resource.ref)))
+  // A Resource that is `about` a Resource the Scope names belongs with it. One
+  // level: a Resource about one admitted this way is not admitted, and what
+  // an excluded or unselected member has about it stays out with the member.
+  const aboutKeys = resources
+    .filter(resource => resource.links.some(link => link.rel === ABOUT_RELATION && listedNamedKeys.has(referenceKey(link.ref))))
+    .map(resource => referenceKey(resource.ref))
+  const resourceKeys = new Set([...namedKeys, ...aboutKeys])
+  // A running Resource pins a revision, not the library's moving head. Only the
+  // Resources the Scope names bring their source Definition.
+  const pinned = named.flatMap(resource => {
+    const source = resource.sourceDefinition
+    if (!source) return []
+    const descriptor = definitions.find(definition => referenceKey(definition.ref) === referenceKey(source))
+    return descriptor ? [{ ...descriptor, currentRevisionId: source.revisionId }] : []
+  })
+  const pinnedKeys = new Set(pinned.map(definition => referenceKey(definition.ref)))
+  // A Definition that is `about` one of those belongs with it, at its own
+  // current revision. One level, as for Resources.
+  const about = definitions.filter(definition =>
+    definition.links?.some(link => link.rel === ABOUT_RELATION && pinnedKeys.has(referenceKey(link.ref))) === true)
   return {
     scope,
-    resources: scopedResources,
-    // A running Resource pins a revision, not the library's moving head.
-    definitions: scopedResources.flatMap(resource => {
-      const source = resource.sourceDefinition
-      if (!source) return []
-      const descriptor = definitions.find(definition => referenceKey(definition.ref) === referenceKey(source))
-      return descriptor ? [{ ...descriptor, currentRevisionId: source.revisionId }] : []
-    }).filter((definition, index, all) => all.findIndex(other =>
+    resources: resources.filter(resource => resourceKeys.has(referenceKey(resource.ref))),
+    definitions: [...pinned, ...about].filter((definition, index, all) => all.findIndex(other =>
       referenceKey(other.ref) === referenceKey(definition.ref) && other.currentRevisionId === definition.currentRevisionId) === index),
     resourceKeys,
-    definitionKeys,
+    definitionKeys: new Set([
+      ...named.flatMap(resource => resource.sourceDefinition ? [referenceKey(resource.sourceDefinition)] : []),
+      ...about.map(definition => referenceKey(definition.ref)),
+    ]),
   }
 }
 
@@ -231,6 +249,42 @@ const targetInScope = (target: WorkspaceTarget | undefined, resolved: ResolvedSc
       || resolved.definitions.some(definition => referenceKey(definition.ref) === referenceKey(target.ref)
         && definition.currentRevisionId === target.ref.revisionId))
   return allowed ? undefined : failure('target_out_of_scope', 'The requested target is outside the current Room Scope', { target, scope: resolved.scope })
+}
+
+/** Every value at a declared input path (contracts `resourceInputs`), with the place it was found: `edits[1].run`. */
+const valuesAtPath = (input: unknown, path: string): ReadonlyArray<{ readonly at: string; readonly value: unknown }> =>
+  path.split('.').reduce<ReadonlyArray<{ readonly at: string; readonly value: unknown }>>((found, segment) => {
+    const each = segment.endsWith('[]')
+    const key = each ? segment.slice(0, -2) : segment
+    return found.flatMap(({ at, value }) => {
+      // A place the input does not hold, or holds in another shape, names no Resource: the Module validates its input itself.
+      if (value === null || typeof value !== 'object' || Array.isArray(value) || !Object.hasOwn(value, key)) return []
+      const child = (value as Readonly<Record<string, unknown>>)[key]
+      const place = at === '' ? key : `${at}.${key}`
+      if (!each) return [{ at: place, value: child }]
+      return Array.isArray(child) ? child.map((element, index) => ({ at: `${place}[${index}]`, value: element })) : []
+    })
+  }, [{ at: '', value: input }])
+
+/**
+ * A Room Scope bounds the Resources a call names in its input as it bounds
+ * the call's target. Where they are is declared by the operation's owning
+ * Module (the descriptor's `resourceInputs`), never known here by operation
+ * or field name. Only an id is judged: null, a missing place or a value that
+ * is not a string is the Module's to validate.
+ */
+const resourceInputsInScope = (operation: ModuleCapabilityDescriptor, input: unknown, resolved: ResolvedScope, workspaceId: WorkspaceId): ToolResult | undefined => {
+  if (resolved.scope.kind === 'workspace') return undefined
+  for (const declared of operation.resourceInputs ?? []) {
+    for (const { at, value } of valuesAtPath(input, declared.path)) {
+      if (typeof value !== 'string') continue
+      const resource = { workspaceId, moduleId: declared.moduleId, type: declared.type, id: value }
+      if (!resolved.resourceKeys.has(referenceKey(resource))) {
+        return failure('input_out_of_scope', `Input ${at} names a Resource outside the current Room Scope`, { input: at, resource, scope: resolved.scope })
+      }
+    }
+  }
+  return undefined
 }
 
 const applicabilityFailure = (
@@ -817,8 +871,10 @@ export const createWorkspaceCapabilityTools = (deps: WorkspaceCapabilityToolsDep
         })
         const effects = prepared.map(entry => effect(entry, 'not-dispatched'))
         const results = await Promise.all(prepared.map(async (entry, index) => {
+          // The operation is advertised once applicabilityFailure passes.
           const issue = applicabilityFailure(entry.operation, entry.target, catalogs.resources.resources, catalogs.definitions.definitions)
             ?? targetInScope(entry.target, resolved)
+            ?? resourceInputsInScope(entry.operation!, entry.input, resolved, deps.workspaceId)
           if (issue) return { key: entry.key, operationId: entry.operationId, success: false, error: issue.error, details: issue.data }
           if (entry.idempotencyKey !== undefined && entry.operation?.acceptsIdempotencyKey !== true) {
             return {
