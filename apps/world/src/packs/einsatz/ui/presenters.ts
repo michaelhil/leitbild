@@ -767,6 +767,23 @@ export const targetingFor = (unit: SituationUnit | undefined, options: UnitOptio
   }
 }
 
+/** A stop in words, for a receipt or a decision: as the unit's options list it, else its call's, site's or object's label; a point is the map point. */
+export const stopLabelOf = (stop: Stop, situation: Situation | null, options: UnitOptions | null, objects: ReadonlyArray<Pick<OperationalObject, 'id' | 'label'>>): string => {
+  const listed = options?.targets.find(target => stopKey(target.target) === stopKey(stop))?.label
+  if (listed !== undefined) return listed
+  const id = stopObjectId(stop)
+  if (id === null) return dispatchWords.mapPoint
+  return situation?.calls.find(call => call.id === id)?.label ?? situation?.sites.find(site => site.id === id)?.label ?? objects.find(object => object.id === id)?.label ?? id
+}
+
+/** The pinned proposal with one unit's chip toggled: dropped from the order, or restored to it. */
+export const toggledChip = (pinned: PinnedProposal, unitId: string): PinnedProposal => {
+  const dropped = new Set(pinned.dropped)
+  if (dropped.has(unitId)) dropped.delete(unitId)
+  else dropped.add(unitId)
+  return { ...pinned, dropped }
+}
+
 // ——— Receipts ———
 
 export interface Receipt {

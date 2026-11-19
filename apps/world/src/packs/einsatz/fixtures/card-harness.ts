@@ -15,6 +15,8 @@ import {
   ownReceipt,
   pinProposal,
   receiptsFromSituation,
+  stopLabelOf,
+  toggledChip,
   withReceipts,
   type CardView,
   type OverviewView,
@@ -28,7 +30,6 @@ import {
   planExpectation,
   reduceSelection,
   selectionChangeEvent,
-  stopKey,
   stopObjectId,
   type ClickedObject,
   type Decision,
@@ -209,12 +210,7 @@ export const openCardScreen = async (run: OpenRun, options: { readonly actor?: A
   }
 
   const unitLabel = (unitId: string): string => situation?.units.find(unit => unit.id === unitId)?.label ?? unitId
-  const stopLabel = (stop: Stop): string => {
-    const listed = unitOptions?.targets.find(target => stopKey(target.target) === stopKey(stop))?.label
-    if (listed !== undefined) return listed
-    const id = stopObjectId(stop)
-    return id === null ? 'the map point' : objects().find(object => object.id === id)?.label ?? id
-  }
+  const stopLabel = (stop: Stop): string => stopLabelOf(stop, situation, unitOptions, objects())
 
   const outcomeOf = async (send: () => Promise<CommandOutcome>): Promise<CommandOutcome> => {
     try {
@@ -384,11 +380,7 @@ export const openCardScreen = async (run: OpenRun, options: { readonly actor?: A
           return await pin(card.id)
         }
         case 'chip': {
-          const current = required(pinned, 'pinned proposal')
-          const dropped = new Set(current.dropped)
-          if (dropped.has(control.unitId)) dropped.delete(control.unitId)
-          else dropped.add(control.unitId)
-          pinned = { ...current, dropped }
+          pinned = toggledChip(required(pinned, 'pinned proposal'), control.unitId)
           return
         }
         case 'alternative': {

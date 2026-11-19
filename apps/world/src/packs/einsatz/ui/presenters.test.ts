@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test'
-import { objectIdSchema, type OperationalObject } from '../../../core/model/index.ts'
+import { geoPointFromLonLat, objectIdSchema, type OperationalObject } from '../../../core/model/index.ts'
 import { assertMapTargeting, mapTargetingMaxTags } from '../../../ui/surface-panel-interaction.ts'
 import { einsatzPackId } from '../ids.ts'
 import { recommendAnswerSchema, type RecommendAnswer } from '../recommendation-schema.ts'
@@ -23,7 +23,9 @@ import {
   receiptsFromSituation,
   receiptText,
   siteCard,
+  stopLabelOf,
   targetingFor,
+  toggledChip,
   unitCard,
   withReceipts,
   type PinnedProposal,
@@ -164,6 +166,14 @@ describe('Compact unit card', () => {
     expect(card.targets).toEqual([])
     expect(targetingFor(other.units[0], optionsFor('r1'))).toBeNull()
   })
+
+  test('a stop in words, which the panel and the card harness both use: as the options list it, else the call\'s, site\'s or object\'s label; a point is the map point', () => {
+    expect(stopLabelOf({ taskId: 'job-1' }, situation, optionsFor('r1'), [])).toBe('J-1 Ridge')
+    expect(stopLabelOf({ taskId: 'job-2' }, situation, null, [])).toBe('J-2 Bay')
+    expect(stopLabelOf({ siteId: 'depot-a' }, situation, null, [])).toBe('Depot A')
+    expect(stopLabelOf({ trackId: 'trk-1' }, situation, null, [{ id: oid('trk-1'), label: 'Contact 1' }])).toBe('Contact 1')
+    expect(stopLabelOf({ point: geoPointFromLonLat(11, 59) }, situation, null, [])).toBe(dispatchWords.mapPoint)
+  })
 })
 
 describe('Call card', () => {
@@ -212,6 +222,9 @@ describe('Call card', () => {
     const all = callCard(situation, situation.calls[0]!, pinnedOf({ dropped: new Set(['k1', 'r1']) }), opened, 0)
     expect(all.proposal.button).toMatchObject({ enabled: false, reason: dispatchWords.noUnitChosen })
     expect(all.proposal.order).toBeNull()
+    // A chip tap drops a unit, a second restores it.
+    expect([...toggledChip(pinnedOf(), 'k1').dropped]).toEqual(['k1'])
+    expect([...toggledChip(toggledChip(pinnedOf(), 'k1'), 'k1').dropped]).toEqual([])
   })
 
   test('an invalidated proposal greys out with the reason and is never re-labelled; Refresh comes alive; no proposal says so', () => {

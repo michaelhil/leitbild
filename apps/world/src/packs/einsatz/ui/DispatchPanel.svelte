@@ -25,7 +25,9 @@
     pinProposal,
     receiptsFromSituation,
     receiptText,
+    stopLabelOf,
     targetingFor,
+    toggledChip,
     withReceipts,
     type PinnedProposal,
     type Receipt,
@@ -39,7 +41,6 @@
     reduceSelection,
     selectedObjectOf,
     selectionChangeEvent,
-    stopKey,
     type ClickedObject,
     type DispatchObjectKind,
     type SelectionEffect,
@@ -215,14 +216,7 @@
   }
 
   const unitLabel = (unitId: string): string => situation?.units.find(unit => unit.id === unitId)?.label ?? unitId
-  const stopLabel = (stop: Stop): string => {
-    const listed = options?.targets.find(target => stopKey(target.target) === stopKey(stop))?.label
-    if (listed !== undefined) return listed
-    if ('taskId' in stop) return situation?.calls.find(call => call.id === stop.taskId)?.label ?? stop.taskId
-    if ('siteId' in stop) return situation?.sites.find(site => site.id === stop.siteId)?.label ?? stop.siteId
-    if ('trackId' in stop) return props.objects.find(object => object.id === stop.trackId)?.label ?? stop.trackId
-    return dispatchWords.mapPoint
-  }
+  const stopLabel = (stop: Stop): string => stopLabelOf(stop, situation, options, props.objects)
 
   const outcomeOf = async (run: () => Promise<CommandOutcome>): Promise<CommandOutcome> => {
     try {
@@ -301,12 +295,7 @@
   })
 
   const toggleChip = (unitId: string): void => {
-    const current = pinned
-    if (current === null) return
-    const dropped = new Set(current.dropped)
-    if (dropped.has(unitId)) dropped.delete(unitId)
-    else dropped.add(unitId)
-    pinned = { ...current, dropped }
+    if (pinned !== null) pinned = toggledChip(pinned, unitId)
   }
 
   /** A row tap: that object's card, and a pan only when the map shows it under the panel or not at all. */
