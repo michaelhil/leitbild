@@ -1,5 +1,6 @@
 import { afterAll, describe, expect, test } from 'bun:test'
-import { moduleCapabilityDescriptorSchema, type ModuleCapabilityDescriptor } from '@leitbild/contracts'
+import { ABOUT_RELATION, moduleCapabilityDescriptorSchema, moduleDefinitionDescriptorSchema, type ModuleCapabilityDescriptor } from '@leitbild/contracts'
+import { bundledPlanDefinitions, guidedPlanDefinitionIds } from '../definitions/index.ts'
 import { createHarness } from './fixtures/harness.ts'
 
 const harness = await createHarness()
@@ -80,5 +81,20 @@ describe('the Planning operations as published (design §5.1)', () => {
       expect(definition.currentRevisionId).toMatch(/^[0-9a-f]{16}$/)
     }
     expect((await harness.request('/internal/featured-definitions')).body).toEqual({ definitions: [], listed: [] })
+  })
+
+  test('a guided plan Definition is about its World Scenario; the others link to nothing', async () => {
+    const definitions: Array<{ ref: { id: string }; links?: unknown }> = (await harness.request(`/internal/workspaces/${harness.workspaceId}/definitions`)).body.definitions
+    expect(definitions.filter(entry => 'links' in entry).map(entry => entry.ref.id).sort()).toEqual([...guidedPlanDefinitionIds].sort())
+    for (const definition of definitions) {
+      expect(moduleDefinitionDescriptorSchema.safeParse(definition).success).toBe(true)
+      if (!guidedPlanDefinitionIds.has(definition.ref.id)) continue
+      // The Scenario is the one the Definition's own settings name, and the one its demo Run must come from.
+      const scenario = bundledPlanDefinitions.find(entry => entry.id === definition.ref.id)!.inputs.settings.scenario!
+      expect(definition.links).toEqual([{ rel: ABOUT_RELATION, ref: { workspaceId: harness.workspaceId, moduleId: 'world', type: 'world.scenario', id: scenario.id } }])
+    }
+    expect(ABOUT_RELATION).toBe('about')
+    // Train A and Supply run name a Scenario too, and still publish no link.
+    for (const id of ['train-a-work-week', 'supply-run']) expect(bundledPlanDefinitions.find(entry => entry.id === id)!.inputs.settings.scenario).toBeDefined()
   })
 })
