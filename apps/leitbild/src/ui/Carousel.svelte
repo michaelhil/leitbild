@@ -27,7 +27,7 @@
     variant?: 'hero' | 'panel'
     /** Word in the picker labels: "Show slide 2 of 6: …" / "Show demo 2 of 3: …". */
     noun?: string
-    /** Start stopped: opened by keyboard (`click.detail === 0`) or by deep link. Reduced motion always starts stopped. */
+    /** Start stopped (the Demos modal always does). Reduced motion always starts stopped. */
     startStopped?: boolean
     /** A tap or click on a dot or thumbnail, Prev/Next or a swipe stops rotation until Play (the Demos modal: Start launches the demo on screen). */
     navigationStops?: boolean

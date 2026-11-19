@@ -48,7 +48,7 @@ describe('carousel rotation', () => {
     expect(controller.snapshot().index).toBe(0)
   })
 
-  test('starts stopped for reduced motion, keyboard or deep-link opens, and never rotates until Play', () => {
+  test('starts stopped for reduced motion and the Demos modal, and never rotates until Play', () => {
     const { scheduler, controller } = carousel({ startStopped: true, initialIndex: 2 })
     expect(controller.snapshot()).toMatchObject({ index: 2, stopped: true, rotating: false, live: 'polite' })
     scheduler.advance(60000)
