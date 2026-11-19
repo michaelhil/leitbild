@@ -306,6 +306,42 @@ describe('dynamic Resource and Capability discovery', () => {
     expect(publishedContextSchema.safeParse({ ...published, objects: [] }).success).toBe(false)
   })
 
+  test('a Capability declares the places in its input that name a Resource, each once, with its Module and type', () => {
+    const edit = {
+      id: 'planning.plan.edit', moduleId: 'planning', kind: 'command', scope: { kind: 'resource', resourceType: 'planning.plan' },
+      title: 'Change a plan', description: 'Change a plan with named edits.', risk: 'write', idempotent: false,
+      inputSchema: { type: 'object' }, outputSchema: { type: 'object' },
+    } as const
+    const run = { path: 'demoRun', moduleId: 'world', type: 'world.simulation-run' } as const
+    const nested = { path: 'edits[].run', moduleId: 'world', type: 'world.simulation-run' } as const
+    // A Capability may name another Module's Resource, or its own, in any scope.
+    const declared = moduleCapabilityDescriptorSchema.parse({ ...edit, resourceInputs: [run, nested, { path: 'plan', moduleId: 'planning', type: 'planning.plan' }] })
+    expect(JSON.stringify(declared.resourceInputs)).toBe(JSON.stringify([run, nested, { path: 'plan', moduleId: 'planning', type: 'planning.plan' }]))
+    expect(moduleCapabilityDescriptorSchema.parse({ ...edit, scope: { kind: 'workspace' }, resourceInputs: [run] }).resourceInputs).toHaveLength(1)
+    // Never defaulted: a descriptor without the declaration is the same on the wire.
+    expect(moduleCapabilityDescriptorSchema.parse(edit)).not.toHaveProperty('resourceInputs')
+    expect(JSON.stringify(moduleCapabilityDescriptorSchema.parse(edit))).toBe(JSON.stringify(edit))
+
+    const accepts = (path: string) => moduleCapabilityDescriptorSchema.safeParse({ ...edit, resourceInputs: [{ ...run, path }] }).success
+    for (const path of ['demoRun', 'edits[].run', 'runs[]', 'settings.run.id', 'rows[].cells[].run_id', '_run']) expect([path, accepts(path)]).toEqual([path, true])
+    for (const path of ['', '.', 'run.', '.run', 'edits..run', 'edits[]run', 'edits[0].run', 'edits[*].run', '[]', '[].run', 'edits[][]', 'edits.[]', 'demo run', 'demo-run', '$.run', '1run', 'run/id', `a${'.a'.repeat(128)}`]) {
+      expect([path, accepts(path)]).toEqual([path, false])
+    }
+
+    const refused = (resourceInputs: unknown) => moduleCapabilityDescriptorSchema.safeParse({ ...edit, resourceInputs })
+    expect(refused([]).success).toBe(false)
+    expect(refused(run).success).toBe(false)
+    expect(refused(['demoRun']).success).toBe(false)
+    expect(refused([{ moduleId: run.moduleId, type: run.type }]).success).toBe(false)
+    expect(refused([{ path: run.path, type: run.type }]).success).toBe(false)
+    expect(refused([{ path: run.path, moduleId: run.moduleId }]).success).toBe(false)
+    expect(refused([{ ...run, field: 'demoRun' }]).success).toBe(false)
+    expect(refused([{ ...run, id: 'run-01' }]).success).toBe(false)
+    expect(refused([{ ...run, type: 'simulation-run' }]).success).toBe(false)
+    expect(() => moduleCapabilityDescriptorSchema.parse({ ...edit, resourceInputs: [{ ...run, type: 'planning.simulation-run' }] })).toThrow('namespaced by its owning Module')
+    expect(() => moduleCapabilityDescriptorSchema.parse({ ...edit, resourceInputs: [nested, { ...nested, type: 'world.run-family' }] })).toThrow('duplicate Resource input path: edits[].run')
+  })
+
   test('keeps the selected Resource in each invocation instead of Agent configuration', () => {
     const workspaceId = newWorkspaceId()
     const invocation = moduleCapabilityInvocationSchema.parse({

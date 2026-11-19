@@ -108,6 +108,21 @@ export const publishedContextSchema = z.object({
 }).strict()
 export type PublishedContext = z.infer<typeof publishedContextSchema>
 
+// A place in a Capability's input whose value is the id of a Resource of the
+// named Module and type, in the Workspace of the call. The path is object keys
+// joined by dots, from the top of the input; `[]` after a key means every
+// element of that array: `demoRun`, `edits[].run`, `runs[]`.
+export const capabilityResourceInputSchema = z.object({
+  path: z.string().max(256).regex(/^[A-Za-z_][A-Za-z0-9_]*(?:\[\])?(?:\.[A-Za-z_][A-Za-z0-9_]*(?:\[\])?)*$/),
+  moduleId: moduleIdSchema,
+  type: resourceTypeSchema,
+}).strict().superRefine((input, ctx) => {
+  if (!input.type.startsWith(`${input.moduleId}.`)) {
+    ctx.addIssue({ code: 'custom', path: ['type'], message: 'Resource type must be namespaced by its owning Module' })
+  }
+})
+export type CapabilityResourceInput = z.infer<typeof capabilityResourceInputSchema>
+
 export const moduleCapabilityDescriptorSchema = z.object({
   id: capabilityIdSchema,
   moduleId: moduleIdSchema,
@@ -134,6 +149,11 @@ export const moduleCapabilityDescriptorSchema = z.object({
   acceptsPresentationRecipient: z.literal(true).optional(),
   schedulable: z.boolean().optional(),
   publishes: z.array(capabilityPublicationSchema).min(1).optional(),
+  // The places in the input that name a Resource by id, which may belong to
+  // another Module. A caller bound to a Scope may pass in such a place only
+  // the id of a Resource in that Scope; the declaring Module still validates
+  // the value itself.
+  resourceInputs: z.array(capabilityResourceInputSchema).min(1).optional(),
   inputSchema: jsonSchemaSchema,
   outputSchema: jsonSchemaSchema,
 }).strict().superRefine((capability, ctx) => {
@@ -152,6 +172,13 @@ export const moduleCapabilityDescriptorSchema = z.object({
   if (capability.publishes?.includes('presentation') && (capability.scope.kind !== 'resource' || capability.kind !== 'command')) {
     ctx.addIssue({ code: 'custom', path: ['publishes'], message: 'Presentation requests are commands about their Resource and require a transient browser recipient' })
   }
+  const resourceInputPaths = new Set<string>()
+  capability.resourceInputs?.forEach((input, index) => {
+    if (resourceInputPaths.has(input.path)) {
+      ctx.addIssue({ code: 'custom', path: ['resourceInputs', index, 'path'], message: `duplicate Resource input path: ${input.path}` })
+    }
+    resourceInputPaths.add(input.path)
+  })
   if (!capability.id.startsWith(`${capability.moduleId}.`)) {
     ctx.addIssue({ code: 'custom', path: ['id'], message: 'Capability id must be namespaced by its owning Module' })
   }
