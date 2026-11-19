@@ -91,13 +91,13 @@ const queueRefusal = (state: EngineState, unit: UnitRecord, target: Target, load
   if (!linksToTask(unit, task)) return refused('cross_side_reference', `${unit.label} cannot serve another side's ${task.label}`)
   // A task the chain already holds is taken again only as a further trip for load still waiting.
   const trips = unit.orders.filter(step => 'taskId' in step.target && step.target.taskId === task.id).length
-  if (trips > 0) return loadLeftFor(state, unit, task, trips) ? undefined : refused('requirement_covered', `${task.label} needs nothing more that ${unit.label} provides`)
+  if (trips > 0) return loadLeftFor(state, unit, task, trips) ? undefined : refused('requirement_covered', `${task.label} needs nothing more than ${unit.label} provides`)
   // By then the unit carries nothing and serves no other task.
   const free = patch(unit, { load: {}, taskId: undefined })
   const contribution = contributionOf(state.catalog, task, assignedTo(state.units.values(), task), free)
   if (contribution.adds) return undefined
   if (contribution.unmet[0] !== undefined) return refused('requirement_unmet', contribution.unmet[0])
-  if (contribution.covered) return refused('requirement_covered', `${task.label} needs nothing more that ${unit.label} provides`)
+  if (contribution.covered) return refused('requirement_covered', `${task.label} needs nothing more than ${unit.label} provides`)
   return refused('requirement_unmet', `${unit.label} provides nothing ${task.label} needs`)
 }
 

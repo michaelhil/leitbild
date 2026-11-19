@@ -97,7 +97,7 @@ describe('Einsatz commands on a running clock', () => {
       expect(durableUpserts(run, 'c1')).toBe(before)
       expect(run.unit('c1')).toMatchObject({ phase: 'mobilizing', taskId: 'low1' })
 
-      expect(await run.refusal(ids.order, send(['c3'], { taskId: 'low1' }))).toEqual({ code: 'requirement_covered', reason: 'requirement_covered: LOW1 needs nothing more that C3 provides' })
+      expect(await run.refusal(ids.order, send(['c3'], { taskId: 'low1' }))).toEqual({ code: 'requirement_covered', reason: 'requirement_covered: LOW1 needs nothing more than C3 provides' })
 
       await accepted(run, ids.order, send(['c2'], { taskId: 'mid1' }))
       run.forward(1_000)

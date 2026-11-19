@@ -257,7 +257,7 @@ describe('Einsatz job chains: rules', () => {
       send(['c1'], { taskId: 'one' }),
       send(['c2'], { taskId: 'two' }),
     ])
-    expect(await refusalOf(state, queue('c1', { taskId: 'one' }))).toEqual({ code: 'requirement_covered', reason: 'requirement_covered: ONE needs nothing more that C1 provides' })
+    expect(await refusalOf(state, queue('c1', { taskId: 'one' }))).toEqual({ code: 'requirement_covered', reason: 'requirement_covered: ONE needs nothing more than C1 provides' })
     // Two wait at TWO and C2 carries one: a second trip there is work, a third is not.
     const second = await runAll(state, [queue('c2', { siteId: 's1' }), queue('c2', { taskId: 'two' })])
     expect(stepsOf(unitOf(second, 'c2'))).toEqual([['step-1', 'serve', 'active'], ['step-2', 'deliver', 'queued'], ['step-3', 'serve', 'queued']])
