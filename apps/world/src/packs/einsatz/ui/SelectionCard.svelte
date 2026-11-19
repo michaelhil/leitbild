@@ -21,6 +21,7 @@
     readonly back: () => void
     readonly targetRow: (target: Stop) => void
     readonly recall: (unitId: string) => void
+    readonly undo: (unitId: string, commandId: string) => void
     readonly chooseStop: (stopId: string) => void
     readonly moveStop: (stopId: string, direction: -1 | 1) => void
     readonly order: (input: UnitOrderInput) => void
@@ -105,6 +106,11 @@
       </ol>
     {/if}
     {#if card.readOnly === null}
+      {@const undo = card.undo}
+      <div class="undo-row">
+        <button type="button" disabled={props.unitPending || !undo.enabled} onclick={() => { if (undo.commandId !== null) props.undo(card.id, undo.commandId) }}>{undo.label}</button>
+        {#if undo.reason !== null}<span class="reason">{undo.reason}</span>{/if}
+      </div>
       {#if props.unitPending || card.targetNotice !== null}<p class="note" role="status">{props.unitPending ? 'Updating plan…' : card.targetNotice}</p>{/if}
       {#if card.targets.length > 0 || card.targetsLoading}
         <details class="unit-disclosure">
@@ -255,6 +261,7 @@
   button.stop-target { border-color: transparent; }
   button.stop-target:hover { border-color: var(--border); }
   .move-controls { display: flex; gap: 4px; }
+  .undo-row { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; }
   .plan li.active .what { font-weight: 650; }
   .plan .predicted { color: var(--muted); font-style: italic; }
   .index { flex: none; min-width: 18px; text-align: center; color: var(--critical); font-variant-numeric: tabular-nums; }

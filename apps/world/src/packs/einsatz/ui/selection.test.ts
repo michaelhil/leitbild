@@ -76,6 +76,17 @@ describe('map-first dispatch', () => {
     }])
   })
 
+  test('after an Undo the unit\'s plan no longer matches the options read before it, so a target tap sends nothing until its options are read again', () => {
+    // The options were read while the unit held its stop; the Undo took the stop back.
+    const undone = { ...busy, plan: [] }
+    const stale = reduceSelection(selected(), click(call), assigned, undone)
+    expect(stale.effects.filter(effect => effect.kind === 'submit')).toEqual([])
+    expect(stale.state.selection).toEqual({ kind: 'unit', unitId: unit.id })
+    expect(reduceSelection(selected(), click(call), options, undone).effects).toEqual([{
+      kind: 'submit', job: null, input: { units: [unit.id], stops: [{ taskId: call.id }], expectedPlan: [] },
+    }])
+  })
+
   test('queue controls move queued neighbours and keep the active route pinned', () => {
     const plan = planExpectation([old, next, { ...next, id: 'step-3' }])
     expect(moveQueuedStop(plan, old.id, 1)).toBeNull()

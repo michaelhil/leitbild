@@ -3,7 +3,7 @@ import { missingArtworkMessage } from '../../../ui/map-runtime/catalogue-symbol-
 import { invokeSimulationRunCapability, querySimulationRunCapability } from '../../../ui/simulation-run-client.ts'
 import type { CapabilityInvocationResponse } from '../../../ui/types.ts'
 import type { EinsatzCommandId, einsatzQueryIds } from '../capabilities.ts'
-import { unitOrderInputSchema, unitPlanReorderInputSchema, unitRecallInputSchema, unitStopRemoveInputSchema, type PlanExpectation, type UnitOrderInput } from '../order-schema.ts'
+import { unitOrderInputSchema, unitPlanReorderInputSchema, unitRecallInputSchema, unitStopRemoveInputSchema, unitUndoInputSchema, type PlanExpectation, type UnitOrderInput } from '../order-schema.ts'
 import { recommendAnswerSchema, type RecommendAnswer } from '../recommendation-schema.ts'
 import { refusalText } from './presenters.ts'
 import { situationInputSchema, situationSchema, unitOptionsInputSchema, unitOptionsSchema, type Situation, type UnitOptions } from '../situation/schema.ts'
@@ -34,6 +34,7 @@ export const dispatchQueryIds = {
 
 export const dispatchCommandIds = {
   order: 'world.einsatz.unit.order',
+  undo: 'world.einsatz.unit.undo',
   planReorder: 'world.einsatz.unit.plan.reorder',
   stopRemove: 'world.einsatz.unit.stop.remove',
   recall: 'world.einsatz.unit.recall',
@@ -53,6 +54,8 @@ export interface EinsatzClient {
   readonly unitOptions: (unitId: string) => Promise<UnitOptions>
   readonly recommend: (taskId: string) => Promise<RecommendAnswer>
   readonly order: (input: UnitOrderInput) => Promise<CommandOutcome>
+  /** Takes back the unit's order the command gave, by the `commandId` its acceptance answered with. */
+  readonly undo: (unitId: string, commandId: string) => Promise<CommandOutcome>
   readonly reorder: (unitId: string, expectedPlan: PlanExpectation, stopIds: readonly string[]) => Promise<CommandOutcome>
   readonly removeStop: (unitId: string, stopId: string, expectedPlan: PlanExpectation) => Promise<CommandOutcome>
   readonly recall: (unitId: string) => Promise<CommandOutcome>
@@ -81,6 +84,7 @@ export const createEinsatzClient = (ports: EinsatzClientPorts): EinsatzClient =>
     unitOptions: async unitId => unitOptionsSchema.parse(await ports.query(dispatchQueryIds.unitOptions, unitOptionsInputSchema.parse({ unitId }))),
     recommend: async taskId => recommendAnswerSchema.parse(await ports.query(dispatchQueryIds.recommend, { taskId })),
     order: async input => await command(dispatchCommandIds.order, unitOrderInputSchema.parse(input)),
+    undo: async (unitId, commandId) => await command(dispatchCommandIds.undo, unitUndoInputSchema.parse({ unitId, commandId })),
     reorder: async (unitId, expectedPlan, stopIds) => await command(dispatchCommandIds.planReorder, unitPlanReorderInputSchema.parse({ unitId, expectedPlan, stopIds })),
     removeStop: async (unitId, stopId, expectedPlan) => await command(dispatchCommandIds.stopRemove, unitStopRemoveInputSchema.parse({ unitId, stopId, expectedPlan })),
     recall: async unitId => await command(dispatchCommandIds.recall, unitRecallInputSchema.parse({ unitId })),

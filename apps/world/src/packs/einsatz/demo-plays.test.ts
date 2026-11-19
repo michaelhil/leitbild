@@ -18,7 +18,7 @@ import type { RecommendAnswer } from './recommendation-schema.ts'
 import type { Situation, UnitOptions } from './situation/schema.ts'
 import { einsatzPackView } from './ui-pack.ts'
 import { dispatchMapCover, panelBottomClearancePx, panelLayoutFor, panelTopClearancePx } from './ui/dispatch-layout.ts'
-import { einsatzRecordsKey } from './ui/presenters.ts'
+import { dispatchWords, einsatzRecordsKey, receiptUndoMs } from './ui/presenters.ts'
 import { planExpectation } from './ui/selection.ts'
 
 /**
@@ -672,6 +672,47 @@ describe('Dispatch panel click counts', () => {
       await screen.press({ kind: 'recall' })
       expect(screen.actions()).toBe(2)
       expect(sent(screen)).toEqual([[ids.recall, { unitId }, 'ok']])
+    })
+  })
+
+  test('undo your last order: 1 click (the receipt\'s Undo, within 8 s of the order)', async () => {
+    await scene(async ({ run, screen, situation, callId, answer }) => {
+      const unitId = chosenCarrier(situation, answer)
+      await screen.mapTap(unitId)
+      await screen.mapTap(callId)
+      const ordered = screen.calls[0]!.result
+      expect(ordered.ok).toBe(true)
+      expect(screen.receipts()[0]).toMatchObject({ commandId: ordered.commandId, undo: dispatchWords.undo })
+      screen.resetActions()
+      await screen.press({ kind: 'receipt-undo' })
+      expect(screen.actions()).toBe(1)
+      expect(sent(screen).at(-1)).toEqual([ids.undo, { unitId, commandId: ordered.commandId }, 'ok'])
+      expect(run.unit(unitId).orders).toEqual([])
+      expect(run.unit(unitId).phase).toBe('available')
+    })
+  })
+
+  test('undo a unit\'s last order once its receipt\'s Undo is gone: 2 clicks (the unit, "Undo last order"); a refused Undo stays disabled with the engine\'s reason', async () => {
+    await scene(async ({ run, screen, situation, callId, answer }) => {
+      const unitId = chosenCarrier(situation, answer)
+      await screen.mapTap(unitId)
+      await screen.mapTap(callId)
+      const ordered = screen.calls[0]!.result
+      screen.wait(receiptUndoMs)
+      await expect(screen.press({ kind: 'receipt-undo' })).rejects.toThrow('offers no Undo')
+      screen.resetActions()
+      await screen.mapTap(unitId)
+      expect(screen.card()).toMatchObject({ kind: 'unit', undo: { enabled: true, commandId: ordered.commandId } })
+      await screen.press({ kind: 'undo' })
+      expect(screen.actions()).toBe(2)
+      expect(sent(screen).at(-1)).toEqual([ids.undo, { unitId, commandId: ordered.commandId }, 'ok'])
+      expect(run.unit(unitId).orders).toEqual([])
+      // The Undo itself is the unit's last command now, and the engine takes nothing back from it.
+      await screen.press({ kind: 'undo' })
+      expect(sent(screen).at(-1)?.[2]).toBe('nothing_to_undo')
+      const card = screen.card()
+      expect(card?.kind === 'unit' ? card.undo : null).toMatchObject({ enabled: false, reason: screen.feedback() })
+      expect(screen.feedback()).toContain('no stop to take back')
     })
   })
 

@@ -25,6 +25,8 @@ import { canTarget, matchingOptions, selectedObjectOf, stopKey, stopObjectId, ty
  * the panel's clocks follow the Run clock between reads.
  */
 
+/** How long a receipt of this screen's own order offers Undo. The card's "Undo last order" stays until the engine refuses it. */
+export const receiptUndoMs = 8_000
 /** The most receipts the footer keeps, newest on top. */
 export const maxReceipts = 3
 
@@ -38,6 +40,9 @@ export const dispatchWords = {
   newBadge: 'New',
   waiting: 'Waiting',
   overdue: 'Overdue',
+  undo: 'Undo',
+  undoLast: 'Undo last order',
+  nothingToUndo: 'No order to undo',
   deliverTo: 'Deliver to',
   refresh: 'Refresh suggestion',
   whyNot: 'Why not others?',
@@ -215,6 +220,13 @@ export interface UnitCardView {
   readonly status: { readonly word: string; readonly tone: UnitTone; readonly due: string | null }
   readonly readOnly: string | null
   readonly recall: ButtonView
+  /**
+   * "Undo last order (by Assistant: C-2 → Depot B)": who gave the order it
+   * takes back and where it sent the unit. Disabled with a reason while the
+   * situation names no command to take back, and with the engine's own
+   * refusal once the engine refused to take back this command.
+   */
+  readonly undo: ButtonView & { readonly commandId: string | null }
   readonly planHeading: string
   readonly plan: ReadonlyArray<PlanStopView>
   readonly removable: boolean
@@ -231,6 +243,31 @@ const loadLabels = (unit: SituationUnit): ReadonlyArray<string> => unit.carry?.l
 const dueText = (unit: SituationUnit, elapsedS: number): string | null => unit.phaseDueInS === null ? null : clockText(unit.phaseDueInS - elapsedS)
 export const jobText = (job: CurrentJob): string => `${job.label} · ${job.code}`
 
+/** The engine's refusal to take back a unit's command, kept against that command: the card's Undo shows it until the unit's last order changes. */
+export interface UndoRefusal {
+  readonly unitId: string
+  readonly commandId: string
+  readonly text: string
+}
+
+/** Who gave the unit's last order and where it sent the unit: the stops that actor gave, else the unit's status. */
+const lastOrderText = (unit: SituationUnit): string | null => {
+  const last = unit.lastOrder
+  if (last === null) return null
+  const stops = unit.plan.filter(stop => stop.by.isViewer === last.by.isViewer && stop.by.label === last.by.label).map(stop => stop.label)
+  return `by ${last.by.label}: ${stops.length === 0 ? unit.status.word : stops.join(' → ')}`
+}
+
+const undoButton = (unit: SituationUnit, readOnly: string | null, refusal: UndoRefusal | null): UnitCardView['undo'] => {
+  const commandId = unit.lastOrder?.commandId ?? null
+  const lastOrder = lastOrderText(unit)
+  const refused = refusal !== null && refusal.unitId === unit.id && refusal.commandId === commandId ? refusal.text : null
+  return {
+    ...button(lastOrder === null ? dispatchWords.undoLast : `${dispatchWords.undoLast} (${lastOrder})`, readOnly ?? (commandId === null ? dispatchWords.nothingToUndo : refused)),
+    commandId,
+  }
+}
+
 // Keep list ordering independent of live ETA changes so rows do not shift under a pointer.
 const targetRows = (unit: SituationUnit, options: UnitOptions | null, words: Words): UnitCardView['targets'] => {
   const assigned = new Set(unit.plan.map(stop => stopKey(stop.target)))
@@ -245,7 +282,7 @@ const targetRows = (unit: SituationUnit, options: UnitOptions | null, words: Wor
 }
 
 /** The compact control card for the asset selected on the map or in the unit grid. */
-export const unitCard = (situation: Situation, unit: SituationUnit, options: UnitOptions | null, elapsedS: number): UnitCardView => {
+export const unitCard = (situation: Situation, unit: SituationUnit, options: UnitOptions | null, elapsedS: number, undoRefusal: UndoRefusal | null = null): UnitCardView => {
   const { words } = situation
   const readOnly = unit.commandedBy === null ? null : `Commanded by ${unit.commandedBy}`
   const destroyed = unit.status.tone === 'out' ? unit.status.word : null
@@ -263,6 +300,7 @@ export const unitCard = (situation: Situation, unit: SituationUnit, options: Uni
     status: { word: unit.status.word, tone: unit.status.tone, due: dueText(unit, elapsedS) },
     readOnly,
     recall: button(recallLabel, readOnly ?? destroyed ?? (loaded.length > 0 ? `Carrying ${joined(loaded)}: deliver first` : null)),
+    undo: undoButton(unit, readOnly, undoRefusal),
     planHeading: words.plan,
     plan: unit.plan.map((stop, index) => ({
       id: stop.id,
@@ -564,6 +602,8 @@ export interface CardInputs {
   /** The selected call's row as last seen, for its card once it closed. */
   readonly lastSeenCall: SituationCall | null
   readonly elapsedS: number
+  /** The engine's last refusal of an Undo, for the unit card's Undo. */
+  readonly undoRefusal: UndoRefusal | null
 }
 
 /** The selection block's card; null for S0 (and a marked track). A unit or site the situation no longer lists has no card. */
@@ -572,7 +612,7 @@ export const cardFor = (situation: Situation, selection: Selection, inputs: Card
     case 'none': return null
     case 'unit': {
       const unit = situation.units.find(entry => entry.id === selection.unitId)
-      return unit === undefined ? null : unitCard(situation, unit, inputs.options, inputs.elapsedS)
+      return unit === undefined ? null : unitCard(situation, unit, inputs.options, inputs.elapsedS, inputs.undoRefusal)
     }
     case 'call': {
       const call = situation.calls.find(entry => entry.id === selection.callId)
@@ -798,6 +838,12 @@ export interface Receipt {
   readonly actor: string | null
   /** The unit, the target and what was dropped: "A2 → C-1 (drops C-3 · P3)". */
   readonly text: string
+  /**
+   * Its Undo, "Undo (A2 returns to C-3 · P3)" when the order dropped a task,
+   * else "Undo": only on this screen's own orders; null on another actor's
+   * and on a return, which the engine never takes back.
+   */
+  readonly undo: string | null
   readonly atMs: number
   /** This viewer's own order, from its own result: it names what the order dropped, which the situation cannot. */
   readonly own: boolean
@@ -807,14 +853,18 @@ export interface Receipt {
 export const receiptText = (receipt: Receipt): string => receipt.actor === null ? receipt.text : `${receipt.actor}: ${receipt.text}`
 
 /** A receipt of this viewer's own accepted order, naming what it dropped; its actor comes from the situation. */
-export const ownReceipt = (options: { readonly commandId: string; readonly unitIds: ReadonlyArray<string>; readonly unitLabel: string; readonly targetLabel: string; readonly dropped: string | null; readonly atMs: number }): Receipt => ({
+export const ownReceipt = (options: { readonly commandId: string; readonly unitIds: ReadonlyArray<string>; readonly unitLabel: string; readonly targetLabel: string; readonly dropped: string | null; readonly undoable: boolean; readonly atMs: number }): Receipt => ({
   commandId: options.commandId,
   unitIds: options.unitIds,
   actor: null,
   text: `${options.unitLabel} → ${options.targetLabel}${options.dropped === null ? '' : ` (drops ${options.dropped})`}`,
+  undo: !options.undoable ? null : options.dropped === null ? dispatchWords.undo : `${dispatchWords.undo} (${options.unitLabel} returns to ${options.dropped})`,
   atMs: options.atMs,
   own: true,
 })
+
+/** Whether a receipt still offers its Undo: this screen's own order, for `receiptUndoMs` after it was accepted. */
+export const receiptUndoable = (receipt: Receipt, nowMs: number): boolean => receipt.undo !== null && nowMs - receipt.atMs < receiptUndoMs
 
 /** Receipts of orders the situation shows as new since the previous read: another actor's, or this viewer's, whose own receipt then takes its actor. */
 export const receiptsFromSituation = (previous: Situation | null, next: Situation, atMs: number): ReadonlyArray<Receipt> => {
@@ -824,7 +874,7 @@ export const receiptsFromSituation = (previous: Situation | null, next: Situatio
     const commandId = unit.lastOrder?.commandId ?? null
     if (commandId === null || unit.lastOrder === null || before.get(unit.id) === commandId) return []
     const target = unit.plan[0]?.label ?? unit.status.word
-    return [{ commandId, unitIds: [unit.id], actor: unit.lastOrder.by.label, text: `${unit.label} → ${target}`, atMs, own: false }]
+    return [{ commandId, unitIds: [unit.id], actor: unit.lastOrder.by.label, text: `${unit.label} → ${target}`, undo: null, atMs, own: false }]
   })
 }
 
@@ -832,7 +882,7 @@ export const receiptsFromSituation = (previous: Situation | null, next: Situatio
  * Adds receipts, newest on top; one per command, at most `maxReceipts`. A
  * viewer's own receipt takes the place of the situation's for the same
  * command, whichever arrived first, so what it names is never lost; it
- * keeps that place and the actor the situation names.
+ * keeps that place, its Undo window and the actor the situation names.
  */
 export const withReceipts = (list: ReadonlyArray<Receipt>, added: ReadonlyArray<Receipt>): ReadonlyArray<Receipt> => {
   const ownOf = new Map(added.filter(receipt => receipt.own).map(receipt => [receipt.commandId, receipt]))

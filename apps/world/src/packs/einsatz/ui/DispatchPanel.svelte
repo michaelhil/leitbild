@@ -25,12 +25,14 @@
     pinProposal,
     receiptsFromSituation,
     receiptText,
+    receiptUndoable,
     stopLabelOf,
     targetingFor,
     toggledChip,
     withReceipts,
     type PinnedProposal,
     type Receipt,
+    type UndoRefusal,
   } from './presenters.ts'
   import {
     activationActs,
@@ -68,6 +70,7 @@
   let opened = $state.raw<ReadonlySet<string>>(new Set())
   let lastSeenCall = $state.raw<SituationCall | null>(null)
   let receipts = $state.raw<ReadonlyArray<Receipt>>([])
+  let undoRefusal = $state.raw<UndoRefusal | null>(null)
   /** The last refusal or failure the panel reports outside a target, shown in the card's slot. */
   let feedback = $state<string | null>(null)
   /** The call whose Close waits for its inline confirm. */
@@ -101,13 +104,18 @@
     const now = props.currentTime()
     return readAtRunMs === null || now === undefined ? 0 : Math.max(0, (Date.parse(now) - readAtRunMs) / 1_000)
   })
-  const card = $derived(situation === null ? null : cardFor(situation, selection.selection, { options, pinned, opened, lastSeenCall, elapsedS }))
+  const card = $derived(situation === null ? null : cardFor(situation, selection.selection, { options, pinned, opened, lastSeenCall, elapsedS, undoRefusal }))
   const lists = $derived(situation === null ? null : overview(situation, selection.selection, opened, elapsedS))
   const contacts = $derived.by(() => {
     if (lists === null || !lists.contacts) return []
     void clock
     const now = props.currentTime()
     return contactRows(props.objects, now === undefined ? null : Date.parse(now), selectedObjectOf(selection.selection))
+  })
+  /** Wall time, on the panel's clock, for the receipts' Undo window. */
+  const nowMs = $derived.by(() => {
+    void clock
+    return Date.now()
   })
   const missingArtwork = $derived.by(() => {
     void iconRevision
@@ -202,7 +210,7 @@
       case 'submit': {
         const unitId = effect.input.units[0]!
         void editUnit(unitId, async () => await client.order(effect.input), {
-          unitIds: [unitId], target: stopLabel(effect.input.stops[0]!), dropped: effect.job === null ? null : jobText(effect.job),
+          unitIds: [unitId], target: stopLabel(effect.input.stops[0]!), dropped: effect.job === null ? null : jobText(effect.job), undoable: true,
         }, effect.input.when === undefined)
         return
       }
@@ -226,8 +234,8 @@
     }
   }
 
-  /** A card's command: a refusal shows in the card's slot; an accepted order leaves a receipt. */
-  const command = async (run: () => Promise<CommandOutcome>, receipt: { readonly unitIds: ReadonlyArray<string>; readonly target: string; readonly dropped?: string | null } | null): Promise<boolean> => {
+  /** A card's command: a refusal shows in the card's slot; an accepted order leaves a receipt, with Undo when the engine can take the order back. */
+  const command = async (run: () => Promise<CommandOutcome>, receipt: { readonly unitIds: ReadonlyArray<string>; readonly target: string; readonly dropped?: string | null; readonly undoable: boolean } | null): Promise<boolean> => {
     feedback = null
     const outcome = await outcomeOf(run)
     if (disposed) return false
@@ -236,13 +244,28 @@
       return false
     }
     if (receipt !== null) {
-      receipts = withReceipts(receipts, [ownReceipt({ commandId: outcome.commandId, unitIds: receipt.unitIds, unitLabel: receipt.unitIds.map(unitLabel).join(', '), targetLabel: receipt.target, dropped: receipt.dropped ?? null, atMs: Date.now() })])
+      receipts = withReceipts(receipts, [ownReceipt({ commandId: outcome.commandId, unitIds: receipt.unitIds, unitLabel: receipt.unitIds.map(unitLabel).join(', '), targetLabel: receipt.target, dropped: receipt.dropped ?? null, undoable: receipt.undoable, atMs: Date.now() })])
     }
     return true
   }
 
   const order = (input: UnitOrderInput): void => {
-    void command(async () => await client.order(input), { unitIds: input.units, target: input.stops.map(stopLabel).join(' → ') })
+    void command(async () => await client.order(input), { unitIds: input.units, target: input.stops.map(stopLabel).join(' → '), undoable: true })
+  }
+
+  /** Takes back a command's order of each unit it named, in turn; the engine's refusal stops there and leaves that unit card's Undo disabled with it. */
+  const undoEach = async (unitIds: ReadonlyArray<string>, commandId: string): Promise<CommandOutcome> => {
+    const [unitId, ...rest] = unitIds
+    if (unitId === undefined) throw new Error(`Undo of ${commandId} names no unit`)
+    const outcome = await client.undo(unitId, commandId)
+    if (!outcome.ok) {
+      undoRefusal = { unitId, commandId, text: outcome.text }
+      return outcome
+    }
+    return rest.length === 0 ? outcome : await undoEach(rest, commandId)
+  }
+  const undo = (unitIds: ReadonlyArray<string>, commandId: string): void => {
+    void editUnit(unitIds[0]!, async () => await undoEach(unitIds, commandId))
   }
 
   const editUnit = async (unitId: string, run: () => Promise<CommandOutcome>, receipt: Parameters<typeof command>[1] = null, initialOrder = false): Promise<void> => {
@@ -471,7 +494,8 @@
             targetRow={(target: Stop) => send({ kind: 'target-row', target })}
             chooseStop={(stopId: string) => send({ kind: 'stop', stopId })}
             {moveStop}
-            recall={(unitId: string) => { void editUnit(unitId, async () => await client.recall(unitId), { unitIds: [unitId], target: situation === null ? dispatchWords.panel : situation.words.return }) }}
+            recall={(unitId: string) => { void editUnit(unitId, async () => await client.recall(unitId), { unitIds: [unitId], target: situation === null ? dispatchWords.panel : situation.words.return, undoable: false }) }}
+            undo={act((unitId: string, commandId: string) => undo([unitId], commandId))}
             order={act(order)}
             toggleChip={act(toggleChip)}
             refresh={act((callId: string) => { void pin(callId) })}
@@ -495,7 +519,11 @@
       {/if}
       {#if missingArtwork !== null}<p class="artwork">{missingArtwork}</p>{/if}
       {#if receipts.length > 0}
-        <p class="receipt-line latest" role="status">{receiptText(receipts[0]!)}</p>
+        {@const latest = receipts[0]!}
+        <div class="footer">
+          <p class="receipt-line latest" role="status">{receiptText(latest)}</p>
+          {#if receiptUndoable(latest, nowMs)}<button type="button" class="undo" disabled={unitPending} onclick={act(() => undo(latest.unitIds, latest.commandId))}>{latest.undo}</button>{/if}
+        </div>
       {/if}
     {/if}
   {/if}
@@ -542,6 +570,8 @@
   button:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
   .tab { display: grid; gap: 2px; padding: 8px 14px; border: 0; border-radius: 10px 0 0 0; background: transparent; text-align: left; }
   .receipt-line { color: var(--muted); font-size: 11px; }
-  .receipt-line.latest { flex: none; margin: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+  .footer { flex: none; display: flex; align-items: center; gap: 6px; min-width: 0; }
+  .receipt-line.latest { flex: 1; min-width: 0; margin: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+  .footer .undo { flex: none; border-color: var(--accent); color: var(--accent); font-weight: 650; }
   .fold { font-size: 18px; line-height: 1; }
 </style>
