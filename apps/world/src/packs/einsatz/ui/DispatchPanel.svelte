@@ -267,7 +267,12 @@
     return rest.length === 0 ? outcome : await undoEach(rest, commandId)
   }
   const undo = (unitIds: ReadonlyArray<string>, commandId: string): void => {
-    void editUnit(unitIds[0]!, async () => await undoEach(unitIds, commandId))
+    void editUnit(unitIds[0]!, async () => {
+      const outcome = await outcomeOf(async () => await undoEach(unitIds, commandId))
+      // An Undo from the folded sheet's tab that is refused opens the sheet, where its reason can be read.
+      if (!outcome.ok && !open) sheetOpenedByOperator = true
+      return outcome
+    })
   }
 
   const editUnit = async (unitId: string, run: () => Promise<CommandOutcome>, receipt: Parameters<typeof command>[1] = null, initialOrder = false): Promise<void> => {
@@ -454,10 +459,16 @@
   aria-label={dispatchWords.panel}
 >
   {#if !open}
-    <button type="button" class="tab" onclick={act(() => { sheetOpenedByOperator = true })}>
-      <strong>{situation === null ? dispatchWords.panel : edgeTabText(situation)}</strong>
-      {#if receipts[0] !== undefined}<span class="receipt-line">{receiptText(receipts[0])}</span>{/if}
-    </button>
+    <div class="folded">
+      <button type="button" class="tab" onclick={act(() => { sheetOpenedByOperator = true })}>
+        <strong>{situation === null ? dispatchWords.panel : edgeTabText(situation)}</strong>
+        {#if receipts[0] !== undefined}<span class="receipt-line">{receiptText(receipts[0])}</span>{/if}
+      </button>
+      {#if receipts[0] !== undefined && receiptUndoable(receipts[0], nowMs)}
+        {@const latest = receipts[0]}
+        <button type="button" class="undo" disabled={unitPending} onclick={act(() => undo(latest.unitIds, latest.commandId))}>{latest.undo}</button>
+      {/if}
+    </div>
   {:else}
     <header class="head">
       <h2>{dispatchWords.panel}</h2>
@@ -556,10 +567,13 @@
   .artwork { flex: none; margin: 0; color: var(--warning); font-size: 11px; }
   button { min-height: 44px; min-width: 44px; padding: 4px 10px; border: 1px solid var(--border); border-radius: 8px; background: var(--panel); color: inherit; font: inherit; font-size: 12px; cursor: pointer; touch-action: manipulation; }
   button:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+  /* The folded sheet: its tab opens it; beside the tab, never inside it, the latest receipt's Undo while it lasts. */
+  .folded { display: flex; align-items: center; gap: 6px; min-width: 0; }
+  .folded .undo { margin-right: 8px; }
   .tab { display: grid; gap: 2px; padding: 8px 14px; border: 0; border-radius: 10px 0 0 0; background: transparent; text-align: left; }
   .receipt-line { color: var(--muted); font-size: 11px; }
   .footer { flex: none; display: flex; align-items: center; gap: 6px; min-width: 0; }
   .receipt-line.latest { flex: 1; min-width: 0; margin: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
-  .footer .undo { flex: none; border-color: var(--accent); color: var(--accent); font-weight: 650; }
+  .undo { flex: none; border-color: var(--accent); color: var(--accent); font-weight: 650; }
   .fold { font-size: 18px; line-height: 1; }
 </style>
