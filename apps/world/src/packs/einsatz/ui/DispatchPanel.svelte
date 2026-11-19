@@ -11,27 +11,26 @@
   import { dispatchMapCover, panelBottomClearancePx, panelEdgeGapPx, panelLayoutFor, panelTopClearancePx, sheetOpen, shownClearOfPanel } from './dispatch-layout.ts'
   import { createIconCache, runEinsatzClient, situationIconIds, type CommandOutcome } from './einsatz-client.ts'
   import {
-    armedOrderWith,
-    busyChoices,
     cardFor,
     contactRows,
-    currentJobOf,
     deliverToOrder,
     dispatchKindOf,
     dispatchWords,
     edgeTabText,
     einsatzRecordsKey,
     emptySelectionText,
-    movePromptText,
+    jobText,
     overview,
     ownReceipt,
-    panelLayoutKey,
     pinProposal,
+    promptChoices,
     receiptsFromSituation,
+    receiptText,
     receiptUndoable,
+    stopLabelOf,
     targetingFor,
+    toggledChip,
     withReceipts,
-    type ArmedOrder,
     type PinnedProposal,
     type Receipt,
   } from './presenters.ts'
@@ -42,8 +41,8 @@
     selectedObjectOf,
     selectionChangeEvent,
     stopObjectId,
+    submitOrder,
     type ClickedObject,
-    type CurrentJob,
     type DispatchObjectKind,
     type SelectionEffect,
     type SelectionEvent,
@@ -61,9 +60,10 @@
    *
    * It holds the Run's situation, read on open and whenever an Einsatz
    * record the screen sees changes (`einsatzRecordsKey`: Einsatz announces
-   * no Pack data revision); an armed unit's options, read on arming and on
-   * every such change while it stays armed, with the armed list's order
-   * fixed at arming; and the
+   * no Pack data revision); the shown unit's options, read when its card
+   * opens, again on arming, and on every such change while its card shows,
+   * each read handed to the selection table, which arms a unit with the read
+   * its card holds, so its first tap is judged as every later one; and the
    * call card's proposal, pinned when the card opens and read again only on
    * Refresh, which keeps the old answer greyed until the new one arrives. It
    * never holds the configuration.
@@ -79,8 +79,8 @@
    * as the banner's and the card's × do.
    *
    * No card, row or footer command acts within the double-click interval of
-   * the last one that acted or of the last re-layout (`activationActs`), so
-   * a double-click never reaches what took the first click's place.
+   * the last one that acted (`activationActs`), so a double-click never
+   * reaches what took the first click's place; every other click acts.
    */
   const props: SurfacePanelProps = $props()
 
@@ -92,7 +92,6 @@
   let problem = $state<string | null>(null)
   let selection = $state.raw<SelectionState>(initialSelection)
   let options = $state.raw<UnitOptions | null>(null)
-  let armedOrder = $state.raw<ArmedOrder | null>(null)
   let pinned = $state.raw<PinnedProposal | null>(null)
   let opened = $state.raw<ReadonlySet<string>>(new Set())
   let lastSeenCall = $state.raw<SituationCall | null>(null)
@@ -108,7 +107,7 @@
   let iconRevision = $state(0)
   let root = $state<HTMLElement | null>(null)
   let disposed = false
-  /** When the last command acted or the layout last changed: the double-click guard. */
+  /** When the last command acted: the double-click guard. */
   let quietFromMs: number | null = null
 
   const icons = createIconCache({ load: loadMapSymbols, changed: () => { iconRevision += 1 } })
@@ -125,7 +124,7 @@
     const now = props.currentTime()
     return readAtRunMs === null || now === undefined ? 0 : Math.max(0, (Date.parse(now) - readAtRunMs) / 1_000)
   })
-  const card = $derived(situation === null ? null : cardFor(situation, selection.selection, { options, armedOrder, pinned, opened, lastSeenCall, elapsedS }))
+  const card = $derived(situation === null ? null : cardFor(situation, selection.selection, { options, pinned, opened, lastSeenCall, elapsedS }))
   const lists = $derived(situation === null ? null : overview(situation, selection.selection, opened, elapsedS))
   const contacts = $derived.by(() => {
     if (lists === null || !lists.contacts) return []
@@ -182,10 +181,7 @@
       const answer = await client.unitOptions(unitId)
       if (disposed || read !== optionsRead) return
       options = answer
-      const armed = selection.selection
-      if (armed.kind !== 'armed' || armed.unitId !== answer.unitId) return
-      armedOrder = armedOrderWith(armedOrder, answer)
-      send({ kind: 'current-job', unitId: answer.unitId, job: currentJobOf(answer) })
+      send({ kind: 'options-read', options: answer })
     } catch (error) {
       if (!disposed && read === optionsRead) feedback = messageOf(error)
     }
@@ -211,11 +207,7 @@
 
   const send = (event: SelectionEvent): void => {
     const stepped = reduceSelection(selection, event)
-    const before = selection.selection
     selection = stepped.state
-    const after = stepped.state.selection
-    if (after.kind !== 'armed') armedOrder = null
-    else if (before.kind !== 'armed' || before.unitId !== after.unitId) armedOrder = null
     for (const effect of stepped.effects) perform(effect)
   }
 
@@ -234,7 +226,7 @@
         void pin(effect.callId)
         return
       case 'submit':
-        void submit(effect.unitId, effect.target, effect.when, effect.drops)
+        void submit(effect)
         return
       case 'late-refusal':
         feedback = `${unitLabel(effect.unitId)} → ${stopLabel(effect.target)}: ${effect.text}`
@@ -243,14 +235,7 @@
   }
 
   const unitLabel = (unitId: string): string => situation?.units.find(unit => unit.id === unitId)?.label ?? unitId
-  const stopLabel = (stop: Stop): string => {
-    const listed = options?.targets.find(target => JSON.stringify(target.target) === JSON.stringify(stop))?.label
-    if (listed !== undefined) return listed
-    if ('taskId' in stop) return situation?.calls.find(call => call.id === stop.taskId)?.label ?? stop.taskId
-    if ('siteId' in stop) return situation?.sites.find(site => site.id === stop.siteId)?.label ?? stop.siteId
-    if ('trackId' in stop) return props.objects.find(object => object.id === stop.trackId)?.label ?? stop.trackId
-    return dispatchWords.mapPoint
-  }
+  const stopLabel = (stop: Stop): string => stopLabelOf(stop, situation, options, props.objects)
 
   const outcomeOf = async (run: () => Promise<CommandOutcome>): Promise<CommandOutcome> => {
     try {
@@ -260,15 +245,14 @@
     }
   }
 
-  /** The armed unit's order for one stop: `now` drops exactly the job the busy prompt named. */
-  const submit = async (unitId: string, target: Stop, when: UnitOrderInput['when'] | null, drops: CurrentJob | null): Promise<void> => {
-    const input: UnitOrderInput = { units: [unitId], stops: [target], ...(when === null ? {} : { when }), ...(drops === null ? {} : { drops: drops.taskId }) }
-    const outcome = await outcomeOf(async () => await client.order(input))
+  /** The armed unit's order for one stop (`submitOrder`); its result goes back to the selection table. */
+  const submit = async (effect: Extract<SelectionEffect, { kind: 'submit' }>): Promise<void> => {
+    const outcome = await outcomeOf(async () => await client.order(submitOrder(effect)))
     if (disposed) return
-    send({ kind: 'result', unitId, target, outcome: outcome.ok ? { ok: true } : { ok: false, code: outcome.code, text: outcome.text }, atMs: Date.now() })
+    send({ kind: 'result', unitId: effect.unitId, target: effect.target, outcome: outcome.ok ? { ok: true } : { ok: false, code: outcome.code, text: outcome.text }, atMs: Date.now() })
     if (outcome.ok) {
-      const dropped = drops === null ? null : `${drops.label}${drops.code === null ? '' : ` · ${drops.code}`}`
-      receipts = withReceipts(receipts, [ownReceipt({ commandId: outcome.commandId, unitIds: [unitId], unitLabel: unitLabel(unitId), targetLabel: stopLabel(target), dropped, atMs: Date.now() })])
+      const dropped = effect.drops === null ? null : jobText(effect.drops)
+      receipts = withReceipts(receipts, [ownReceipt({ commandId: outcome.commandId, unitIds: [effect.unitId], unitLabel: unitLabel(effect.unitId), targetLabel: stopLabel(effect.target), dropped, atMs: Date.now() })])
     }
   }
 
@@ -295,12 +279,7 @@
   }
 
   const toggleChip = (unitId: string): void => {
-    const current = pinned
-    if (current === null) return
-    const dropped = new Set(current.dropped)
-    if (dropped.has(unitId)) dropped.delete(unitId)
-    else dropped.add(unitId)
-    pinned = { ...current, dropped }
+    if (pinned !== null) pinned = toggledChip(pinned, unitId)
   }
 
   /** The map point of a stop: its own point, or the position of the object it names. */
@@ -380,14 +359,14 @@
     }
   })
 
-  // Every change of an Einsatz record the screen sees reads the situation again, and an armed unit's options; the first runs on open.
+  // Every change of an Einsatz record the screen sees reads the situation again, and the shown unit's options; the first runs on open.
   const recordsKey = $derived(einsatzRecordsKey(props.objects))
   $effect(() => {
     void recordsKey
     untrack(() => {
       void readSituation()
-      const armed = selection.selection
-      if (armed.kind === 'armed') void readOptions(armed.unitId)
+      const shown = selection.selection
+      if (shown.kind === 'unit' || shown.kind === 'armed') void readOptions(shown.unitId)
     })
   })
 
@@ -409,19 +388,10 @@
     if (row !== undefined) untrack(() => { lastSeenCall = row })
   })
 
-  // A change of what stands where re-arms the double-click guard.
-  let shownLayout: string | null = null
-  $effect(() => {
-    const key = panelLayoutKey(card, lists, receipts, confirming !== null)
-    if (key === shownLayout) return
-    shownLayout = key
-    quietFromMs = Date.now()
-  })
-
   // The armed unit's halos and tags; sent again only when they change.
   let shownTargeting: string | null = null
   $effect(() => {
-    const targeting = targetingFor(selection.selection, options)
+    const targeting = targetingFor(selection.selection)
     const key = targeting === null ? null : JSON.stringify(targeting)
     if (key === shownTargeting) return
     shownTargeting = key
@@ -439,21 +409,14 @@
     const shown = selection.selection
     const current = situation
     let prompt: MapPrompt | null = null
-    if (shown.kind === 'armed' && shown.prompt !== null && current !== null) {
-      if (shown.prompt.kind === 'move') {
-        prompt = { point: shown.prompt.point, options: [{ label: movePromptText(current, shown.unitId), onConfirm: () => send({ kind: 'prompt', choice: 'move' }) }], onDismiss: promptDismissed }
-      } else if (shown.prompt.job !== null) {
-        const choices = busyChoices(shown.prompt.job)
-        const point = pointOf(shown.prompt.target)
-        if (point !== undefined) {
-          prompt = {
-            point,
-            options: [
-              { label: choices.after, onConfirm: () => send({ kind: 'prompt', choice: 'after' }) },
-              { label: choices.now, tone: 'warning', onConfirm: () => send({ kind: 'prompt', choice: 'now' }) },
-            ],
-            onDismiss: promptDismissed,
-          }
+    const choices = current === null ? null : promptChoices(current, shown)
+    if (choices !== null && shown.kind === 'armed' && shown.prompt !== null) {
+      const point = shown.prompt.kind === 'move' ? shown.prompt.point : pointOf(shown.prompt.target)
+      if (point !== undefined) {
+        prompt = {
+          point,
+          options: choices.map(entry => ({ label: entry.label, ...(entry.warning ? { tone: 'warning' as const } : {}), onConfirm: () => send({ kind: 'prompt', choice: entry.choice }) })),
+          onDismiss: promptDismissed,
         }
       }
     }
@@ -479,13 +442,14 @@
   style:height={layout.mode === 'sheet' && open ? `${layout.heightPx}px` : null}
   style:top={layout.mode === 'docked' ? `${panelTopClearancePx}px` : null}
   style:bottom={layout.mode === 'docked' ? `${panelBottomClearancePx}px` : '0px'}
+  style:padding-bottom={layout.mode === 'sheet' && open ? `${panelBottomClearancePx}px` : null}
   style:right={layout.mode === 'docked' ? `${panelEdgeGapPx}px` : '0px'}
   aria-label={dispatchWords.panel}
 >
   {#if !open}
     <button type="button" class="tab" onclick={act(() => { sheetOpenedByOperator = true })}>
       <strong>{situation === null ? dispatchWords.panel : edgeTabText(situation)}</strong>
-      {#if receipts[0] !== undefined}<span class="receipt-line">{receipts[0].text}</span>{/if}
+      {#if receipts[0] !== undefined}<span class="receipt-line">{receiptText(receipts[0])}</span>{/if}
     </button>
   {:else}
     <header class="head">
@@ -506,7 +470,7 @@
             {icon}
             confirming={confirming !== null && confirming === card.id}
             back={act(() => send({ kind: 'back' }))}
-            arm={act((unitId: string, when: 'after' | null) => send({ kind: 'arm', unitId, when }))}
+            arm={act((unitId: string, when: 'after' | null) => send({ kind: 'arm', unitId, when, held: options }))}
             targetRow={act((target: Stop) => send({ kind: 'target-row', target }))}
             promptChoice={act((choice: 'after' | 'now') => send({ kind: 'prompt', choice }))}
             recall={act((unitId: string) => { void command(async () => await client.recall(unitId), { unitIds: [unitId], target: situation === null ? dispatchWords.panel : situation.words.return }) })}
@@ -539,7 +503,7 @@
         <ol class="receipts" aria-label={dispatchWords.undo}>
           {#each receipts as receipt (receipt.commandId)}
             <li>
-              <span class="receipt-text">{receipt.text}</span>
+              <span class="receipt-text">{receiptText(receipt)}</span>
               {#if receiptUndoable(receipt, nowMs)}<button type="button" onclick={act(() => undoReceipt(receipt))}>{receipt.undo}</button>{/if}
             </li>
           {/each}
@@ -569,6 +533,7 @@
     line-height: 16px;
     pointer-events: auto;
   }
+  /* The open sheet keeps its footer above the World status line (the clock chip) drawn over its bottom edge. */
   .dispatch[data-mode='sheet'] { left: 0; border-radius: 10px 10px 0 0; }
   .dispatch[data-mode='sheet'].folded { left: auto; padding: 0; border-radius: 10px 0 0 0; }
   .head { flex: none; display: flex; align-items: center; gap: 8px; }

@@ -138,7 +138,7 @@ export const unitAuthority = (catalog: Catalog, viewer: EinsatzViewer, declared:
   if (!inPicture(catalog, viewer, unit)) return notInPicture()
   if (commandsUnit(catalog, viewer, unit)) return undefined
   const denied = `${heldText(viewer)} ${viewer.roles.length === 1 ? 'does' : 'do'} not command ${unit.label}`
-  const commanders = declared.filter(role => role.class === 'operator' && roleCommands(pictureTypes(catalog), role, unit)).map(role => role.label)
+  const commanders = declared.filter(role => role.class === 'operator' && roleCommands(role, unit)).map(role => role.label)
   return refused('unit_not_authorized', commanders.length === 0
     ? `${denied}, and no operator role does`
     : `${denied}. It belongs to ${listText(commanders)}: add ${commanders.length === 1 ? 'that role' : 'one of those roles'} to command it`)

@@ -176,7 +176,6 @@ const siteRowSchema = z.object({
 export const situationInputSchema = z.object({
   group: configIdSchema.optional().describe('Only the units of this declared group; calls and sites are listed in full.'),
 }).strict()
-export type SituationInput = z.output<typeof situationInputSchema>
 
 /** The `world.einsatz.situation` answer. It makes no suggestions: who should go comes from `world.einsatz.recommend`. */
 export const situationSchema = z.object({
@@ -215,27 +214,23 @@ export type SituationSite = Situation['sites'][number]
 export const unitOptionsInputSchema = z.object({
   unitId: idSchema.describe('The unit to list targets for.'),
 }).strict()
-export type UnitOptionsInput = z.output<typeof unitOptionsInputSchema>
 
 /** The `world.einsatz.unit.options` answer: where the unit may be ordered now, and where not and why. */
 export const unitOptionsSchema = z.object({
   unitId: idSchema.describe('The unit the answer is for.'),
   busy: z.object({
-    taskId: idSchema.describe('The task the unit works for now.'),
+    taskId: idSchema.describe('The task the unit works for now; an order with when "now" drops it.'),
     label: text.describe('That task\'s label.'),
+    code: text.describe('That task\'s priority code.'),
     freeInS: seconds.nullable().describe('Estimated seconds until its current job is done; null when it cannot be estimated.'),
-  }).strict().nullable().describe('Set when the unit is busy: an order then needs when ("after" or "now" with drops).'),
+  }).strict().nullable().describe('Set when the unit is busy: an order then needs when ("after" or "now" with drops = taskId).'),
   targets: z.array(z.object({
     target: stopSchema.describe('The stop, in world.einsatz.unit.order form.'),
     verb: z.enum(stopVerbs).describe('What the unit would do there.'),
     label: text.describe('The target\'s label.'),
-    etaS: seconds.describe('Seconds to arrive, turnout included; routed for road units, straight-line for direct ones.'),
-    drops: z.object({
-      taskId: idSchema.describe('The task dropped.'),
-      label: text.describe('Its label.'),
-      code: text.describe('Its priority code.'),
-    }).strict().optional().describe('The busy unit\'s current task, which an order with when "now" drops.'),
-  }).strict()).describe('Valid targets, nearest first.'),
+    etaS: seconds.describe('Seconds to arrive, turnout included; routed for road units, straight-line for direct ones. For a target only "after" takes, from where and when the unit\'s plan ends, the delivery its deliver standing order makes included.'),
+    now: z.boolean().describe('Whether an order now takes it: for a busy unit one with when "now", dropping its job; for any other one without when. False: only an order with when "after" takes it, after the unit\'s plan (a loaded carrier\'s call once it has delivered).'),
+  }).strict()).describe('Valid targets, nearest first: those an order now or "after" the unit\'s plan would take.'),
   refused: z.array(z.object({
     target: stopSchema.describe('The stop, in world.einsatz.unit.order form.'),
     label: text.describe('The target\'s label.'),

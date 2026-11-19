@@ -249,17 +249,21 @@ describe('map targeting', () => {
   const from = 'unit:a4' as ObjectId
   const target = (id: string, tag = '4 min') => ({ id: id as ObjectId, tag })
 
-  test('an armed order marks up to eight distinct tagged targets other than its own object, and any other is refused naming the panel', () => {
-    const eight = { from, targets: Array.from({ length: 8 }, (_, index) => target(`task:c-${index}`)) }
+  test('an armed order marks every valid target, at most eight of them tagged, none twice or its own object, and any other is refused naming the panel', () => {
+    const eight = { from, complete: true, targets: Array.from({ length: 8 }, (_, index) => target(`task:c-${index}`)) }
     expect(assertMapTargeting('fixture.panel', eight)).toBe(eight)
-    expect(assertMapTargeting('fixture.panel', { from, targets: [] }).targets).toEqual([])
+    expect(assertMapTargeting('fixture.panel', { from, complete: false, targets: [] }).targets).toEqual([])
+    // Every valid target is marked: beyond the eight tagged ones, untagged.
+    const twelve = { from, complete: true, targets: [...eight.targets, ...Array.from({ length: 4 }, (_, index) => ({ id: `task:d-${index}` as ObjectId }))] }
+    expect(assertMapTargeting('fixture.panel', twelve)).toBe(twelve)
     // The target a click was just refused for carries the refusal as its tag.
-    const refused = { from, targets: [{ ...target('task:c-1', 'Needs fire suppression'), tone: 'refused' as const }, target('task:c-2')] }
+    const refused = { from, complete: true, targets: [{ ...target('task:c-1', 'Needs fire suppression'), tone: 'refused' as const }, target('task:c-2')] }
     expect(assertMapTargeting('fixture.panel', refused)).toBe(refused)
-    expect(() => assertMapTargeting('fixture.panel', { from, targets: [...eight.targets, target('task:c-9')] })).toThrow('Surface panel fixture.panel showed a map targeting from unit:a4 with 9 targets; at most 8 are marked')
-    expect(() => assertMapTargeting('fixture.panel', { from, targets: [target('unit:a4')] })).toThrow('that targets its own object')
-    expect(() => assertMapTargeting('fixture.panel', { from, targets: [target('task:c-1'), target('task:c-1')] })).toThrow('that marks task:c-1 twice')
-    expect(() => assertMapTargeting('fixture.panel', { from, targets: [target('task:c-1', '')] })).toThrow('whose target task:c-1 has no tag')
+    expect(() => assertMapTargeting('fixture.panel', { from, complete: true, targets: [...eight.targets, target('task:c-9')] })).toThrow('Surface panel fixture.panel showed a map targeting from unit:a4 with 9 tags; at most 8 are shown')
+    expect(() => assertMapTargeting('fixture.panel', { from, complete: true, targets: [target('unit:a4')] })).toThrow('that targets its own object')
+    expect(() => assertMapTargeting('fixture.panel', { from, complete: true, targets: [target('task:c-1'), target('task:c-1')] })).toThrow('that marks task:c-1 twice')
+    expect(() => assertMapTargeting('fixture.panel', { from, complete: true, targets: [target('task:c-1', '')] })).toThrow('whose target task:c-1 has an empty tag')
+    expect(() => assertMapTargeting('fixture.panel', { from, complete: true, targets: [{ id: 'task:c-1' as ObjectId, tone: 'refused' as const }] })).toThrow('whose refused target task:c-1 has no tag')
   })
 })
 

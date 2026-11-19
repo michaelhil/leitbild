@@ -51,8 +51,8 @@ const situation = {
 
 const options = {
   unitId: 'unit:u-2',
-  busy: { taskId: 'task:t-1', label: 'T-1 First', freeInS: 400 },
-  targets: [{ target: { taskId: 'task:t-2' }, verb: 'serve', label: 'T-2 Second', etaS: 300, drops: { taskId: 'task:t-1', label: 'T-1 First', code: 'P1' } }],
+  busy: { taskId: 'task:t-1', label: 'T-1 First', code: 'P1', freeInS: 400 },
+  targets: [{ target: { taskId: 'task:t-2' }, verb: 'serve', label: 'T-2 Second', etaS: 300, now: true }],
   refused: [{ target: { siteId: 'unit:s-1' }, label: 'S-1', code: 'site_not_accepting', text: 'S-1 accepts no arrivals' }],
 }
 

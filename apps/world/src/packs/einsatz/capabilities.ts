@@ -126,7 +126,7 @@ export const einsatzCapabilities: ReadonlyArray<SimulationCapability> = [
     readScope: 'collection',
     id: einsatzQueryIds.unitOptions,
     title: 'Where a unit may be ordered',
-    description: 'For one unit: every target an order may name now, nearest first, with the verb (serve, pick up, deliver, go to, engage), the ETA and, for a busy unit, the task an order with when "now" drops; and every target an order would be refused for, with its code and reason. A busy unit names its task and when it is free. Example: `{unitId:\'unit:a4\'}`.',
+    description: 'For one unit: every target an order may name, nearest first, with the verb (serve, pick up, deliver, go to, engage), the ETA and `now`: whether an order now takes it, or only one with when "after" its plan (a loaded carrier\'s call once it has delivered); and every target an order would be refused for, with its code and reason. A busy unit names its current task (which an order with when "now" drops), its priority code and when it is free. Example: `{unitId:\'unit:a4\'}`.',
     searchTerms: [...dispatchTerms, 'targets', 'options', 'where can'],
     input: unitOptionsInputSchema,
     output: unitOptionsSchema,
@@ -144,7 +144,7 @@ export const einsatzCapabilities: ReadonlyArray<SimulationCapability> = [
   command({
     id: einsatzCommandIds.order,
     title: 'Order units',
-    description: 'Give units a plan, all or nothing. Example (pick up, then deliver): `{units:[\'unit:a4\'], stops:[{taskId:\'task:c-1\'},{siteId:\'unit:clinic\'}]}`. For a busy unit, set `when`: `after` appends; `now` replaces its job and needs `drops` = its current task. A carrier with no site stop delivers to the nearest accepting site. Refusals: `when_required`, `drops_mismatch`, `requirement_unmet`, `site_not_accepting`, `divert_after_arrival`, `unit_loaded`, `chain_full`.',
+    description: 'Give units a plan, all or nothing. Example (pick up, then deliver): `{units:[\'unit:a4\'], stops:[{taskId:\'task:c-1\'},{siteId:\'unit:clinic\'}]}`. For a busy unit, set `when`: `after` appends; `now` replaces its job and needs `drops` = its current task. A carrier under a deliver standing order with no site stop delivers to the nearest accepting site. Refusals: `when_required`, `drops_mismatch`, `requirement_unmet`, `site_not_accepting`, `divert_after_arrival`, `unit_loaded`, `chain_full`.',
     searchTerms: [...dispatchTerms, 'order', 'move', 'plan', 'stops', 'divert'],
     idempotent: false,
     targets: input => objectIds(...input.units),

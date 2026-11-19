@@ -1,6 +1,7 @@
 /**
- * Browser-safe wording helpers the map presentation and the dispatch surface
- * share. They import nothing, so the browser loads no engine with them.
+ * Browser-safe wording helpers the map presentation, the dispatch surface
+ * and the engine's own wording share. They import nothing, so the browser
+ * loads no engine with them.
  */
 
 /** "4:20", or "1:04:20" past an hour; never negative. */

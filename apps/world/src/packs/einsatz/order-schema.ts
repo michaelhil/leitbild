@@ -36,7 +36,7 @@ export const unitOrderInputSchema = z.object({
     .refine(distinct, 'Each unit is named once')
     .describe(`The units to order, 1 to ${maxOrderUnits}, each named once. A busy unit must be the only one.`),
   stops: z.array(stopSchema).min(1).max(maxSteps)
-    .describe(`The plan's stops in order, 1 to ${maxSteps}. A carrier with no site stop delivers to the nearest accepting site.`),
+    .describe(`The plan's stops in order, 1 to ${maxSteps}. A carrier under a deliver standing order with no site stop delivers to the nearest accepting site.`),
   when: z.enum(orderWhen).optional()
     .describe('Required when a named unit is busy, else refused when_required: "after" appends after its current job; "now" replaces its current job and needs drops.'),
   drops: idSchema.optional()

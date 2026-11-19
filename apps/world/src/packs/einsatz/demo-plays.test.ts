@@ -145,8 +145,8 @@ const paces: ReadonlyArray<Pace> = [
 ]
 /** Every call's slack against a per-call objective is at least this in every play. */
 const slackS = 3 * 60
-/** A busy unit's first submit is refused when_required: the busy prompt it opens is the next click (plan B.3), never an order lost. */
-const refusedOrders = (log: PlayLog) => log.orders.filter(order => !order.ok && order.code !== 'when_required')
+/** Every order a play sends is accepted: a busy unit's target tap asks After or Now from its options read before any order goes. */
+const refusedOrders = (log: PlayLog) => log.orders.filter(order => !order.ok)
 
 const describeLog = (log: PlayLog): string => JSON.stringify({
   orders: log.orders.map(order => [order.atS, order.capabilityId, order.input, order.ok ? 'ok' : order.reason, order.clicks]),
@@ -310,25 +310,23 @@ describe('halden-emergency pressure moments', () => {
       expect(ranks.indexOf(first!.priority)).toBeLessThan(ranks.indexOf(later!.priority))
       expect(first!.firstOnSceneS!).toBeLessThan(later!.firstOnSceneS!)
       const [fireBeat] = demos.emergency.beats
-      // No free unit can help at the fight: the dispatcher diverts the one on its way to the fallen tree, by the fight's row, the unit, its Dispatch, the fight, then "Now (drops …)" naming the tree, which the server checks.
+      // No free unit can help at the fight: the dispatcher diverts the one on its way to the fallen tree, by the fight's row, the unit, its Dispatch, the fight, then "Now (drops …)" naming the tree, which the server checks. The prompt opens from the unit's options: one order goes.
       const fight = createdBy(log.calls, cueAt(emergency, 'torget-fight'))
       const tree = createdBy(log.calls, cueAt(emergency, 'tree-on-road'))
       const divert = log.orders.filter(order => order.move === 'divert' && stopsOf(order.input)[0]?.taskId === fight.id)
       expect(divert.map(order => [whenOf(order.input), (order.input as { readonly drops?: string }).drops, order.ok ? 'ok' : order.code, order.clicks])).toEqual([
-        [undefined, undefined, 'when_required', 5],
         ['now', tree.id, 'ok', 5],
       ])
       // Within a step of the fight's arrival: the first free unit goes by the suggestion, the second by the divert.
-      expect(divert[1]!.atS - fight.createdS).toBeLessThanOrEqual(5)
+      expect(divert[0]!.atS - fight.createdS).toBeLessThanOrEqual(5)
       // The car fire: the unit, its Dispatch, the car fire, then "After current job".
       const carFire = createdBy(log.calls, cueAt(emergency, 'harbour-car-fire'))
       const after = log.orders.filter(order => order.beat === fireBeat!.name)
       expect(after.map(order => [order.capabilityId, stopsOf(order.input), whenOf(order.input), order.ok ? 'ok' : order.code, order.clicks])).toEqual([
-        [ids.order, [{ taskId: carFire.id }], undefined, 'when_required', 4],
         [ids.order, [{ taskId: carFire.id }], 'after', 'ok', 4],
       ])
       // The unit it was given to stood on scene at the first fire, then at the car fire.
-      const unitId = unitsOf(after[1]!.input)[0]!
+      const unitId = unitsOf(after[0]!.input)[0]!
       expect(createdBy(log.calls, cueAt(emergency, 'guest-harbour-fire')).onScene.has(unitId)).toBe(true)
       expect(carFire.onScene.has(unitId)).toBe(true)
     } finally {
@@ -381,7 +379,6 @@ describe('supply-run pressure moments', () => {
       const bulk = createdBy(log.calls, cueAt(supply, 'pumping-station-bulk'))
       const divert = log.orders.filter(order => order.move === 'divert' && stopsOf(order.input)[0]?.taskId === bulk.id)
       expect(divert.map(order => [whenOf(order.input), order.ok ? 'ok' : order.code, order.clicks, order.atS])).toEqual([
-        [undefined, 'when_required', 5, bulk.createdS],
         ['now', 'ok', 5, bulk.createdS],
       ])
       const chain = log.orders.filter(order => order.beat === chainBeat!.name)
@@ -398,7 +395,6 @@ describe('supply-run pressure moments', () => {
       const harbour = createdBy(log.calls, cueAt(supply, 'harbour-request'))
       const home = log.orders.filter(order => order.beat === homeBeat!.name)
       expect(home.map(order => [stopsOf(order.input), whenOf(order.input), order.ok ? 'ok' : order.code, order.clicks])).toEqual([
-        [[{ taskId: harbour.id }], undefined, 'when_required', 4],
         [[{ taskId: harbour.id }], 'after', 'ok', 4],
       ])
     } finally {
@@ -558,27 +554,81 @@ describe('B.11 click counts at the Dispatch panel', () => {
     })
   })
 
+  /** Set up, not counted: the suggested unit takes the start call, and a second call of the same kind comes in nearby. */
+  const busyWithSecondCall = async ({ run, screen, callId, answer }: Scene): Promise<{ readonly busyId: string; readonly second: string }> => {
+    const busyId = answer.proposal!.units[0]!.unitId
+    expect((await run.invoke(ids.order, answer.proposal!.order)).ok).toBe(true)
+    const start = run.task(callId)
+    const position = lonLatOf(run.object(callId)!)
+    expect((await run.invoke(ids.taskCreate, { template: start.template, label: 'C-9 Second call', at: { type: 'Point', coordinates: [position[0] + 0.003, position[1]] }, loads: start.loads })).ok).toBe(true)
+    await screen.sync()
+    return { busyId, second: screen.situation().calls.find(call => call.label === 'C-9 Second call')!.id }
+  }
+
   test('busy unit → call: 4 clicks (the unit, Dispatch…, the call, "After current job" on the busy prompt)', async () => {
-    await scene(async ({ run, screen, callId, answer }) => {
-      // Set up, not counted: the suggested unit takes the start call, and a second call of the same kind comes in nearby.
-      const busyId = answer.proposal!.units[0]!.unitId
-      expect((await run.invoke(ids.order, answer.proposal!.order)).ok).toBe(true)
-      const start = run.task(callId)
-      const position = lonLatOf(run.object(callId)!)
-      expect((await run.invoke(ids.taskCreate, { template: start.template, label: 'C-9 Second call', at: { type: 'Point', coordinates: [position[0] + 0.003, position[1]] }, loads: start.loads })).ok).toBe(true)
-      await screen.sync()
-      const second = screen.situation().calls.find(call => call.label === 'C-9 Second call')!.id
+    await scene(async given => {
+      const { run, screen, callId } = given
+      const { busyId, second } = await busyWithSecondCall(given)
       await screen.mapTap(busyId)
       await screen.press({ kind: 'arm' })
       await screen.mapTap(second)
-      // Refused when_required: the busy prompt names the job "Now" would drop.
-      expect(screen.prompt()).toEqual([expect.stringMatching(/^After current job/), expect.stringContaining(run.object(callId)!.label)])
+      // The options read at arming named the job: the busy prompt opens at once, naming the job "Now" would drop, and nothing is sent yet.
+      expect(screen.calls).toEqual([])
+      expect(screen.prompt()).toEqual([expect.stringMatching(/^After current job/), expect.stringContaining(`${run.object(callId)!.label} · `)])
       await screen.promptTap(0)
       expect(screen.actions()).toBe(4)
       expect(sent(screen)).toEqual([
-        [ids.order, { units: [busyId], stops: [{ taskId: second }] }, 'when_required'],
         [ids.order, { units: [busyId], stops: [{ taskId: second }], when: 'after' }, 'ok'],
       ])
+    })
+  })
+
+  test('T7: a transporting unit takes a call after its delivery in 3 clicks (the unit, Dispatch…, the call): nothing is dropped, so nothing is asked; it delivers, then goes to the call', async () => {
+    await scene(async given => {
+      const { run, screen } = given
+      const { busyId: carrier, second } = await busyWithSecondCall(given)
+      // Set up, not counted: the Run goes on until the unit takes its load to a site.
+      await run.run.setClock({ paused: false })
+      for (let index = 0; index < 400 && run.unit(carrier).phase !== 'transporting'; index++) {
+        run.forward(5_000)
+        await run.settle()
+      }
+      expect(run.unit(carrier).phase).toBe('transporting')
+      await screen.sync()
+      await screen.mapTap(carrier)
+      await screen.press({ kind: 'arm' })
+      // The call is a valid target, taken after the delivery: not dimmed, its row says so.
+      const card = screen.card()
+      if (card?.kind !== 'unit' || card.armed === null) throw new Error(`${carrier} is not armed`)
+      expect(card.armed.rows.find(entry => JSON.stringify(entry.target) === JSON.stringify({ taskId: second }))).toMatchObject({ refused: null, drops: null, after: expect.any(String) })
+      await screen.mapTap(second)
+      expect(screen.actions()).toBe(3)
+      expect(screen.prompt()).toBeNull()
+      expect(sent(screen)).toEqual([[ids.order, { units: [carrier], stops: [{ taskId: second }], when: 'after' }, 'ok']])
+      const loadOnBoard = () => Object.values(run.unit(carrier).load).reduce((sum, count) => sum + count, 0)
+      for (let index = 0; index < 400 && run.unit(carrier).taskId !== second; index++) {
+        run.forward(5_000)
+        await run.settle()
+      }
+      // On its way to the call it carries nothing: it handed its load over first.
+      expect(run.unit(carrier).taskId).toBe(second)
+      expect(loadOnBoard()).toBe(0)
+    })
+  })
+
+  test('F5: a tap before the arming read returns asks After or Now from the options the unit\'s card read, and sends no order before the choice', async () => {
+    await scene(async given => {
+      const { screen } = given
+      const { busyId, second } = await busyWithSecondCall(given)
+      await screen.mapTap(busyId)
+      const release = screen.holdReads()
+      await screen.press({ kind: 'arm' })
+      await screen.mapTap(second)
+      expect(screen.calls).toEqual([])
+      expect(screen.prompt()).toEqual([expect.stringMatching(/^After current job/), expect.stringMatching(/^Now \(drops /)])
+      await release()
+      await screen.promptTap(0)
+      expect(sent(screen)).toEqual([[ids.order, { units: [busyId], stops: [{ taskId: second }], when: 'after' }, 'ok']])
     })
   })
 
@@ -700,8 +750,33 @@ describe('B.11 click counts at the Dispatch panel', () => {
       await screen.groundTap([east + 0.004, north + 0.002])
       expect(screen.prompt()).toEqual([expect.stringMatching(/ here$/)])
       await screen.groundTap([east + 0.006, north + 0.003])
-      expect(screen.selection()).toEqual({ kind: 'armed', unitId, when: null, prompt: { kind: 'move', point: geoPointFromLonLat(east + 0.006, north + 0.003) }, refusal: null })
+      expect(screen.selection()).toMatchObject({ kind: 'armed', unitId, when: null, prompt: { kind: 'move', point: geoPointFromLonLat(east + 0.006, north + 0.003) }, refusal: null })
       expect(screen.calls).toEqual([])
+    })
+  })
+
+  test('the first click after the panel appears acts: a row tap at once opens the call\'s card', async () => {
+    await scene(async ({ screen, callId }) => {
+      await screen.row({ id: callId, kind: 'call' }, 0)
+      expect(screen.selection()).toEqual({ kind: 'call', callId })
+    })
+  })
+
+  test('the first click after a refresh acts: a new call and an order change the panel, and the next command still acts; only a double-click\'s second half is ignored', async () => {
+    await scene(async ({ run, screen, callId, answer }) => {
+      await screen.row({ id: callId, kind: 'call' })
+      // Another actor's order and a new call re-lay the panel while its card is open.
+      const other = answer.alternatives.flatMap(entry => entry.units)[0]!
+      expect((await run.invoke(ids.order, other.order)).ok).toBe(true)
+      const start = run.task(callId)
+      const position = lonLatOf(run.object(callId)!)
+      expect((await run.invoke(ids.taskCreate, { template: start.template, label: 'C-9 Second call', at: { type: 'Point', coordinates: [position[0] + 0.003, position[1]] }, loads: start.loads })).ok).toBe(true)
+      screen.wait(800)
+      await screen.sync()
+      // A command 50 ms after that refresh acts: Close asks its confirm.
+      await screen.press({ kind: 'close' }, 50)
+      await screen.press({ kind: 'confirm-close' })
+      expect(sent(screen)).toEqual([[ids.taskClose, { taskId: callId }, 'ok']])
     })
   })
 

@@ -109,7 +109,7 @@ const commandableBy = (sees: RoleSees, unit: PictureUnit): boolean =>
  * group's role, the units of its group on a side it sees; any other
  * operator role commands nothing.
  */
-export const roleCommands = (_types: PictureTypes, role: PictureRole, unit: PictureUnit): boolean => {
+export const roleCommands = (role: PictureRole, unit: PictureUnit): boolean => {
   if (role.class === 'controller') return true
   const group = groupOf(role)
   return group !== undefined && unit.group === group && commandableBy(seesOf(role), unit)
@@ -124,7 +124,7 @@ const roleQueues = (types: PictureTypes, role: PictureRole, task: PictureTask, g
 
 /** The commandable set: a controller commands every unit in its picture; an operator, the union of what each of its roles commands. */
 export const commandsUnit = (types: PictureTypes, viewer: PictureViewer, unit: PictureUnit): boolean =>
-  inPicture(types, viewer, unit) && (viewer.class === 'controller' || viewer.roles.some(role => roleCommands(types, role, unit)))
+  inPicture(types, viewer, unit) && (viewer.class === 'controller' || viewer.roles.some(role => roleCommands(role, unit)))
 
 
 /** The queue: a controller queues every task in its picture; an operator, the union of its roles' queues, each within its own picture. */

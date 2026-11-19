@@ -8,21 +8,19 @@ import type { Situation, SituationCall, UnitOptions } from '../situation/schema.
 import { einsatzPackView } from '../ui-pack.ts'
 import { createEinsatzClient, type CommandOutcome, type EinsatzClient } from '../ui/einsatz-client.ts'
 import {
-  armedOrderWith,
-  busyChoices,
   cardFor,
-  currentJobOf,
   deliverToOrder,
   dispatchKindOf,
-  movePromptText,
+  jobText,
   overview,
   ownReceipt,
-  panelLayoutKey,
   pinProposal,
+  promptChoices,
   receiptsFromSituation,
   receiptUndoable,
+  stopLabelOf,
+  toggledChip,
   withReceipts,
-  type ArmedOrder,
   type CardView,
   type OverviewView,
   type PinnedProposal,
@@ -34,8 +32,8 @@ import {
   reduceSelection,
   selectionChangeEvent,
   stopObjectId,
+  submitOrder,
   type ClickedObject,
-  type CurrentJob,
   type Selection,
   type SelectionEffect,
   type SelectionEvent,
@@ -49,8 +47,12 @@ import { operator, type OpenRun } from './run-harness.ts'
  * click does, the presenters (`ui/presenters.ts`) what the card, lists and
  * receipts show, and the panel's client (`ui/einsatz-client.ts`) what is
  * read and sent, validated with the Capabilities' own schemas. It performs
- * the selection effects as `DispatchPanel.svelte` does. It reads the
- * situation, and an armed unit's options, after every action and Run step
+ * the selection effects as `DispatchPanel.svelte` does, with the panel's own
+ * functions for what they decide: the order a submit sends
+ * (`submitOrder`), the map prompt's options (`promptChoices`), a stop's
+ * words (`stopLabelOf`) and a chip tap (`toggledChip`); only the glue that
+ * awaits reads and commands and holds their answers is its own. It reads the
+ * situation, and the shown unit's options, after every action and Run step
  * (the panel reads only when an Einsatz record it sees changed,
  * `einsatzRecordsKey`, and carries waiting times and ETAs on its own clock
  * between reads; the harness has no clock, so it reads each time); it pins
@@ -67,6 +69,9 @@ import { operator, type OpenRun } from './run-harness.ts'
  * wall clock is the test's own: every action comes `paceMs` after the
  * previous one, as a person's do, unless a test gives its own gap, so the
  * panel's double-click guard (`activationActs`) is exercised exactly.
+ * Reads take no wall time, so a refresh comes at the moment of the action
+ * before it, unless a test holds them (`holdReads`) to land an action
+ * before the read its last one asked for.
  * Production code never imports this file.
  */
 
@@ -120,7 +125,7 @@ export interface CardScreen {
   readonly prompt: () => ReadonlyArray<string> | null
   /** The object the map selects. */
   readonly mapSelection: () => string | null
-  /** Reads the situation again, and an armed unit's options. */
+  /** Reads the situation again, and the shown unit's options. */
   readonly sync: () => Promise<void>
   readonly mapTap: (objectId: string, gapMs?: number) => Promise<void>
   readonly groundTap: (position: readonly [number, number], gapMs?: number) => Promise<void>
@@ -131,6 +136,8 @@ export interface CardScreen {
   readonly promptTap: (index: number, gapMs?: number) => Promise<void>
   /** Lets wall time pass, as the panel's ticker does. */
   readonly wait: (ms: number) => void
+  /** Holds every read, as a slow answer does, until the returned release makes them in order. */
+  readonly holdReads: () => () => Promise<void>
 }
 
 /** The gap a person leaves between two actions, comfortably past the double-click interval. */
@@ -145,8 +152,6 @@ const panel: MapTargetPanel = {
 }
 
 const messageOf = (error: unknown): string => error instanceof Error ? error.message : String(error)
-
-const sameStop = (a: Stop, b: Stop): boolean => JSON.stringify(a) === JSON.stringify(b)
 
 export const openCardScreen = async (run: OpenRun, options: { readonly actor?: Actor } = {}): Promise<CardScreen> => {
   const actor = options.actor ?? operator
@@ -166,7 +171,6 @@ export const openCardScreen = async (run: OpenRun, options: { readonly actor?: A
   let situation: Situation | null = null
   let selection: SelectionState = initialSelection
   let unitOptions: UnitOptions | null = null
-  let armedOrder: ArmedOrder | null = null
   let pinned: PinnedProposal | null = null
   let opened: ReadonlySet<string> = new Set()
   let lastSeenCall: SituationCall | null = null
@@ -175,7 +179,8 @@ export const openCardScreen = async (run: OpenRun, options: { readonly actor?: A
   let confirming: string | null = null
   let mapSelection: string | null = null
   let quietFromMs: number | null = null
-  let layoutKey: string | null = null
+  /** The reads waiting while a test holds them. */
+  let heldReads: Array<() => Promise<void>> | null = null
 
   const objects = (): ReadonlyArray<OperationalObject> => run.run.snapshot().objects
   const kindOf = (objectId: string) => {
@@ -186,16 +191,8 @@ export const openCardScreen = async (run: OpenRun, options: { readonly actor?: A
     if (situation === null) throw new Error('The screen has read no situation yet')
     return situation
   }
-  const currentCard = (): CardView | null => cardFor(shown(), selection.selection, { options: unitOptions, armedOrder, pinned, opened, lastSeenCall, elapsedS: 0 })
+  const currentCard = (): CardView | null => cardFor(shown(), selection.selection, { options: unitOptions, pinned, opened, lastSeenCall, elapsedS: 0 })
   const currentLists = (): OverviewView => overview(shown(), selection.selection, opened, 0)
-
-  /** A change of what stands where re-arms the double-click guard, as the panel's layout effect does. */
-  const noteLayout = (): void => {
-    if (situation === null) return
-    const key = panelLayoutKey(currentCard(), currentLists(), receipts, confirming !== null)
-    if (key !== layoutKey) quietFromMs = wallMs
-    layoutKey = key
-  }
 
   const readSituation = async (): Promise<void> => {
     const next = await client.situation()
@@ -214,10 +211,7 @@ export const openCardScreen = async (run: OpenRun, options: { readonly actor?: A
       return
     }
     unitOptions = answer
-    const armed = selection.selection
-    if (armed.kind !== 'armed' || armed.unitId !== answer.unitId) return
-    armedOrder = armedOrderWith(armedOrder, answer)
-    await send({ kind: 'current-job', unitId: answer.unitId, job: currentJobOf(answer) })
+    await send({ kind: 'options-read', options: answer })
   }
 
   const pin = async (callId: string): Promise<void> => {
@@ -231,12 +225,7 @@ export const openCardScreen = async (run: OpenRun, options: { readonly actor?: A
   }
 
   const unitLabel = (unitId: string): string => situation?.units.find(unit => unit.id === unitId)?.label ?? unitId
-  const stopLabel = (stop: Stop): string => {
-    const listed = unitOptions?.targets.find(target => sameStop(target.target, stop))?.label
-    if (listed !== undefined) return listed
-    const id = stopObjectId(stop)
-    return id === null ? 'the map point' : objects().find(object => object.id === id)?.label ?? id
-  }
+  const stopLabel = (stop: Stop): string => stopLabelOf(stop, situation, unitOptions, objects())
 
   const outcomeOf = async (send: () => Promise<CommandOutcome>): Promise<CommandOutcome> => {
     try {
@@ -246,13 +235,12 @@ export const openCardScreen = async (run: OpenRun, options: { readonly actor?: A
     }
   }
 
-  const submit = async (unitId: string, target: Stop, when: OrderWhen | null, drops: CurrentJob | null): Promise<void> => {
-    const input: UnitOrderInput = { units: [unitId], stops: [target], ...(when === null ? {} : { when }), ...(drops === null ? {} : { drops: drops.taskId }) }
-    const outcome = await outcomeOf(async () => await client.order(input))
-    await send({ kind: 'result', unitId, target, outcome: outcome.ok ? { ok: true } : { ok: false, code: outcome.code, text: outcome.text }, atMs: wallMs })
+  const submit = async (effect: Extract<SelectionEffect, { kind: 'submit' }>): Promise<void> => {
+    const outcome = await outcomeOf(async () => await client.order(submitOrder(effect)))
+    await send({ kind: 'result', unitId: effect.unitId, target: effect.target, outcome: outcome.ok ? { ok: true } : { ok: false, code: outcome.code, text: outcome.text }, atMs: wallMs })
     if (outcome.ok) {
-      const dropped = drops === null ? null : `${drops.label}${drops.code === null ? '' : ` · ${drops.code}`}`
-      receipts = withReceipts(receipts, [ownReceipt({ commandId: outcome.commandId, unitIds: [unitId], unitLabel: unitLabel(unitId), targetLabel: stopLabel(target), dropped, atMs: wallMs })])
+      const dropped = effect.drops === null ? null : jobText(effect.drops)
+      receipts = withReceipts(receipts, [ownReceipt({ commandId: outcome.commandId, unitIds: [effect.unitId], unitLabel: unitLabel(effect.unitId), targetLabel: stopLabel(effect.target), dropped, atMs: wallMs })])
     }
   }
 
@@ -279,14 +267,15 @@ export const openCardScreen = async (run: OpenRun, options: { readonly actor?: A
         mapSelection = effect.objectId
         return
       case 'options':
-        await readOptions(effect.unitId)
+        if (heldReads !== null) heldReads.push(async () => await readOptions(effect.unitId))
+        else await readOptions(effect.unitId)
         return
       case 'recommend':
         opened = new Set([...opened, effect.callId])
         await pin(effect.callId)
         return
       case 'submit':
-        await submit(effect.unitId, effect.target, effect.when, effect.drops)
+        await submit(effect)
         return
       case 'late-refusal':
         feedback = `${unitLabel(effect.unitId)} → ${stopLabel(effect.target)}: ${effect.text}`
@@ -296,19 +285,15 @@ export const openCardScreen = async (run: OpenRun, options: { readonly actor?: A
 
   async function send(event: SelectionEvent): Promise<void> {
     const stepped = reduceSelection(selection, event)
-    const before = selection.selection
     selection = stepped.state
-    const after = stepped.state.selection
-    // The armed list's order holds while the same unit stays armed.
-    if (!(after.kind === 'armed' && before.kind === 'armed' && before.unitId === after.unitId)) armedOrder = null
     for (const effect of stepped.effects) await perform(effect)
   }
 
   const sync = async (): Promise<void> => {
+    if (heldReads !== null) return
     await readSituation()
-    const armed = selection.selection
-    if (armed.kind === 'armed') await readOptions(armed.unitId)
-    noteLayout()
+    const shown = selection.selection
+    if (shown.kind === 'unit' || shown.kind === 'armed') await readOptions(shown.unitId)
   }
 
   /** An operator action at `gapMs` after the previous one. */
@@ -395,8 +380,8 @@ export const openCardScreen = async (run: OpenRun, options: { readonly actor?: A
         if (button === null || !button.enabled) throw new Error(`${what} is not enabled on ${card.title}`)
       }
       switch (control.kind) {
-        case 'arm': enabled(card.armed === null ? card.dispatch : null, 'Dispatch'); return await send({ kind: 'arm', unitId: card.id, when: null })
-        case 'add-stop': enabled(card.armed === null ? card.addStop : null, 'Add stop'); return await send({ kind: 'arm', unitId: card.id, when: 'after' })
+        case 'arm': enabled(card.armed === null ? card.dispatch : null, 'Dispatch'); return await send({ kind: 'arm', unitId: card.id, when: null, held: unitOptions })
+        case 'add-stop': enabled(card.armed === null ? card.addStop : null, 'Add stop'); return await send({ kind: 'arm', unitId: card.id, when: 'after', held: unitOptions })
         case 'recall': enabled(card.recall, 'Return'); return await command(async () => await client.recall(card.id), { unitIds: [card.id], target: shown().words.return })
         case 'undo-last': enabled(card.undo, 'Undo'); return await command(async () => await client.undo(card.id, required(card.undo.commandId, 'order to undo')), null)
         case 'remove-stop': return await command(async () => await client.removeStop(card.id, control.stopId), null)
@@ -427,14 +412,9 @@ export const openCardScreen = async (run: OpenRun, options: { readonly actor?: A
           if (!proposal.refresh.enabled) throw new Error(`Refresh is not enabled on ${card.label}`)
           return await pin(card.id)
         }
-        case 'chip': {
-          const current = required(pinned, 'pinned proposal')
-          const dropped = new Set(current.dropped)
-          if (dropped.has(control.unitId)) dropped.delete(control.unitId)
-          else dropped.add(control.unitId)
-          pinned = { ...current, dropped }
+        case 'chip':
+          pinned = toggledChip(required(pinned, 'pinned proposal'), control.unitId)
           return
-        }
         case 'alternative': {
           const unit = required(card.alternatives.flatMap(entry => entry.units).find(entry => entry.unitId === control.unitId), `alternative ${control.unitId}`)
           return await order(unit.order)
@@ -461,14 +441,7 @@ export const openCardScreen = async (run: OpenRun, options: { readonly actor?: A
     throw new Error(`A ${card.kind} card has no ${control.kind}`)
   }
 
-  const promptOf = (): { readonly labels: ReadonlyArray<string>; readonly choices: ReadonlyArray<'move' | OrderWhen> } | null => {
-    const armed = selection.selection
-    if (armed.kind !== 'armed' || armed.prompt === null || situation === null) return null
-    if (armed.prompt.kind === 'move') return { labels: [movePromptText(situation, armed.unitId)], choices: ['move'] }
-    if (armed.prompt.job === null) return null
-    const choices = busyChoices(armed.prompt.job)
-    return { labels: [choices.after, choices.now], choices: ['after', 'now'] }
-  }
+  const promptOf = () => situation === null ? null : promptChoices(situation, selection.selection)
 
   await sync()
   return {
@@ -482,7 +455,7 @@ export const openCardScreen = async (run: OpenRun, options: { readonly actor?: A
     lists: currentLists,
     receipts: () => receipts,
     feedback: () => feedback,
-    prompt: () => promptOf()?.labels ?? null,
+    prompt: () => promptOf()?.map(entry => entry.label) ?? null,
     mapSelection: () => mapSelection,
     sync,
     mapTap: async (objectId, gapMs = paceMs) => {
@@ -513,14 +486,23 @@ export const openCardScreen = async (run: OpenRun, options: { readonly actor?: A
       step(gapMs)
       const prompt = promptOf()
       if (prompt === null) throw new Error('The map shows no prompt')
-      const choice = prompt.choices[index]
-      if (choice === undefined) throw new Error(`The map prompt has no option ${index}`)
-      await send({ kind: 'prompt', choice })
+      const option = prompt[index]
+      if (option === undefined) throw new Error(`The map prompt has no option ${index}`)
+      await send({ kind: 'prompt', choice: option.choice })
       await sync()
     },
     wait: ms => {
       wallMs += ms
       void send({ kind: 'tick', atMs: wallMs })
+    },
+    holdReads: () => {
+      heldReads = []
+      return async () => {
+        const pending = heldReads ?? []
+        heldReads = null
+        for (const read of pending) await read()
+        await sync()
+      }
     },
   }
 }

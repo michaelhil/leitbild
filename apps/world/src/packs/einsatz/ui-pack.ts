@@ -5,7 +5,7 @@ import { plannedPathFeatures } from './chain-path.ts'
 import { einsatzColors } from './colors.ts'
 import { einsatzPackId, einsatzRuntimeId } from './ids.ts'
 import { neutralLexicon, type UnitPhase } from './lexicon.ts'
-import { contactIcon } from './situation/text.ts'
+import { contactIcon } from './text.ts'
 import { dispatchWords, einsatzRecordOf, tierWord, trackAgeText, type EinsatzRecord } from './ui/presenters.ts'
 
 /**

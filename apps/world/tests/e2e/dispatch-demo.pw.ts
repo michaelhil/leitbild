@@ -1,4 +1,5 @@
 import { expect, test, type Request } from '@playwright/test'
+import { doubleClickMs } from '../../src/packs/einsatz/ui/selection.ts'
 
 /**
  * Einsatz plan F.1 V.6: from the landing page, "Try the dispatch demo" and
@@ -6,11 +7,10 @@ import { expect, test, type Request } from '@playwright/test'
  * C-1 and pressing its Dispatch button sends `world.einsatz.unit.order`, and
  * the Run accepts the order.
  *
- * The panel ignores a click that lands within 500 ms of its layout changing
- * (its double-click guard), which no person manages but a test runner does
- * as soon as the panel or the card appears. So the test clicks again until
- * the click acts: the call's row until its card is open, and Dispatch until
- * the order is on the network, never twice once it is.
+ * Each click is made once. The panel ignores only the second half of a
+ * double-click, a click within `doubleClickMs` of the last one that acted;
+ * a test runner can click that fast where no person does, so the test lets
+ * that interval pass after opening the card, as a person's pace does.
  */
 const isOrder = (request: Request): boolean => request.method() === 'POST'
   && new URL(request.url()).pathname.endsWith('/capabilities/world.einsatz.unit.order/invoke')
@@ -30,21 +30,16 @@ test('the dispatch demo sends an order from the landing page in four clicks', as
 
   const row = panel.getByRole('region', { name: 'Calls' }).getByRole('button', { name: /C-1 / })
   const card = panel.getByRole('article', { name: /^C-1 / })
-  await expect(async () => {
-    await row.click()
-    await expect(card).toBeVisible({ timeout: 1_000 })
-  }).toPass({ timeout: 30_000 })
+  await row.click()
+  const openedAt = Date.now()
+  await expect(card).toBeVisible()
 
   // The call card's first Dispatch button is its pinned proposal, "Dispatch A4 · 4 min".
   const proposal = card.getByRole('button', { name: /^Dispatch / }).first()
   await expect(proposal).toBeEnabled({ timeout: 30_000 })
+  await page.waitForTimeout(Math.max(0, openedAt + doubleClickMs - Date.now()))
   const ordered = page.waitForRequest(isOrder, { timeout: 30_000 })
-  const seen: { request: Request | null } = { request: null }
-  ordered.then(request => { seen.request = request }, () => {})
-  await expect(async () => {
-    if (seen.request === null) await proposal.click()
-    await expect.poll(() => seen.request, { timeout: 1_000 }).not.toBeNull()
-  }).toPass({ timeout: 30_000 })
+  await proposal.click()
 
   const response = await (await ordered).response()
   expect(response?.status()).toBe(200)
