@@ -94,6 +94,10 @@ let runId = ''
 let room: Room
 let planId = ''
 let revision = 0
+// The what-if copy, the Room scoped to it alone and its plan: set by the copy case, used by the one after it.
+let copyId = ''
+let copyRoom: Room
+let copyPlanId = ''
 
 test('beside a fresh maintenance Run the guided plan Definition is in scope, and creating through the tools returns that Run\'s plan', async () => {
   runId = await stack.start('world.scenario', 'nuclear-maintenance-planning', 'world.scenario.start')
@@ -197,10 +201,10 @@ test('planning.sources.refresh is not offered beside a Run and is refused there 
 }, TIMEOUT_MS)
 
 test('a what-if copy gets its own plan, and a Room scoped to the copy alone neither lists nor reaches the original Run\'s plan', async () => {
-  const copyId = (await invokeOnRun('world.simulation-run.copy', runId, { name: 'Maintenance · what-if' }) as { id: string }).id
+  copyId = (await invokeOnRun('world.simulation-run.copy', runId, { name: 'Maintenance · what-if' }) as { id: string }).id
   expect(await familyOf(copyId)).toEqual(await familyOf(runId))
   // One member selected, as the Room's scope controls build it.
-  const copyRoom = roomWith('room-copy', { kind: 'collection', collection: await familyOf(copyId), members: { mode: 'selected', only: [runReference(copyId)] } })
+  copyRoom = roomWith('room-copy', { kind: 'collection', collection: await familyOf(copyId), members: { mode: 'selected', only: [runReference(copyId)] } })
 
   const before = await copyRoom.listed()
   expect(planDefinitions(before).map(definition => definition.target.ref.id)).toEqual(['nuclear-maintenance-planning'])
@@ -208,7 +212,7 @@ test('a what-if copy gets its own plan, and a Room scoped to the copy alone neit
 
   const created = await copyRoom.call('planning.plan.create', { demoRun: copyId })
   expect(created.error).toBeUndefined()
-  const copyPlanId: string = created.data.plan.id
+  copyPlanId = created.data.plan.id
   expect(copyPlanId).not.toBe(planId)
   expect(created.data.target).toEqual(planTarget(copyPlanId))
   expect((await stack.store.read(workspaceId, copyPlanId)).inputs.settings.run?.id).toBe(copyId)
@@ -229,6 +233,56 @@ test('a what-if copy gets its own plan, and a Room scoped to the copy alone neit
   expect(plansAbout(await room.listed())).toEqual(byPlan([aboutRun(planId, runId), aboutRun(copyPlanId, copyId)]))
   expect((await room.call('planning.plan.read', {})).details?.code).toBe('target_required')
   expect((await room.call('planning.plan.read', {}, { target: planTarget(planId) })).data.sections[0].data.plan.id).toBe(planId)
+}, TIMEOUT_MS)
+
+test('a Room scoped to the copy alone cannot name another Run in a call\'s input: neither to open its plan nor to link a plan to it', async () => {
+  // A maintenance Run of another family, with no plan yet.
+  const strangerId = await stack.start('world.scenario', 'nuclear-maintenance-planning', 'world.scenario.start')
+  expect(await familyOf(strangerId)).not.toEqual(await familyOf(copyId))
+  const definition = planDefinitions(await copyRoom.listed())[0]!.target
+  const stored = async () => ({
+    ids: (await stack.store.list(workspaceId)).plans.map(plan => plan.id).toSorted(),
+    original: await stack.store.read(workspaceId, planId), copy: await stack.store.read(workspaceId, copyPlanId),
+  })
+  const before = await stored()
+  const refusedAt = (place: string, refused: CallResult) => {
+    expect(refused.success).toBe(false)
+    expect(refused.details?.code).toBe('input_out_of_scope')
+    expect(refused.error).toBe(`input_out_of_scope: Input ${place} names a Resource outside the current Room Scope`)
+    expect(refused.data).toBeUndefined()
+  }
+
+  // Opening: the plan Definition is in scope, the Run named in the input is not.
+  for (const outside of [runId, strangerId]) {
+    refusedAt('demoRun', await copyRoom.call('planning.plan.create', { demoRun: outside }, { target: definition }))
+    refusedAt('demoRun', await copyRoom.call('planning.plan.create', { demoRun: outside }))
+  }
+  // Linking: the copy's plan is in scope, the Run it would be linked to is not.
+  const copyPlan = planTarget(copyPlanId)
+  for (const outside of [runId, strangerId]) {
+    refusedAt('edits[0].run', await copyRoom.call('planning.plan.edit', { edits: [{ edit: 'plan', run: outside }] }, { target: copyPlan, expectedRevision: before.copy.revision }))
+    refusedAt('edits[1].run', await copyRoom.call('planning.plan.edit', { preview: true, edits: [{ edit: 'plan', title: 'What-if' }, { edit: 'plan', run: outside }] }, { target: copyPlan, expectedRevision: before.copy.revision }))
+  }
+  expect(await stored()).toEqual(before)
+
+  // What the Scope allows is the Module's to decide. Shown as previews, which save nothing: the Run the Room
+  // is beside, no Run at all, and, from the family Room, the other Run of the family.
+  for (const [from, run] of [[copyRoom, copyId], [copyRoom, null], [room, runId], [room, null]] as const) {
+    const preview = await from.call('planning.plan.edit', { preview: true, edits: [{ edit: 'plan', run }] }, { target: copyPlan, expectedRevision: before.copy.revision })
+    expect(preview.details?.code).not.toBe('input_out_of_scope')
+    expect(preview.error).toBeUndefined()
+    expect(preview.data.preview.saved).toBe(false)
+  }
+  // The family Room holds the original Run, so it may open that Run's plan; the stranger stays outside it too.
+  refusedAt('demoRun', await room.call('planning.plan.create', { demoRun: strangerId }))
+  expect(await stored()).toEqual(before)
+
+  // The legitimate open beside the copy still returns the copy's plan.
+  const reopened = await copyRoom.call('planning.plan.create', { demoRun: copyId })
+  expect(reopened.error).toBeUndefined()
+  expect(reopened.data.plan).toMatchObject({ id: copyPlanId, revision: before.copy.revision })
+  expect((await stored()).ids).toEqual(before.ids)
+  expect(await stack.store.read(workspaceId, planId)).toEqual(before.original)
 }, TIMEOUT_MS)
 
 test('an open refused for a stopped backup pump returns the refusal and leaves the plan exactly as it was', async () => {

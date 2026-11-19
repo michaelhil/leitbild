@@ -1084,4 +1084,190 @@ describe('Room Scope follows `about` links one level', () => {
     const only: WorkspaceRoomScope = { kind: 'collection', collection: family, members: { mode: 'selected', only: [run] } }
     expect(shape(only)).toBe(expected(only, [run01, runFamily], [key(family), key(run)]))
   })
+
+  describe('and bounds the Resources a call names in its input, where the operation declares them', () => {
+    const planEdit = capabilityIdSchema.parse('planning.plan.edit')
+    const planCompare = capabilityIdSchema.parse('planning.plan.compare')
+    // Run 03 belongs to another family.
+    const strangerRun = workspaceResourceReferenceSchema.parse({ workspaceId, moduleId, type: 'world.simulation-run', id: 'run-03' })
+    const otherFamily = workspaceResourceReferenceSchema.parse({ workspaceId, moduleId, type: 'world.run-family', id: 'family-02' })
+    const runAt = (path: string) => ({ path, moduleId, type: run.type })
+    const createDeclares = [runAt('demoRun'), runAt('edits[].run')]
+    const compareDeclares = [{ path: 'with', moduleId: planning, type: planA.type }, runAt('runs[]'), runAt('rows[].cells[].run')]
+
+    /** The `about` catalogue with a second family, and operations that declare where their input names a Resource. */
+    const declaredFetch = (requests: Request[] = []): typeof fetch => {
+      const base = aboutFetch(requests)
+      return (async (input, init) => {
+        const response = await base(input, init)
+        const pathname = new URL(input instanceof Request ? input.url : String(input)).pathname
+        if (pathname.endsWith('/invoke')) return response
+        const body = await response.json() as { resources?: Array<{ ref: { type: string }; capabilityIds: string[] }>; capabilities?: Array<Record<string, unknown>> }
+        if (body.resources) {
+          for (const resource of body.resources) if (resource.ref.type === planA.type) resource.capabilityIds.push(planEdit, planCompare)
+          body.resources.push(
+            { ref: strangerRun, title: 'Run 03', capabilityIds: [readId], links: [{ rel: 'member-of', ref: otherFamily }], summary: [], observedAt: now } as never,
+            { ref: otherFamily, title: 'Other family', capabilityIds: [], links: [{ rel: 'contains', ref: strangerRun }], summary: [], observedAt: now } as never,
+          )
+        }
+        if (body.capabilities) {
+          body.capabilities.find(capability => capability.id === planCreate)!.resourceInputs = createDeclares
+          body.capabilities.push(
+            { id: planEdit, moduleId: planning, kind: 'command', scope: { kind: 'resource', resourceType: planA.type }, title: 'Change a plan', description: 'Change a plan with named edits.', risk: 'write', idempotent: false, resourceInputs: [runAt('edits[].run')], inputSchema: { type: 'object' }, outputSchema: { type: 'object' } },
+            { id: planCompare, moduleId: planning, kind: 'query', scope: { kind: 'resource', resourceType: planA.type }, title: 'Compare plans', description: 'Compare a plan with another.', risk: 'read', idempotent: true, resourceInputs: compareDeclares, inputSchema: { type: 'object' }, outputSchema: { type: 'object' } },
+          )
+        }
+        return Response.json(body)
+      }) as typeof fetch
+    }
+    const declaredTools = (scope: WorkspaceRoomScope, requests: Request[] = []) => createWorkspaceCapabilityTools({
+      workspaceId, hostBaseUrl: 'https://host.test', getRoomScope: roomId => roomId === 'room' ? scope : undefined, fetchImpl: declaredFetch(requests),
+    })
+    const invocations = (requests: Request[]) => requests.filter(request => new URL(request.url).pathname.endsWith('/invoke'))
+    const familyRoom = (members: Extract<WorkspaceRoomScope, { kind: 'collection' }>['members']): WorkspaceRoomScope => ({ kind: 'collection', collection: family, members })
+    /** One call's result, and how many invocations reached the Host for it. */
+    const attempt = async (scope: WorkspaceRoomScope, operationId: string, input: unknown, target?: unknown) => {
+      const requests: Request[] = []
+      const result = await declaredTools(scope, requests)[1]!.execute({ calls: [{ key: 'c', operationId, input, ...(target === undefined ? {} : { target }) }] }, context)
+      const [entry] = (result.data as { results: Array<{ success: boolean; error?: string; details?: unknown }> }).results
+      return { result, entry: entry!, sent: invocations(requests) }
+    }
+    const refusal = (at: string, resource: unknown, scope: WorkspaceRoomScope) => ({
+      key: 'c', success: false,
+      error: `input_out_of_scope: Input ${at} names a Resource outside the current Room Scope`,
+      details: { code: 'input_out_of_scope', details: { input: at, resource, scope } },
+    })
+    const planATarget = { kind: 'resource' as const, ref: planA }
+
+    test('an id of a Resource in scope passes as given; one outside is refused by name before anything is sent', async () => {
+      const inside = await attempt(runRoom, planCreate, { demoRun: run.id })
+      expect(inside.entry).toMatchObject({ success: true, target: guidedTarget })
+      expect(inside.sent).toHaveLength(1)
+      expect(await inside.sent[0]!.json()).toMatchObject({ definition: guidedTarget.ref, input: { demoRun: run.id } })
+
+      const outside = await attempt(runRoom, planCreate, { demoRun: otherRun.id })
+      expect(outside.entry).toEqual({ ...refusal('demoRun', otherRun, runRoom), operationId: planCreate } as never)
+      expect(outside.sent).toHaveLength(0)
+      expect(outside.result).toMatchObject({ success: true, effects: [{ kind: 'change', outcome: 'not-dispatched', operationId: planCreate, target: guidedTarget }] })
+      // An id no Resource has, or one that could be no Resource's id, is outside every Scope.
+      for (const id of ['run-99', ' run-01', 'RUN-01', '']) expect((await attempt(runRoom, planCreate, { demoRun: id })).entry.error).toContain('input_out_of_scope: Input demoRun ')
+    })
+
+    test('a Run of another family, an excluded member and an unselected member are refused; the family is not its Run', async () => {
+      const everyone = familyRoom({ mode: 'all', except: [] })
+      for (const member of [run, otherRun]) expect((await attempt(everyone, planCreate, { demoRun: member.id }, guidedTarget)).sent).toHaveLength(1)
+      const stranger = await attempt(everyone, planCreate, { demoRun: strangerRun.id }, guidedTarget)
+      expect(stranger.entry).toEqual({ ...refusal('demoRun', strangerRun, everyone), operationId: planCreate } as never)
+      expect(stranger.sent).toHaveLength(0)
+      // The family is in scope as a family: its id names no Run.
+      const asRun = await attempt(everyone, planCreate, { demoRun: family.id }, guidedTarget)
+      expect(asRun.entry.error).toContain('input_out_of_scope')
+      expect(asRun.sent).toHaveLength(0)
+
+      const excluded = await attempt(familyRoom({ mode: 'all', except: [otherRun] }), planCreate, { demoRun: otherRun.id }, guidedTarget)
+      expect(excluded.entry.error).toBe('input_out_of_scope: Input demoRun names a Resource outside the current Room Scope')
+      expect(excluded.sent).toHaveLength(0)
+      expect((await attempt(familyRoom({ mode: 'all', except: [otherRun] }), planCreate, { demoRun: run.id }, guidedTarget)).sent).toHaveLength(1)
+
+      const unselected = await attempt(familyRoom({ mode: 'selected', only: [run] }), planCreate, { demoRun: otherRun.id }, guidedTarget)
+      expect(unselected.entry.error).toBe('input_out_of_scope: Input demoRun names a Resource outside the current Room Scope')
+      expect(unselected.sent).toHaveLength(0)
+      expect((await attempt(familyRoom({ mode: 'selected', only: [run] }), planCreate, { demoRun: run.id }, guidedTarget)).sent).toHaveLength(1)
+    })
+
+    test('a declared path reaches into arrays: every id found there is judged, and the refusal names the place', async () => {
+      const linked = await attempt(runRoom, planEdit, { edits: [{ edit: 'job', key: 'restore' }, { edit: 'plan', run: run.id }] }, planATarget)
+      expect(linked.entry.success).toBe(true)
+      expect(await linked.sent[0]!.json()).toMatchObject({ resource: planA, input: { edits: [{ edit: 'job', key: 'restore' }, { edit: 'plan', run: run.id }] } })
+
+      const relinked = await attempt(runRoom, planEdit, { edits: [{ edit: 'plan', run: run.id }, { edit: 'job', key: 'restore' }, { edit: 'plan', run: otherRun.id }] }, planATarget)
+      expect(relinked.entry).toEqual({ ...refusal('edits[2].run', otherRun, runRoom), operationId: planEdit } as never)
+      expect(relinked.sent).toHaveLength(0)
+      // The same path on another operation of the same input shape.
+      expect((await attempt(runRoom, planCreate, { edits: [{ edit: 'plan', run: strangerRun.id }] })).entry.error)
+        .toBe('input_out_of_scope: Input edits[0].run names a Resource outside the current Room Scope')
+
+      const nested = await attempt(runRoom, planCompare, { rows: [{ cells: [{ run: run.id }] }, { cells: [{ run: run.id }, { run: otherRun.id }] }] }, planATarget)
+      expect(nested.entry).toEqual({ ...refusal('rows[1].cells[1].run', otherRun, runRoom), operationId: planCompare } as never)
+      const listed = await attempt(runRoom, planCompare, { runs: [run.id, otherRun.id] }, planATarget)
+      expect(listed.entry).toEqual({ ...refusal('runs[1]', otherRun, runRoom), operationId: planCompare } as never)
+      expect((await attempt(runRoom, planCompare, { runs: [run.id, run.id], rows: [{ cells: [{ run: run.id }] }] }, planATarget)).sent).toHaveLength(1)
+    })
+
+    test('null, a missing place and a value of another shape are the Module\'s to validate', async () => {
+      const left = [
+        { edits: [{ edit: 'plan', run: null }] }, { edits: [{ edit: 'plan', title: 'Week 47' }] }, { edits: [{ edit: 'plan', run: 42 }] },
+        { edits: [{ edit: 'plan', run: { id: otherRun.id } }] }, { edits: [{ edit: 'plan', run: [otherRun.id] }] },
+        { edits: { run: otherRun.id } }, { edits: 'run-02' }, { edits: [otherRun.id, null, 7] }, { edits: [] }, {}, null, undefined, 'run-02', [{ run: otherRun.id }],
+      ]
+      for (const input of left) {
+        const tried = await attempt(runRoom, planEdit, input, planATarget)
+        expect([JSON.stringify(input), tried.entry.success, tried.sent.length]).toEqual([JSON.stringify(input), true, 1])
+      }
+      // An object shaped like an array is not one.
+      expect((await attempt(runRoom, planCompare, { runs: { length: 1, 0: otherRun.id } }, planATarget)).sent).toHaveLength(1)
+    })
+
+    test('a Resource in scope only through the `about` rule may be named; one about another Resource, or a second level, may not', async () => {
+      const admitted = await attempt(runRoom, planCompare, { with: planA.id }, planATarget)
+      expect(admitted.entry.success).toBe(true)
+      expect(admitted.sent).toHaveLength(1)
+      for (const outside of [planB, secondLevel, unlinked]) {
+        const tried = await attempt(runRoom, planCompare, { with: outside.id }, planATarget)
+        expect(tried.entry).toEqual({ ...refusal('with', outside, runRoom), operationId: planCompare } as never)
+        expect(tried.sent).toHaveLength(0)
+      }
+      // The declared Module and type decide what an id names: a Run's id is no plan.
+      expect((await attempt(runRoom, planCompare, { with: run.id }, planATarget)).entry.error).toContain('input_out_of_scope: Input with ')
+
+      // A refused read leaves the other reads of its batch running.
+      const requests: Request[] = []
+      const batch = await declaredTools(runRoom, requests)[1]!.execute({ calls: [
+        { key: 'inside', operationId: planCompare, target: planATarget, input: { with: planA.id } },
+        { key: 'outside', operationId: planCompare, target: planATarget, input: { with: planB.id } },
+      ] }, context)
+      expect(batch).toMatchObject({ success: true, data: { results: [{ key: 'inside', success: true }, { key: 'outside', success: false, error: expect.stringContaining('input_out_of_scope') }] },
+        effects: [{ outcome: 'returned' }, { outcome: 'not-dispatched' }] })
+      expect(invocations(requests)).toHaveLength(1)
+    })
+
+    test('a Room scoped to the whole Workspace passes anything', async () => {
+      const workspace: WorkspaceRoomScope = { kind: 'workspace' }
+      for (const [operationId, input, target] of [
+        [planCreate, { demoRun: strangerRun.id }, guidedTarget], [planCreate, { demoRun: 'run-99' }, guidedTarget],
+        [planEdit, { edits: [{ edit: 'plan', run: otherRun.id }] }, planATarget], [planCompare, { with: unlinked.id, runs: ['run-99'] }, planATarget],
+      ] as const) {
+        const tried = await attempt(workspace, operationId, input, target)
+        expect([operationId, tried.entry.success, tried.sent.length]).toEqual([operationId, true, 1])
+        expect(await tried.sent[0]!.json()).toMatchObject({ input })
+      }
+    })
+
+    test('an operation that declares nothing is unaffected, whatever its input holds', async () => {
+      const input = { demoRun: otherRun.id, with: planB.id, runs: [strangerRun.id], edits: [{ edit: 'plan', run: otherRun.id }] }
+      for (const [operationId, target] of [[planRead, planATarget], [readId, runTarget], [writeId, runTarget]] as const) {
+        const tried = await attempt(runRoom, operationId, input, target)
+        expect([operationId, tried.entry.success, tried.sent.length]).toEqual([operationId, true, 1])
+        expect(await tried.sent[0]!.json()).toMatchObject({ input })
+      }
+    })
+
+    test('discovery shows a declaration with its operation, and an operation without one exactly as before', async () => {
+      type Listed = { operations: Array<{ operationId: string } & Record<string, unknown>> }
+      const operations = async (tools: ReturnType<typeof aboutTools>) => new Map(((await tools[0]!.execute(
+        { view: 'operations', includeInputSchema: true, includeOutputSchema: true, limit: 50 }, context)).data as Listed).operations.map(operation => [operation.operationId, operation]))
+      const before = await operations(aboutTools({ kind: 'workspace' }))
+      const after = await operations(declaredTools({ kind: 'workspace' }))
+      expect([...after.keys()].sort()).toEqual([...before.keys(), planEdit, planCompare].sort())
+      for (const [operationId, operation] of before) {
+        if (operationId === planCreate) continue
+        expect(JSON.stringify(after.get(operationId))).toBe(JSON.stringify(operation))
+        expect(operation).not.toHaveProperty('resourceInputs')
+      }
+      const { resourceInputs, ...rest } = after.get(planCreate)!
+      expect(resourceInputs).toEqual(createDeclares)
+      expect(JSON.stringify(rest)).toBe(JSON.stringify(before.get(planCreate)))
+      expect(after.get(planCompare)!.resourceInputs).toEqual(compareDeclares)
+    })
+  })
 })

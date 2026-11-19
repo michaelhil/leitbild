@@ -251,6 +251,42 @@ const targetInScope = (target: WorkspaceTarget | undefined, resolved: ResolvedSc
   return allowed ? undefined : failure('target_out_of_scope', 'The requested target is outside the current Room Scope', { target, scope: resolved.scope })
 }
 
+/** Every value at a declared input path (contracts `resourceInputs`), with the place it was found: `edits[1].run`. */
+const valuesAtPath = (input: unknown, path: string): ReadonlyArray<{ readonly at: string; readonly value: unknown }> =>
+  path.split('.').reduce<ReadonlyArray<{ readonly at: string; readonly value: unknown }>>((found, segment) => {
+    const each = segment.endsWith('[]')
+    const key = each ? segment.slice(0, -2) : segment
+    return found.flatMap(({ at, value }) => {
+      // A place the input does not hold, or holds in another shape, names no Resource: the Module validates its input itself.
+      if (value === null || typeof value !== 'object' || Array.isArray(value) || !Object.hasOwn(value, key)) return []
+      const child = (value as Readonly<Record<string, unknown>>)[key]
+      const place = at === '' ? key : `${at}.${key}`
+      if (!each) return [{ at: place, value: child }]
+      return Array.isArray(child) ? child.map((element, index) => ({ at: `${place}[${index}]`, value: element })) : []
+    })
+  }, [{ at: '', value: input }])
+
+/**
+ * A Room Scope bounds the Resources a call names in its input as it bounds
+ * the call's target. Where they are is declared by the operation's owning
+ * Module (the descriptor's `resourceInputs`), never known here by operation
+ * or field name. Only an id is judged: null, a missing place or a value that
+ * is not a string is the Module's to validate.
+ */
+const resourceInputsInScope = (operation: ModuleCapabilityDescriptor, input: unknown, resolved: ResolvedScope, workspaceId: WorkspaceId): ToolResult | undefined => {
+  if (resolved.scope.kind === 'workspace') return undefined
+  for (const declared of operation.resourceInputs ?? []) {
+    for (const { at, value } of valuesAtPath(input, declared.path)) {
+      if (typeof value !== 'string') continue
+      const resource = { workspaceId, moduleId: declared.moduleId, type: declared.type, id: value }
+      if (!resolved.resourceKeys.has(referenceKey(resource))) {
+        return failure('input_out_of_scope', `Input ${at} names a Resource outside the current Room Scope`, { input: at, resource, scope: resolved.scope })
+      }
+    }
+  }
+  return undefined
+}
+
 const applicabilityFailure = (
   operation: ModuleCapabilityDescriptor | undefined,
   target: WorkspaceTarget | undefined,
@@ -835,8 +871,10 @@ export const createWorkspaceCapabilityTools = (deps: WorkspaceCapabilityToolsDep
         })
         const effects = prepared.map(entry => effect(entry, 'not-dispatched'))
         const results = await Promise.all(prepared.map(async (entry, index) => {
+          // The operation is advertised once applicabilityFailure passes.
           const issue = applicabilityFailure(entry.operation, entry.target, catalogs.resources.resources, catalogs.definitions.definitions)
             ?? targetInScope(entry.target, resolved)
+            ?? resourceInputsInScope(entry.operation!, entry.input, resolved, deps.workspaceId)
           if (issue) return { key: entry.key, operationId: entry.operationId, success: false, error: issue.error, details: issue.data }
           if (entry.idempotencyKey !== undefined && entry.operation?.acceptsIdempotencyKey !== true) {
             return {

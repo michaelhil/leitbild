@@ -99,7 +99,8 @@ const createModule = (moduleId: ModuleId) => {
           id: 'agents.room-definition.start', moduleId, kind: 'command',
           scope: { kind: 'definition', definitionType: 'agents.room-definition' },
           title: 'Start Room', description: 'Starts the selected Room Definition.',
-          risk: 'write', idempotent: false, inputSchema: { type: 'object' }, outputSchema: { type: 'object' },
+          risk: 'write', idempotent: false, resourceInputs: [{ path: 'about[].run', moduleId: 'world', type: 'world.simulation-run' }],
+          inputSchema: { type: 'object' }, outputSchema: { type: 'object' },
         }
         return Response.json({ capabilities: [startCapability, ...(moduleId === 'world' ? [{
           id: 'world.simulation-run.read', moduleId, kind: 'query',
@@ -227,6 +228,10 @@ describe('Leitbild Workspace Host', () => {
     // What a Module declares its results publish passes through unchanged.
     expect(catalog.capabilities.find(item => item.id === 'world.simulation-run.read')?.publishes).toEqual(['embedded-view'])
     expect(catalog.capabilities.find(item => item.id === 'world.simulation-run.context')?.publishes).toEqual(['context'])
+    // So does where a Module declares its input names a Resource, another Module's included; an undeclared one gains nothing.
+    expect(JSON.stringify(catalog.capabilities.find(item => item.id === 'agents.room-definition.start')?.resourceInputs))
+      .toBe(JSON.stringify([{ path: 'about[].run', moduleId: 'world', type: 'world.simulation-run' }]))
+    expect(catalog.capabilities.find(item => item.id === 'world.scenario.start')).not.toHaveProperty('resourceInputs')
     const result = await host.invoke(
       workspace.id,
       capabilityIdSchema.parse('world.simulation-run.read'),
