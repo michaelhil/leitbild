@@ -2196,6 +2196,9 @@ mod integrated {
         base: Base,
     }
 
+    /// R4-OBS-PURE: a climb set aside for an observer's matrix request.
+    pub struct ClimbAside(Option<super::ClimbMatrices>);
+
     /// PERF2 (E-LIN, R4-JAC-BASE): the state of the last residual call.
     /// Stock IDA sets up its linear system
     /// right after a residual at the same `(t, y, y')` (SUNNonlinSol_Newton
@@ -2494,6 +2497,19 @@ mod integrated {
                 f.cache
                     .for_each_held(|(_, analyses)| analyses.retained = None);
             }
+        }
+        /// R4-OBS-PURE: an observer's matrix request at a state of its own
+        /// (N4′'s `∂F/∂y` at a restart's left side) neither reads nor writes
+        /// a climb: its kept matrices are set aside for the request, which is
+        /// then a full assembly at the observer's state and `cj`, and put
+        /// back unread. Stock IDA's requests are unchanged.
+        pub fn set_climb_aside(&mut self) -> ClimbAside {
+            ClimbAside(self.climb.take())
+        }
+        /// R4-OBS-PURE: the climb [`Self::set_climb_aside`] set aside, back
+        /// as it was.
+        pub fn put_climb_back(&mut self, aside: ClimbAside) {
+            self.climb = aside.0;
         }
         /// R4-CLIMB: while `cj` falls after a restart, the iteration matrix is
         /// the start's `A + cj B`, with the equilibrium columns refreshed at
