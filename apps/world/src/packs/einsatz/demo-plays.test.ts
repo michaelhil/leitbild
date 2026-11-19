@@ -823,6 +823,25 @@ describe('Dispatch panel click counts', () => {
     })
   })
 
+  test('a refusal lasts until the next tap is answered: a tap on another target opens its decision without the old refusal above it, and a tap on the refused target says it again', async () => {
+    await scene(async ({ run, screen, callId, answer }) => {
+      const unitId = answer.proposal!.units[0]!.unitId
+      expect((await run.invoke(ids.order, answer.proposal!.order)).ok).toBe(true)
+      const second = await newCall(run, screen, callId, 'C-9 Second call', 0.003)
+      await screen.mapTap(unitId)
+      await screen.mapTap(callId)
+      const refusal = screen.feedback()
+      expect(refusal).toContain('needs nothing more than')
+      await screen.mapTap(second)
+      expect(screen.decision()).toMatchObject({ kind: 'order', target: { taskId: second } })
+      expect(screen.feedback()).toBeNull()
+      await screen.decide('cancel')
+      await screen.mapTap(callId)
+      expect(screen.feedback()).toBe(refusal)
+      expect(screen.calls).toHaveLength(0)
+    })
+  })
+
   test('close an unserved call: 3 clicks (the call, Close, its Confirm beside it)', async () => {
     await scene(async ({ screen, callId }) => {
       await screen.mapTap(callId)

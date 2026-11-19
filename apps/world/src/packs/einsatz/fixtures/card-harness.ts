@@ -29,7 +29,9 @@ import {
 } from '../ui/presenters.ts'
 import {
   activationActs,
+  answersLastTap,
   initialSelection,
+  optionsAnswer,
   reduceSelection,
   selectionChangeEvent,
   stopObjectId,
@@ -203,6 +205,8 @@ export const openCardScreen = async (run: OpenRun, options: { readonly actor?: A
       return
     }
     unitOptions = answer
+    // As the panel: the options answer the loading notice a tap left while they were on their way.
+    if (optionsAnswer(feedback, selectedUnit(), answer)) feedback = null
   }
 
   const pin = async (callId: string): Promise<void> => {
@@ -288,8 +292,11 @@ export const openCardScreen = async (run: OpenRun, options: { readonly actor?: A
   }
 
   async function send(event: SelectionEvent): Promise<void> {
+    const before = selection
     const stepped = reduceSelection(selection, event, unitOptions, selectedUnit())
     selection = stepped.state
+    // As the panel: a handled tap answers the last one, so the feedback that one left goes.
+    if (answersLastTap(event, before, stepped)) feedback = null
     for (const effect of stepped.effects) await perform(effect)
   }
 

@@ -185,6 +185,18 @@ export const reduceSelection = (state: SelectionState, event: SelectionEvent, op
   }
 }
 
+/**
+ * Whether a handled event answers the person's last tap, so the feedback
+ * that tap left goes: a map click, a target row or a decision the table
+ * acted on. The second half of a double-click, which it ignores, leaves it.
+ */
+export const answersLastTap = (event: SelectionEvent, before: SelectionState, step: SelectionStep): boolean =>
+  (event.kind === 'click' || event.kind === 'target-row' || event.kind === 'decide') && (step.state !== before || step.effects.length > 0)
+
+/** Whether the selected unit's options read answers the feedback shown: the loading notice a tap left while the read was on its way. */
+export const optionsAnswer = (feedback: string | null, unit: TargetingUnit | undefined, options: UnitOptions): boolean =>
+  feedback === dispatchWords.loadingTargets && matchingOptions(unit, options) !== null
+
 export const activationActs = (quietFromMs: number | null, atMs: number): boolean => quietFromMs === null || atMs - quietFromMs >= doubleClickMs
 
 export const selectionChangeEvent = (state: SelectionState, objectId: string | null, kindOf: (objectId: string) => DispatchObjectKind | null, atMs: number): SelectionEvent | null => {

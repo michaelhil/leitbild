@@ -36,7 +36,9 @@
   } from './presenters.ts'
   import {
     activationActs,
+    answersLastTap,
     initialSelection,
+    optionsAnswer,
     reduceSelection,
     selectedObjectOf,
     selectionChangeEvent,
@@ -70,6 +72,12 @@
   let undoRefusal = $state.raw<UndoRefusal | null>(null)
   /** The last refusal or failure the panel reports outside a target, shown in the card's slot. */
   let feedback = $state<string | null>(null)
+  /** Counts what the panel said there, so the same words said again are drawn, and announced, as a new line. */
+  let feedbackKey = $state(0)
+  const say = (text: string | null): void => {
+    feedback = text
+    if (text !== null) feedbackKey += 1
+  }
   /** The call whose Close waits for its inline confirm. */
   let confirming = $state<string | null>(null)
   let surfaceWidth = $state(0)
@@ -159,9 +167,12 @@
     try {
       const answer = await client.unitOptions(unitId)
       const selected = selection.selection
-      if (!disposed && read === optionsRead && selected.kind === 'unit' && selected.unitId === unitId) options = answer
+      if (!disposed && read === optionsRead && selected.kind === 'unit' && selected.unitId === unitId) {
+        options = answer
+        if (optionsAnswer(feedback, selectedUnit, answer)) say(null)
+      }
     } catch (error) {
-      if (!disposed && read === optionsRead) feedback = messageOf(error)
+      if (!disposed && read === optionsRead) say(messageOf(error))
     }
   }
 
@@ -176,7 +187,7 @@
     } catch (error) {
       if (!disposed && read === pinRead) {
         if (pinned !== null && pinned.callId === callId) pinned = { ...pinned, refreshing: false }
-        feedback = messageOf(error)
+        say(messageOf(error))
       }
     }
   }
@@ -186,15 +197,17 @@
   const send = (event: SelectionEvent): void => {
     if (unitPending && (event.kind === 'target-row' || event.kind === 'stop' || event.kind === 'decide' ||
       (event.kind === 'click' && event.on.kind !== 'unit' && selectedUnit !== undefined))) return
+    const before = selection
     const stepped = reduceSelection(selection, event, options, selectedUnit)
     selection = stepped.state
+    if (answersLastTap(event, before, stepped)) say(null)
     for (const effect of stepped.effects) perform(effect)
   }
 
   const perform = (effect: SelectionEffect): void => {
     switch (effect.kind) {
       case 'select':
-        feedback = null
+        say(null)
         confirming = null
         options = null
         props.onSelectObject(effect.objectId === null ? null : objectIdSchema.parse(effect.objectId))
@@ -217,7 +230,7 @@
         void editUnit(effect.unitId, async () => await client.removeStop(effect.unitId, effect.stopId, effect.expectedPlan))
         return
       case 'feedback':
-        feedback = effect.text
+        say(effect.text)
         return
     }
   }
@@ -238,11 +251,11 @@
    * an accepted order leaves a receipt, with Undo when the engine can take the order back.
    */
   const command = async (run: () => Promise<CommandOutcome>, receipt: { readonly unitIds: ReadonlyArray<string>; readonly target: string; readonly dropped?: string | null; readonly undoable: boolean } | null): Promise<boolean> => {
-    feedback = null
+    say(null)
     const outcome = await outcomeOf(run)
     if (disposed) return false
     if (!outcome.ok) {
-      feedback = open && saysBesideUndo(card, outcome.text) ? null : outcome.text
+      say(open && saysBesideUndo(card, outcome.text) ? null : outcome.text)
       return false
     }
     if (receipt !== null) {
@@ -487,6 +500,7 @@
               {card}
               {unitPending}
               {feedback}
+              {feedbackKey}
               {icon}
               confirming={confirming !== null && confirming === card.id}
               back={act(() => send({ kind: 'back' }))}
@@ -504,7 +518,7 @@
             />
           {:else}
             <p class="hint">{emptySelectionText(situation.words)}</p>
-            {#if feedback !== null}<p class="problem" role="alert">{feedback}</p>{/if}
+            {#if feedback !== null}{#key feedbackKey}<p class="problem said" role="alert">{feedback}</p>{/key}{/if}
           {/if}
         </div>
         {#if lists !== null}
@@ -564,6 +578,10 @@
   .hint { margin: 0; padding: 10px 8px; border: 1px dashed var(--border); border-radius: 8px; color: var(--muted); }
   .loading { margin: 0; color: var(--muted); }
   .problem { margin: 0; color: var(--critical); }
+  /* Said again: a short highlight, so a repeated answer is seen to come; none where motion is reduced. */
+  .said { animation: said 700ms ease-out; }
+  @keyframes said { from { background: color-mix(in srgb, var(--critical) 18%, transparent); } }
+  @media (prefers-reduced-motion: reduce) { .said { animation: none; } }
   .artwork { flex: none; margin: 0; color: var(--warning); font-size: 11px; }
   button { min-height: 44px; min-width: 44px; padding: 4px 10px; border: 1px solid var(--border); border-radius: 8px; background: var(--panel); color: inherit; font: inherit; font-size: 12px; cursor: pointer; touch-action: manipulation; }
   button:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
