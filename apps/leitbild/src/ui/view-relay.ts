@@ -1,4 +1,5 @@
 import {
+  ABOUT_RELATION,
   embeddedViewHostMessageSchema,
   embeddedViewOpenMessageSchema,
   embeddedViewSubjectOpenMessageSchema,
@@ -10,6 +11,7 @@ import {
   type EmbeddedViewOpenMessage,
   type EmbeddedViewSubjectOpenMessage,
   type EmbeddedViewsMessage,
+  type ModuleResourceDescriptor,
   type WorkspaceResourceReference,
 } from '@leitbild/contracts'
 import type { ZodError } from 'zod'
@@ -19,12 +21,15 @@ import type { ZodError } from 'zod'
 // to be opened (or a subject's default display, as a proposal card does), and
 // the World frame, whose page shows the Run's window. Views about other
 // Resources open in a Host frame at their owning Module's embed route; they
-// do not require or select a World Run. The relay is
+// do not require or select a World Run. One such view opens in the window
+// instead: a view whose subject the Workspace's catalogue links as about the
+// Run the World pane shows, so it appears over what it is about. The relay is
 // the only validator on that path: every message is parsed with its contract
 // schema and must name this page's Workspace, and every refusal is reported
 // where the operator sees it. It keeps only the latest list, whether the World
-// document listens, and at most one open waiting for it; it never reads a
-// view's state. What it posts is freshly parsed plain data, never UI state.
+// document listens, at most one open waiting for it, and the opens that wait
+// while the catalogue is read again; it never reads a view's state. What it
+// posts is freshly parsed plain data, never UI state.
 
 /** How long an open waits for the World page to listen before it is reported as failed. */
 export const PENDING_VIEW_OPEN_MS = 30_000
@@ -35,6 +40,9 @@ export type WorldPane = 'absent' | 'collapsed' | 'shown'
 // The contract's window messages share this prefix. Other messages from the
 // two frames are not part of the window's protocol and are not judged here.
 const VIEW_MESSAGE_PREFIX = 'leitbild:view'
+
+const sameResource = (a: WorkspaceResourceReference, b: WorkspaceResourceReference): boolean =>
+  a.workspaceId === b.workspaceId && a.moduleId === b.moduleId && a.type === b.type && a.id === b.id
 
 const viewMessageType = (data: unknown): string | null => {
   if (typeof data !== 'object' || data === null) return null
@@ -56,6 +64,17 @@ export const createViewRelay = (config: {
   /** The Workspace this page shows; a view of any other Workspace is refused. */
   readonly workspaceId: () => string
   readonly worldPane: () => WorldPane
+  /** The Run the World pane shows, collapsed or not; null without that pane. */
+  readonly shownRun: () => WorkspaceResourceReference | null
+  /** The Workspace's Resources as the Host last read them. The relay reads only each one's links. */
+  readonly resources: () => ReadonlyArray<Pick<ModuleResourceDescriptor, 'ref' | 'links'>>
+  /**
+   * Reads the Workspace's Resources again, so that `resources` answers with
+   * what the Workspace lists now; it rejects when they could not be read. The
+   * relay asks once for a view whose subject is not listed (an agent may just
+   * have created it), and never fetches anything itself.
+   */
+  readonly refreshResources: () => Promise<void>
   /**
    * Why the Run may not be opened beside the chat, or null when it may: the
    * Workspace must list it (after reading the catalog again on a miss, since
@@ -84,6 +103,8 @@ export const createViewRelay = (config: {
   let pending: { readonly open: WindowOpen; readonly cancel: () => void } | null = null
   // Counts opens, so a Run check still running for an earlier one does nothing.
   let openSequence = 0
+  // While the catalogue is read again: the opens that wait for it, in arrival order. Null when no read is running.
+  let held: { readonly opens: Array<() => void>; readonly cancel: () => void } | null = null
 
   const viewsMessage = (): EmbeddedViewsMessage => embeddedViewsMessageSchema.parse({ type: 'leitbild:views', views })
   const openMessage = (view: EmbeddedViewListing): EmbeddedViewOpenMessage =>
@@ -96,10 +117,64 @@ export const createViewRelay = (config: {
     pending = null
   }
 
+  const dropHeld = (): void => {
+    held?.cancel()
+    held = null
+  }
+
   const closeOpens = (): void => {
     openSequence += 1
     dropPending()
+    dropHeld()
     config.openOwnedView(null)
+  }
+
+  // One read of the catalogue for the open that needs it. Opens that arrive
+  // meanwhile wait behind it and are handled in arrival order once it settles,
+  // so none is lost, none acts before an earlier one, and none starts a second
+  // read. A read that fails, or does not answer within the open's wait budget,
+  // is reported, and the waiting opens are then judged by the catalogue as held.
+  const readCatalogueAgainThen = (first: () => void): void => {
+    const opens = [first]
+    const settle = (problem: string | null): void => {
+      if (held?.opens !== opens) return
+      dropHeld()
+      if (problem !== null) config.reportError(`Display opened in its own frame, not in the Run's window: ${problem}`)
+      for (const act of opens) act()
+    }
+    held = { opens, cancel: config.startTimer(PENDING_VIEW_OPEN_MS, () => settle(`the Workspace's resources were not read again within ${PENDING_VIEW_OPEN_MS / 1_000} s`)) }
+    void readCatalogueAgain(settle)
+  }
+
+  const readCatalogueAgain = async (settle: (problem: string | null) => void): Promise<void> => {
+    try {
+      await config.refreshResources()
+    } catch (error) {
+      return settle(`the Workspace's resources could not be read again: ${error instanceof Error ? error.message : String(error)}`)
+    }
+    settle(null)
+  }
+
+  // A view whose subject is not a Run. It opens in the window of the Run the
+  // World pane shows where the catalogue links its subject as about that Run,
+  // and in a Host frame otherwise. A subject the catalogue does not list may
+  // have been created since the Host last read it, so the catalogue is read
+  // again, once, before the rule is applied. A subject still unlisted after
+  // that read, or after a failed one, opens in the Host frame: that is where
+  // every view that is not about the shown Run opens, with the view shown, not
+  // a fallback that hides a failure.
+  const openOwned = (view: EmbeddedViewListing, readAgain: boolean): void => {
+    const run = config.worldPane() === 'absent' ? null : config.shownRun()
+    const listed = run === null ? undefined : config.resources().find(resource => sameResource(resource.ref, view.envelope.subject))
+    if (run !== null && listed === undefined && readAgain) return readCatalogueAgainThen(() => openOwned(view, false))
+    if (run !== null && listed?.links.some(link => link.rel === ABOUT_RELATION && sameResource(link.ref, run))) return open(openMessage(view), run)
+    closeOpens()
+    config.openOwnedView(view)
+  }
+
+  const openView = (view: EmbeddedViewListing, readAgain: boolean): void => {
+    if (view.envelope.subject.moduleId !== 'world' || view.envelope.subject.type !== 'world.simulation-run') return openOwned(view, readAgain)
+    open(openMessage(view), view.envelope.subject)
   }
 
   const keepPending = (open: WindowOpen): void => {
@@ -133,12 +208,9 @@ export const createViewRelay = (config: {
     if (!parsed.success) return config.reportError(`Display could not be opened: ${firstIssue(parsed.error)}`)
     const view = parsed.data.view
     if (foreign(view)) return config.reportError('Display could not be opened: it belongs to another Workspace')
-    if (view.envelope.subject.moduleId !== 'world' || view.envelope.subject.type !== 'world.simulation-run') {
-      closeOpens()
-      config.openOwnedView(view)
-      return
-    }
-    open(openMessage(view), view.envelope.subject)
+    // Behind a running read the open waits its turn, and is then judged by the catalogue that read brought.
+    if (held !== null) return void held.opens.push(() => openView(view, false))
+    openView(view, true)
   }
 
   // A subject's default display (a proposal's element) is relayed exactly as an open: the same Workspace and Run checks, the same refusals.
@@ -146,7 +218,9 @@ export const createViewRelay = (config: {
     const parsed = embeddedViewSubjectOpenMessageSchema.safeParse(data)
     if (!parsed.success) return config.reportError(`Display could not be opened: ${firstIssue(parsed.error)}`)
     if (parsed.data.resource.workspaceId !== config.workspaceId()) return config.reportError('Display could not be opened: it belongs to another Workspace')
-    open(parsed.data, parsed.data.resource)
+    const message = parsed.data
+    if (held !== null) return void held.opens.push(() => open(message, message.resource))
+    open(message, message.resource)
   }
 
   const open = (message: WindowOpen, run: WorkspaceResourceReference): void => {

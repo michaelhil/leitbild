@@ -66,3 +66,56 @@ test('a refused Next preserves an offered prompt link; only successful progressi
     if (originalLocation) Object.defineProperty(globalThis, 'location', originalLocation); else Reflect.deleteProperty(globalThis, 'location')
   }
 })
+
+test('a prompt offered by a step that does not wait for a reply is sent without asking World to link it', async () => {
+  const priorRoles = currentActiveRoleSet(); configureActiveRoleSet(null)
+  const originalFetch = globalThis.fetch, originalWindow = Object.getOwnPropertyDescriptor(globalThis, 'window'), originalLocation = Object.getOwnPropertyDescriptor(globalThis, 'location')
+  const parent = {}, messages: any[] = [], calls: string[] = []
+  const subject = { workspaceId: '00000000-0000-4000-8000-000000000001', moduleId: 'world', type: 'world.simulation-run', id: 'run-plan-guide' }
+  const recipient = { subject, clientId: 'client', documentId: 'document', leaseId: 'lease', expiresAt: new Date(Date.now() + 60_000).toISOString() }
+  const attemptId = crypto.randomUUID(), stepAttemptId = crypto.randomUUID()
+  const effect = { id: 'deadline-question', target: { kind: 'composer' }, action: { kind: 'draft', text: 'Can we finish by 20:00?' }, requestId: 'request-question' }
+  let guide: any = { available: true, title: 'Guide' }, queued = false
+  let screen: GuidanceScreen | undefined
+  Object.defineProperty(globalThis, 'window', { configurable: true, value: { parent } })
+  Object.defineProperty(globalThis, 'location', { configurable: true, value: { origin: 'http://world.test' } })
+  globalThis.fetch = (async (input: RequestInfo | URL) => {
+    const path = String(input); calls.push(path)
+    if (path.endsWith('/presentation/register')) return Response.json({ result: recipient })
+    if (path.endsWith('/presentation/poll')) {
+      const requests = queued ? [{ id: 'request-question', recipient, source: { moduleId: 'world', kind: 'guide', id: attemptId, label: 'Guide', executionId: stepAttemptId }, target: { subject, type: 'world.composer', id: 'assistant' }, action: effect.action, purpose: 'Compare', mode: 'guide', createdAt: new Date().toISOString(), expiresAt: new Date(Date.now() + 30_000).toISOString() }] : []
+      queued = false
+      return Response.json({ result: { recipient, requests } })
+    }
+    if (path.endsWith('/guide/read')) return Response.json({ result: guide })
+    if (path.endsWith('/guide/start')) {
+      guide = { available: true, title: 'Guide', attemptId, stepAttemptId, revision: 0, status: 'active', step: { id: 'compare', title: 'Compare', instruction: 'Compare, or ask', completion: 'acknowledge', effects: [effect] }, receipts: [], completed: [] }
+      queued = true
+      return Response.json({ result: guide })
+    }
+    // World's answer to a prompt link on a step that names no reply task.
+    if (path.endsWith('/guide/prompt')) return Response.json({ error: { code: 'guide_prompt_stale', message: 'The submitted prompt does not match this guide step' } }, { status: 409 })
+    return Response.json({ result: { closed: true } })
+  }) as typeof fetch
+  const storage = new Map<string, string>()
+  let session: ReturnType<typeof createGuidanceSession> | undefined
+  try {
+    const { configureActiveWorkspace } = await import('../src/ui/workspace-context.ts')
+    const { workspaceIdSchema } = await import('@leitbild/contracts')
+    configureActiveWorkspace(workspaceIdSchema.parse(subject.workspaceId))
+    session = createGuidanceSession({ runId: subject.id, perspective: 'open', apply: async () => ({ status: 'applied' }), clear: () => {}, changed: value => screen = value, post: value => messages.push(value), storage: { getItem: key => storage.get(key) ?? null, setItem: (key, value) => { storage.set(key, value) }, removeItem: key => { storage.delete(key) } } })
+    for (let n = 0; n < 30 && !screen?.guide; n++) await Bun.sleep(1)
+    await session.action('start')
+    expect(messages.some(message => message.type === 'leitbild:presentation-compose')).toBe(true)
+    session.receive({ origin: 'http://world.test', source: parent, data: { type: 'leitbild:presentation-evidence', recipient, room: { ...subject, moduleId: 'agents', type: 'agents.room', id: 'room-a' }, requestId: 'request-question', messageId: 'actual-person-message' } } as MessageEvent)
+    await session.read()
+    await Bun.sleep(5)
+    expect(calls.filter(path => path.endsWith('/guide/prompt'))).toEqual([])
+    expect(screen?.error).toBeNull()
+    expect(screen?.guide?.step?.id).toBe('compare')
+  } finally {
+    session?.stop(); configureActiveRoleSet(priorRoles); globalThis.fetch = originalFetch
+    if (originalWindow) Object.defineProperty(globalThis, 'window', originalWindow); else Reflect.deleteProperty(globalThis, 'window')
+    if (originalLocation) Object.defineProperty(globalThis, 'location', originalLocation); else Reflect.deleteProperty(globalThis, 'location')
+  }
+})

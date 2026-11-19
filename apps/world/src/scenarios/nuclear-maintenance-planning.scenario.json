@@ -61,7 +61,7 @@
       {
         "id": "compare",
         "title": "Can the cooling train return by Wednesday evening?",
-        "instruction": "Choose Compare maintenance schedules. Work starts Wednesday 18 November at 07:00, with a 21:00 return target. Compare the dated finishes and cost for existing crews or a qualified HX contractor. The plan reads this plant’s pre-maintenance state.",
+        "instruction": "Choose Compare maintenance schedules to compare them in Planning, or ask the Assistant beside the plant. The suggested question is editable and is never sent automatically; send it yourself, then open a schedule from the answer to see it over the plant. Work starts Wednesday 18 November at 07:00, with a 21:00 return target. Compare the dated finishes and cost for existing crews or a qualified HX contractor. The plan reads this plant’s pre-maintenance state.",
         "effects": [
           {
             "id": "show-plant",
@@ -71,6 +71,16 @@
             },
             "action": {
               "kind": "reveal"
+            }
+          },
+          {
+            "id": "deadline-question",
+            "target": {
+              "kind": "composer"
+            },
+            "action": {
+              "kind": "draft",
+              "text": "Can we finish the cooling-train maintenance by 20:00 Wednesday? What about 19:00?"
             }
           }
         ],

@@ -745,6 +745,14 @@
     return null
   }
 
+  // The process display window reads the catalog again when a chat display's
+  // subject is not listed (an agent may just have created it, as a plan beside
+  // a Run), so every reader of the catalog sees it too. A failed read rejects,
+  // and the relay reports it.
+  const rereadResources = async (): Promise<void> => {
+    if (workspace) await refreshResources(workspace.id)
+  }
+
   // The open Run was deleted: its address is replaced, so Back does not return to it.
   const closeWorldRun = (): void => {
     location.replace(workspace ? `/workspaces/${encodeURIComponent(workspace.id)}` : '/workspaces')
@@ -1024,7 +1032,7 @@
     {#if shownStandby !== null}
       <!-- A screen with nothing to show: the badge's Standby fills the window, and no Run is joined. -->
     {:else if showingComposer}
-    <WorkspaceComposer workspaceId={workspace.id} worldRunId={selectedWorldRunId} worldFocus={selectedWorldFocus} worldElement={selectedWorldElement} worldOption={selectedWorldOption} worldSurface={selectedWorldSurface} {planningPath} planningResource={selectedPlanningResource?.ref ?? null}
+    <WorkspaceComposer workspaceId={workspace.id} worldRunId={selectedWorldRunId} worldFocus={selectedWorldFocus} worldElement={selectedWorldElement} worldOption={selectedWorldOption} worldSurface={selectedWorldSurface} {planningPath} planningResource={selectedPlanningResource?.ref ?? null} {resources} {rereadResources}
       onResourceCatalogChange={() => { void refreshResources(workspace!.id).catch(cause => { refreshError = String(cause) }) }}
       {focusedSubjects} agentsRoomId={selectedAgentsRoomId} {agentsVisible} onShowAgents={showRunAssistant}
       {runRefusal} onOpenRun={runId => switchWorldRun(runId)} {runAssistantAvailable} onOpenRunAssistant={openRunAssistant}
