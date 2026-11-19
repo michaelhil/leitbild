@@ -269,6 +269,18 @@ describe('Arming and the armed unit\'s submits', () => {
     // Armed by "+ Add stop" the order goes after the job: no prompt.
     expect(kinds(step({ ...busy, when: 'after' }, click(call)).effects)).toEqual(['submit'])
   })
+  test('T7: a unit with no job whose options take a target only "after" its plan (a loaded carrier\'s call) sends it with when "after" on the tap or the row, asking nothing; a target "now" takes goes as armed', () => {
+    const loaded: UnitOptions = { unitId: unitA.id, busy: null, targets: [
+      { target: { siteId: site.id }, verb: 'deliver', label: 'S-1', etaS: 60, now: true },
+      { target: { taskId: call.id }, verb: 'pick-up', label: 'T-1', etaS: 600, now: false },
+    ], refused: [] }
+    const armed = holding(loaded)
+    expect(step(armed, click(call)).effects).toEqual([{ kind: 'submit', unitId: unitA.id, target: { taskId: call.id }, when: 'after', drops: null }])
+    expect(step(armed, { kind: 'target-row', target: { taskId: call.id } }).effects).toEqual([{ kind: 'submit', unitId: unitA.id, target: { taskId: call.id }, when: 'after', drops: null }])
+    expect(step(armed, click(site)).effects).toEqual([{ kind: 'submit', unitId: unitA.id, target: { siteId: site.id }, when: null, drops: null }])
+    // A target the options do not list goes as armed, and the server decides.
+    expect(step(armed, click(call2)).effects).toEqual([{ kind: 'submit', unitId: unitA.id, target: { taskId: call2.id }, when: null, drops: null }])
+  })
   test('the server\'s net: a tap before the options read arrives, or after one that called the unit free, submits; when_required then asks, with the job the next read names', () => {
     for (const armed of [sa, holding(optionsOf(unitA.id, null))]) {
       const sent = step(armed, click(call))

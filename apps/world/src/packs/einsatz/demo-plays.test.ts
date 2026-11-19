@@ -583,6 +583,39 @@ describe('B.11 click counts at the Dispatch panel', () => {
     })
   })
 
+  test('T7: a transporting unit takes a call after its delivery in 3 clicks (the unit, Dispatch…, the call): nothing is dropped, so nothing is asked; it delivers, then goes to the call', async () => {
+    await scene(async given => {
+      const { run, screen } = given
+      const { busyId: carrier, second } = await busyWithSecondCall(given)
+      // Set up, not counted: the Run goes on until the unit takes its load to a site.
+      await run.run.setClock({ paused: false })
+      for (let index = 0; index < 400 && run.unit(carrier).phase !== 'transporting'; index++) {
+        run.forward(5_000)
+        await run.settle()
+      }
+      expect(run.unit(carrier).phase).toBe('transporting')
+      await screen.sync()
+      await screen.mapTap(carrier)
+      await screen.press({ kind: 'arm' })
+      // The call is a valid target, taken after the delivery: not dimmed, its row says so.
+      const card = screen.card()
+      if (card?.kind !== 'unit' || card.armed === null) throw new Error(`${carrier} is not armed`)
+      expect(card.armed.rows.find(entry => JSON.stringify(entry.target) === JSON.stringify({ taskId: second }))).toMatchObject({ refused: null, drops: null, after: expect.any(String) })
+      await screen.mapTap(second)
+      expect(screen.actions()).toBe(3)
+      expect(screen.prompt()).toBeNull()
+      expect(sent(screen)).toEqual([[ids.order, { units: [carrier], stops: [{ taskId: second }], when: 'after' }, 'ok']])
+      const loadOnBoard = () => Object.values(run.unit(carrier).load).reduce((sum, count) => sum + count, 0)
+      for (let index = 0; index < 400 && run.unit(carrier).taskId !== second; index++) {
+        run.forward(5_000)
+        await run.settle()
+      }
+      // On its way to the call it carries nothing: it handed its load over first.
+      expect(run.unit(carrier).taskId).toBe(second)
+      expect(loadOnBoard()).toBe(0)
+    })
+  })
+
   test('F5: a tap before the arming read returns asks After or Now from the options the unit\'s card read, and sends no order before the choice', async () => {
     await scene(async given => {
       const { screen } = given

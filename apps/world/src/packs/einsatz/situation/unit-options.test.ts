@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test'
 import { createDirectRoutingAdapter } from '../../../routing/direct-adapter.ts'
-import { at, controller, emptyState, first, newTask, newUnit, refusalOf, run, runAll, send, templates, top, types } from '../fixtures/engine-harness.ts'
+import { advance, arrivalAt, at, controller, emptyState, first, newTask, newUnit, refusalOf, run, runAll, send, templates, top, types, unitOf } from '../fixtures/engine-harness.ts'
 import type { EngineState } from '../engine/model.ts'
 import { openViewer } from '../viewer.ts'
 import { unitOptionsSchema } from './schema.ts'
@@ -53,6 +53,23 @@ describe('Einsatz unit options', () => {
     expect(answer.targets.find(target => target.label === 'CLINIC')).toMatchObject({ now: true })
     expect((await refusalOf(state, { kind: 'order', units: ['c1'], stops: [{ taskId: 'near' }], when: 'now', drops: 'far' })).code).toBe('divert_from_higher_priority')
     expect((await run(state, { kind: 'order', units: ['c1'], stops: [{ taskId: 'near' }], when: 'after' })).units.get('c1')!.orders).toHaveLength(2)
+  })
+
+  test('T7: a carrier taking its load to a site takes no call now, but a call after its delivery is valid; a site to deliver to is valid now', async () => {
+    let state = await run(await field(), send(['c1'], { taskId: 'near' }))
+    state = await advance(state, arrivalAt(state, 'c1') + 10_000)
+    expect(unitOf(state, 'c1')).toMatchObject({ phase: 'transporting', load: { [top]: 1 } })
+    expect(unitOf(state, 'c1').taskId).toBeUndefined()
+    const answer = await options(state, 'c1')
+    expect(answer.busy).toBeNull()
+    expect(answer.targets.find(target => target.label === 'CLINIC')).toMatchObject({ verb: 'deliver', now: true })
+    const far = answer.targets.find(target => target.label === 'FAR')!
+    expect(far).toMatchObject({ verb: 'pick-up', now: false })
+    expect((await refusalOf(state, send(['c1'], { taskId: 'far' }))).code).toBe('unit_loaded')
+    const after = await run(state, { kind: 'order', units: ['c1'], stops: [{ taskId: 'far' }], when: 'after' })
+    expect(unitOf(after, 'c1').orders.map(step => [step.kind, step.state])).toEqual([['deliver', 'active'], ['serve', 'queued']])
+    // A call it cannot serve even after delivering is refused for that reason, not for its load.
+    expect(answer.refused.find(entry => entry.label === 'LIFT')).toMatchObject({ code: 'requirement_unmet' })
   })
 
   test('a unit not in the picture is refused, as a Capability rejection', async () => {

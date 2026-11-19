@@ -234,13 +234,18 @@ const unchanged = (state: SelectionState): SelectionStep => ({ state, effects: [
 /**
  * A target for the armed unit. A unit its options read names busy asks
  * After or Now at once, sending nothing yet; any other submits, and the
- * server decides. The prompt shown goes: this tap answers what it asked. A
- * refusal shown stays until the result replaces it or it expires.
+ * server decides: a target its options say only an order "after" its plan
+ * takes (a loaded carrier's call) with `when: 'after'`, since nothing is
+ * dropped and nothing needs asking, any other as armed. The prompt shown
+ * goes: this tap answers what it asked. A refusal shown stays until the
+ * result replaces it or it expires.
  */
 const submit = (state: SelectionState, armed: Extract<Selection, { kind: 'armed' }>, target: Stop): SelectionStep => {
   const job = armed.options?.busy ?? null
   if (armed.when === null && job !== null) return { state: { ...state, selection: { ...armed, prompt: { kind: 'busy', target, job } } }, effects: [] }
-  return { state: { ...state, selection: { ...armed, prompt: null } }, effects: [{ kind: 'submit', unitId: armed.unitId, target, when: armed.when, drops: null }] }
+  const afterOnly = armed.options?.targets.some(entry => !entry.now && stopKey(entry.target) === stopKey(target)) === true
+  const when = armed.when ?? (afterOnly ? 'after' : null)
+  return { state: { ...state, selection: { ...armed, prompt: null } }, effects: [{ kind: 'submit', unitId: armed.unitId, target, when, drops: null }] }
 }
 
 const clickIn = (state: SelectionState, on: Clicked): SelectionStep => {
