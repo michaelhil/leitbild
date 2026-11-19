@@ -88,6 +88,28 @@ describe('map-first dispatch', () => {
     }])
   })
 
+  test('a tap on the active stop or on a queued stop gets the options read\'s plain answer and sends nothing: the read judges a planned target by adding it only', () => {
+    const held: UnitOptions = {
+      ...assigned,
+      targets: [],
+      refused: [
+        { target: old.target, label: old.label, code: 'requirement_covered', text: 'Old call needs nothing more than A provides' },
+        { target: next.target, label: next.label, code: 'site_not_accepting', text: 'Later stop is not accepting' },
+      ],
+    }
+    for (const [on, text] of [[{ kind: 'call', id: 'call:a' }, 'Old call needs nothing more than A provides'], [{ kind: 'site', id: 'site:a' }, 'Later stop is not accepting']] as const) {
+      const tapped = reduceSelection(selected(), click(on), held, busy)
+      expect(tapped.effects).toEqual([{ kind: 'feedback', text }])
+      expect(tapped.state.selection).toEqual({ kind: 'unit', unitId: unit.id })
+    }
+    // With load still waiting there, the read offers the planned call for a further trip only: Replace is disabled with its words.
+    const further: UnitOptions = { ...assigned, refused: [], targets: [{ target: old.target, label: old.label, verb: 'pick-up', etaS: 0, afterOnly: true, canReplace: false, canAdd: true, replaceRefusal: 'Old call is already in A\'s plan' }] }
+    const picked = reduceSelection(selected(), click({ kind: 'call', id: 'call:a' }), further, busy)
+    expect(picked.effects).toEqual([])
+    expect(picked.state.selection).toMatchObject({ decision: { kind: 'order', replace: false, add: true, replaceReason: 'Old call is already in A\'s plan' } })
+    expect(reduceSelection(picked.state, { kind: 'decide', choice: 'replace' }, further, busy).effects).toEqual([])
+  })
+
   test('after an Undo the unit\'s plan no longer matches the options read before it, so a target tap sends nothing until its options are read again', () => {
     // The options were read while the unit held its stop; the Undo took the stop back.
     const undone = { ...busy, plan: [] }

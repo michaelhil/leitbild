@@ -744,7 +744,7 @@ describe('Dispatch panel click counts', () => {
     })
   })
 
-  test('a map tap on a target already in the plan is a target like any other: the options read answers it, and it never removes a stop', async () => {
+  test('a map tap on a target already in the plan, the active stop or a queued one, gets the options read\'s plain answer: no dialog, nothing sent, no stop removed', async () => {
     await scene(async ({ run, screen, callId, answer }) => {
       const unitId = answer.proposal!.units[0]!.unitId
       expect((await run.invoke(ids.order, answer.proposal!.order)).ok).toBe(true)
@@ -753,14 +753,16 @@ describe('Dispatch panel click counts', () => {
       await screen.mapTap(second)
       await screen.decide('add')
       const plan = displayedPlan(screen, unitId)
+      expect(plan.map(stop => stop.state)).toEqual(['active', 'queued'])
       const options = await run.query<UnitOptions>(einsatzQueryIds.unitOptions, { unitId })
-      for (const target of [second, callId]) {
-        // The options read lists the planned call: taking it now is allowed, adding it again is not, with the engine's reason.
-        const listed = options.targets.find(entry => 'taskId' in entry.target && entry.target.taskId === target)
-        expect(listed).toMatchObject({ canReplace: true, canAdd: false })
+      for (const target of [callId, second]) {
+        // The read judges a planned call by adding it again only, which the engine refuses: it is listed as refused, with that reason.
+        expect(options.targets.some(entry => 'taskId' in entry.target && entry.target.taskId === target)).toBe(false)
+        const refused = options.refused.find(entry => 'taskId' in entry.target && entry.target.taskId === target)
+        expect(refused?.code).toBe('requirement_covered')
         await screen.mapTap(target)
-        expect(screen.decision()).toMatchObject({ kind: 'order', target: { taskId: target }, replace: true, add: false, addReason: listed!.addRefusal })
-        await screen.decide('cancel')
+        expect(screen.decision()).toBeNull()
+        expect(screen.feedback()).toBe(refused!.text)
       }
       expect(screen.calls).toHaveLength(1)
       expect(displayedPlan(screen, unitId)).toEqual(plan)
