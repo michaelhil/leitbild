@@ -5,7 +5,7 @@ import { neutralLexicon, unitPhases } from '../lexicon.ts'
 import type { Stop, UnitOrderInput } from '../order-schema.ts'
 import type { Eta, RecommendAnswer } from '../recommendation-schema.ts'
 import type { Situation, SituationCall, SituationSite, SituationUnit, StopVerb, UnitOptions, UnitTone } from '../situation/schema.ts'
-import { clockText, contactIcon } from '../situation/text.ts'
+import { clockText, contactIcon } from '../text.ts'
 import { mapTargetingMaxTags, type MapTargeting } from '../../../ui/surface-panel-interaction.ts'
 import { selectedObjectOf, stopObjectId, type CurrentJob, type DispatchObjectKind, type Selection } from './selection.ts'
 

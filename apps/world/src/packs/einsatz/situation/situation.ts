@@ -90,8 +90,7 @@ const loadCounts = (state: EngineState, load: UnitRecord['load']) => state.catal
 /** Who commands a unit the caller does not, in role words; null when the caller commands it. */
 const commandedByOf = (state: EngineState, viewer: EinsatzViewer, roles: ReadonlyArray<ScenarioRole>, unit: UnitRecord): string | null => {
   if (commandsUnit(state.catalog, viewer, unit)) return null
-  const types = { unitType: (id: string) => state.catalog.types.get(id)!, taskTemplate: (id: string) => state.catalog.templates.get(id)! }
-  const commanders = roles.filter(role => role.class === 'operator' && roleCommands(types, role, unit)).map(role => role.label)
+  const commanders = roles.filter(role => role.class === 'operator' && roleCommands(role, unit)).map(role => role.label)
   return commanders.length === 0 ? 'No role' : commanders.join(', ')
 }
 

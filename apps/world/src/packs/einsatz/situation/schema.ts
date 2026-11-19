@@ -176,7 +176,6 @@ const siteRowSchema = z.object({
 export const situationInputSchema = z.object({
   group: configIdSchema.optional().describe('Only the units of this declared group; calls and sites are listed in full.'),
 }).strict()
-export type SituationInput = z.output<typeof situationInputSchema>
 
 /** The `world.einsatz.situation` answer. It makes no suggestions: who should go comes from `world.einsatz.recommend`. */
 export const situationSchema = z.object({
@@ -215,7 +214,6 @@ export type SituationSite = Situation['sites'][number]
 export const unitOptionsInputSchema = z.object({
   unitId: idSchema.describe('The unit to list targets for.'),
 }).strict()
-export type UnitOptionsInput = z.output<typeof unitOptionsInputSchema>
 
 /** The `world.einsatz.unit.options` answer: where the unit may be ordered now, and where not and why. */
 export const unitOptionsSchema = z.object({
