@@ -155,7 +155,7 @@ describe('Standby says why', () => {
   test('each reason has its sentence, and only another Workspace has a link', () => {
     expect(standbyText({ kind: 'unassigned', definition: nuclear }, scenario)).toEqual({ why: 'Nothing assigned for Halden offsite power', link: null })
     expect(standbyText({ kind: 'run-gone' }, scenario)).toEqual({ why: 'Its Run no longer exists', link: null })
-    expect(standbyText({ kind: 'no-run' }, scenario)).toEqual({ why: 'This address names no Run', link: null })
+    expect(standbyText({ kind: 'no-run' }, scenario)).toEqual({ why: 'Nothing to show: this address names no Run', link: null })
     expect(standbyText({ kind: 'elsewhere', href: `/workspaces/${there}?screen=B`, problem: null }, scenario)).toEqual({
       why: 'The screens now show a Run in another Workspace',
       link: { href: `/workspaces/${there}?screen=B`, label: 'Open it on this screen' },

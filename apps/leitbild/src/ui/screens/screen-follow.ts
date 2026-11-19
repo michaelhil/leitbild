@@ -91,7 +91,7 @@ export const standbyText = (reason: StandbyReason, scenario: (definition: string
   switch (reason.kind) {
     case 'unassigned': return { why: `Nothing assigned for ${scenario(reason.definition)}`, link: null }
     case 'run-gone': return { why: 'Its Run no longer exists', link: null }
-    case 'no-run': return { why: 'This address names no Run', link: null }
+    case 'no-run': return { why: 'Nothing to show: this address names no Run', link: null }
     case 'elsewhere': return {
       why: reason.problem === null
         ? 'The screens now show a Run in another Workspace'

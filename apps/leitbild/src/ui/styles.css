@@ -116,6 +116,8 @@ main { width: min(1120px, 92vw); margin: 0 auto; padding: 3.5rem 0 6rem; }
 main.workspace-main { width: 100%; height: calc(100dvh - 42px); margin: 0; padding: 0; overflow: hidden; }
 #app:has(main.workspace-main) { height: 100dvh; display: grid; grid-template-rows: auto minmax(0, 1fr); }
 #app:has(main.workspace-main) main.workspace-main { height: auto; min-height: 0; }
+/* A screen window has no workspace bar: its page takes the whole window. */
+#app:has(main.screen-window) { grid-template-rows: minmax(0, 1fr); }
 .eyebrow { margin: 0; color: #5d725f; font-size: .7rem; font-weight: 800; letter-spacing: .14em; text-transform: uppercase; }
 code { color: #607064; font-size: .78rem; overflow-wrap: anywhere; }
 h2, h3, p { margin-top: 0; }
@@ -382,7 +384,8 @@ html:has(dialog.lb-modal[open]) { overflow: hidden; }
 .screens-rows li + li { border-top: 1px solid var(--lb-line); }
 .screens-letter { display: grid; place-items: center; width: 36px; height: 36px; border-radius: var(--lb-r-sm); color: var(--lb-on-dark); background: var(--lb-brand-700); font-size: 1.05rem; font-weight: 750; }
 .screens-fields { min-width: 0; display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: var(--lb-s1) var(--lb-s2); }
-.screens-fields .lb-input { min-height: 40px; padding: .4rem .6rem; font-size: .875rem; }
+/* As specific as the page's base `input` rule, and after it. */
+.screens-fields input.lb-input, .screens-fields select.lb-input { min-height: 40px; padding: .4rem .6rem; border: 1px solid var(--lb-control); border-radius: var(--lb-r-md); font-size: .875rem; }
 .screens-meta { grid-column: 1 / -1; display: flex; flex-wrap: wrap; gap: 2px var(--lb-s3); color: var(--lb-ink-3); font-size: var(--lb-fs-micro); overflow-wrap: anywhere; }
 .screens-meta .present { color: var(--lb-ok); font-weight: 650; }
 .screens-meta .blocked { color: var(--lb-danger); font-weight: 650; }
@@ -396,3 +399,27 @@ html:has(dialog.lb-modal[open]) { overflow: hidden; }
   .screens-fields { grid-template-columns: minmax(0, 1fr); }
   .screens-actions, .screens-confirm { grid-column: 1 / -1; max-width: none; }
 }
+
+/* ---------- A screen window (screens/ScreenBadge.svelte): badge, Identify, Standby ---------- */
+.screen-badge { position: fixed; z-index: 25; left: 8px; bottom: 8px; display: inline-flex; align-items: center; gap: .45rem; max-width: calc(100vw - 16px); padding: 3px 4px 3px 3px;
+  border: 1px solid var(--lb-on-dark-line); border-radius: var(--lb-r-pill); color: var(--lb-on-dark); background: rgba(22, 35, 26, .9); box-shadow: var(--lb-shadow-sm);
+  font-size: var(--lb-fs-micro); opacity: .72; transition: opacity var(--lb-t-fast) var(--lb-ease); }
+.screen-badge:hover, .screen-badge:focus-within { opacity: 1; }
+.screen-badge-letter { flex: none; display: grid; place-items: center; width: 22px; height: 22px; border-radius: 50%; color: var(--lb-brand-900); background: var(--lb-on-dark); font-weight: 800; }
+.screen-badge-name { max-width: 18ch; overflow: hidden; font-weight: 600; text-overflow: ellipsis; white-space: nowrap; }
+.screen-badge-notice { color: #f3c98b; font-weight: 600; }
+.screen-badge button, .screen-standby button { flex: none; min-height: 24px; padding: 0 .55rem; border-color: var(--lb-on-dark-line); border-radius: var(--lb-r-pill); color: var(--lb-on-dark); background: transparent; font-size: inherit; font-weight: 600; cursor: pointer; }
+.screen-badge button:hover, .screen-standby button:hover { border-color: var(--lb-on-dark-2); background: rgba(255, 255, 255, .08); }
+.screen-badge button:focus-visible, .screen-standby button:focus-visible, .screen-standby a:focus-visible { outline: 2px solid var(--lb-focus-on-dark); outline-offset: 2px; }
+.screen-badge button:disabled, .screen-standby button:disabled { cursor: not-allowed; }
+.screen-standby, .screen-identify { position: fixed; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: var(--lb-s3); padding: var(--lb-s5); color: var(--lb-on-dark); text-align: center; }
+.screen-standby { z-index: 20; overflow-y: auto; background: var(--lb-brand-900); }
+.screen-standby p { margin: 0; }
+.screen-standby button { min-height: 32px; padding: 0 .9rem; font-size: var(--lb-fs-small); }
+.screen-identify { z-index: 40; background: rgba(22, 35, 26, .94); pointer-events: none; }
+.screen-letter { font-size: clamp(6rem, 42vmin, 30rem); font-weight: 800; line-height: .9; letter-spacing: -.04em; }
+.screen-name { color: var(--lb-on-dark-2); font-size: clamp(1rem, 3vmin, 2rem); font-weight: 600; overflow-wrap: anywhere; }
+.screen-why { max-width: 44ch; font-size: clamp(1.05rem, 2.6vmin, 1.75rem); font-weight: 600; line-height: 1.35; overflow-wrap: anywhere; }
+.screen-notice { max-width: 60ch; color: #f3c98b; font-size: var(--lb-fs-small); line-height: 1.45; }
+@media (pointer: coarse) { .screen-badge button, .screen-standby button { min-height: 44px; } }
+@media (prefers-reduced-motion: reduce) { .screen-badge { transition: none; } }

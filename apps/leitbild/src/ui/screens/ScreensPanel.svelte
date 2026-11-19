@@ -86,8 +86,9 @@
       answered = new Set()
       windows = new Map()
       read()
+      // A browser without screens has no window to ask, and keeps no trace of having looked.
       rollCall = newStamp()
-      store.call('roll-call', rollCall)
+      if (setup.status === 'ok' && setup.value.screens.length > 0) store.call('roll-call', rollCall)
     })
   })
 
