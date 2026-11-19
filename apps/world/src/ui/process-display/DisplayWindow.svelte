@@ -290,7 +290,10 @@
   const backTarget = $derived(current === null ? null : returnTo.get(current.key) ?? null)
   const connecting = $derived(current !== null && currentDefault?.state !== 'failed' && currentRefusal === null
     && (currentEnvelope === null || !framesUp.has(current.key)))
-  const effectiveBounds = $derived<ProcessDisplayWindowBounds>(maximised
+  // A screen's surface is the pane itself; a maximised window keeps its margin.
+  const effectiveBounds = $derived<ProcessDisplayWindowBounds>(asSurface
+    ? { x: 0, y: 0, width: Math.max(1, viewport.width), height: Math.max(1, viewport.height) }
+    : maximised
     ? {
         x: windowConstraints.margin,
         y: windowConstraints.margin,
@@ -846,6 +849,7 @@
     bind:this={sectionElement}
     class="process-display-window display-window"
     class:maximised
+    class:as-surface={asSurface}
     class:dragging={windowDrag !== null}
     style="left: {effectiveBounds.x}px; top: {effectiveBounds.y}px; width: {effectiveBounds.width}px; height: {effectiveBounds.height}px;"
     tabindex="-1"

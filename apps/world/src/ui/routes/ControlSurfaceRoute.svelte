@@ -117,6 +117,7 @@
     startupHasFailed,
     startupIsReady,
     startupModalShouldShow,
+    startupStepsAwaited,
     startStartupStep,
     type StartupStep,
     type StartupStepId,
@@ -449,10 +450,14 @@
   const systemStatusTone = $derived<StatusTone>(
     startupHasFailed(startupSteps) ? 'error' : startupIsReady(startupSteps) ? 'ready' : 'working',
   )
+  // A surface needs nothing from the base map: its startup neither waits for the map nor fails with it. The map
+  // still starts underneath and reports where it always does.
+  const startupAwaitsMap = $derived(mapVisible && !surfaceMode)
+  const awaitedStartupSteps = $derived(startupStepsAwaited(startupSteps, { map: !surfaceMode }))
   const startupModalVisible = $derived(rolePicker === null && (startupModalShouldShow({
     routeMode,
     dismissed: startupDismissed,
-    steps: startupSteps,
+    steps: awaitedStartupSteps,
   }) || startupStatusModalOpen))
   const runRoles = $derived(scenarioDefinition ? runRolesOf(scenarioDefinition) : null)
   // A surface panel plays the screen's role set; a role switch remounts it.
@@ -1141,8 +1146,8 @@
 
   const completeReadyWhenReady = (): void => {
     if (!snapshotReady || !realtimeAttached) return
-    if (mapVisible && !mapReady) return
-    if (startupSteps.find(step => step.id === 'objects')?.status !== 'done' || startupHasFailed(startupSteps)) return
+    if (startupAwaitsMap && !mapReady) return
+    if (startupSteps.find(step => step.id === 'objects')?.status !== 'done' || startupHasFailed(awaitedStartupSteps)) return
     completeStep('ready')
     startupDismissed = true
     reportStartupDebug()
@@ -1151,11 +1156,11 @@
 
   const completeObjectsWhenReady = async (): Promise<void> => {
     if (!snapshotReady) return
-    if (mapVisible && !mapReady) return
+    if (startupAwaitsMap && !mapReady) return
     const generation = surfaceLoadGeneration
     startStep('objects')
     await tick()
-    if (generation !== surfaceLoadGeneration || !snapshotReady || (mapVisible && !mapReady)) return
+    if (generation !== surfaceLoadGeneration || !snapshotReady || (startupAwaitsMap && !mapReady)) return
     completeStep('objects')
     completeReadyWhenReady()
   }
