@@ -77,6 +77,8 @@
   let sheetOpenedByOperator = $state(false)
   let iconRevision = $state(0)
   let root = $state<HTMLElement | null>(null)
+  /** The card and the lists, which scroll as one. */
+  let body = $state<HTMLElement | null>(null)
   let disposed = false
   /** When the last command acted: the double-click guard. */
   let quietFromMs: number | null = null
@@ -420,6 +422,12 @@
     untrack(() => props.onMapTargeting(targeting))
   })
 
+  // A card opens at the top of the scrolling body, where it is seen, however far the lists were scrolled.
+  $effect(() => {
+    const shown = selectedObjectOf(selection.selection)
+    untrack(() => { if (shown !== null) body?.scrollTo({ top: 0 }) })
+  })
+
   // The camera centres clear of the docked panel or the open sheet.
   $effect(() => {
     const cover = dispatchMapCover(layout, panelSize, open)
@@ -439,7 +447,6 @@
   style:max-height={layout.mode === 'docked' ? `${Math.max(0, surfaceHeight - panelTopClearancePx - panelBottomClearancePx)}px` : null}
   style:padding-bottom={layout.mode === 'sheet' && open ? `${panelBottomClearancePx}px` : null}
   style:right={layout.mode === 'docked' ? `${panelEdgeGapPx}px` : '0px'}
-  class:unit-selected={selection.selection.kind === 'unit'}
   aria-label={dispatchWords.panel}
 >
   {#if !open}
@@ -458,40 +465,42 @@
     {#if situation === null}
       {#if problem === null}<p class="loading">{dispatchWords.loading}</p>{/if}
     {:else}
-      <div class="selection" aria-busy={unitPending}>
-        {#if card !== null}
-          <SelectionCard
-            {card}
-            {unitPending}
-            {feedback}
-            {icon}
-            confirming={confirming !== null && confirming === card.id}
-            back={act(() => send({ kind: 'back' }))}
-            targetRow={(target: Stop) => send({ kind: 'target-row', target })}
-            removeStop={(stopId: string) => send({ kind: 'stop', stopId })}
-            recall={(unitId: string) => { void editUnit(unitId, async () => await client.recall(unitId), { unitIds: [unitId], target: situation === null ? dispatchWords.panel : situation.words.return, undoable: false }) }}
-            undo={act((unitId: string, commandId: string) => undo([unitId], commandId))}
-            order={act(order)}
-            toggleChip={act(toggleChip)}
-            refresh={act((callId: string) => { void pin(callId) })}
-            askClose={act((callId: string) => { confirming = callId })}
-            cancelClose={act(() => { confirming = null })}
-            closeTask={act((taskId: string) => { confirming = null; void command(async () => await client.closeTask(taskId), null) })}
-            setSite={act((siteId: string, accepting: boolean) => { void command(async () => await client.setSite(siteId, accepting), null) })}
-          />
-        {:else}
-          <p class="hint">{emptySelectionText(situation.words)}</p>
-          {#if feedback !== null}<p class="problem" role="alert">{feedback}</p>{/if}
-        {/if}
-      </div>
-      {#if lists !== null}
-        <div class="lists">
-          <OverviewLists view={lists} {icon} open={act(openRow)} />
-          {#if lists.contacts && !lists.folded}
-            <ContactsSection heading={neutralLexicon.tracks} empty={neutralLexicon.noTracks} rows={contacts} {icon} open={act(openRow)} />
+      <div class="body" bind:this={body}>
+        <div class="selection" aria-busy={unitPending}>
+          {#if card !== null}
+            <SelectionCard
+              {card}
+              {unitPending}
+              {feedback}
+              {icon}
+              confirming={confirming !== null && confirming === card.id}
+              back={act(() => send({ kind: 'back' }))}
+              targetRow={(target: Stop) => send({ kind: 'target-row', target })}
+              removeStop={(stopId: string) => send({ kind: 'stop', stopId })}
+              recall={(unitId: string) => { void editUnit(unitId, async () => await client.recall(unitId), { unitIds: [unitId], target: situation === null ? dispatchWords.panel : situation.words.return, undoable: false }) }}
+              undo={act((unitId: string, commandId: string) => undo([unitId], commandId))}
+              order={act(order)}
+              toggleChip={act(toggleChip)}
+              refresh={act((callId: string) => { void pin(callId) })}
+              askClose={act((callId: string) => { confirming = callId })}
+              cancelClose={act(() => { confirming = null })}
+              closeTask={act((taskId: string) => { confirming = null; void command(async () => await client.closeTask(taskId), null) })}
+              setSite={act((siteId: string, accepting: boolean) => { void command(async () => await client.setSite(siteId, accepting), null) })}
+            />
+          {:else}
+            <p class="hint">{emptySelectionText(situation.words)}</p>
+            {#if feedback !== null}<p class="problem" role="alert">{feedback}</p>{/if}
           {/if}
         </div>
-      {/if}
+        {#if lists !== null}
+          <div class="lists">
+            <OverviewLists view={lists} {icon} open={act(openRow)} />
+            {#if lists.contacts && !lists.folded}
+              <ContactsSection heading={neutralLexicon.tracks} empty={neutralLexicon.noTracks} rows={contacts} {icon} open={act(openRow)} />
+            {/if}
+          </div>
+        {/if}
+      </div>
       {#if missingArtwork !== null}<p class="artwork">{missingArtwork}</p>{/if}
       {#if receipts.length > 0}
         {@const latest = receipts[0]!}
@@ -533,10 +542,10 @@
   .dispatch[data-mode='sheet'].folded { left: auto; padding: 0; border-radius: 10px 0 0 0; }
   .head { flex: none; display: flex; align-items: center; gap: 8px; }
   h2 { flex: 1; margin: 0; font-size: 12px; font-weight: 750; letter-spacing: .08em; text-transform: uppercase; color: var(--muted); }
-  .selection { flex: 0 1 auto; max-height: min(46dvh, 400px); min-height: 0; overflow: auto; overscroll-behavior: contain; }
-  .unit-selected .selection { max-height: none; flex: 1 1 auto; }
-  .unit-selected .lists { flex: none; }
-  .lists { flex: 1 1 auto; min-height: 0; overflow: auto; overscroll-behavior: contain; display: grid; align-content: start; gap: 4px; }
+  /* The card and the lists scroll as one, so a card gets the room it needs; the title and the receipt footer stay in place. */
+  .body { flex: 1 1 auto; min-height: 0; overflow: auto; overscroll-behavior: contain; display: flex; flex-direction: column; gap: 6px; }
+  .selection, .lists { flex: none; }
+  .lists { display: grid; align-content: start; gap: 4px; }
   .hint { margin: 0; padding: 10px 8px; border: 1px dashed var(--border); border-radius: 8px; color: var(--muted); }
   .loading { margin: 0; color: var(--muted); }
   .problem { margin: 0; color: var(--critical); }
