@@ -337,6 +337,11 @@ const [feasibleStatusSchema, refusalStatusSchema, invalidStatusSchema, unsupport
 /** The longest line of a method combination in a compact refusal (coordinator: 150 characters). */
 export const compactLineLength = 150
 /**
+ * The first line of explain refusal for an option made before the latest change: what follows is the proof as
+ * stored, about the plan before the change. The screen drops it where the option already says it is out of date.
+ */
+export const staleRefusalPreface = 'On the plan before your latest change: generate again to know for the plan as it is now.'
+/**
  * A refusal as the options and previous sections page it (coordinator, shape E): the option's own method's
  * cause as stored and its span as a summary; per method combination one `line` of at most 150 characters, the
  * figures first and then the method's name, the option's own first and the rest in the plan's combination
