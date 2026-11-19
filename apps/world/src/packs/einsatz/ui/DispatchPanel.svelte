@@ -11,7 +11,6 @@
   import { dispatchMapCover, panelBottomClearancePx, panelEdgeGapPx, panelLayoutFor, panelTopClearancePx, sheetOpen, shownClearOfPanel } from './dispatch-layout.ts'
   import { createIconCache, runEinsatzClient, situationIconIds, type CommandOutcome } from './einsatz-client.ts'
   import {
-    armedOrderWith,
     busyChoices,
     cardFor,
     contactRows,
@@ -31,7 +30,6 @@
     receiptUndoable,
     targetingFor,
     withReceipts,
-    type ArmedOrder,
     type PinnedProposal,
     type Receipt,
   } from './presenters.ts'
@@ -63,7 +61,8 @@
    * record the screen sees changes (`einsatzRecordsKey`: Einsatz announces
    * no Pack data revision); the shown unit's options, read when its card
    * opens, again on arming, and on every such change while its card shows,
-   * with the armed list's order fixed at arming; and the
+   * each read handed to the selection table, which arms a unit with the read
+   * its card holds, so its first tap is judged as every later one; and the
    * call card's proposal, pinned when the card opens and read again only on
    * Refresh, which keeps the old answer greyed until the new one arrives. It
    * never holds the configuration.
@@ -92,7 +91,6 @@
   let problem = $state<string | null>(null)
   let selection = $state.raw<SelectionState>(initialSelection)
   let options = $state.raw<UnitOptions | null>(null)
-  let armedOrder = $state.raw<ArmedOrder | null>(null)
   let pinned = $state.raw<PinnedProposal | null>(null)
   let opened = $state.raw<ReadonlySet<string>>(new Set())
   let lastSeenCall = $state.raw<SituationCall | null>(null)
@@ -125,7 +123,7 @@
     const now = props.currentTime()
     return readAtRunMs === null || now === undefined ? 0 : Math.max(0, (Date.parse(now) - readAtRunMs) / 1_000)
   })
-  const card = $derived(situation === null ? null : cardFor(situation, selection.selection, { options, armedOrder, pinned, opened, lastSeenCall, elapsedS }))
+  const card = $derived(situation === null ? null : cardFor(situation, selection.selection, { options, pinned, opened, lastSeenCall, elapsedS }))
   const lists = $derived(situation === null ? null : overview(situation, selection.selection, opened, elapsedS))
   const contacts = $derived.by(() => {
     if (lists === null || !lists.contacts) return []
@@ -182,10 +180,7 @@
       const answer = await client.unitOptions(unitId)
       if (disposed || read !== optionsRead) return
       options = answer
-      const armed = selection.selection
-      if (armed.kind !== 'armed' || armed.unitId !== answer.unitId) return
-      armedOrder = armedOrderWith(armedOrder, answer)
-      send({ kind: 'current-job', unitId: answer.unitId, job: answer.busy })
+      send({ kind: 'options-read', options: answer })
     } catch (error) {
       if (!disposed && read === optionsRead) feedback = messageOf(error)
     }
@@ -211,11 +206,7 @@
 
   const send = (event: SelectionEvent): void => {
     const stepped = reduceSelection(selection, event)
-    const before = selection.selection
     selection = stepped.state
-    const after = stepped.state.selection
-    if (after.kind !== 'armed') armedOrder = null
-    else if (before.kind !== 'armed' || before.unitId !== after.unitId) armedOrder = null
     for (const effect of stepped.effects) perform(effect)
   }
 
@@ -412,7 +403,7 @@
   // The armed unit's halos and tags; sent again only when they change.
   let shownTargeting: string | null = null
   $effect(() => {
-    const targeting = targetingFor(selection.selection, options)
+    const targeting = targetingFor(selection.selection)
     const key = targeting === null ? null : JSON.stringify(targeting)
     if (key === shownTargeting) return
     shownTargeting = key
@@ -498,7 +489,7 @@
             {icon}
             confirming={confirming !== null && confirming === card.id}
             back={act(() => send({ kind: 'back' }))}
-            arm={act((unitId: string, when: 'after' | null) => send({ kind: 'arm', unitId, when }))}
+            arm={act((unitId: string, when: 'after' | null) => send({ kind: 'arm', unitId, when, held: options }))}
             targetRow={act((target: Stop) => send({ kind: 'target-row', target }))}
             promptChoice={act((choice: 'after' | 'now') => send({ kind: 'prompt', choice }))}
             recall={act((unitId: string) => { void command(async () => await client.recall(unitId), { unitIds: [unitId], target: situation === null ? dispatchWords.panel : situation.words.return }) })}

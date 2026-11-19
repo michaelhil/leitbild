@@ -554,16 +554,21 @@ describe('B.11 click counts at the Dispatch panel', () => {
     })
   })
 
+  /** Set up, not counted: the suggested unit takes the start call, and a second call of the same kind comes in nearby. */
+  const busyWithSecondCall = async ({ run, screen, callId, answer }: Scene): Promise<{ readonly busyId: string; readonly second: string }> => {
+    const busyId = answer.proposal!.units[0]!.unitId
+    expect((await run.invoke(ids.order, answer.proposal!.order)).ok).toBe(true)
+    const start = run.task(callId)
+    const position = lonLatOf(run.object(callId)!)
+    expect((await run.invoke(ids.taskCreate, { template: start.template, label: 'C-9 Second call', at: { type: 'Point', coordinates: [position[0] + 0.003, position[1]] }, loads: start.loads })).ok).toBe(true)
+    await screen.sync()
+    return { busyId, second: screen.situation().calls.find(call => call.label === 'C-9 Second call')!.id }
+  }
+
   test('busy unit → call: 4 clicks (the unit, Dispatch…, the call, "After current job" on the busy prompt)', async () => {
-    await scene(async ({ run, screen, callId, answer }) => {
-      // Set up, not counted: the suggested unit takes the start call, and a second call of the same kind comes in nearby.
-      const busyId = answer.proposal!.units[0]!.unitId
-      expect((await run.invoke(ids.order, answer.proposal!.order)).ok).toBe(true)
-      const start = run.task(callId)
-      const position = lonLatOf(run.object(callId)!)
-      expect((await run.invoke(ids.taskCreate, { template: start.template, label: 'C-9 Second call', at: { type: 'Point', coordinates: [position[0] + 0.003, position[1]] }, loads: start.loads })).ok).toBe(true)
-      await screen.sync()
-      const second = screen.situation().calls.find(call => call.label === 'C-9 Second call')!.id
+    await scene(async given => {
+      const { run, screen, callId } = given
+      const { busyId, second } = await busyWithSecondCall(given)
       await screen.mapTap(busyId)
       await screen.press({ kind: 'arm' })
       await screen.mapTap(second)
@@ -575,6 +580,22 @@ describe('B.11 click counts at the Dispatch panel', () => {
       expect(sent(screen)).toEqual([
         [ids.order, { units: [busyId], stops: [{ taskId: second }], when: 'after' }, 'ok'],
       ])
+    })
+  })
+
+  test('F5: a tap before the arming read returns asks After or Now from the options the unit\'s card read, and sends no order before the choice', async () => {
+    await scene(async given => {
+      const { screen } = given
+      const { busyId, second } = await busyWithSecondCall(given)
+      await screen.mapTap(busyId)
+      const release = screen.holdReads()
+      await screen.press({ kind: 'arm' })
+      await screen.mapTap(second)
+      expect(screen.calls).toEqual([])
+      expect(screen.prompt()).toEqual([expect.stringMatching(/^After current job/), expect.stringMatching(/^Now \(drops /)])
+      await release()
+      await screen.promptTap(0)
+      expect(sent(screen)).toEqual([[ids.order, { units: [busyId], stops: [{ taskId: second }], when: 'after' }, 'ok']])
     })
   })
 
@@ -696,7 +717,7 @@ describe('B.11 click counts at the Dispatch panel', () => {
       await screen.groundTap([east + 0.004, north + 0.002])
       expect(screen.prompt()).toEqual([expect.stringMatching(/ here$/)])
       await screen.groundTap([east + 0.006, north + 0.003])
-      expect(screen.selection()).toEqual({ kind: 'armed', unitId, when: null, prompt: { kind: 'move', point: geoPointFromLonLat(east + 0.006, north + 0.003) }, refusal: null, job: null })
+      expect(screen.selection()).toMatchObject({ kind: 'armed', unitId, when: null, prompt: { kind: 'move', point: geoPointFromLonLat(east + 0.006, north + 0.003) }, refusal: null })
       expect(screen.calls).toEqual([])
     })
   })

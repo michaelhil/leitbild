@@ -1,5 +1,6 @@
 import type { GeoJsonPoint } from '../../../core/model/index.ts'
 import type { OrderWhen, Stop } from '../order-schema.ts'
+import type { UnitOptions } from '../situation/schema.ts'
 
 /**
  * What a click does in the Dispatch panel: the plan's selection table (B.3)
@@ -29,7 +30,9 @@ import type { OrderWhen, Stop } from '../order-schema.ts'
  * `world.einsatz.unit.options` for a unit whose card opens and again when
  * it is armed, `recommend` pins the call card's
  * proposal and `late-refusal` reports a refused order whose unit is no
- * longer armed, which would otherwise be lost.
+ * longer armed, which would otherwise be lost. An armed unit holds its
+ * latest options read, from the one its card held at arming on, so its
+ * first tap is judged by them as every later one is.
  */
 
 /** A second click on the same thing within this many ms is the second half of a double-click. */
@@ -49,13 +52,29 @@ export interface ClickedObject {
 export type Clicked = ClickedObject | { readonly kind: 'ground'; readonly point: GeoJsonPoint }
 
 /** A busy unit's current job, as its options name it (`busy`): the task an order with `when: 'now'` drops. */
-export interface CurrentJob {
-  readonly taskId: string
+export type CurrentJob = NonNullable<UnitOptions['busy']>
+
+/** A row of the armed list, by the target it names, with the label it was last listed with. */
+export interface ArmedRow {
+  readonly key: string
+  readonly target: Stop
   readonly label: string
-  /** Its priority code. */
-  readonly code: string
-  /** Estimated seconds until the job is done; null when unknown. */
-  readonly freeInS: number | null
+}
+
+const stopKey = (target: Stop): string => JSON.stringify(target)
+
+/**
+ * The armed list's rows after this options answer, in a fixed order so a
+ * live update never moves a row under the pointer: the rows so far in
+ * place, each with its latest label, and every target the answer adds
+ * appended (the first answer's order: valid targets nearest first, then
+ * refused ones). A row no answer lists any more keeps its last label.
+ */
+export const armedRowsWith = (rows: ReadonlyArray<ArmedRow>, options: UnitOptions): ReadonlyArray<ArmedRow> => {
+  const listed = [...options.targets, ...options.refused].map(entry => ({ key: stopKey(entry.target), target: entry.target, label: entry.label }))
+  const labels = new Map(listed.map(row => [row.key, row.label]))
+  const known = new Set(rows.map(row => row.key))
+  return [...rows.map(row => ({ ...row, label: labels.get(row.key) ?? row.label })), ...listed.filter(row => !known.has(row.key))]
 }
 
 /** A prompt the map shows for the armed unit, offset from the point it names. */
@@ -92,8 +111,14 @@ export type Selection =
     readonly when: 'after' | null
     readonly prompt: ArmedPrompt | null
     readonly refusal: ShownRefusal | null
-    /** The unit's current job as its latest options read names it, null while it is free; absent until a read arrives. */
-    readonly job?: CurrentJob | null
+    /**
+     * The unit's latest options read: its current job (`busy`) and the
+     * targets a tap may take. Null until one for this unit is held; a tap
+     * then submits, and the server decides.
+     */
+    readonly options: UnitOptions | null
+    /** The armed list's rows, in the order fixed at arming (`armedRowsWith`). */
+    readonly rows: ReadonlyArray<ArmedRow>
   }
   | { readonly kind: 'call'; readonly callId: string }
   | { readonly kind: 'site'; readonly siteId: string }
@@ -113,8 +138,8 @@ export type SelectionEvent =
   | { readonly kind: 'click'; readonly on: Clicked; readonly atMs: number }
   /** A row of the armed card's target list: it submits like its map target. */
   | { readonly kind: 'target-row'; readonly target: Stop }
-  /** "Dispatch A4…", or "+ Add stop" with `when: 'after'`. */
-  | { readonly kind: 'arm'; readonly unitId: string; readonly when: 'after' | null }
+  /** "Dispatch A4…", or "+ Add stop" with `when: 'after'`; `held` is the options read the panel holds, which count when they are this unit's. */
+  | { readonly kind: 'arm'; readonly unitId: string; readonly when: 'after' | null; readonly held: UnitOptions | null }
   /** A choice of the armed unit's map prompt. */
   | { readonly kind: 'prompt'; readonly choice: 'move' | OrderWhen }
   /**
@@ -128,8 +153,8 @@ export type SelectionEvent =
   /** The surface cleared the shared selection. */
   | { readonly kind: 'cleared' }
   | { readonly kind: 'result'; readonly unitId: string; readonly target: Stop; readonly outcome: SubmitOutcome; readonly atMs: number }
-  /** The unit's options arrived; they name its current job (`busy`), or none while it is free. */
-  | { readonly kind: 'current-job'; readonly unitId: string; readonly job: CurrentJob | null }
+  /** A unit's options arrived: they name its current job (`busy`), or none while it is free, and its targets. */
+  | { readonly kind: 'options-read'; readonly options: UnitOptions }
   | { readonly kind: 'tick'; readonly atMs: number }
 
 export type SelectionEffect =
@@ -213,7 +238,8 @@ const unchanged = (state: SelectionState): SelectionStep => ({ state, effects: [
  * refusal shown stays until the result replaces it or it expires.
  */
 const submit = (state: SelectionState, armed: Extract<Selection, { kind: 'armed' }>, target: Stop): SelectionStep => {
-  if (armed.when === null && armed.job != null) return { state: { ...state, selection: { ...armed, prompt: { kind: 'busy', target, job: armed.job } } }, effects: [] }
+  const job = armed.options?.busy ?? null
+  if (armed.when === null && job !== null) return { state: { ...state, selection: { ...armed, prompt: { kind: 'busy', target, job } } }, effects: [] }
   return { state: { ...state, selection: { ...armed, prompt: null } }, effects: [{ kind: 'submit', unitId: armed.unitId, target, when: armed.when, drops: null }] }
 }
 
@@ -250,8 +276,10 @@ export const reduceSelection = (state: SelectionState, event: SelectionEvent): S
     case 'target-row':
       if (selection.kind !== 'armed') throw new Error('A target row was tapped while no unit is armed')
       return submit(state, selection, event.target)
-    case 'arm':
-      return transition(state, { kind: 'armed', unitId: event.unitId, when: event.when, prompt: null, refusal: null })
+    case 'arm': {
+      const options = event.held !== null && event.held.unitId === event.unitId ? event.held : null
+      return transition(state, { kind: 'armed', unitId: event.unitId, when: event.when, prompt: null, refusal: null, options, rows: options === null ? [] : armedRowsWith([], options) })
+    }
     case 'prompt': {
       if (selection.kind !== 'armed' || selection.prompt === null) throw new Error(`The ${event.choice} prompt was confirmed with no prompt shown`)
       const prompt = selection.prompt
@@ -286,11 +314,12 @@ export const reduceSelection = (state: SelectionState, event: SelectionEvent): S
       const refusal: ShownRefusal = { targetId: stopObjectId(event.target), text: outcome.text, untilMs: event.atMs + refusalShownMs }
       return { state: { ...state, selection: { ...selection, refusal } }, effects: [] }
     }
-    case 'current-job': {
-      if (selection.kind !== 'armed' || selection.unitId !== event.unitId) return unchanged(state)
+    case 'options-read': {
+      const options = event.options
+      if (selection.kind !== 'armed' || selection.unitId !== options.unitId) return unchanged(state)
       // An open busy prompt that has not yet named its job takes this one; from then on it keeps it.
-      const prompt = selection.prompt?.kind === 'busy' && selection.prompt.job === null && event.job !== null ? { ...selection.prompt, job: event.job } : selection.prompt
-      return { state: { ...state, selection: { ...selection, job: event.job, prompt } }, effects: [] }
+      const prompt = selection.prompt?.kind === 'busy' && selection.prompt.job === null && options.busy !== null ? { ...selection.prompt, job: options.busy } : selection.prompt
+      return { state: { ...state, selection: { ...selection, options, rows: armedRowsWith(selection.rows, options), prompt } }, effects: [] }
     }
     case 'tick':
       if (selection.kind === 'armed' && selection.refusal !== null && event.atMs >= selection.refusal.untilMs) {

@@ -8,7 +8,6 @@ import type { Situation, SituationCall, UnitOptions } from '../situation/schema.
 import { einsatzPackView } from '../ui-pack.ts'
 import { createEinsatzClient, type CommandOutcome, type EinsatzClient } from '../ui/einsatz-client.ts'
 import {
-  armedOrderWith,
   busyChoices,
   cardFor,
   deliverToOrder,
@@ -21,7 +20,6 @@ import {
   receiptsFromSituation,
   receiptUndoable,
   withReceipts,
-  type ArmedOrder,
   type CardView,
   type OverviewView,
   type PinnedProposal,
@@ -67,7 +65,8 @@ import { operator, type OpenRun } from './run-harness.ts'
  * previous one, as a person's do, unless a test gives its own gap, so the
  * panel's double-click guard (`activationActs`) is exercised exactly.
  * Reads take no wall time, so a refresh comes at the moment of the action
- * before it.
+ * before it, unless a test holds them (`holdReads`) to land an action
+ * before the read its last one asked for.
  * Production code never imports this file.
  */
 
@@ -132,6 +131,8 @@ export interface CardScreen {
   readonly promptTap: (index: number, gapMs?: number) => Promise<void>
   /** Lets wall time pass, as the panel's ticker does. */
   readonly wait: (ms: number) => void
+  /** Holds every read, as a slow answer does, until the returned release makes them in order. */
+  readonly holdReads: () => () => Promise<void>
 }
 
 /** The gap a person leaves between two actions, comfortably past the double-click interval. */
@@ -167,7 +168,6 @@ export const openCardScreen = async (run: OpenRun, options: { readonly actor?: A
   let situation: Situation | null = null
   let selection: SelectionState = initialSelection
   let unitOptions: UnitOptions | null = null
-  let armedOrder: ArmedOrder | null = null
   let pinned: PinnedProposal | null = null
   let opened: ReadonlySet<string> = new Set()
   let lastSeenCall: SituationCall | null = null
@@ -176,6 +176,8 @@ export const openCardScreen = async (run: OpenRun, options: { readonly actor?: A
   let confirming: string | null = null
   let mapSelection: string | null = null
   let quietFromMs: number | null = null
+  /** The reads waiting while a test holds them. */
+  let heldReads: Array<() => Promise<void>> | null = null
 
   const objects = (): ReadonlyArray<OperationalObject> => run.run.snapshot().objects
   const kindOf = (objectId: string) => {
@@ -186,7 +188,7 @@ export const openCardScreen = async (run: OpenRun, options: { readonly actor?: A
     if (situation === null) throw new Error('The screen has read no situation yet')
     return situation
   }
-  const currentCard = (): CardView | null => cardFor(shown(), selection.selection, { options: unitOptions, armedOrder, pinned, opened, lastSeenCall, elapsedS: 0 })
+  const currentCard = (): CardView | null => cardFor(shown(), selection.selection, { options: unitOptions, pinned, opened, lastSeenCall, elapsedS: 0 })
   const currentLists = (): OverviewView => overview(shown(), selection.selection, opened, 0)
 
   const readSituation = async (): Promise<void> => {
@@ -206,10 +208,7 @@ export const openCardScreen = async (run: OpenRun, options: { readonly actor?: A
       return
     }
     unitOptions = answer
-    const armed = selection.selection
-    if (armed.kind !== 'armed' || armed.unitId !== answer.unitId) return
-    armedOrder = armedOrderWith(armedOrder, answer)
-    await send({ kind: 'current-job', unitId: answer.unitId, job: answer.busy })
+    await send({ kind: 'options-read', options: answer })
   }
 
   const pin = async (callId: string): Promise<void> => {
@@ -271,7 +270,8 @@ export const openCardScreen = async (run: OpenRun, options: { readonly actor?: A
         mapSelection = effect.objectId
         return
       case 'options':
-        await readOptions(effect.unitId)
+        if (heldReads !== null) heldReads.push(async () => await readOptions(effect.unitId))
+        else await readOptions(effect.unitId)
         return
       case 'recommend':
         opened = new Set([...opened, effect.callId])
@@ -288,15 +288,12 @@ export const openCardScreen = async (run: OpenRun, options: { readonly actor?: A
 
   async function send(event: SelectionEvent): Promise<void> {
     const stepped = reduceSelection(selection, event)
-    const before = selection.selection
     selection = stepped.state
-    const after = stepped.state.selection
-    // The armed list's order holds while the same unit stays armed.
-    if (!(after.kind === 'armed' && before.kind === 'armed' && before.unitId === after.unitId)) armedOrder = null
     for (const effect of stepped.effects) await perform(effect)
   }
 
   const sync = async (): Promise<void> => {
+    if (heldReads !== null) return
     await readSituation()
     const shown = selection.selection
     if (shown.kind === 'unit' || shown.kind === 'armed') await readOptions(shown.unitId)
@@ -386,8 +383,8 @@ export const openCardScreen = async (run: OpenRun, options: { readonly actor?: A
         if (button === null || !button.enabled) throw new Error(`${what} is not enabled on ${card.title}`)
       }
       switch (control.kind) {
-        case 'arm': enabled(card.armed === null ? card.dispatch : null, 'Dispatch'); return await send({ kind: 'arm', unitId: card.id, when: null })
-        case 'add-stop': enabled(card.armed === null ? card.addStop : null, 'Add stop'); return await send({ kind: 'arm', unitId: card.id, when: 'after' })
+        case 'arm': enabled(card.armed === null ? card.dispatch : null, 'Dispatch'); return await send({ kind: 'arm', unitId: card.id, when: null, held: unitOptions })
+        case 'add-stop': enabled(card.armed === null ? card.addStop : null, 'Add stop'); return await send({ kind: 'arm', unitId: card.id, when: 'after', held: unitOptions })
         case 'recall': enabled(card.recall, 'Return'); return await command(async () => await client.recall(card.id), { unitIds: [card.id], target: shown().words.return })
         case 'undo-last': enabled(card.undo, 'Undo'); return await command(async () => await client.undo(card.id, required(card.undo.commandId, 'order to undo')), null)
         case 'remove-stop': return await command(async () => await client.removeStop(card.id, control.stopId), null)
@@ -512,6 +509,15 @@ export const openCardScreen = async (run: OpenRun, options: { readonly actor?: A
     wait: ms => {
       wallMs += ms
       void send({ kind: 'tick', atMs: wallMs })
+    },
+    holdReads: () => {
+      heldReads = []
+      return async () => {
+        const pending = heldReads ?? []
+        heldReads = null
+        for (const read of pending) await read()
+        await sync()
+      }
     },
   }
 }

@@ -215,31 +215,7 @@ export interface PlanStopView {
   readonly removeLabel: string
 }
 
-/**
- * The armed list's rows in a fixed order, so a live update never moves a
- * row under the pointer: the order of the first options answer after
- * arming (valid targets nearest first, then refused ones), with every target
- * a later answer adds appended. Each row keeps the label it was last listed
- * with, for a target no answer lists any more.
- */
-export interface ArmedOrder {
-  readonly unitId: string
-  readonly rows: ReadonlyArray<{ readonly key: string; readonly target: Stop; readonly label: string }>
-}
-
 const stopKey = (target: Stop): string => JSON.stringify(target)
-
-/** The armed list's order after this options answer: the rows so far in place, new targets appended; a new unit starts afresh. */
-export const armedOrderWith = (order: ArmedOrder | null, options: UnitOptions): ArmedOrder => {
-  const listed = [...options.targets, ...options.refused].map(entry => ({ key: stopKey(entry.target), target: entry.target, label: entry.label }))
-  const kept = order !== null && order.unitId === options.unitId ? order.rows : []
-  const labels = new Map(listed.map(row => [row.key, row.label]))
-  const known = new Set(kept.map(row => row.key))
-  return {
-    unitId: options.unitId,
-    rows: [...kept.map(row => ({ ...row, label: labels.get(row.key) ?? row.label })), ...listed.filter(row => !known.has(row.key))],
-  }
-}
 
 export interface ArmedRowView {
   readonly key: string
@@ -320,17 +296,17 @@ const armedSlot = (selection: Extract<Selection, { kind: 'armed' }>): ArmedSlot 
   return selection.refusal === null ? { kind: 'empty' } : { kind: 'refusal', text: selection.refusal.text }
 }
 
-const armedView = (unit: SituationUnit, words: Words, options: UnitOptions | null, order: ArmedOrder | null, selection: Extract<Selection, { kind: 'armed' }>): ArmedView => {
-  const own = options !== null && options.unitId === unit.id ? options : null
+/** The armed card's body, from the options and rows the armed selection holds. */
+const armedView = (unit: SituationUnit, words: Words, selection: Extract<Selection, { kind: 'armed' }>): ArmedView => {
+  const own = selection.options
   const valid = new Map((own?.targets ?? []).map(target => [stopKey(target.target), target]))
   const refused = new Map((own?.refused ?? []).map(entry => [stopKey(entry.target), entry]))
-  const rows = order !== null && order.unitId === unit.id ? order.rows : []
   // Armed by "+ Add stop", the order goes after the current job and drops nothing.
   const drops = own?.busy == null || selection.when === 'after' ? null : `drops ${jobText(own.busy)}`
   return {
     banner: `${words.send} ${unit.label}…${selection.when === 'after' ? ` (${dispatchWords.after.toLowerCase()})` : ''}`,
     slot: armedSlot(selection),
-    rows: rows.map(row => {
+    rows: selection.rows.map(row => {
       const target = valid.get(row.key)
       if (target !== undefined) {
         return { key: row.key, target: row.target, text: `${verbText(target.verb, words)} ${target.label}`, eta: minutesText(target.etaS), drops, refused: null }
@@ -363,8 +339,8 @@ const noTargetReason = (unit: SituationUnit, options: UnitOptions | null): strin
   return [...counts].reduce((best, entry) => entry[1] > best[1] ? entry : best)[0]
 }
 
-/** A unit's card, armed or not. */
-export const unitCard = (situation: Situation, unit: SituationUnit, selection: Selection, options: UnitOptions | null, order: ArmedOrder | null, elapsedS: number): UnitCardView => {
+/** A unit's card, armed or not; `options` is the read the panel holds, for its Dispatch button. */
+export const unitCard = (situation: Situation, unit: SituationUnit, selection: Selection, options: UnitOptions | null, elapsedS: number): UnitCardView => {
   const { words } = situation
   const readOnly = unit.commandedBy === null ? null : `Commanded by ${unit.commandedBy}`
   const destroyed = unit.status.tone === 'out' ? unit.status.word : null
@@ -405,7 +381,7 @@ export const unitCard = (situation: Situation, unit: SituationUnit, selection: S
     addStop: unit.plan.length === 0 ? null : button(`+ Add ${words.stop.toLowerCase()}`, readOnly ?? destroyed),
     facts,
     states: unit.states.map(state => state.text),
-    armed: selection.kind === 'armed' && selection.unitId === unit.id ? armedView(unit, words, options, order, selection) : null,
+    armed: selection.kind === 'armed' && selection.unitId === unit.id ? armedView(unit, words, selection) : null,
   }
 }
 
@@ -675,9 +651,8 @@ export type CardView = UnitCardView | CallCardView | ClosedCallView | SiteCardVi
 
 /** What the panel holds besides the situation for its selection block. */
 export interface CardInputs {
+  /** The latest options read, for a unit card's Dispatch; an armed card shows its selection's own. */
   readonly options: UnitOptions | null
-  /** The armed list's order, fixed at arming. */
-  readonly armedOrder: ArmedOrder | null
   readonly pinned: PinnedProposal | null
   readonly opened: ReadonlySet<string>
   /** The selected call's row as last seen, for its card once it closed. */
@@ -692,7 +667,7 @@ export const cardFor = (situation: Situation, selection: Selection, inputs: Card
     case 'unit':
     case 'armed': {
       const unit = situation.units.find(entry => entry.id === selection.unitId)
-      return unit === undefined ? null : unitCard(situation, unit, selection, inputs.options, inputs.armedOrder, inputs.elapsedS)
+      return unit === undefined ? null : unitCard(situation, unit, selection, inputs.options, inputs.elapsedS)
     }
     case 'call': {
       const call = situation.calls.find(entry => entry.id === selection.callId)
@@ -852,15 +827,16 @@ export const overview = (situation: Situation, selection: Selection, opened: Rea
  * that is an object, with an ETA tag on the nearest ones (all tags together
  * at most `mapTargetingMaxTags`), and a refused target's reason at that
  * target, in the `refused` tone, while it is shown. Every other object is
- * dimmed, so a dimmed object is never one an order would take. Before the
- * options arrive the targeting is not `complete`: nothing is dimmed and no
- * valid target is marked, but the unit is armed and a click still submits.
+ * dimmed, so a dimmed object is never one an order would take. Until the
+ * armed selection holds the unit's options the targeting is not `complete`:
+ * nothing is dimmed and no valid target is marked, but the unit is armed and
+ * a click still submits.
  */
-export const targetingFor = (selection: Selection, options: UnitOptions | null): MapTargeting | null => {
+export const targetingFor = (selection: Selection): MapTargeting | null => {
   if (selection.kind !== 'armed') return null
   const refusal = selection.refusal
   const refused = refusal?.targetId === null || refusal === null ? [] : [{ id: objectIdSchema.parse(refusal.targetId), tag: refusal.text, tone: 'refused' as const }]
-  const own = options !== null && options.unitId === selection.unitId ? options : null
+  const own = selection.options
   const valid = (own?.targets ?? []).flatMap(target => {
     const id = stopObjectId(target.target)
     return id === null || id === refusal?.targetId ? [] : [{ id: objectIdSchema.parse(id), etaS: target.etaS }]

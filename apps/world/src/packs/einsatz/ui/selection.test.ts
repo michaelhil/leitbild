@@ -1,7 +1,9 @@
 import { describe, expect, test } from 'bun:test'
 import { geoPointFromLonLat, type GeoJsonPoint } from '../../../core/model/index.ts'
+import type { UnitOptions } from '../situation/schema.ts'
 import {
   activationActs,
+  armedRowsWith,
   doubleClickMs,
   initialSelection,
   reduceSelection,
@@ -9,6 +11,7 @@ import {
   selectedObjectOf,
   selectionChangeEvent,
   type Clicked,
+  type CurrentJob,
   type Selection,
   type SelectionEffect,
   type SelectionEvent,
@@ -33,7 +36,7 @@ const ground: Clicked = { kind: 'ground', point }
 
 const s0: Selection = { kind: 'none', marked: null }
 const su: Selection = { kind: 'unit', unitId: unitA.id }
-const sa: Selection = { kind: 'armed', unitId: unitA.id, when: null, prompt: null, refusal: null }
+const sa: Selection = { kind: 'armed', unitId: unitA.id, when: null, prompt: null, refusal: null, options: null, rows: [] }
 const sc: Selection = { kind: 'call', callId: call.id }
 const ss: Selection = { kind: 'site', siteId: site.id }
 const states = { S0: s0, SU: su, SA: sa, SC: sc, SS: ss } as const
@@ -43,6 +46,11 @@ let clock = 10_000
 const click = (on: Clicked, atMs = (clock += 2_000)): SelectionEvent => ({ kind: 'click', on, atMs })
 const step = (selection: Selection, event: SelectionEvent) => reduceSelection(start(selection), event)
 const kinds = (effects: ReadonlyArray<SelectionEffect>) => effects.map(effect => effect.kind)
+const job: CurrentJob = { taskId: 't-9', label: 'C-9', code: 'P3', freeInS: 300 }
+/** A unit's options read: its job, or none while free, and one valid target. */
+const optionsOf = (unitId: string, busy: CurrentJob | null): UnitOptions => ({ unitId, busy, targets: [{ target: { taskId: call.id }, verb: 'serve', label: 'T-1', etaS: 60 }], refused: [] })
+/** SA holding these options, as an arming with them held or a read since leaves it. */
+const holding = (options: UnitOptions): Extract<Selection, { kind: 'armed' }> => ({ ...sa, options, rows: armedRowsWith([], options) })
 
 describe('B.3: a click on a unit', () => {
   for (const [name, selection] of Object.entries(states)) {
@@ -97,7 +105,7 @@ describe('B.3: a click on a call or a site', () => {
     expect(kinds(step(sa, click(call2)).effects)).toEqual(['submit'])
   })
   test('SA armed by "+ Add stop" submits with when "after"', () => {
-    const armed = reduceSelection(start(su), { kind: 'arm', unitId: unitA.id, when: 'after' }).state
+    const armed = reduceSelection(start(su), { kind: 'arm', unitId: unitA.id, when: 'after', held: null }).state
     expect(reduceSelection(armed, click(call)).effects).toEqual([{ kind: 'submit', unitId: unitA.id, target: { taskId: call.id }, when: 'after', drops: null }])
   })
   test('a track outside SA is marked on the map, with no card', () => {
@@ -208,7 +216,18 @@ describe('B.3: a double-click acts as one click', () => {
 
 describe('Arming and the armed unit\'s submits', () => {
   test('"Dispatch A4…" arms the unit and reads its options again', () => {
-    expect(step(su, { kind: 'arm', unitId: unitA.id, when: null })).toEqual({ state: start(sa), effects: [{ kind: 'options', unitId: unitA.id }] })
+    expect(step(su, { kind: 'arm', unitId: unitA.id, when: null, held: null })).toEqual({ state: start(sa), effects: [{ kind: 'options', unitId: unitA.id }] })
+  })
+  test('arming holds the options read the card held for that unit, its rows in their order, and reads again; another unit\'s read is not held', () => {
+    const read = optionsOf(unitA.id, job)
+    expect(step(su, { kind: 'arm', unitId: unitA.id, when: null, held: read })).toEqual({ state: start(holding(read)), effects: [{ kind: 'options', unitId: unitA.id }] })
+    expect(step(su, { kind: 'arm', unitId: unitA.id, when: null, held: optionsOf(unitB.id, job) }).state.selection).toEqual(sa)
+  })
+  test('F5: a busy unit armed with its card\'s read asks After or Now on a tap before the arming read returns, and sends nothing', () => {
+    const armed = step(su, { kind: 'arm', unitId: unitA.id, when: null, held: optionsOf(unitA.id, job) }).state
+    const tapped = reduceSelection(armed, click(call))
+    expect(tapped.effects).toEqual([])
+    expect(tapped.state.selection).toMatchObject({ kind: 'armed', prompt: { kind: 'busy', target: { taskId: call.id }, job } })
   })
   test('one level back from SA, or an accepted order, keeps the unit\'s card and reads nothing', () => {
     expect(step(sa, { kind: 'back' }).effects).toEqual([])
@@ -227,23 +246,21 @@ describe('Arming and the armed unit\'s submits', () => {
   })
   test('HF5: the busy prompt keeps the job the options named first, and Now sends exactly that one, so a job that changed meanwhile is the server\'s drops_mismatch', () => {
     const refused = step(sa, { kind: 'result', unitId: unitA.id, target: { taskId: call.id }, outcome: { ok: false, code: 'when_required', text: 'busy' }, atMs: 1 }).state
-    const job = { taskId: 't-9', label: 'C-9', code: 'P3', freeInS: 300 }
-    const named = reduceSelection(refused, { kind: 'current-job', unitId: unitA.id, job }).state
-    expect(named.selection).toEqual({ ...sa, job, prompt: { kind: 'busy', target: { taskId: call.id }, job } })
+    const named = reduceSelection(refused, { kind: 'options-read', options: optionsOf(unitA.id, job) }).state
+    expect(named.selection).toEqual({ ...holding(optionsOf(unitA.id, job)), prompt: { kind: 'busy', target: { taskId: call.id }, job } })
     // A later read naming another job, or none, never re-labels the prompt.
     const promptOf = (state: SelectionState) => state.selection.kind === 'armed' ? state.selection.prompt : null
-    expect(promptOf(reduceSelection(named, { kind: 'current-job', unitId: unitA.id, job: { ...job, taskId: 't-8', label: 'C-8' } }).state)).toEqual(promptOf(named))
-    expect(promptOf(reduceSelection(named, { kind: 'current-job', unitId: unitA.id, job: null }).state)).toEqual(promptOf(named))
+    expect(promptOf(reduceSelection(named, { kind: 'options-read', options: optionsOf(unitA.id, { ...job, taskId: 't-8', label: 'C-8' }) }).state)).toEqual(promptOf(named))
+    expect(promptOf(reduceSelection(named, { kind: 'options-read', options: optionsOf(unitA.id, null) }).state)).toEqual(promptOf(named))
     expect(reduceSelection(named, { kind: 'prompt', choice: 'now' }).effects).toEqual([{ kind: 'submit', unitId: unitA.id, target: { taskId: call.id }, when: 'now', drops: job }])
-    // Outside a busy prompt the job is the armed unit's own, for its next tap.
-    expect(reduceSelection(start(sa), { kind: 'current-job', unitId: unitA.id, job }).state.selection).toEqual({ ...sa, job })
-    expect(reduceSelection(start(sa), { kind: 'current-job', unitId: unitB.id, job }).state.selection).toEqual(sa)
+    // Outside a busy prompt the read is the armed unit's own, for its next tap; another unit's changes nothing.
+    expect(reduceSelection(start(sa), { kind: 'options-read', options: optionsOf(unitA.id, job) }).state.selection).toEqual(holding(optionsOf(unitA.id, job)))
+    expect(reduceSelection(start(sa), { kind: 'options-read', options: optionsOf(unitB.id, job) }).state.selection).toEqual(sa)
     const mismatch = reduceSelection(named, { kind: 'result', unitId: unitA.id, target: { taskId: call.id }, outcome: { ok: false, code: 'drops_mismatch', text: 'A works for C-8' }, atMs: 5 })
     expect(mismatch.state.selection).toMatchObject({ kind: 'armed', refusal: { targetId: call.id, text: 'A works for C-8' } })
   })
   test('a unit its options read names busy asks After or Now at once on a target tap or a target row, sending nothing; Now drops the job read', () => {
-    const job = { taskId: 't-9', label: 'C-9', code: 'P3', freeInS: 300 }
-    const busy: Selection = { ...sa, job }
+    const busy = holding(optionsOf(unitA.id, job))
     const tapped = step(busy, click(call))
     expect(tapped).toEqual({ state: { selection: { ...busy, prompt: { kind: 'busy', target: { taskId: call.id }, job } }, lastClick: expect.anything() }, effects: [] })
     expect(step(busy, { kind: 'target-row', target: { siteId: site.id } }).state.selection).toEqual({ ...busy, prompt: { kind: 'busy', target: { siteId: site.id }, job } })
@@ -253,13 +270,13 @@ describe('Arming and the armed unit\'s submits', () => {
     expect(kinds(step({ ...busy, when: 'after' }, click(call)).effects)).toEqual(['submit'])
   })
   test('the server\'s net: a tap before the options read arrives, or after one that called the unit free, submits; when_required then asks, with the job the next read names', () => {
-    for (const armed of [sa, { ...sa, job: null }] as const) {
+    for (const armed of [sa, holding(optionsOf(unitA.id, null))]) {
       const sent = step(armed, click(call))
       expect(sent.effects).toEqual([{ kind: 'submit', unitId: unitA.id, target: { taskId: call.id }, when: null, drops: null }])
       const refused = reduceSelection(sent.state, { kind: 'result', unitId: unitA.id, target: { taskId: call.id }, outcome: { ok: false, code: 'when_required', text: 'busy' }, atMs: 1 })
       expect(refused.effects).toEqual([{ kind: 'options', unitId: unitA.id }])
-      const job = { taskId: 't-9', label: 'C-9', code: 'P3', freeInS: null }
-      expect(reduceSelection(refused.state, { kind: 'current-job', unitId: unitA.id, job }).state.selection).toEqual({ ...armed, job, prompt: { kind: 'busy', target: { taskId: call.id }, job } })
+      const named = { ...job, freeInS: null }
+      expect(reduceSelection(refused.state, { kind: 'options-read', options: optionsOf(unitA.id, named) }).state.selection).toEqual({ ...holding(optionsOf(unitA.id, named)), prompt: { kind: 'busy', target: { taskId: call.id }, job: named } })
     }
   })
   test('any other refusal shows beside the target for 4 s, stays armed and sends nothing', () => {

@@ -5,7 +5,6 @@ import { einsatzPackId } from '../ids.ts'
 import { recommendAnswerSchema, type RecommendAnswer } from '../recommendation-schema.ts'
 import { situationSchema, unitOptionsSchema, type Situation, type UnitOptions } from '../situation/schema.ts'
 import {
-  armedOrderWith,
   busyChoices,
   callCard,
   cardFor,
@@ -35,7 +34,7 @@ import {
   withReceipts,
   type PinnedProposal,
 } from './presenters.ts'
-import type { Selection } from './selection.ts'
+import { armedRowsWith, type Selection } from './selection.ts'
 
 /**
  * The Dispatch panel's view models over a situation written in words no
@@ -106,7 +105,9 @@ const situationOf = (patch: object = {}): Situation => situationSchema.parse({ .
 const situation = situationOf()
 const none: Selection = { kind: 'none', marked: null }
 const su = (unitId: string): Selection => ({ kind: 'unit', unitId })
-const sa = (unitId: string, extra: object = {}): Selection => ({ kind: 'armed', unitId, when: null, prompt: null, refusal: null, ...extra })
+const sa = (unitId: string, extra: object = {}): Selection => ({ kind: 'armed', unitId, when: null, prompt: null, refusal: null, options: null, rows: [], ...extra })
+/** Armed, holding these options and the rows they fix. */
+const armedWith = (options: UnitOptions, extra: object = {}): Selection => sa(options.unitId, { options, rows: armedRowsWith([], options), ...extra })
 const opened = new Set<string>()
 
 const optionsFor = (unitId: string, extra: object = {}): UnitOptions => unitOptionsSchema.parse({
@@ -139,7 +140,7 @@ const pinnedOf = (extra: Partial<PinnedProposal> = {}, at: Situation = situation
 
 describe('Unit card', () => {
   test('a free unit: title, status, the Dispatch verb from the lexicon, fixed buttons disabled with a reason', () => {
-    const card = unitCard(situation, situation.units[0]!, su('r1'), null, null, 0)
+    const card = unitCard(situation, situation.units[0]!, su('r1'), null, 0)
     expect(card.title).toBe('R1 · Rover · North crews')
     expect(card.status).toEqual({ word: 'Idle', tone: 'free', due: null })
     expect(card.dispatch).toEqual({ label: 'Task R1…', enabled: true, reason: null })
@@ -151,7 +152,7 @@ describe('Unit card', () => {
   })
 
   test('a busy carrier: its plan with verbs, ETAs and the actor, the predicted delivery as a "then" line, Return naming what it drops, Deliver-to chips, Add stop', () => {
-    const card = unitCard(situation, situation.units[1]!, su('r2'), null, null, 60)
+    const card = unitCard(situation, situation.units[1]!, su('r2'), null, 60)
     expect(card.planHeading).toBe('Route')
     expect(card.plan).toEqual([{ id: 'leg-1', index: 1, text: 'Pick up at J-2 Bay', eta: '2 min', active: true, by: 'by Assistant', removeLabel: 'Remove leg 1: Pick up at J-2 Bay' }])
     expect(card.predicted).toBe('then Depot A (nearest accepting) · 5 min')
@@ -167,7 +168,7 @@ describe('Unit card', () => {
 
   test('a loaded carrier cannot be sent home: Return is disabled with what it carries', () => {
     const loaded = situationOf({ units: [unit('r1', { carry: { capacity: 2, load: [{ classId: 'crate', code: 'C', label: '1 crate', count: 1 }] } })] })
-    const card = unitCard(loaded, loaded.units[0]!, su('r1'), null, null, 0)
+    const card = unitCard(loaded, loaded.units[0]!, su('r1'), null, 0)
     expect(card.recall).toEqual({ label: 'Home', enabled: false, reason: 'Carrying 1 crate: deliver first' })
     expect(card.deliverTo.map(chip => [chip.label, chip.selected])).toEqual([['Depot A', false]])
   })
@@ -178,7 +179,7 @@ describe('Unit card', () => {
       predictedDelivery: { siteId: 'depot-a', label: 'Depot A', eta: routed(360) },
       carry: { capacity: 2, load: [{ classId: 'crate', code: 'C', label: '1 crate', count: 1 }] },
     })], sites: [...baseSituation.sites, { ...baseSituation.sites[0]!, id: 'depot-c', label: 'Depot C', inbound: [] }] })
-    expect(unitCard(chosen, chosen.units[0]!, su('r1'), null, null, 0).deliverTo.map(chip => [chip.label, chip.selected])).toEqual([['Depot A', false], ['Depot C', true]])
+    expect(unitCard(chosen, chosen.units[0]!, su('r1'), null, 0).deliverTo.map(chip => [chip.label, chip.selected])).toEqual([['Depot A', false], ['Depot C', true]])
   })
 
   test('a unit whose options list no target an order would take: Dispatch is disabled with the reason most refusals give; with one valid target, or before its options, it is not', () => {
@@ -187,29 +188,28 @@ describe('Unit card', () => {
       { target: { taskId: 'job-2' }, label: 'J-2 Bay', code: 'unit_committed', text: 'R1 is handing over at Depot A' },
       { target: { siteId: 'depot-b' }, label: 'Depot B', code: 'site_not_accepting', text: 'Depot B is closed for arrivals' },
     ] })
-    expect(unitCard(situation, situation.units[0]!, su('r1'), stuck, null, 0).dispatch).toEqual({ label: 'Task R1…', enabled: false, reason: 'R1 is handing over at Depot A' })
-    expect(unitCard(situation, situation.units[0]!, su('r1'), optionsFor('r1'), null, 0).dispatch.enabled).toBe(true)
-    expect(unitCard(situation, situation.units[0]!, su('r1'), null, null, 0).dispatch.enabled).toBe(true)
+    expect(unitCard(situation, situation.units[0]!, su('r1'), stuck, 0).dispatch).toEqual({ label: 'Task R1…', enabled: false, reason: 'R1 is handing over at Depot A' })
+    expect(unitCard(situation, situation.units[0]!, su('r1'), optionsFor('r1'), 0).dispatch.enabled).toBe(true)
+    expect(unitCard(situation, situation.units[0]!, su('r1'), null, 0).dispatch.enabled).toBe(true)
     // Another unit's options say nothing of this one.
-    expect(unitCard(situation, situation.units[0]!, su('r1'), { ...stuck, unitId: 'k1' }, null, 0).dispatch.enabled).toBe(true)
+    expect(unitCard(situation, situation.units[0]!, su('r1'), { ...stuck, unitId: 'k1' }, 0).dispatch.enabled).toBe(true)
   })
 
   test('a unit another role commands is read-only and says who commands it', () => {
     const other = situationOf({ units: [unit('r1', { commandedBy: 'Blue command' })] })
-    const card = unitCard(other, other.units[0]!, su('r1'), null, null, 0)
+    const card = unitCard(other, other.units[0]!, su('r1'), null, 0)
     expect(card.readOnly).toBe('Commanded by Blue command')
     expect([card.dispatch.enabled, card.recall.enabled, card.undo.enabled, card.removable]).toEqual([false, false, false, false])
   })
 
   test('armed: the banner, one list of targets in the order fixed at arming, valid ones with verb, ETA and what is dropped, refused ones dimmed with their reason; loading until options arrive', () => {
-    const loading = unitCard(situation, situation.units[0]!, sa('r1'), null, null, 0)
+    const loading = unitCard(situation, situation.units[0]!, sa('r1'), null, 0)
     expect(loading.armed).toEqual({ banner: 'Task R1…', slot: { kind: 'empty' }, rows: [], loading: true })
     const busy = optionsFor('r1', {
       busy: { taskId: 'job-2', label: 'J-2 Bay', code: 'Q1', freeInS: 300 },
       targets: [{ target: { taskId: 'job-1' }, verb: 'pick-up', label: 'J-1 Ridge', etaS: 240 }],
     })
-    const order = armedOrderWith(null, busy)
-    const armed = unitCard(situation, situation.units[0]!, sa('r1', { refusal: { targetId: 'depot-b', text: 'Depot B is closed', untilMs: 9 } }), busy, order, 0).armed!
+    const armed = unitCard(situation, situation.units[0]!, armedWith(busy, { refusal: { targetId: 'depot-b', text: 'Depot B is closed', untilMs: 9 } }), null, 0).armed!
     expect(armed.loading).toBe(false)
     expect(armed.rows).toEqual([
       { key: JSON.stringify({ taskId: 'job-1' }), target: { taskId: 'job-1' }, text: 'Pick up at J-1 Ridge', eta: '4 min', drops: 'drops J-2 Bay · Q1', refused: null },
@@ -217,15 +217,15 @@ describe('Unit card', () => {
     ])
     expect(armed.slot).toEqual({ kind: 'refusal', text: 'Depot B is closed' })
     // Armed by "+ Add stop" the order drops nothing.
-    expect(unitCard(situation, situation.units[0]!, sa('r1', { when: 'after' }), busy, order, 0).armed!.rows[0]!.drops).toBeNull()
-    // Options of another unit are never shown.
-    expect(unitCard(situation, situation.units[0]!, sa('r1'), optionsFor('k1'), null, 0).armed!.loading).toBe(true)
-    expect(unitCard(situation, situation.units[0]!, sa('r1', { when: 'after' }), null, null, 0).armed!.banner).toBe('Task R1… (after current job)')
+    expect(unitCard(situation, situation.units[0]!, armedWith(busy, { when: 'after' }), null, 0).armed!.rows[0]!.drops).toBeNull()
+    // The armed card shows the options its selection holds, never the panel's latest read of another unit.
+    expect(unitCard(situation, situation.units[0]!, sa('r1'), optionsFor('k1'), 0).armed!.loading).toBe(true)
+    expect(unitCard(situation, situation.units[0]!, sa('r1', { when: 'after' }), null, 0).armed!.banner).toBe('Task R1… (after current job)')
   })
 
   test('HF9: the armed list keeps its order through live updates: ETAs change in place, new targets are appended, a target no longer listed keeps its row, dimmed', () => {
-    const first = armedOrderWith(null, optionsFor('r1'))
-    expect(first.rows.map(row => row.label)).toEqual(['J-1 Ridge', 'Depot A', 'the map point', 'Depot B'])
+    const first = armedRowsWith([], optionsFor('r1'))
+    expect(first.map(row => row.label)).toEqual(['J-1 Ridge', 'Depot A', 'the map point', 'Depot B'])
     // The next read has the point nearest, a new call, and J-1 Ridge gone.
     const next = optionsFor('r1', {
       targets: [
@@ -234,9 +234,9 @@ describe('Unit card', () => {
         { target: { siteId: 'depot-a' }, verb: 'go-to', label: 'Depot A', etaS: 380 },
       ],
     })
-    const kept = armedOrderWith(first, next)
-    expect(kept.rows.map(row => row.label)).toEqual(['J-1 Ridge', 'Depot A', 'the map point', 'Depot B', 'J-3 Pier'])
-    const rows = unitCard(situation, situation.units[0]!, sa('r1'), next, kept, 0).armed!.rows
+    const kept = armedRowsWith(first, next)
+    expect(kept.map(row => row.label)).toEqual(['J-1 Ridge', 'Depot A', 'the map point', 'Depot B', 'J-3 Pier'])
+    const rows = unitCard(situation, situation.units[0]!, sa('r1', { options: next, rows: kept }), null, 0).armed!.rows
     expect(rows.map(row => [row.text, row.eta, row.refused])).toEqual([
       ['J-1 Ridge', null, dispatchWords.notListed],
       ['Shift Depot A', '6 min', null],
@@ -244,16 +244,14 @@ describe('Unit card', () => {
       ['Depot B', null, 'Depot B is closed for arrivals'],
       ['Task J-3 Pier', '2 min', null],
     ])
-    // Arming another unit starts afresh.
-    expect(armedOrderWith(kept, optionsFor('k1')).rows.map(row => row.label)).toEqual(['J-1 Ridge', 'Depot A', 'the map point', 'Depot B'])
   })
 
   test('HF5: the busy slot names the job the prompt pinned, not the latest options; until they name one it says it is reading', () => {
     const job = { taskId: 'job-2', label: 'J-2 Bay', code: 'Q1', freeInS: 300 }
     const later = optionsFor('r1', { busy: { taskId: 'job-1', label: 'J-1 Ridge', code: 'Q0', freeInS: 60 } })
-    const asked = unitCard(situation, situation.units[0]!, sa('r1', { prompt: { kind: 'busy', target: { taskId: 'job-1' }, job } }), later, null, 0).armed!
+    const asked = unitCard(situation, situation.units[0]!, armedWith(later, { prompt: { kind: 'busy', target: { taskId: 'job-1' }, job } }), null, 0).armed!
     expect(asked.slot).toEqual({ kind: 'busy', after: `${dispatchWords.after} (free in 5 min)`, now: `${dispatchWords.now} (drops J-2 Bay · Q1)` })
-    expect(unitCard(situation, situation.units[0]!, sa('r1', { prompt: { kind: 'busy', target: { taskId: 'job-1' }, job: null } }), later, null, 0).armed!.slot).toEqual({ kind: 'busy-reading' })
+    expect(unitCard(situation, situation.units[0]!, armedWith(later, { prompt: { kind: 'busy', target: { taskId: 'job-1' }, job: null } }), null, 0).armed!.slot).toEqual({ kind: 'busy-reading' })
   })
 })
 
@@ -357,7 +355,7 @@ describe('Call card', () => {
 
   test('a call that closed shows who served it and offers nothing', () => {
     expect(closedCallCard(situation.calls[1]!)).toEqual({ kind: 'closed-call', id: 'job-2', label: 'J-2 Bay', text: `${dispatchWords.closed} · served by R2` })
-    const inputs = { options: null, armedOrder: null, pinned: null, opened, lastSeenCall: { ...situation.calls[1]!, id: 'job-9' }, elapsedS: 0 }
+    const inputs = { options: null, pinned: null, opened, lastSeenCall: { ...situation.calls[1]!, id: 'job-9' }, elapsedS: 0 }
     expect(cardFor(situation, { kind: 'call', callId: 'job-9' }, inputs)?.kind).toBe('closed-call')
     expect(cardFor(situation, { kind: 'call', callId: 'job-8' }, inputs)).toBeNull()
     expect(cardFor(situation, { kind: 'call', callId: 'job-1' }, inputs)?.kind).toBe('call')
@@ -433,19 +431,18 @@ describe('Overview', () => {
 
 describe('Armed feedback, prompts and receipts', () => {
   test('targeting: a halo on every valid target that is an object, ETA tags on the nearest, the refused target\'s reason first in the refused tone; not complete until the options arrive; nothing outside SA', () => {
-    expect(targetingFor(su('r1'), optionsFor('r1'))).toBeNull()
-    expect(targetingFor(sa('r1'), null)).toEqual({ from: oid('r1'), complete: false, targets: [] })
-    expect(targetingFor(sa('r1'), optionsFor('k1'))).toEqual({ from: oid('r1'), complete: false, targets: [] })
-    expect(targetingFor(sa('r1'), optionsFor('r1'))).toEqual({ from: oid('r1'), complete: true, targets: [{ id: oid('job-1'), tag: '4 min', tone: 'valid' }, { id: oid('depot-a'), tag: '7 min', tone: 'valid' }] })
-    const refused = sa('r1', { refusal: { targetId: 'depot-b', text: 'Depot B is closed', untilMs: 1 } })
-    expect(targetingFor(refused, optionsFor('r1'))!.targets[0]).toEqual({ id: oid('depot-b'), tag: 'Depot B is closed', tone: 'refused' })
+    expect(targetingFor(su('r1'))).toBeNull()
+    expect(targetingFor(sa('r1'))).toEqual({ from: oid('r1'), complete: false, targets: [] })
+    expect(targetingFor(armedWith(optionsFor('r1')))).toEqual({ from: oid('r1'), complete: true, targets: [{ id: oid('job-1'), tag: '4 min', tone: 'valid' }, { id: oid('depot-a'), tag: '7 min', tone: 'valid' }] })
+    const refused = armedWith(optionsFor('r1'), { refusal: { targetId: 'depot-b', text: 'Depot B is closed', untilMs: 1 } })
+    expect(targetingFor(refused)!.targets[0]).toEqual({ id: oid('depot-b'), tag: 'Depot B is closed', tone: 'refused' })
     // Each targeting passes the surface's own check (at most eight tags, no target twice or as its own object, every tag worded).
-    expect(assertMapTargeting('einsatz.dispatch', targetingFor(refused, optionsFor('r1'))!)).toBeDefined()
+    expect(assertMapTargeting('einsatz.dispatch', targetingFor(refused)!)).toBeDefined()
   })
 
   test('E3: dimmed means not a valid target: every valid target is listed however far, only the nearest are tagged, and a refused one is not listed', () => {
     const many = optionsFor('r1', { targets: Array.from({ length: 12 }, (_, index) => ({ target: { taskId: `job-${index}` }, verb: 'serve', label: `J-${index}`, etaS: index * 60 })) })
-    const targeting = targetingFor(sa('r1'), many)!
+    const targeting = targetingFor(armedWith(many))!
     expect(targeting.targets.map(target => target.id)).toEqual(Array.from({ length: 12 }, (_, index) => oid(`job-${index}`)))
     expect(targeting.targets.filter(target => target.tag !== undefined).map(target => target.id)).toEqual(Array.from({ length: mapTargetingMaxTags }, (_, index) => oid(`job-${index}`)))
     // The ninth nearest valid target is marked, untagged; the refused Depot B is not among the targets, so the map dims it.
@@ -453,7 +450,7 @@ describe('Armed feedback, prompts and receipts', () => {
     expect(targeting.targets.some(target => target.id === oid('depot-b'))).toBe(false)
     expect(assertMapTargeting('einsatz.dispatch', targeting)).toBe(targeting)
     // A refusal shown takes one of the tags.
-    const shown = targetingFor(sa('r1', { refusal: { targetId: 'depot-b', text: 'Depot B is closed', untilMs: 1 } }), many)!
+    const shown = targetingFor(armedWith(many, { refusal: { targetId: 'depot-b', text: 'Depot B is closed', untilMs: 1 } }))!
     expect(shown.targets.filter(target => target.tag !== undefined)).toHaveLength(mapTargetingMaxTags)
     expect(shown.targets).toHaveLength(13)
   })
@@ -502,7 +499,7 @@ describe('Armed feedback, prompts and receipts', () => {
   test('no word says "You": the viewer\'s own orders read in the situation\'s actor word on every surface', () => {
     expect(Object.values(dispatchWords)).not.toContain('You')
     const mine = situationOf({ units: [unit('r1', { plan: [{ id: 'leg-1', verb: 'serve', target: { taskId: 'job-1' }, label: 'J-1 Ridge', state: 'active', eta: routed(60), by: { label: 'Operator', isViewer: false } }], lastOrder: { by: { label: 'Operator', isViewer: false }, commandId: 'cmd-9' } })] })
-    const card = unitCard(mine, mine.units[0]!, su('r1'), null, null, 0)
+    const card = unitCard(mine, mine.units[0]!, su('r1'), null, 0)
     expect([card.plan[0]!.by, card.undo.label]).toEqual(['by Operator', `${dispatchWords.undoLast} (by Operator: J-1 Ridge)`])
     expect(overview(mine, none, opened, 0).units.groups[0]!.rows[0]!.actor).toBe('by Operator')
     expect(receiptText(receiptsFromSituation(situationOf({ units: [unit('r1')] }), mine, 1)[0]!)).toBe('Operator: R1 → J-1 Ridge')
