@@ -1694,14 +1694,25 @@ impl Unit {
     /// point's and a restore's restart belong to no exchange, so a source and
     /// its copy report alike). R4-MEM: a reported line is read again by
     /// nothing, so the host keeps none (a live unit's logs grew without
-    /// bound, one class-S line per Grid exchange).
+    /// bound, one class-S line per Grid exchange). R4-MEM2: nor does it keep
+    /// the harness-only records that grow per restart or event: the driver's
+    /// closed segments (a no-op restart takes back only the one it closed in
+    /// the same call) and donor flips (detection reads the last signs, the
+    /// count the per-path tallies), the routing's and the DC groups' records.
     fn mark_seen(&mut self) -> Result<(), String> {
         let p = &mut self.plant;
         let field = p.field.as_mut().ok_or("no field controller")?;
         field.protection.log.clear();
         p.driver.log.clear();
+        p.driver.segments.clear();
+        p.driver.donor_flips.events.clear();
         p.protection.protection.log.clear();
-        p.ida.system_mut().log.clear();
+        let unit = p.ida.system_mut();
+        unit.log.clear();
+        unit.routing.records.clear();
+        if let Some(dc) = unit.dc.as_mut() {
+            dc.records.clear();
+        }
         Ok(())
     }
 
