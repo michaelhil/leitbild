@@ -1,6 +1,7 @@
 import type { Layer, PickingInfo } from '@deck.gl/core'
 import type { OperationalObject } from '../../core/model/index.ts'
 import { IconLayer, PathLayer, ScatterplotLayer, TextLayer } from '@deck.gl/layers'
+import { pointsUnder } from '../map/map-stack.ts'
 import type { CatalogueSymbolAtlasState } from './catalogue-symbol-atlas.ts'
 import { colorWithAlpha, darkStroke, dimmedAlpha, rgba, white } from './colors.ts'
 import { ObjectLabelLayer } from './object-label-layer.ts'
@@ -142,6 +143,27 @@ const glyphColor = (point: OperationalPointFeature): ColorRgba => point.dimmed ?
 
 const asPointPicking = (info: PickingInfo<OperationalPointFeature>): OperationalPointFeature | null =>
   info.object ?? null
+
+/**
+ * The object a pick on an object's label or target tag reaches: the top
+ * drawn icon whose disk holds the pointer, where the text lies over one
+ * (`map/map-stack.ts`, `pointsUnder`), else the text's own object. A label or
+ * a tag takes a click only on its own text, never on an icon beneath it, so
+ * a tap on an icon reaches that icon wherever another object's text overlaps
+ * it.
+ */
+const textPickingFor = (points: ReadonlyArray<OperationalPointFeature>) =>
+  (info: PickingInfo<OperationalPointFeature>): OperationalPointFeature | null => {
+    const text = asPointPicking(info)
+    if (text === null) return null
+    const viewport = info.viewport
+    if (viewport === undefined) throw new Error(`The pick on the map text of ${text.id} has no viewport`)
+    const screenOf = (position: Position3) => {
+      const [x, y] = viewport.project([...position])
+      return { x: x!, y: y! }
+    }
+    return pointsUnder(points, screenOf, { x: info.x - viewport.x, y: info.y - viewport.y })[0] ?? text
+  }
 
 const placementPointObjects = (
   points: ReadonlyArray<Position3>,
@@ -308,15 +330,22 @@ export const createOperationalDeckLayers = (config: OperationalDeckLayerConfig):
   const diskClicks = config.diskClicks
   const diskClickPoints = config.disksPick || diskClicks === null ? emptyPoints : layerData.iconPoints.filter(point => diskClicks(point.object))
   const catalogueAtlas = config.catalogueAtlas
-  const onSymbolClick = (info: PickingInfo<OperationalPointFeature>): void => {
-    const point = asPointPicking(info)
-    if (!point) return
-    config.onObjectSeen(point)
-    config.onObjectSelected(point)
-  }
-  const onSymbolHover = (info: PickingInfo<OperationalPointFeature>): void => {
-    config.onObjectHover(asPointPicking(info))
-  }
+  const clickWith = (pick: (info: PickingInfo<OperationalPointFeature>) => OperationalPointFeature | null) =>
+    (info: PickingInfo<OperationalPointFeature>): void => {
+      const point = pick(info)
+      if (!point) return
+      config.onObjectSeen(point)
+      config.onObjectSelected(point)
+    }
+  const hoverWith = (pick: (info: PickingInfo<OperationalPointFeature>) => OperationalPointFeature | null) =>
+    (info: PickingInfo<OperationalPointFeature>): void => {
+      config.onObjectHover(pick(info))
+    }
+  const onSymbolClick = clickWith(asPointPicking)
+  const onSymbolHover = hoverWith(asPointPicking)
+  const textPicking = textPickingFor(points)
+  const onTextClick = clickWith(textPicking)
+  const onTextHover = hoverWith(textPicking)
   return [
     new PathLayer<{ readonly path: ReadonlyArray<Position3> }>({
       id: 'leitbild-targeting-line',
@@ -360,10 +389,12 @@ export const createOperationalDeckLayers = (config: OperationalDeckLayerConfig):
         getWidth: snapshot.revisions.paths,
       },
     }),
+    // A line takes no pick. A finger picks the nearest drawn pixel within its radius, so a route line through an
+    // icon would win a tap on that icon and leave it to the ground; nothing reads a line's pick.
     new PathLayer<OperationalPathFeature>({
       id: 'leitbild-operational-paths',
       data: visiblePaths,
-      pickable: true,
+      pickable: false,
       visible: visiblePaths.length > 0,
       getPath: deckPath,
       getColor: path => path.color,
@@ -574,20 +605,21 @@ export const createOperationalDeckLayers = (config: OperationalDeckLayerConfig):
           id: 'leitbild-object-labels',
           data: layerData.labelPoints,
           obstacles: points,
-          // A label is part of its object: a click or hover on it acts on the object, never on the ground beneath.
+          // A label is part of its object: a click or hover on it acts on the object, never on the ground beneath,
+          // and where it lies over another icon, on that icon (`textPickingFor`).
           pickable: true,
           visible: visible(visibleFamilies, 'objects'),
           getColor: point => point.dimmed ? rgba(40, 46, 56, 95) : point.muted ? rgba(40, 46, 56, 150) : rgba(24, 28, 36, 245),
           backgroundColor: white(215),
-          onClick: onSymbolClick,
-          onHover: onSymbolHover,
+          onClick: onTextClick,
+          onHover: onTextHover,
         })]
       : []),
     // Each tagged target's tag above its halo while an order is armed: the verb or ETA a click there gives, or for a
     // refused target the refusal, wrapped at about 22 characters a line. Centred above its target, it runs right from
     // the target's left edge, or left from its right edge, where centred it would leave the map (`targetTagAnchor`).
-    // Like a label, a tag is part of its target: a tap on it picks the target, never the ground or an icon fanned out
-    // beneath it.
+    // Like a label, a tag is part of its target: a tap on it picks the target, never the ground. Where it lies over
+    // an icon, a tap there picks that icon (`textPickingFor`).
     ...(layerData.targetTagPoints.length > 0
       ? [new TextLayer<OperationalPointFeature>({
           id: 'leitbild-target-tags',
@@ -613,8 +645,8 @@ export const createOperationalDeckLayers = (config: OperationalDeckLayerConfig):
           wordBreak: 'break-word',
           getBackgroundColor: point => targetColors[point.targetTone ?? 'valid'].stroke,
           backgroundPadding: [6, 3],
-          onClick: onSymbolClick,
-          onHover: onSymbolHover,
+          onClick: onTextClick,
+          onHover: onTextHover,
           updateTriggers: {
             getText: snapshot.revisions.points,
             getPosition: snapshot.revisions.points,

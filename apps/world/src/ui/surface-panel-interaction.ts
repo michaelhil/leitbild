@@ -88,7 +88,8 @@ export interface MapTargetingTarget {
  * dimmed. Until then (the panel is
  * still reading them) nothing is dimmed. The map only draws it; clicks route
  * as always (`map-target-routing.ts`), a tap on a tag is a tap on its
- * target, and a tap on a stack of icons offers its valid and assigned targets.
+ * target except where the tag lies over another icon, which then takes the
+ * tap, and a tap on a stack of icons offers its valid and assigned targets.
  */
 export interface MapTargeting {
   readonly from: ObjectId

@@ -34,25 +34,33 @@ export const needsSingleTargetChoice = (hit: OperationalObject, stack: ReadonlyA
   stack.length > 1 && eligible.length === 1 && eligible[0]!.id !== hit.id
 
 /**
- * The objects whose icons lie under a point on the map's canvas itself, top
- * first (the last drawn): those whose coloured disk, which covers its glyph,
- * holds the point. No picking radius widens it, so icons that only stand
- * near each other never count as a stack; only icons overlapping where the
- * finger lands do. Labels do not count.
+ * The drawn icons under a point on the map's canvas itself, one per object,
+ * top first (the last drawn): those whose coloured disk, which covers its
+ * glyph, holds the point. No picking radius widens it, so icons that only
+ * stand near each other never count as a stack; only icons overlapping where
+ * the finger lands do. Labels and target tags do not count.
  */
-export const objectsUnder = (
+export const pointsUnder = (
   points: ReadonlyArray<OperationalPointFeature>,
   screenOf: (position: Position3) => ScreenPoint,
   at: ScreenPoint,
-): ReadonlyArray<OperationalObject> => {
+): ReadonlyArray<OperationalPointFeature> => {
   const seen = new Set<string>()
-  const objects: OperationalObject[] = []
+  const under: OperationalPointFeature[] = []
   for (const point of [...points].reverse()) {
     if (seen.has(point.object.id)) continue
     const screen = screenOf(point.position)
     if (Math.hypot(screen.x - at.x, screen.y - at.y) > statusDiskRadiusPx(point.sizePx)) continue
     seen.add(point.object.id)
-    objects.push(point.object)
+    under.push(point)
   }
-  return objects
+  return under
 }
+
+/** The objects whose icons lie under a point (`pointsUnder`), top first. */
+export const objectsUnder = (
+  points: ReadonlyArray<OperationalPointFeature>,
+  screenOf: (position: Position3) => ScreenPoint,
+  at: ScreenPoint,
+): ReadonlyArray<OperationalObject> =>
+  pointsUnder(points, screenOf, at).map(point => point.object)
