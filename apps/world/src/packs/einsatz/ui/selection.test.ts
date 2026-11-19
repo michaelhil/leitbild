@@ -1,6 +1,7 @@
 import { describe, expect, test } from 'bun:test'
 import { initialSelection, planExpectation, reduceSelection, type ClickedObject, type SelectionState } from './selection.ts'
 import type { UnitOptions } from '../situation/schema.ts'
+import { dispatchWords } from './presenters.ts'
 
 const free = { id: 'unit:a', status: { word: 'Free', tone: 'free' as const }, commandedBy: null, carry: null, plan: [] }
 const unit = { kind: 'unit', id: free.id } as const
@@ -25,7 +26,8 @@ describe('map-first dispatch', () => {
     expect(reduceSelection(opened.state, click(call, 1_010), options, free).effects).toEqual([{
       kind: 'submit', job: null, input: { units: [unit.id], stops: [{ taskId: call.id }], expectedPlan: [] },
     }])
-    expect(reduceSelection(opened.state, click(call), null, free).effects[0]?.kind).toBe('feedback')
+    // A tap before the options arrive is answered in the loading state's one word, the card's own notice.
+    expect(reduceSelection(opened.state, click(call), null, free).effects).toEqual([{ kind: 'feedback', text: dispatchWords.loadingTargets }])
     expect(reduceSelection(opened.state, click({ kind: 'call', id: 'call:c' }), options, free).effects).toEqual([{ kind: 'feedback', text: 'This need is covered' }])
   })
 
@@ -38,7 +40,7 @@ describe('map-first dispatch', () => {
     expect(reopened.effects).toEqual([{ kind: 'select', objectId: unit.id }, { kind: 'options', unitId: unit.id }])
     // A tap on its current call is a target the options read does not list: nothing is removed.
     expect(reduceSelection(reopened.state, click({ kind: 'call', id: 'call:a' }, 1_110), assigned, busy).effects)
-      .toEqual([{ kind: 'feedback', text: 'This target is not available.' }])
+      .toEqual([{ kind: 'feedback', text: dispatchWords.targetUnavailable }])
     expect(reduceSelection(opened, { kind: 'initial-order-accepted', unitId: 'unit:other' }).state).toBe(opened)
   })
 
@@ -47,7 +49,7 @@ describe('map-first dispatch', () => {
     expect(picked.effects).toEqual([])
     expect(picked.state.selection).toMatchObject({ decision: { kind: 'order', assigned: true, currentLabel: 'Old call' } })
     expect(reduceSelection(picked.state, { kind: 'decide', choice: 'cancel' }, assigned, busy).effects).toEqual([])
-    expect(reduceSelection(picked.state, { kind: 'decide', choice: 'replace' }, options, free).effects).toEqual([{ kind: 'feedback', text: 'The plan changed. Pick the target again.' }])
+    expect(reduceSelection(picked.state, { kind: 'decide', choice: 'replace' }, options, free).effects).toEqual([{ kind: 'feedback', text: dispatchWords.planChanged }])
   })
 
   test('Replace preserves the observed task and plan; Add appends and drops nothing', () => {

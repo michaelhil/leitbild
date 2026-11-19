@@ -63,7 +63,11 @@ export const dispatchWords = {
   inbound: 'Inbound',
   slots: 'slots in use',
   validTargets: 'Targets',
+  /** The selected unit's options are on their way: the card's notice, and the answer to a target tap meanwhile. */
   loadingTargets: 'Reading targets…',
+  targetUnavailable: 'This target is not available.',
+  cannotMoveHere: 'This unit cannot move here.',
+  planChanged: 'The plan changed. Pick the target again.',
   refreshing: 'Reading the suggestion again…',
   suggestionHolds: 'The suggestion still holds',
   observedBy: 'Observed by',

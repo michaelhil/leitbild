@@ -1,6 +1,7 @@
 import type { GeoJsonPoint } from '../../../core/model/index.ts'
 import type { Stop, UnitOrderInput } from '../order-schema.ts'
 import type { SituationUnit, UnitOptions } from '../situation/schema.ts'
+import { dispatchWords } from './presenters.ts'
 
 /** Opening an asset selects it for dispatch; only a subsequent target selection may issue an order. */
 export const doubleClickMs = 500
@@ -109,20 +110,20 @@ const targetStep = (state: SelectionState, target: Stop, unit: TargetingUnit | u
   if (!unit || !canTarget(unit)) return unchanged(state)
   const match = stopKey(target)
   const current = matchingOptions(unit, options)
-  if (current === null) return feedback(state, 'Reading targets. Try again in a moment.')
+  if (current === null) return feedback(state, dispatchWords.loadingTargets)
   const listed: Option | undefined = current.targets.find(entry => stopKey(entry.target) === match)
   if (!('point' in target) && listed === undefined) {
-    return feedback(state, current.refused.find(entry => stopKey(entry.target) === match)?.text ?? 'This target is not available.')
+    return feedback(state, current.refused.find(entry => stopKey(entry.target) === match)?.text ?? dispatchWords.targetUnavailable)
   }
   const assigned = current.plan.length > 0 || current.busy !== null
   const loaded = unit.carry?.load.some(entry => entry.count > 0) ?? false
   const replace = listed?.canReplace ?? (current.moveRefusal === undefined && !loaded && (!assigned || unit.plan[0]?.state === 'active'))
   const add = listed?.canAdd ?? assigned
   if (!assigned && !('point' in target)) {
-    if (!replace) return feedback(state, 'This target is not available.')
+    if (!replace) return feedback(state, dispatchWords.targetUnavailable)
     return { state, effects: [{ kind: 'submit', input: { units: [unit.id], stops: [target], expectedPlan: current.plan }, job: null }] }
   }
-  if (!assigned && !replace) return feedback(state, current.moveRefusal ?? 'This unit cannot move here.')
+  if (!assigned && !replace) return feedback(state, current.moveRefusal ?? dispatchWords.cannotMoveHere)
   return decisionFor(state, unit.id, {
     kind: 'order', target, expectedPlan: current.plan, job: current.busy, replace, add, assigned,
     currentLabel: unit.plan.find(stop => stop.state === 'active')?.label ?? null,
@@ -160,7 +161,7 @@ export const reduceSelection = (state: SelectionState, event: SelectionEvent, op
       const { unitId, decision } = selection
       const next: SelectionState = { ...state, selection: { kind: 'unit', unitId } }
       if (event.choice === 'cancel') return unchanged(next)
-      if (!selected || !canTarget(selected) || !samePlan(planExpectation(selected.plan), decision.expectedPlan)) return feedback(next, 'The plan changed. Pick the target again.')
+      if (!selected || !canTarget(selected) || !samePlan(planExpectation(selected.plan), decision.expectedPlan)) return feedback(next, dispatchWords.planChanged)
       if (decision.kind === 'remove') {
         if (event.choice !== 'remove') return unchanged(state)
         return { state: next, effects: [{ kind: 'remove', unitId, stopId: decision.stop.id, expectedPlan: decision.expectedPlan }] }
