@@ -97,16 +97,16 @@
     ],
     "previews": [
       {
-        "alt": "Halden, paused: ambulance A2 open in the Dispatch panel above the calls ranked by priority, and two waiting calls on the map.",
+        "alt": "Halden, paused: ambulance A2 selected in the Dispatch panel; the calls and sites it can go to are tagged with travel times, the rest faded.",
         "width": 1600,
         "height": 1000,
         "sources": [
           {
-            "file": "halden-emergency-960.9990aa8a.webp",
+            "file": "halden-emergency-960.6c69f662.webp",
             "width": 960
           },
           {
-            "file": "halden-emergency-1600.338cbeb1.webp",
+            "file": "halden-emergency-1600.5fb4aaf0.webp",
             "width": 1600
           }
         ]
