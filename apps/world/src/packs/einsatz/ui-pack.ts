@@ -7,7 +7,8 @@ import type { TaskData } from './engine/model.ts'
 import { einsatzPackId, einsatzRuntimeId } from './ids.ts'
 import { neutralLexicon, type UnitPhase } from './lexicon.ts'
 import { contactIcon } from './text.ts'
-import { dispatchWords, einsatzRecordOf, tierWord, trackAgeText, type EinsatzRecord } from './ui/presenters.ts'
+import { dispatchWords } from './ui/dispatch-words.ts'
+import { einsatzRecordOf, tierWord, trackAgeText, type EinsatzRecord } from './ui/presenters.ts'
 
 /**
  * The browser-safe Einsatz view. It reads only the presentation each object

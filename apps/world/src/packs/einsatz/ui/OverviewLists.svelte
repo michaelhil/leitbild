@@ -1,7 +1,8 @@
 <script lang="ts">
   import { einsatzColors } from '../colors.ts'
   import { svgImageSource } from './einsatz-client.ts'
-  import { dispatchWords, type OverviewView } from './presenters.ts'
+  import { dispatchWords } from './dispatch-words.ts'
+  import type { OverviewView } from './presenters.ts'
   import type { ClickedObject } from './selection.ts'
 
   /**

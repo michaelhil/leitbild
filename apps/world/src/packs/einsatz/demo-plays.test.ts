@@ -18,7 +18,8 @@ import type { RecommendAnswer } from './recommendation-schema.ts'
 import type { Situation, UnitOptions } from './situation/schema.ts'
 import { einsatzPackView } from './ui-pack.ts'
 import { dispatchMapCover, panelBottomClearancePx, panelLayoutFor, panelTopClearancePx } from './ui/dispatch-layout.ts'
-import { dispatchWords, einsatzRecordsKey, receiptUndoMs } from './ui/presenters.ts'
+import { dispatchWords } from './ui/dispatch-words.ts'
+import { einsatzRecordsKey, receiptUndoMs } from './ui/presenters.ts'
 import { planExpectation } from './ui/selection.ts'
 
 /**
@@ -692,7 +693,7 @@ describe('Dispatch panel click counts', () => {
     })
   })
 
-  test('undo a unit\'s last order once its receipt\'s Undo is gone: 2 clicks (the unit, "Undo last order"); a refused Undo stays disabled with the engine\'s reason', async () => {
+  test('undo a unit\'s last order once its receipt\'s Undo is gone: 2 clicks (the unit, "Undo last order"); then it is disabled with the engine\'s reason before any click', async () => {
     await scene(async ({ run, screen, situation, callId, answer }) => {
       const unitId = chosenCarrier(situation, answer)
       await screen.mapTap(unitId)
@@ -702,17 +703,71 @@ describe('Dispatch panel click counts', () => {
       await expect(screen.press({ kind: 'receipt-undo' })).rejects.toThrow('offers no Undo')
       screen.resetActions()
       await screen.mapTap(unitId)
-      expect(screen.card()).toMatchObject({ kind: 'unit', undo: { enabled: true, commandId: ordered.commandId } })
+      expect(screen.card()).toMatchObject({ kind: 'unit', undo: { label: dispatchWords.undoLast, enabled: true, commandId: ordered.commandId } })
       await screen.press({ kind: 'undo' })
       expect(screen.actions()).toBe(2)
       expect(sent(screen).at(-1)).toEqual([ids.undo, { unitId, commandId: ordered.commandId }, 'ok'])
       expect(run.unit(unitId).orders).toEqual([])
-      // The Undo itself is the unit's last command now, and the engine takes nothing back from it.
-      await screen.press({ kind: 'undo' })
-      expect(sent(screen).at(-1)?.[2]).toBe('nothing_to_undo')
+      // The Undo itself is the unit's last command now: the situation carries the engine's verdict, so the card says so without a click.
       const card = screen.card()
-      expect(card?.kind === 'unit' ? card.undo : null).toMatchObject({ enabled: false, reason: screen.feedback() })
-      expect(screen.feedback()).toContain('no stop to take back')
+      if (card?.kind !== 'unit') throw new Error('The unit card is not shown')
+      expect(card.undo).toMatchObject({ label: dispatchWords.undoLast, enabled: false })
+      expect(card.undo.commandId).not.toBe(ordered.commandId)
+      expect(card.undo.reason).toContain('no stop to take back')
+      await expect(screen.press({ kind: 'undo' })).rejects.toThrow('Undo is not enabled')
+      expect(sent(screen).map(entry => entry[0])).toEqual([ids.order, ids.undo])
+    })
+  })
+
+  test('the unit card\'s Undo agrees with the footer once the unit has arrived: disabled with the engine\'s reason, and nothing is sent', async () => {
+    await scene(async ({ run, screen, situation, callId, answer }) => {
+      const unitId = chosenCarrier(situation, answer)
+      await screen.mapTap(unitId)
+      await screen.mapTap(callId)
+      await run.run.setClock({ paused: false })
+      for (let i = 0; i < 400 && !['on-task', 'transporting'].includes(run.unit(unitId).phase); i++) {
+        run.forward(2_000)
+        await run.settle()
+      }
+      await run.run.setClock({ paused: true })
+      await screen.mapTap(unitId)
+      const card = screen.card()
+      expect(card?.kind === 'unit' ? card.undo : null).toMatchObject({ label: dispatchWords.undoLast, enabled: false })
+      expect(card?.kind === 'unit' ? card.undo.reason : null).toMatch(/has arrived|past the first stop/)
+      expect(screen.calls).toHaveLength(1)
+    })
+  })
+
+  test('a refused Undo says why once: in the feedback slot while its unit\'s card is not shown, only beside the card\'s disabled Undo while it is', async () => {
+    await scene(async ({ run, screen, situation, callId, answer }) => {
+      const unitId = chosenCarrier(situation, answer)
+      await screen.mapTap(unitId)
+      await screen.mapTap(callId)
+      await screen.press({ kind: 'back' })
+      expect(screen.card()).toBeNull()
+      // Within the receipt's 8 s the Run moves on and the unit arrives, so the engine takes nothing back.
+      await run.run.setClock({ paused: false })
+      for (let i = 0; i < 400 && !['on-task', 'transporting'].includes(run.unit(unitId).phase); i++) {
+        run.forward(2_000)
+        await run.settle()
+      }
+      await run.run.setClock({ paused: true })
+      await screen.sync()
+      await screen.press({ kind: 'receipt-undo' })
+      expect(sent(screen).at(-1)?.[2]).toBe('nothing_to_undo')
+      const text = screen.feedback()
+      expect(text).toMatch(/has arrived|past the first stop/)
+      await screen.mapTap(unitId)
+      const card = () => {
+        const shown = screen.card()
+        if (shown?.kind !== 'unit') throw new Error('The unit card is not shown')
+        return shown
+      }
+      expect(card().undo).toMatchObject({ enabled: false, reason: text })
+      await screen.press({ kind: 'receipt-undo' })
+      expect(sent(screen).at(-1)?.[2]).toBe('nothing_to_undo')
+      expect(screen.feedback()).toBeNull()
+      expect(card().undo).toMatchObject({ enabled: false, reason: text })
     })
   })
 
@@ -744,7 +799,7 @@ describe('Dispatch panel click counts', () => {
     })
   })
 
-  test('a map tap on a target already in the plan is a target like any other: the options read answers it, and it never removes a stop', async () => {
+  test('a map tap on a target already in the plan, the active stop or a queued one, gets the options read\'s plain answer: no dialog, nothing sent, no stop removed', async () => {
     await scene(async ({ run, screen, callId, answer }) => {
       const unitId = answer.proposal!.units[0]!.unitId
       expect((await run.invoke(ids.order, answer.proposal!.order)).ok).toBe(true)
@@ -753,17 +808,38 @@ describe('Dispatch panel click counts', () => {
       await screen.mapTap(second)
       await screen.decide('add')
       const plan = displayedPlan(screen, unitId)
+      expect(plan.map(stop => stop.state)).toEqual(['active', 'queued'])
       const options = await run.query<UnitOptions>(einsatzQueryIds.unitOptions, { unitId })
-      for (const target of [second, callId]) {
-        // The options read lists the planned call: taking it now is allowed, adding it again is not, with the engine's reason.
-        const listed = options.targets.find(entry => 'taskId' in entry.target && entry.target.taskId === target)
-        expect(listed).toMatchObject({ canReplace: true, canAdd: false })
+      for (const target of [callId, second]) {
+        // The read judges a planned call by adding it again only, which the engine refuses: it is listed as refused, with that reason.
+        expect(options.targets.some(entry => 'taskId' in entry.target && entry.target.taskId === target)).toBe(false)
+        const refused = options.refused.find(entry => 'taskId' in entry.target && entry.target.taskId === target)
+        expect(refused?.code).toBe('requirement_covered')
         await screen.mapTap(target)
-        expect(screen.decision()).toMatchObject({ kind: 'order', target: { taskId: target }, replace: true, add: false, addReason: listed!.addRefusal })
-        await screen.decide('cancel')
+        expect(screen.decision()).toBeNull()
+        expect(screen.feedback()).toBe(refused!.text)
       }
       expect(screen.calls).toHaveLength(1)
       expect(displayedPlan(screen, unitId)).toEqual(plan)
+    })
+  })
+
+  test('a refusal lasts until the next tap is answered: a tap on another target opens its decision without the old refusal above it, and a tap on the refused target says it again', async () => {
+    await scene(async ({ run, screen, callId, answer }) => {
+      const unitId = answer.proposal!.units[0]!.unitId
+      expect((await run.invoke(ids.order, answer.proposal!.order)).ok).toBe(true)
+      const second = await newCall(run, screen, callId, 'C-9 Second call', 0.003)
+      await screen.mapTap(unitId)
+      await screen.mapTap(callId)
+      const refusal = screen.feedback()
+      expect(refusal).toContain('needs nothing more than')
+      await screen.mapTap(second)
+      expect(screen.decision()).toMatchObject({ kind: 'order', target: { taskId: second } })
+      expect(screen.feedback()).toBeNull()
+      await screen.decide('cancel')
+      await screen.mapTap(callId)
+      expect(screen.feedback()).toBe(refusal)
+      expect(screen.calls).toHaveLength(0)
     })
   })
 

@@ -3,7 +3,8 @@
   import { einsatzColors } from '../colors.ts'
   import type { Stop, UnitOrderInput } from '../order-schema.ts'
   import { svgImageSource } from './einsatz-client.ts'
-  import { dispatchWords, type CardView, type PlanStopView } from './presenters.ts'
+  import { dispatchWords } from './dispatch-words.ts'
+  import type { CardView, PlanStopView } from './presenters.ts'
 
   /**
    * The unit card keeps the plan and map selection controls in reach.
@@ -15,6 +16,8 @@
     readonly unitPending: boolean
     /** The last refusal or failure the panel reports, shown in the card's reserved slot. */
     readonly feedback: string | null
+    /** Changes each time the panel says something there, so the same words said again are a new line. */
+    readonly feedbackKey: number
     readonly icon: (id: string) => string | undefined
     /** Whether this call's Close waits for its confirm. */
     readonly confirming: boolean
@@ -43,7 +46,7 @@
 {/snippet}
 
 {#snippet slot()}
-  <p class="slot refusal" role="alert">{props.feedback ?? ''}</p>
+  {#key props.feedbackKey}<p class="slot refusal" class:said={props.feedback !== null} role="alert">{props.feedback ?? ''}</p>{/key}
 {/snippet}
 
 {#snippet chosen(label: string)}
@@ -76,7 +79,7 @@
       </button>
     </header>
     {#if card.readOnly !== null}<p class="note">{card.readOnly}</p>{/if}
-    {#if props.feedback !== null}<p class="refusal" role="alert">{props.feedback}</p>{/if}
+    {#if props.feedback !== null}{#key props.feedbackKey}<p class="refusal said" role="alert">{props.feedback}</p>{/key}{/if}
     {#each card.states as state, index (index)}<p class="state">{state}</p>{/each}
     {#if card.plan.length > 0 || card.predicted !== null}
       <h4>{card.planHeading}</h4>
@@ -241,6 +244,10 @@
   .status[data-tone='attention'] .dot, .status[data-tone='out'] .dot { color: var(--critical); }
   .note, .reason, .facts, .by, .priority { color: var(--muted); font-size: 12px; }
   .refusal, .state, .overdue { color: var(--critical); font-size: 12px; }
+  /* Said again: a short highlight, so a repeated answer is seen to come; none where motion is reduced. */
+  .said { animation: said 700ms ease-out; }
+  @keyframes said { from { background: color-mix(in srgb, var(--critical) 18%, transparent); } }
+  @media (prefers-reduced-motion: reduce) { .said { animation: none; } }
   .code { font-weight: 750; color: var(--critical); }
   .new { padding: 1px 6px; border-radius: 6px; background: var(--warning); color: var(--panel); font-size: 11px; font-weight: 750; }
   .targets, .plan, .needs { display: grid; gap: 4px; margin: 0; padding: 0; list-style: none; }

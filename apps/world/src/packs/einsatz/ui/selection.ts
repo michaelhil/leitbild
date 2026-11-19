@@ -1,7 +1,7 @@
 import type { GeoJsonPoint } from '../../../core/model/index.ts'
 import type { Stop, UnitOrderInput } from '../order-schema.ts'
 import type { SituationUnit, UnitOptions } from '../situation/schema.ts'
-import { dispatchWords } from './presenters.ts'
+import { dispatchWords } from './dispatch-words.ts'
 
 /** Opening an asset selects it for dispatch; only a subsequent target selection may issue an order. */
 export const doubleClickMs = 500
@@ -184,6 +184,18 @@ export const reduceSelection = (state: SelectionState, event: SelectionEvent, op
       : transition(state, none)
   }
 }
+
+/**
+ * Whether a handled event answers the person's last tap, so the feedback
+ * that tap left goes: a map click, a target row or a decision the table
+ * acted on. The second half of a double-click, which it ignores, leaves it.
+ */
+export const answersLastTap = (event: SelectionEvent, before: SelectionState, step: SelectionStep): boolean =>
+  (event.kind === 'click' || event.kind === 'target-row' || event.kind === 'decide') && (step.state !== before || step.effects.length > 0)
+
+/** Whether the selected unit's options read answers the feedback shown: the loading notice a tap left while the read was on its way. */
+export const optionsAnswer = (feedback: string | null, unit: TargetingUnit | undefined, options: UnitOptions): boolean =>
+  feedback === dispatchWords.loadingTargets && matchingOptions(unit, options) !== null
 
 export const activationActs = (quietFromMs: number | null, atMs: number): boolean => quietFromMs === null || atMs - quietFromMs >= doubleClickMs
 

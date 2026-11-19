@@ -15,7 +15,7 @@ import { config as engineConfig, low, templates, types as engineTypes } from './
 import { einsatzCommandIds } from './capabilities.ts'
 import { einsatzPack } from './pack.ts'
 import { einsatzDispatchPanelId, einsatzPackView } from './ui-pack.ts'
-import { dispatchWords } from './ui/presenters.ts'
+import { dispatchWords } from './ui/dispatch-words.ts'
 
 const { categories, presentObject } = einsatzPackView.presentation
 const recordType = (object: OperationalObject): unknown => (object.packData as { readonly type?: unknown }).type
