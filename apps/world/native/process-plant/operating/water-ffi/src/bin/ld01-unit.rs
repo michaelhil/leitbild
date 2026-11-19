@@ -6,8 +6,10 @@
 //! composition (`unit::s3::compose`) on IC-PROT's frame driver with its
 //! plant clients (`unit::plant::Plant`: the acquired protection, IC-CTRL's
 //! PZR pressure control in class S, the generator page's ACT.B field
-//! controller), stock IDAS in one-step mode with its quadratures carried.
-//! It reads no environment: LOAD names every input path.
+//! controller, and AUTO rod control when the section declares it), stock
+//! IDAS in one-step mode with its quadratures carried.
+//! It reads no environment: LOAD names every input path. It sets two for
+//! SUNDIALS's logger, so that SUNDIALS's warnings and errors go to stderr.
 //!
 //! **Frames.** Request `u32 len | u8 op | u32 seq | payload`; reply
 //! `u32 len | u8 status | u32 seq | f64 wall_s | f64 cpu_s | payload`, all
@@ -43,8 +45,13 @@
 //! **Composition.** The IC section's own declarations choose it: a section
 //! declaring the governor composes the X4.3 governor (`LD01.TG.ADM.POS`), one
 //! declaring the DC groups composes them, report-only (their reports and the
-//! labelled engineering values); the protection client refuses a mismatch.
-//! The pages they read join the identity.
+//! labelled engineering values), and one declaring rod control composes the
+//! AUTO rod client on the wiki's `ld01-rod-control`; the protection client
+//! refuses a governor or DC mismatch. The pages they read join the identity.
+//! With rod control the unit delivers `LD01.CORE.BANK.HOLD` and the values
+//! the law compares at the last frame, `LD01.CORE.BANK.TAVG` (its lagged
+//! Tavg) and `LD01.CORE.BANK.TREF` (its program at its lagged load), read
+//! from the rod client's own state: observation only.
 //!
 //! **Operator commands** (PROC T4, T5, T11; lane ELEC): `IncomingDevice`
 //! `{bus, source, target}`, `StartConsumer` `{consumer}`, `DcDistribution`
@@ -54,6 +61,9 @@
 //! the unit does not hold is refused and changes nothing. A request the
 //! equipment's guards refuse is a result, not a refusal: the reply says
 //! `accepted: false`, the electrical log records why, and the unit goes on.
+//! `BankHold` and `BankAuto` set and release the operator's bank HOLD on the
+//! AUTO rod client, at the unit's time and acting at the next frame; a unit
+//! whose section declares no rod control refuses them by name.
 //!
 //! **Snapshot** (design §6.1, copy = restart boundary). At the unit's time,
 //! with nothing due there and no held change pending: `t`, `y`, `y'` and
@@ -67,37 +77,69 @@
 //! water library, solver configuration, the composed tolerances), restores
 //! every state and makes the same exact consistent restart.
 //!
+//! **Grid exchange** (R4-GRID, owner 8 Nov). LOAD's `solver.grid_exchange_s`
+//! (seconds, or null for a unit no Grid connects) sets an absolute exchange
+//! grid in unit time, whole multiples of that many I&C frames. While the
+//! generator breaker is closed the next exchange is an exact stop, re-armed
+//! at every request boundary from `t`, the LOAD and the breaker's state, so
+//! a restored copy holds the stop its source holds. An ADVANCE may not cross
+//! an armed exchange. `GridBoundary` and `LoadRequest` apply only at an
+//! exchange instant: the boundary's frequency, its rate and the voltage, and
+//! the governor's load request, are held inputs entering storage rates only,
+//! class S at the stop, no restart. With the breaker open a changed boundary
+//! is no event; the boundary's voltage and frequency also reach the auxiliary
+//! sources, class R at the exchange only when the qualification band's
+//! verdict changes (no stop armed with the breaker open: a restart from the
+//! last step's dense output). A dead bus is class R there too, once. Energized after dead
+//! is refused: 1.0 has no offsite restoration (S3-D10). A load request with
+//! the governor out of LOAD is a result (`accepted: false`), not a refusal.
+//!
+//! **Kinetics domain** (R4-FLOOR-UNIT). The unit judges the domain of the
+//! source feedback as the case observer judges the operable unit's cases:
+//! P1 with B1 (OU-P1), the packet's `hot_standby_kinetics` record, through
+//! `post_trip_domain::hot_standby_domain_exit` (`validate_accepted_within`,
+//! the 8 MPa floor among its bounds, then B1's phase absence) at every
+//! accepted step and every restart's consistent start inside an ADVANCE. The
+//! first state outside it fail-stops the unit with the exit's label, time and
+//! bound; it is not a named end.
+//!
 //! A refusal after the unit's state may have changed (ADVANCE, a restart, a
 //! Grid boundary) fail-stops the unit: every later request but STATUS and
 //! CLOSE is refused with that cause.
 use leitbild_operating_plant::joined::domain_end::DomainEnd;
 use leitbild_operating_plant::{
     digest::sha256,
-    electrical::{breaker::Contact, bus, dc_supply, field, slice},
+    electrical::{breaker::Contact, bus, dc_supply, slice},
     ic::{
         acquisition::Quality,
         packet::{Quantity, SgFlow},
     },
-    joined::block::Command,
+    joined::{
+        block::Command,
+        operator::Joined,
+        post_trip_domain::{self, HotStandby},
+    },
     network::{CellMode, Network, Properties},
+    source_feedback as sf,
     thermal::Scalar,
+    turbine::governor::Mode,
 };
 use leitbild_operating_water::{
     If97,
     electrical::Electrified,
     frame::{
-        Action, COUNTER_NAMES, Change, Class, Client, Diagnostic, DriverState, MatrixRebuild,
-        Stepping, same_instant,
+        Action, COUNTER_NAMES, Change, Class, Client, Diagnostic, DriverState, Frame,
+        MatrixRebuild, Observer, Side, Stepping, same_instant,
     },
     joined::{Discrete, Integrated, JoinedSystem, discrete_restart},
     unit::{
         clock,
         dc::{self, Dc},
         inputs::{Inputs, MODEL, Spine},
-        plant::{self, Boundary, Plant},
+        live,
+        plant::{Boundary, Plant},
         profile::{Solver, Weights, parse_first_step, parse_stepping},
-        s3, timeline,
-        turbine::{self, Turbine},
+        rod_control, s3, timeline, turbine,
     },
 };
 use serde_json::{Map, Value, json};
@@ -339,6 +381,11 @@ enum Reading {
     /// R4-RELIEF-ISO.
     ReliefIsolationPosition,
     ReliefLiftOpen,
+    /// The operator's bank HOLD on the AUTO rod client.
+    BankHold,
+    /// The AUTO rod law's lagged Tavg (0) and its program reference (1) at
+    /// the last frame (`RodClient::tavg_and_reference_k`).
+    RodLaw(usize),
     ReleasedPower,
     PzrPressure,
     PzrCollapsedLevel,
@@ -360,6 +407,31 @@ enum Reading {
     BreakerClosed,
     OffsiteLost,
     ExportEnergy,
+    /// R4-GRID: the held boundary and the port's net power.
+    GridFrequency,
+    GridVoltage,
+    NetExport,
+    /// R4-GRID: the governor's load request in force and whether it takes one.
+    LoadRequest,
+    LoadActive,
+}
+
+/// R4-GRID: the exchange grid's first instant strictly after `t`.
+fn exchange_after(frame: &Frame, every: u64, t: f64) -> f64 {
+    let mut m = (t / (every as f64 * frame.period_s())).floor() as u64;
+    loop {
+        let instant = frame.instant(m * every);
+        if instant > t && !same_instant(instant, t) {
+            return instant;
+        }
+        m += 1;
+    }
+}
+
+/// R4-GRID: whether `t` is an instant of the exchange grid.
+fn on_exchange(frame: &Frame, every: u64, t: f64) -> bool {
+    let m = (t / (every as f64 * frame.period_s())).round() as u64;
+    same_instant(frame.instant(m * every), t)
 }
 
 struct Channel {
@@ -633,6 +705,38 @@ fn channels(plant: &Plant, inputs: &Inputs) -> Result<Vec<Channel>, String> {
         "IC-CTRL PZR pressure control",
         Reading::HeaterRequest,
     ));
+    if plant.rods.is_some() {
+        out.push(channel(
+            "LD01.CORE.BANK.HOLD",
+            "1",
+            "Bank HOLD in force (1 held, 0 AUTO)",
+            "X4.4 AUTO rod control",
+            Reading::BankHold,
+        ));
+        // The values the law compares at each frame (soak r2's rod line):
+        // formed every frame, acted on only in AUTO.
+        for (i, (id, quantity)) in [
+            (
+                "LD01.CORE.BANK.TAVG",
+                "AUTO rod control's Tavg: the law's lagged loop-mean input",
+            ),
+            (
+                "LD01.CORE.BANK.TREF",
+                "AUTO rod control's Tref: the Tavg program at the law's lagged turbine load",
+            ),
+        ]
+        .into_iter()
+        .enumerate()
+        {
+            out.push(channel(
+                id,
+                "K",
+                quantity,
+                "X4.4 AUTO rod control",
+                Reading::RodLaw(i),
+            ));
+        }
+    }
     let joined = &plant.ida.system().integrated().joined;
     // R4-RELIEF-ISO: the valve's position and the relief's direct lift
     // indication, where the packet composes the valve. True flow stays in
@@ -921,8 +1025,43 @@ fn channels(plant: &Plant, inputs: &Inputs) -> Result<Vec<Channel>, String> {
             "generator export energy since LOAD (IDAS quadrature)",
             Reading::ExportEnergy,
         ),
+        (
+            "LD01.GRID.FREQUENCY",
+            "Hz",
+            "the Grid's frequency held at the boundary",
+            Reading::GridFrequency,
+        ),
+        (
+            "LD01.GRID.VOLTAGE",
+            "1",
+            "the Grid's voltage held at the boundary, per unit of the line voltage",
+            Reading::GridVoltage,
+        ),
+        (
+            "LD01.GRID.NET_EXPORT",
+            "W",
+            "net power to the Grid: terminal export less both auxiliary draws",
+            Reading::NetExport,
+        ),
     ] {
         out.push(channel(id, unit, quantity, "ELEC slice", read));
+    }
+    // R4-GRID: the load path, with a governor composed.
+    if inputs.ic.governor.declared {
+        out.push(channel(
+            "LD01.TG.LOAD.REQUEST",
+            "W",
+            "the governor's load request in force",
+            "X4.3 governor",
+            Reading::LoadRequest,
+        ));
+        out.push(channel(
+            "LD01.TG.LOAD.ACTIVE",
+            "1",
+            "the governor is in LOAD and takes a load request",
+            "X4.3 governor",
+            Reading::LoadActive,
+        ));
     }
     let mut seen = std::collections::BTreeSet::new();
     if let Some(c) = out.iter().find(|c| !seen.insert(c.id.clone())) {
@@ -962,6 +1101,10 @@ struct Unit {
     /// R4-ENDED: the named domain end the unit stands at.
     ended: Option<Ended>,
     exchanges: u64,
+    /// R4-GRID: the exchange grid in I&C frames (LOAD's `grid_exchange_s`).
+    grid_exchange_frames: Option<u64>,
+    /// R4-FLOOR-UNIT: the kinetics domain judged on accepted states.
+    domain: KineticsDomain,
 }
 
 /// R4-ENDED: a named domain end, at the last accepted step's time.
@@ -969,6 +1112,121 @@ struct Ended {
     end: DomainEnd,
     t: f64,
     cause: String,
+}
+
+/// R4-FLOOR-UNIT: the kinetics domain the case observer judges on the
+/// operable unit's cases (P1 with B1, OU-P1), judged here at the same points
+/// with the same functions: every accepted stock step, and every restart's
+/// consistent start inside a driven span. Read from the packet at compose;
+/// it holds no state and decides no change.
+struct KineticsDomain {
+    /// The packet's `hot_standby_kinetics` record (`ld01-hot-standby-kinetics`).
+    record: HotStandby,
+    /// The operator's dimension (the electrical slice's coordinates follow).
+    n: usize,
+}
+
+impl KineticsDomain {
+    fn of(packet: &Value, plant: &Plant) -> Result<Self, String> {
+        let record: HotStandby = serde_json::from_value(packet["hot_standby_kinetics"].clone())
+            .map_err(|e| format!("the packet's hot_standby_kinetics section (OU-P1): {e}"))?;
+        let feedback = plant.ida.system().integrated().joined.nuclear().feedback();
+        record
+            .validate(&feedback.domains())
+            .map_err(|e| e.to_string())?;
+        Ok(Self { record, n: plant.n })
+    }
+
+    /// The case observer's P1 exit at the accepted state `(t, y, y')`: its
+    /// evaluation held or made there, then
+    /// [`post_trip_domain::hot_standby_domain_exit`]; at an exit, the
+    /// admission names it, labelled as the case observer labels it. The check
+    /// reads the nuclear block, the rods' travel and the region water only,
+    /// so a release-root call's evaluation that stopped at the face drives
+    /// serves as well as a whole one (R4-ROOT-DRIVES).
+    fn judge(
+        &self,
+        joined: &mut Joined<If97>,
+        t: f64,
+        y: &[f64],
+        yp: &[f64],
+    ) -> Result<(), String> {
+        if !joined.holds_nuclear_evaluation(t, y, yp) {
+            joined
+                .evaluate(t, y, yp, None, 0., None)
+                .map_err(|e| format!("kinetics domain: the operator at {t} s: {e:?}"))?;
+        }
+        let phase = joined
+            .region_phases()
+            .map_err(|e| format!("kinetics domain: region phases at {t} s: {e:?}"))?;
+        let exit = post_trip_domain::hot_standby_domain_exit(
+            joined.nuclear(),
+            &phase,
+            &self.record,
+            joined.travel(),
+            t,
+            0.,
+        )
+        .map_err(|e| format!("kinetics domain at {t} s: {e}"))?;
+        if !exit {
+            return Ok(());
+        }
+        match post_trip_domain::admit_hot_standby_accepted(
+            joined.nuclear(),
+            &phase,
+            &self.record,
+            joined.travel(),
+            t,
+            0.,
+        ) {
+            Ok(_) => Ok(()),
+            Err(post_trip_domain::Error::Unsupported {
+                margin_holds, exit, ..
+            }) => {
+                let label = if sf::phase_absence(&phase).err().as_ref() == Some(&exit) {
+                    "B1 phase-absence exit"
+                } else {
+                    "P1 hot-standby domain exit"
+                };
+                Err(format!(
+                    "{label} at {t} s: unsupported: nominal margin holds {margin_holds}, {exit:?}: the first accepted state outside the kinetics domain (R4-FLOOR-UNIT)"
+                ))
+            }
+            Err(e) => Err(format!("kinetics domain at {t} s: {e}")),
+        }
+    }
+}
+
+impl<J: JoinedSystem<Properties = If97>> Observer<Electrified<J>> for KineticsDomain {
+    fn next_after(&self, _t: f64) -> Option<f64> {
+        None
+    }
+    fn sample(
+        &mut self,
+        system: &mut Electrified<J>,
+        t: f64,
+        y: &[f64],
+        yp: &[f64],
+        _q: &[f64],
+        side: Side,
+    ) -> Result<(), String> {
+        if side != Side::AfterRestart {
+            return Ok(());
+        }
+        let n = self.n;
+        self.judge(&mut system.integrated_mut().joined, t, &y[..n], &yp[..n])
+    }
+    fn accepted(
+        &mut self,
+        system: &mut Electrified<J>,
+        t: f64,
+        y: &[f64],
+        yp: &[f64],
+        _q: &[f64],
+    ) -> Result<(), String> {
+        let n = self.n;
+        self.judge(&mut system.integrated_mut().joined, t, &y[..n], &yp[..n])
+    }
 }
 
 /// The cheap identity of a LOAD request: every input file and wiki page it
@@ -994,6 +1252,7 @@ fn file_identity(
         (inputs.ic.governor.declared, turbine::TURBINE_PAGE),
         (inputs.ic.governor.declared, turbine::ADMISSION_PAGE),
         (inputs.ic.dc.declared, dc::DC_PAGE),
+        (inputs.ic.rod_control.declared, rod_control::PAGE),
     ];
     for (_, p) in declared.iter().filter(|(on, _)| *on) {
         let path = format!("{}/{p}", inputs.spine.wiki_root);
@@ -1013,8 +1272,24 @@ fn file_identity(
     }))
 }
 
-/// A LOAD request's parts: the inputs, the state's path, the solver.
-fn parse_load(load: &Value) -> Result<(Inputs, String, Solver), String> {
+/// R4-GRID: LOAD's exchange interval in I&C frames: a whole number of them,
+/// the grid's instants the frames' own product.
+fn exchange_frames(seconds: f64, frame: &Frame) -> Result<u64, String> {
+    let frames = (seconds / frame.period_s()).round();
+    if !(seconds.is_finite() && seconds > 0. && frames >= 1.)
+        || !same_instant(frames * frame.period_s(), seconds)
+    {
+        return Err(format!(
+            "LOAD solver.grid_exchange_s {seconds} is not a whole number of {} s frames",
+            frame.period_s()
+        ));
+    }
+    Ok(frames as u64)
+}
+
+/// A LOAD request's parts: the inputs, the state's path, the solver, the
+/// Grid exchange interval (s; null for a unit no Grid connects).
+fn parse_load(load: &Value) -> Result<(Inputs, String, Solver, Option<f64>), String> {
     let o = exactly(load, "LOAD", &["inputs", "state", "solver"])?;
     let i = &o["inputs"];
     exactly(
@@ -1057,8 +1332,23 @@ fn parse_load(load: &Value) -> Result<(Inputs, String, Solver), String> {
     exactly(
         &o["solver"],
         "LOAD solver",
-        &["weights", "first_step", "stepping", "water", "source_atol"],
+        &[
+            "weights",
+            "first_step",
+            "stepping",
+            "water",
+            "source_atol",
+            "grid_exchange_s",
+        ],
     )?;
+    // R4-GRID: a required LOAD key, null with no Grid connected.
+    let grid_exchange_s =
+        match &o["solver"]["grid_exchange_s"] {
+            Value::Null => None,
+            v => Some(v.as_f64().ok_or_else(|| {
+                format!("LOAD solver.grid_exchange_s is a number or null, not {v}")
+            })?),
+        };
     let solver = Solver {
         weights: Weights::parse(text(&o["solver"], "weights", "LOAD solver")?)?,
         first_step: parse_first_step(text(&o["solver"], "first_step", "LOAD solver")?)?,
@@ -1077,14 +1367,19 @@ fn parse_load(load: &Value) -> Result<(Inputs, String, Solver), String> {
             "LOAD solver",
         )?)?,
     };
-    Ok((inputs, text(load, "state", "LOAD")?.to_string(), solver))
+    Ok((
+        inputs,
+        text(load, "state", "LOAD")?.to_string(),
+        solver,
+        grid_exchange_s,
+    ))
 }
 
 impl Unit {
     /// The composed unit of a LOAD request, before its start frame (LOAD)
     /// or its restore (RESTORE).
     fn compose(load: &Value) -> Result<Self, String> {
-        let (inputs, state_path, solver) = parse_load(load)?;
+        let (inputs, state_path, solver, grid_exchange_s) = parse_load(load)?;
         if !matches!(
             solver.first_step,
             leitbild_operating_water::joined::FirstStep::Declared
@@ -1096,40 +1391,13 @@ impl Unit {
         let files = file_identity(load, &inputs, &state_path, solver)?;
         let state = read_json(&state_path)?;
         let elec = read_json(&inputs.elec_path)?;
-        let field_parameters: field::Parameters =
-            serde_json::from_value(elec["fieldProtection"].clone()).map_err(|e| {
-                format!(
-                    "the electrical packet's fieldProtection (ld01-generator-field-protection): {e}"
-                )
-            })?;
         let v_nominal = elec["boundary"]["lineVoltage_V"]
             .as_f64()
             .ok_or("the electrical packet's boundary.lineVoltage_V")?;
         // The section's declarations choose the composition; the protection
-        // client refuses a mismatch either way.
-        let wiki = &inputs.spine.wiki_root;
-        let governor = inputs
-            .ic
-            .governor
-            .declared
-            .then(|| Turbine::from_wiki(wiki))
-            .transpose()?;
-        let dc = inputs
-            .ic
-            .dc
-            .declared
-            .then(|| Dc::from_wiki(wiki))
-            .transpose()?;
-        let u = s3::compose_dc_with(
-            &inputs,
-            &state,
-            s3::Scaling::NONE,
-            solver,
-            governor.as_ref(),
-            &[],
-            dc.as_ref(),
-            Ok,
-        )?;
+        // client refuses a governor or DC mismatch either way.
+        let live::Composed { unit: u, dc } =
+            live::compose(&inputs, &state, s3::Scaling::NONE, solver, &[], Ok)?;
         if u.receipt["from_saved_s3_state"] != json!(true) || u.receipt["spray_path"] != json!(true)
         {
             return Err(format!(
@@ -1137,15 +1405,16 @@ impl Unit {
                 u.receipt
             ));
         }
-        let plant = Plant::new(
+        // The r4 baseline: stock matrix management (MR-1 off). A host keeps
+        // no per-frame record of the rods.
+        let (plant, _) = live::plant(
             u,
-            &inputs.ic,
-            plant::Config {
-                field: Some(&field_parameters),
+            &inputs,
+            live::Options {
                 diagnostic: Diagnostic::None,
-                // The r4 baseline: stock matrix management (MR-1 off).
                 matrix_rebuild: MatrixRebuild::Stock,
                 clock: clock::thread_cpu_s,
+                rod_records: false,
             },
         )?;
         // R4-FREE-STEPS: the LOAD request's stepping (its solver, part of the
@@ -1169,6 +1438,10 @@ impl Unit {
                 .as_bytes()
         ));
         let t = plant.t0;
+        let grid_exchange_frames = grid_exchange_s
+            .map(|seconds| exchange_frames(seconds, &plant.frame))
+            .transpose()?;
+        let domain = KineticsDomain::of(&inputs.spine.packet_json()?, &plant)?;
         Ok(Self {
             plant,
             inputs,
@@ -1182,6 +1455,8 @@ impl Unit {
             failed: None,
             ended: None,
             exchanges: 0,
+            grid_exchange_frames,
+            domain,
         })
     }
 
@@ -1191,7 +1466,45 @@ impl Unit {
         let q0 = vec![0.; slice::QUADRATURES.len()];
         p.driver.start_quadratures(&mut p.ida, q0)?;
         p.start(&mut [])?;
+        unit.arm_exchange()?;
         Ok(unit)
+    }
+
+    /// R4-GRID: the armed stop is the next exchange while the breaker is
+    /// closed and none otherwise, from `t`, the LOAD and the breaker alone.
+    /// Any request boundary may call it: a source and its restored copy hold
+    /// the same stop, and how a Run slices its time changes nothing.
+    fn arm_exchange(&mut self) -> Result<(), String> {
+        let Some(every) = self.grid_exchange_frames else {
+            return Ok(());
+        };
+        let p = &mut self.plant;
+        p.driver.clear_declared_stops();
+        if p.ida.system().breaker.contact == Contact::Closed {
+            p.driver
+                .declare_stop(exchange_after(&p.frame, every, self.t))?;
+        }
+        Ok(())
+    }
+
+    /// R4-GRID: the unit stands at an exchange instant, or a refusal by name.
+    fn at_exchange(&self, kind: &str, t: f64) -> Result<(), String> {
+        let every = self
+            .grid_exchange_frames
+            .ok_or_else(|| format!("{kind}: this unit was loaded with no Grid exchange"))?;
+        if !same_instant(t, self.t) {
+            return Err(format!(
+                "{kind}: decided at the unit's time {} s, not {t} s",
+                self.t
+            ));
+        }
+        if !on_exchange(&self.plant.frame, every, self.t) {
+            return Err(format!(
+                "{kind}: {} s is not an instant of the exchange grid",
+                self.t
+            ));
+        }
+        Ok(())
     }
 
     fn reply(&self) -> Value {
@@ -1257,6 +1570,7 @@ impl Unit {
             protection,
             control,
             field,
+            rods,
             ..
         } = &mut self.plant;
         let n = *n;
@@ -1315,6 +1629,11 @@ impl Unit {
                     Reading::ReliefLiftOpen => {
                         flag(y[unit.integrated().joined.offsets().pzr] != 0.)
                     }
+                    Reading::BankHold => flag(rods.as_ref().is_some_and(|r| r.hold)),
+                    Reading::RodLaw(i) => rods
+                        .as_ref()
+                        .ok_or("no AUTO rod control")?
+                        .tavg_and_reference_k()[*i],
                     Reading::Latched(f) => divisions.iter().filter(|d| d.latched(f)).count() as f64,
                     Reading::DivisionTrip(d) => flag(divisions[*d].trip.is_some()),
                     Reading::DivisionPowered(d) => flag(divisions[*d].powered),
@@ -1357,6 +1676,17 @@ impl Unit {
                     Reading::BreakerClosed => flag(unit.breaker.contact == Contact::Closed),
                     Reading::OffsiteLost => flag(unit.offsite_loss_s.is_some_and(|l| l <= t)),
                     Reading::ExportEnergy => q[EXPORT],
+                    Reading::GridFrequency => unit.slice.inputs.f_grid_hz,
+                    Reading::GridVoltage => unit.slice.inputs.v_line / self.v_nominal,
+                    Reading::NetExport => {
+                        let i = unit.slice.inputs;
+                        unit.slice.export_w(&y[n..]) - i.unit_draw_w - i.reserve_draw_w
+                    }
+                    Reading::LoadRequest => unit.governor.as_ref().ok_or("no governor")?.held.to_w,
+                    Reading::LoadActive => {
+                        let g = unit.governor.as_ref().ok_or("no governor")?;
+                        flag(g.held.mode == Mode::Load)
+                    }
                 })
             })
             .collect()
@@ -1422,8 +1752,21 @@ impl Unit {
                 self.t
             ));
         }
+        // R4-GRID: an armed exchange is the end of an ADVANCE, never inside one.
+        if let Some(every) = self.grid_exchange_frames
+            && self.plant.ida.system().breaker.contact == Contact::Closed
+        {
+            let exchange = exchange_after(&self.plant.frame, every, self.t);
+            if t1 > exchange && !same_instant(t1, exchange) {
+                return Err(format!(
+                    "ADVANCE to {t1} s crosses the Grid exchange at {exchange} s"
+                ));
+            }
+        }
         let before = self.counters()?;
-        let reached = self.plant.run(self.t, t1, &mut [], None);
+        // R4-FLOOR-UNIT: the kinetics domain judged on the accepted states;
+        // its exit is a driver error, so a failure below, never a named end.
+        let reached = self.plant.run(self.t, t1, &mut [], Some(&mut self.domain));
         let reached = match reached {
             Ok(plant_reached) => plant_reached,
             Err(e) => match self.named_end(&e) {
@@ -1448,6 +1791,9 @@ impl Unit {
         let leitbild_operating_water::frame::Reached::Until(t) = reached;
         self.t = t;
         self.exchanges += 1;
+        if self.ended.is_none() {
+            self.arm_exchange()?;
+        }
         let after = self.counters()?;
         let values = self.values()?;
         let mut events = self.events()?;
@@ -1506,6 +1852,12 @@ impl Unit {
         }
         if kind == "GridBoundary" {
             return self.grid_boundary(v, t);
+        }
+        if kind == "BankHold" || kind == "BankAuto" {
+            return self.bank(v, kind, t);
+        }
+        if kind == "LoadRequest" {
+            return self.load_request(v, t);
         }
         if let Some(operator) = operator_of(v, kind) {
             return self.operator(kind, operator?, t);
@@ -1633,8 +1985,93 @@ impl Unit {
         )
     }
 
+    /// The operator's bank HOLD or its release to AUTO, at the unit's time,
+    /// acting at the next frame (the client's own rule). With the drive
+    /// disengaged or the request already in force it is a result, not a
+    /// refusal; a unit composing no rod control refuses by name.
+    fn bank(&mut self, v: &Value, kind: &str, t: f64) -> Result<Value, String> {
+        exactly(v, kind, &["kind", "t_apply"])?;
+        if !same_instant(t, self.t) {
+            return Err(format!(
+                "{kind}: decided at the unit's time {} s, not {t} s",
+                self.t
+            ));
+        }
+        let hold = kind == "BankHold";
+        let rods = self
+            .plant
+            .rods
+            .as_mut()
+            .ok_or_else(|| format!("{kind}: the section declares no rod control"))?;
+        let accepted = rods.engaged && rods.hold != hold;
+        if accepted {
+            rods.set_hold(hold);
+        }
+        let why = match (accepted, rods.engaged) {
+            (true, _) => "accepted",
+            (false, false) => "refused: the drive is not engaged",
+            (false, true) => "refused: already in force",
+        };
+        self.plant
+            .ida
+            .system_mut()
+            .log
+            .push((self.t, format!("operator LD01.CORE.BANK {kind}: {why}")));
+        Ok(
+            json!({"kind": kind, "t_apply": self.t, "t_apply_bits": bits(self.t), "accepted": accepted}),
+        )
+    }
+
+    /// R4-GRID: the plant-side load request, at an exchange instant, through
+    /// the unit library (`turbine::grid_request`), class S. With the governor
+    /// out of LOAD (after a turbine trip) it is a result, not a refusal: the
+    /// reply says `accepted: false`, the electrical log records why, and the
+    /// unit goes on, like an operator command its equipment's guards refuse.
+    fn load_request(&mut self, v: &Value, t: f64) -> Result<Value, String> {
+        exactly(v, "LoadRequest", &["kind", "t_apply", "request_w"])?;
+        self.at_exchange("LoadRequest", t)?;
+        let request_w = v["request_w"]
+            .as_f64()
+            .filter(|w| w.is_finite() && *w >= 0.)
+            .ok_or_else(|| {
+                format!(
+                    "LoadRequest needs a finite request_w >= 0, not {}",
+                    v["request_w"]
+                )
+            })?;
+        let at = self.t;
+        let p = &mut self.plant;
+        let governor = p
+            .ida
+            .system()
+            .governor
+            .as_ref()
+            .ok_or("LoadRequest: no governor composed")?;
+        if governor.held.mode != Mode::Load {
+            p.ida.system_mut().log.push((
+                at,
+                format!("load request {request_w} W refused: the governor is not in LOAD"),
+            ));
+            return Ok(
+                json!({"kind": "LoadRequest", "t_apply": at, "t_apply_bits": bits(at), "accepted": false}),
+            );
+        }
+        let decided = turbine::grid_request(&mut p.driver, p.ida.system(), at, request_w)?;
+        if let Err(e) = self.plant.apply_due(&mut []) {
+            let cause = format!("LoadRequest at {at} s: {e}");
+            self.failed = Some(cause.clone());
+            return Err(cause);
+        }
+        Ok(
+            json!({"kind": "LoadRequest", "t_apply": at, "t_apply_bits": bits(at), "accepted": true, "decided": decided}),
+        )
+    }
+
     /// The Grid's boundary for `[t, until)` through the unit library
-    /// (`plant::boundary`), decided at the unit's time and applied now.
+    /// (`plant::boundary`), decided at an exchange instant and applied now,
+    /// `until` the next one. With the breaker open a changed boundary is no
+    /// event: the relative angle alone still reads it, and an angle to a bus
+    /// the machine has left means nothing. A dead bus goes through, once.
     fn grid_boundary(&mut self, v: &Value, t: f64) -> Result<Value, String> {
         exactly(
             v,
@@ -1650,26 +2087,25 @@ impl Unit {
                 "frequency_rate_hz_s",
             ],
         )?;
-        if !same_instant(t, self.t) {
-            return Err(format!(
-                "GridBoundary: decided at the unit's time {} s, not {t} s",
-                self.t
-            ));
-        }
+        self.at_exchange("GridBoundary", t)?;
         let number = |k: &str| {
             v[k].as_f64()
                 .ok_or_else(|| format!("GridBoundary needs the number {k}"))
         };
         let until = number("until")?;
-        if !(until.is_finite() && until > self.t) {
+        let every = self
+            .grid_exchange_frames
+            .ok_or("GridBoundary: no exchange")?;
+        let next = exchange_after(&self.plant.frame, every, self.t);
+        if !same_instant(until, next) {
             return Err(format!(
-                "GridBoundary: until {until} s is not after {} s",
-                self.t
+                "GridBoundary: until {until} s is not the next exchange, {next} s"
             ));
         }
         let boundary = match v["energized"].as_bool() {
             Some(true) => Boundary::Energized {
                 voltage_v: self.v_nominal * number("voltage_pu")?,
+                voltage_pu: number("voltage_pu")?,
                 frequency_hz: number("frequency_hz")?,
                 phase_error_rad: number("phase_error_rad")?,
                 frequency_rate_hz_s: number("frequency_rate_hz_s")?,
@@ -1727,6 +2163,7 @@ impl Unit {
                 "protection": p.protection.protection.snapshot()?,
                 "pzr_control": p.control.snapshot()?,
                 "field": p.field.as_ref().ok_or("no field controller")?.snapshot(),
+                "rod_control": p.rods.as_ref().map(rod_control::RodClient::snapshot),
             },
             "driver": driver_json(&driver),
         });
@@ -1759,6 +2196,7 @@ impl Unit {
             self.failed = Some(cause.clone());
             return Err(cause);
         }
+        self.arm_exchange()?;
         self.mark_seen()?;
         Ok(snapshot)
     }
@@ -1784,7 +2222,7 @@ impl Unit {
             return Err(format!("not an {FORMAT}: {}", o["format"]));
         }
         // The input files first (cheap), then the composition's identity.
-        let (inputs, state, solver) = parse_load(&o["load"])?;
+        let (inputs, state, solver, _) = parse_load(&o["load"])?;
         let mut files = file_identity(&o["load"], &inputs, &state, solver)?;
         for (k, v) in o["identity"].as_object().ok_or("snapshot identity")? {
             if k != "composition" && k != "channels_sha256" && files.get(k) != Some(v) {
@@ -1810,7 +2248,7 @@ impl Unit {
         let clients = exactly(
             &o["clients"],
             "snapshot clients",
-            &["protection", "pzr_control", "field"],
+            &["protection", "pzr_control", "field", "rod_control"],
         )?;
         let driver = driver_state(&o["driver"])?;
         if driver.observed_to.to_bits() != t.to_bits() {
@@ -1832,6 +2270,16 @@ impl Unit {
             .as_mut()
             .ok_or("no field controller")?
             .restore(&clients["field"])?;
+        match (p.rods.as_mut(), &clients["rod_control"]) {
+            (Some(rods), v) if !v.is_null() => rods.restore(v)?,
+            (None, Value::Null) => {}
+            (rods, v) => {
+                return Err(format!(
+                    "the snapshot's rod control {v} against a unit composing {}",
+                    if rods.is_some() { "it" } else { "none" }
+                ));
+            }
+        }
         // The integrator's tolerances and nonnegative stocks as the source
         // holds them (a phase-mode restart retunes both), then the source's
         // exact consistent restart at t.
@@ -1860,6 +2308,7 @@ impl Unit {
         p.yp.clone_from(&restarted.yp);
         p.driver.restore_state(&mut p.ida, driver)?;
         unit.t = t;
+        unit.arm_exchange()?;
         unit.mark_seen()?;
         Ok(unit)
     }
@@ -2062,6 +2511,17 @@ fn fatal(message: &str) -> ! {
 }
 
 fn main() {
+    // R4-UNIT-STDERR: stdout is the protocol channel. SUNDIALS 7.5.0 builds
+    // every SUNContext's logger from the environment (`SUNLogger_CreateFromEnv`
+    // in `SUNContext_Create`), with warnings to stdout and errors to stderr by
+    // default; IDA's warnings go to that logger. Both name stderr here, before
+    // any context exists, so every context of the process logs there. Nothing
+    // is suppressed.
+    // SAFETY: the first statement of `main`; no other thread exists yet.
+    unsafe {
+        std::env::set_var("SUNLOGGER_WARNING_FILENAME", "stderr");
+        std::env::set_var("SUNLOGGER_ERROR_FILENAME", "stderr");
+    }
     let mut unit: Option<Unit> = None;
     let mut input = BufReader::new(std::io::stdin().lock());
     let mut output = BufWriter::new(std::io::stdout().lock());
@@ -2099,5 +2559,117 @@ fn main() {
         if matches!(outcome, Ok(true)) {
             return;
         }
+    }
+}
+
+/// RODOBS7: the rod law's channels are the law's own values. Ignored; run
+/// with the tuple in the environment (unit_host.rs's LOAD),
+/// `LD01_UNIT_ROD_FRAMES` (0.1 s exchanges after t0) and
+/// `LD01_UNIT_ROD_TRIP` (`on`: TurbineTripAcquired at t0 + 1 s, as the
+/// copy gate; `off`: a hold).
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn env(name: &str) -> String {
+        std::env::var(name).unwrap_or_else(|_| panic!("{name} is not set"))
+    }
+
+    /// An ADVANCE reply's observation frame.
+    fn reply_values(out: &[u8]) -> Vec<f64> {
+        let u32_at = |i: usize| u32::from_le_bytes(out[i..i + 4].try_into().unwrap()) as usize;
+        let at = 20 + 8 * u32_at(16);
+        (0..u32_at(at))
+            .map(|j| f64::from_le_bytes(out[at + 4 + 8 * j..at + 12 + 8 * j].try_into().unwrap()))
+            .collect()
+    }
+
+    #[test]
+    #[ignore = "needs the unit's environment (LD01_UNIT_ROD_FRAMES, LD01_UNIT_ROD_TRIP)"]
+    fn the_rod_law_channels_are_the_laws_own_values() {
+        let water = std::env::var("LD01_UNIT_HOST_WATER").unwrap_or_else(|_| "sbtl".into());
+        let load = json!({
+            "inputs": {
+                "packet": env("LD01_OPERATING_HOT_SPINE_PACKET"),
+                "wiki_root": env("LD01_WIKI_ROOT"),
+                "wiki_commit": env("LD01_WIKI_COMMIT"),
+                "wiki_repository": env("LD01_WIKI_REPOSITORY"),
+                "ic": env("LD01_IC_SECTION"),
+                "pzr_control": env("LD01_PZR_CONTROL_SECTION"),
+                "pzr_control_wiki": env("LD01_PZR_CONTROL_WIKI"),
+                "elec": env("ELEC_PACKET"),
+            },
+            "state": env("LD01_S3_STATE"),
+            "solver": {"weights": "stock", "first_step": "declared", "stepping": "free", "water": water,
+                "source_atol": std::env::var("LD01_S3_SOURCE_ATOL").unwrap_or_else(|_| "derived".into()),
+                "grid_exchange_s": null},
+        });
+        let mut unit = Unit::load(&load).expect("LOAD");
+        let index = |id: &str| {
+            unit.channels
+                .iter()
+                .position(|c| c.id == id)
+                .unwrap_or_else(|| panic!("no channel {id}"))
+        };
+        let (tavg, tref) = (index("LD01.CORE.BANK.TAVG"), index("LD01.CORE.BANK.TREF"));
+        // The per-frame record is observation: it decides nothing.
+        unit.plant
+            .rods
+            .as_mut()
+            .expect("AUTO rod control")
+            .recording = true;
+        let frames: u64 = env("LD01_UNIT_ROD_FRAMES").parse().expect("frames");
+        let period = unit.plant.frame.period_s();
+        let k0 = (unit.t / period).round() as u64;
+        match env("LD01_UNIT_ROD_TRIP").as_str() {
+            "on" => {
+                let trip =
+                    json!({"kind": "TurbineTripAcquired", "t_apply": (k0 + 10) as f64 * period});
+                unit.command(&trip).expect("the trip");
+            }
+            "off" => {}
+            other => panic!("LD01_UNIT_ROD_TRIP {other}: on or off"),
+        }
+        let (mut auto, mut not_auto, mut worst_t, mut worst_e) = (0, 0, 0f64, 0f64);
+        for k in 1..=frames {
+            let mut out = Vec::new();
+            unit.advance((k0 + k) as f64 * period, &mut out)
+                .expect("ADVANCE");
+            let values = reply_values(&out);
+            assert_eq!(values.len(), unit.channels.len());
+            let rods = unit.plant.rods.as_ref().expect("AUTO rod control");
+            let last = rods.series.last().expect("a frame record");
+            let at = last["t_s"].as_f64().expect("the frame's instant");
+            assert!(
+                same_instant(at, unit.t),
+                "the last frame at {at} s, the unit at {} s",
+                unit.t
+            );
+            let evidence = &last["evidence"];
+            let delivered = evidence["tavg_k"].as_f64().expect("the delivered Tavg");
+            assert_eq!(
+                values[tavg].to_bits(),
+                delivered.to_bits(),
+                "TAVG at {at} s"
+            );
+            match last["decision"]["tref_k"].as_f64() {
+                Some(tref_k) => {
+                    assert_eq!(values[tref].to_bits(), tref_k.to_bits(), "TREF at {at} s");
+                    auto += 1;
+                    worst_t = worst_t.max((values[tavg] - values[tref]).abs());
+                    worst_e = worst_e.max(last["decision"]["error_k"].as_f64().expect("e").abs());
+                }
+                None => {
+                    let load = evidence["load"].as_f64().expect("the delivered load");
+                    let program = rods.controller.law().tref_k(load);
+                    assert_eq!(values[tref].to_bits(), program.to_bits(), "TREF at {at} s");
+                    not_auto += 1;
+                }
+            }
+        }
+        println!(
+            "rod law channels: {frames} exchanges; {auto} in AUTO (TAVG = the evidence, TREF = the decision's, bitwise), \
+             {not_auto} not deciding (TREF = the program at the delivered load); in AUTO max |TAVG - TREF| {worst_t} K, max |e| {worst_e} K"
+        );
     }
 }

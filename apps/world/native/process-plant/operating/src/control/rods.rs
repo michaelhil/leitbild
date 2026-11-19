@@ -235,6 +235,17 @@ impl Controller {
     pub fn rate(&self) -> f64 {
         self.rate
     }
+    /// The controller's state (the rate-lag, its last input and the rate in
+    /// force), for a snapshot.
+    pub fn state(&self) -> [f64; 3] {
+        [self.lag, self.input, self.rate]
+    }
+    /// Restore [`Controller::state`] bit for bit.
+    pub fn restore_state(&mut self, [lag, input, rate]: [f64; 3]) {
+        self.lag = lag;
+        self.input = input;
+        self.rate = rate;
+    }
     /// Evaluate at a frame, `h` after the previous one, on the delivered
     /// evidence, and put the requested rate in force.
     pub fn frame(&mut self, h: f64, e: &Evidence) -> Result<Decision, Failure> {

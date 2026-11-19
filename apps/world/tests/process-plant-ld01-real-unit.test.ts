@@ -30,7 +30,7 @@ describe.skipIf(!enabled)('NOT-EVIDENCE: the LD-01 engine on the real ld01-unit'
   const connect = async (restored?: Parameters<typeof connectNativeProcessPlantEngine>[0]['restored']) => {
     if (artifact === null) throw new Error(`the artifact is not usable: ${resolution !== null && !resolution.ok ? resolution.reason : 'none'}`)
     const startedAt = performance.now()
-    const engine = await connectNativeProcessPlantEngine({ plant: plant(), tagMap: artifact.tagMap, load: artifact.load, artifactSha256: artifact.manifestSha256, command: [artifact.binary], ...(restored === undefined ? {} : { restored }) })
+    const engine = await connectNativeProcessPlantEngine({ plant: plant(), tagMap: artifact.tagMap, load: artifact.load, gridExchangeS: null, artifactSha256: artifact.manifestSha256, command: [artifact.binary], ...(restored === undefined ? {} : { restored }) })
     engines.push(engine)
     return { engine, wallS: (performance.now() - startedAt) / 1_000 }
   }
@@ -118,7 +118,7 @@ describe.skipIf(!enabled)('NOT-EVIDENCE: the LD-01 engine on the real ld01-unit'
 
   test('normal exchanges stay inside the owner\'s limit; a unit that stops answering fails by name, and the last checkpoint continues bit for bit', async () => {
     const pidFile = join(receipts!, 'advance-limit-child.pid')
-    const watched = await connectNativeProcessPlantEngine({ plant: plant(), tagMap: artifact!.tagMap, load: artifact!.load, artifactSha256: artifact!.manifestSha256, command: ['/bin/sh', '-c', `echo $$ > '${pidFile}'; exec "$0"`, artifact!.binary] })
+    const watched = await connectNativeProcessPlantEngine({ plant: plant(), tagMap: artifact!.tagMap, load: artifact!.load, gridExchangeS: null, artifactSha256: artifact!.manifestSha256, command: ['/bin/sh', '-c', `echo $$ > '${pidFile}'; exec "$0"`, artifact!.binary] })
     engines.push(watched)
     const normal = await run(watched, 3)
     expect(Math.max(...normal.map(frame => frame.cost.wallS))).toBeLessThan(ld01UnitAdvanceLimitS)

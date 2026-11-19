@@ -39,6 +39,7 @@ export const gridElectricalPortsAt = (config: {
   const connection = config.grid.externalConnections.get(point.id)
   const connected = connection?.systemPresent === true
   const exchanging = connection?.connected === true
+  const frequencyRateHzPerS = config.grid.islandPlan?.islands.find(island => island.id === bus.islandId)?.rocofHzPerSecond ?? null
   const base = {
     id: point.id,
     label: point.label,
@@ -54,6 +55,7 @@ export const gridElectricalPortsAt = (config: {
           activePowerMw: exchanging ? -connection.systemActivePowerMw : 0,
           voltagePu: bus.voltagePu,
           frequencyHz: bus.frequencyHz,
+          ...(frequencyRateHzPerS === null ? {} : { frequencyRateHzPerS }),
           energized: true,
           connected,
           observedAt: config.at,

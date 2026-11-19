@@ -509,7 +509,7 @@ struct Recorder {
     /// LD01_PERF_PROFILE=1 (with LD01_OU_FRAME_COST=1).
     profile: Option<Vec<ProfileFrame>>,
     /// HOOK (PHYS X1): the protection's observed quantities at each frame
-    /// of a gated run, when LD01_PHYS_OPERATOR_FRAMES=1 (never in `frames`).
+    /// of a run, when LD01_PHYS_OPERATOR_FRAMES=1 (never in `frames`).
     /// The observed quantities and their references ride along once.
     operator: Option<(leitbild_operating_water::ic::Readings, Value, Vec<Value>)>,
     /// HOOK (FEED, plan r4 X4.1): with the packet's feed train, each loop's
@@ -650,12 +650,21 @@ const C4_R3_SHA256: &str = "6b4958c8aff62554f88ee90e4143df86336a36df049d87333567
 const C4_R4: &str = include_str!("s3_harness/fixtures/ld01-s3-cases-c4-r4.json");
 const C4_R4_FENCE: &str = "ld01-s3-cases-c4-r4";
 const C4_R4_SHA256: &str = "44eab84f6ead4ed811d1ff9302e749ef416e38bc50ef92ec0c562e9a1ebfdb1c";
-/// Revision 5 (R4-C4-REV5, owner-approved after result): C4 runs on it.
+/// Revision 5 (R4-C4-REV5, owner-approved after result): its verdicts stay on
+/// record.
 const C4_R5: &str = include_str!("s3_harness/fixtures/ld01-s3-cases-c4-r5.json");
+const C4_R5_FENCE: &str = "ld01-s3-cases-c4-r5";
 const C4_R5_SHA256: &str = "9863cfb39cb3405c75e659411013ba530266ae32c91ff7b21e16a6c0d6497526";
+/// Revision 6 (R4-C4-R2-F, owner 18 November): C4 runs on it.
+const C4_R6: &str = include_str!("s3_harness/fixtures/ld01-s3-cases-c4-r6.json");
+const C4_R6_SHA256: &str = "f19c3df00b42d13aa3f03942463effb0580ba8cd2a748e90217e7833bb7c76dd";
 /// C4-I (owner-approved 7 November): its own block on C4's drive.
 const C4I_R1: &str = include_str!("s3_harness/fixtures/ld01-s3-cases-c4i.json");
+const C4I_R1_FENCE: &str = "ld01-s3-cases-c4i";
 const C4I_R1_SHA256: &str = "d5354e11ec7fa1267d102cfcf140a881d3e3a555df562ca4a5db31bbf049d1a7";
+/// C4-I revision 2 (R4-C4-R2-F, owner 18 November): C4-I runs on it.
+const C4I_R2: &str = include_str!("s3_harness/fixtures/ld01-s3-cases-c4i-r2.json");
+const C4I_R2_SHA256: &str = "a562447b73bf47f2fbabbf18ee6d99954995610790d59665bc01fc90410309c3";
 /// The revisions the r8 wiki supersedes, refused by name.
 const SUPERSEDED: [(&str, &str, &str); 2] = [
     (
@@ -670,7 +679,7 @@ const SUPERSEDED: [(&str, &str, &str); 2] = [
     ),
 ];
 /// The pin a block must carry for a gate run on the r8 wiki, by fence.
-const REQUIRED: [(&str, &str, &str); 5] = [
+const REQUIRED: [(&str, &str, &str); 7] = [
     (
         "ld01-s3-cases-c1c3",
         C1C3_R3_8_SHA256,
@@ -678,8 +687,10 @@ const REQUIRED: [(&str, &str, &str); 5] = [
     ),
     ("ld01-s3-cases-c4", C4_R3_SHA256, "RP1-pin-s3-c4-r3"),
     (C4_R4_FENCE, C4_R4_SHA256, "RP1-pin-s3-c4-r4"),
-    (s3_harness::c4::FENCE, C4_R5_SHA256, "RP1-pin-s3-c4-r5"),
-    (s3_harness::c4i::FENCE, C4I_R1_SHA256, "RP1-pin-s3-c4i"),
+    (C4_R5_FENCE, C4_R5_SHA256, "RP1-pin-s3-c4-r5"),
+    (s3_harness::c4::FENCE, C4_R6_SHA256, "RP1-pin-s3-c4-r6"),
+    (C4I_R1_FENCE, C4I_R1_SHA256, "RP1-pin-s3-c4i"),
+    (s3_harness::c4i::FENCE, C4I_R2_SHA256, "RP1-pin-s3-c4i-r2"),
 ];
 
 /// Refuses a superseded block revision by name, and any C1–C3 or C4 block
@@ -1063,6 +1074,57 @@ fn operator_trip_at(
 
 /// D1's quiet exchange interval, from the `ld01-electrical-exchange` block
 /// on the handoff page (`LD01_WIKI_ROOT`).
+/// R4-GRID (test-only, unset: nothing changes): the boundary a connected
+/// case exchanges on the absolute 1 s grid, `LD01_S3_GRID_TRACE`: the Grid
+/// Pack's own port values per second, `{points: [{after_zero_s, frequency_hz,
+/// frequency_rate_hz_s, voltage_pu}, ...]}` ascending; held from each point.
+/// `LD01_S3_GRID_HOLD_S` is the connected hold before the case's event.
+struct GridTrace {
+    points: Vec<(f64, f64, f64, f64)>,
+}
+impl GridTrace {
+    fn read() -> Option<Self> {
+        let path = std::env::var("LD01_S3_GRID_TRACE").ok()?;
+        let v: Value = serde_json::from_slice(&std::fs::read(&path).expect("LD01_S3_GRID_TRACE"))
+            .expect("LD01_S3_GRID_TRACE: JSON");
+        let number = |p: &Value, k: &str| p[k].as_f64().unwrap_or_else(|| panic!("trace {k}"));
+        let points: Vec<_> = v["points"]
+            .as_array()
+            .expect("trace points")
+            .iter()
+            .map(|p| {
+                (
+                    number(p, "after_zero_s"),
+                    number(p, "frequency_hz"),
+                    number(p, "frequency_rate_hz_s"),
+                    number(p, "voltage_pu"),
+                )
+            })
+            .collect();
+        assert!(!points.is_empty(), "LD01_S3_GRID_TRACE: no points");
+        Some(Self { points })
+    }
+    fn at(
+        &self,
+        after_zero_s: f64,
+        v_nominal: f64,
+    ) -> leitbild_operating_water::unit::plant::Boundary {
+        let p = self
+            .points
+            .iter()
+            .rev()
+            .find(|p| p.0 <= after_zero_s)
+            .unwrap_or(&self.points[0]);
+        leitbild_operating_water::unit::plant::Boundary::Energized {
+            voltage_v: v_nominal * p.3,
+            voltage_pu: p.3,
+            frequency_hz: p.1,
+            phase_error_rad: 0.,
+            frequency_rate_hz_s: p.2,
+        }
+    }
+}
+
 fn exchange_quiet_s() -> f64 {
     let page = format!("{}/operating-scale-realization.md", gates::wiki_model());
     Block::from_page(&page, "ld01-electrical-exchange")
@@ -1109,14 +1171,14 @@ fn c4_revision_4_pins_and_names_the_owner_approved_changes() {
 /// Block r5 (R4-C4-REV5): the owner's three rulings on E, and the stepping.
 #[test]
 fn c4_revision_5_pins_the_rulings_and_the_c4i_block_is_its_own() {
-    let b = Block::from_json(s3_harness::c4::FENCE, C4_R5).unwrap();
+    let b = Block::from_json(C4_R5_FENCE, C4_R5).unwrap();
     assert_eq!(guards::declared_sha256(&b).unwrap(), C4_R5_SHA256);
     assert_eq!(b.whole("/cases/C4/stepping/record"), "free");
     assert!(b.whole("/cases/C4/windows").get("maxStep_s").is_none());
     let rule = b.whole("/cases/C4/gates/refinement");
     let rule = rule.as_str().unwrap();
     assert!(rule.contains("operator grade") && rule.contains("Recorded, not judged"));
-    let i = Block::from_json(s3_harness::c4i::FENCE, C4I_R1).unwrap();
+    let i = Block::from_json(C4I_R1_FENCE, C4I_R1).unwrap();
     assert_eq!(guards::declared_sha256(&i).unwrap(), C4I_R1_SHA256);
     assert_eq!(i.whole("/cases/C4I/closeAt_s"), json!([30, 47]));
     assert!(
@@ -1127,6 +1189,46 @@ fn c4_revision_5_pins_the_rulings_and_the_c4i_block_is_its_own() {
     );
     let lines = i.whole("/cases/C4I/lines");
     assert_eq!(lines.as_object().unwrap().len(), 12);
+}
+
+/// Revision 6 and C4-I revision 2 (R4-C4-R2-F, owner 18 November): family F
+/// reads R2 beside the series; every other entry is revision 5's and revision
+/// 1's.
+#[test]
+fn c4_revision_6_and_c4i_revision_2_add_rule_f_s_r2_only() {
+    let strip = |v: &Value, case: &str| {
+        let mut v = v.clone();
+        for k in ["revision", "scope", "from"] {
+            v.as_object_mut().unwrap().remove(k);
+        }
+        v["cases"][case]["gates"]
+            .as_object_mut()
+            .unwrap()
+            .remove("smoothness");
+        if case == "C4I" {
+            v["cases"]["C4I"]["gates"]["refinement"] = Value::Null;
+        }
+        v
+    };
+    let r5 = Block::from_json(C4_R5_FENCE, C4_R5).unwrap();
+    let r6 = Block::from_json(s3_harness::c4::FENCE, C4_R6).unwrap();
+    assert_eq!(guards::declared_sha256(&r6).unwrap(), C4_R6_SHA256);
+    assert_eq!(r6.whole("/revision"), json!("6"));
+    assert_eq!(strip(&r6.value, "C4"), strip(&r5.value, "C4"));
+    let f = r6.whole("/cases/C4/gates/smoothness");
+    let f = f.as_str().unwrap();
+    assert!(f.contains("R2") && f.contains("family F alone") && f.contains("R4-C4-R2-F"));
+    let i1 = Block::from_json(C4I_R1_FENCE, C4I_R1).unwrap();
+    let i2 = Block::from_json(s3_harness::c4i::FENCE, C4I_R2).unwrap();
+    assert_eq!(guards::declared_sha256(&i2).unwrap(), C4I_R2_SHA256);
+    assert_eq!(i2.whole("/revision"), json!("2"));
+    assert_eq!(strip(&i2.value, "C4I"), strip(&i1.value, "C4I"));
+    assert!(
+        i2.whole("/cases/C4I/gates/smoothness")
+            .as_str()
+            .unwrap()
+            .contains("C4's R2")
+    );
 }
 
 #[test]
@@ -1285,16 +1387,10 @@ fn sg_relief_valve(packet: &Value) -> &Value {
 struct CaseConfig {
     solver: leitbild_operating_water::unit::profile::Solver,
     matrix_rebuild: leitbild_operating_water::frame::MatrixRebuild,
-    /// X4.4 (lane ROD): automatic rod control composed in AUTO
-    /// (`LD01_ROD_AUTO` on | off, unset off; the block from
-    /// `LD01_ROD_CONTROL_WIKI`).
+    /// The section's declarations, recorded: AUTO rod control (X4.4), the
+    /// LOAD governor (X4.3) and the DC groups (PROC T5).
     rod_auto: bool,
-    /// X4.3 (lane TURB): the LOAD governor, ADM and GEN.WT composed with
-    /// the SG owner's valve law (`LD01_TURB_GOV` on | off, unset off; the
-    /// blocks from `LD01_TURB_WIKI`).
     turbine_governor: bool,
-    /// PROC T5 (lane ELEC): the five DC supply groups, report-only
-    /// (`LD01_DC` on | off, unset off; the blocks from `LD01_DC_WIKI`).
     dc: bool,
     /// C4-I (`LD01_S3_C4I_CLOSE_S`, one of its block's `closeAt_s`): C4's
     /// drive with the relief isolation valve closed that long after zero.
@@ -1326,7 +1422,7 @@ impl CaseConfig {
     /// | last/<d> | last-unless-roots/<d>), `LD01_S3_MATRIX_REBUILD` (stock |
     /// packet) and `LD01_S3_RC1` (on | off); unset: stock, declared, stock,
     /// on (the r4 baseline). Any other value refuses.
-    fn from_env() -> Result<Self, String> {
+    fn from_env(ic: &leitbild_operating_plant::ic::packet::Section) -> Result<Self, String> {
         use leitbild_operating_water::{
             frame::MatrixRebuild,
             unit::profile::{Solver, Weights, parse_first_step, parse_stepping},
@@ -1361,21 +1457,9 @@ impl CaseConfig {
             "off" => false,
             v => return Err(format!("LD01_S3_JUMP_DIAGNOSTIC={v}: on or off")),
         };
-        let rod_auto = match var("LD01_ROD_AUTO", "off").as_str() {
-            "on" => true,
-            "off" => false,
-            v => return Err(format!("LD01_ROD_AUTO={v}: on or off")),
-        };
-        let turbine_governor = match var("LD01_TURB_GOV", "off").as_str() {
-            "on" => true,
-            "off" => false,
-            v => return Err(format!("LD01_TURB_GOV={v}: on or off")),
-        };
-        let dc = match var("LD01_DC", "off").as_str() {
-            "on" => true,
-            "off" => false,
-            v => return Err(format!("LD01_DC={v}: on or off")),
-        };
+        let rod_auto = ic.rod_control.declared;
+        let turbine_governor = ic.governor.declared;
+        let dc = ic.dc.declared;
         let c4i_close_s = match std::env::var("LD01_S3_C4I_CLOSE_S") {
             Ok(v) => Some(
                 v.parse::<f64>()
@@ -1500,20 +1584,29 @@ fn drive(
         },
         ida::System,
         joined::JoinedSystem,
+        unit::live,
         unit::plant::{self, Boundary, Plant},
     };
     let c5 = case == Case::C5;
     // C1 and C5 exchange with the test-only Grid stand-in (owner D1 + D2,
     // R5-F4): C1 as a connected unit on a steady bus, every interval quiet
     // (S3-D42: no grid event, no grid window).
-    let exchanging = c5 || case == Case::C1;
+    // R4-GRID: a connected case on a scripted boundary (test-only).
+    let grid_trace = GridTrace::read();
+    let grid_hold_s = std::env::var("LD01_S3_GRID_HOLD_S").map_or(0., |v| {
+        assert!(
+            grid_trace.is_some(),
+            "LD01_S3_GRID_HOLD_S needs LD01_S3_GRID_TRACE"
+        );
+        v.parse::<f64>().expect("LD01_S3_GRID_HOLD_S")
+    });
+    let exchanging = c5 || case == Case::C1 || grid_trace.is_some();
+    // The delay from the case's event to the Grid's first answer (test-only,
+    // with a trace; a chosen input, recorded by the caller's rule).
+    let grid_delay_s = std::env::var("LD01_S3_GRID_DELAY_S")
+        .map_or(0., |v| v.parse::<f64>().expect("LD01_S3_GRID_DELAY_S"));
     let started = process_cpu_s();
     let section = inputs.ic.clone();
-    let turbine = ask.config.turbine_governor.then(|| {
-        let wiki = std::env::var("LD01_TURB_WIKI").expect("LD01_TURB_GOV=on needs LD01_TURB_WIKI");
-        leitbild_operating_water::unit::turbine::Turbine::from_wiki(&wiki)
-            .unwrap_or_else(|e| panic!("{e}"))
-    });
     // Stuck-cluster C2: the declared single's packet index.
     let single = ask.config.single.map(|id| {
         let packet = inputs.spine.packet_json().expect("packet json");
@@ -1525,21 +1618,16 @@ fn drive(
             .unwrap_or_else(|| panic!("LD01_S3_SINGLE={id}: no such rod cluster"));
         (id, index)
     });
-    let dc = ask.config.dc.then(|| {
-        let wiki = std::env::var("LD01_DC_WIKI").expect("LD01_DC=on needs LD01_DC_WIKI");
-        leitbild_operating_water::unit::dc::Dc::from_wiki(&wiki).unwrap_or_else(|e| panic!("{e}"))
-    });
-    let mut unit = s3::compose_dc_with(
+    let mut unit = live::compose(
         inputs,
         state,
         ask.scaling,
         ask.config.solver,
-        turbine.as_ref(),
         &single.iter().map(|(_, i)| *i).collect::<Vec<_>>(),
-        dc.as_ref(),
         wrap,
     )
-    .unwrap_or_else(|e| panic!("{e}"));
+    .unwrap_or_else(|e| panic!("{e}"))
+    .unit;
     // B1 (owner request 14): the declared stuck-cluster term, before any
     // transaction, from the wiki's ld01-stuck-worth.
     let stuck_worth = ask.config.stuck.then(|| {
@@ -1565,33 +1653,6 @@ fn drive(
         json!({"page": page_path, "block": block, "block_sha256": leitbild_operating_plant::digest::sha256(text.as_bytes()), "term_dk": dk})
     });
     let (t0, n, rtol, frame) = (unit.t0, unit.n, unit.rtol, unit.frame);
-    // X4.4 (lane ROD): automatic rod control in AUTO when asked.
-    let (mut rods, rod_receipt) = if ask.config.rod_auto {
-        use leitbild_operating_water::unit::rod_control;
-        let wiki = std::env::var("LD01_ROD_CONTROL_WIKI")
-            .expect("LD01_ROD_AUTO=on needs LD01_ROD_CONTROL_WIKI");
-        let section = rod_control::section(&wiki).unwrap_or_else(|e| panic!("{e}"));
-        let ids: Vec<String> = inputs.spine.packet_json().unwrap()["mechanics"]["regions"]
-            .as_array()
-            .unwrap()
-            .iter()
-            .map(|r| r["id"].as_str().unwrap().to_string())
-            .collect();
-        let (y0, reference) = (unit.y.clone(), unit.reference.clone());
-        let (c, r) = rod_control::commission(
-            unit.ida.system_mut(),
-            &section,
-            &ids,
-            leitbild_operating_water::frame::Class::S,
-            t0,
-            &y0,
-            &reference,
-        )
-        .unwrap_or_else(|e| panic!("rod control: {e}"));
-        (Some(c), json!({"wiki": wiki, "commissioning": r}))
-    } else {
-        (None, Value::Null)
-    };
     let declared_frame_s = d.block.number(&d.common("/frameAlignment/frame_s"));
     d.block.text(&d.common("/frameAlignment/rule"));
     assert_eq!(
@@ -1636,7 +1697,7 @@ fn drive(
         ),
         other => panic!("kinetics rule {other:?}: A4 or P1"),
     };
-    let zero = t0 + zero_after;
+    let zero = t0 + zero_after + grid_hold_s;
     let implemented: Vec<String> = section.functions.iter().map(|f| f.id.clone()).collect();
     // C5 (ICFIELD): the generator page's ACT.B field controller, a client,
     // with its timing from the ELEC packet's `fieldProtection`
@@ -1645,20 +1706,13 @@ fn drive(
     let elec_packet: Value =
         serde_json::from_slice(&std::fs::read(&inputs.elec_path).expect("the electrical packet"))
             .expect("the electrical packet json");
-    let field_parameters: Option<leitbild_operating_plant::electrical::field::Parameters> =
-        c5.then(|| {
-            serde_json::from_value(elec_packet["fieldProtection"].clone()).expect(
-                "C5: the electrical packet carries no field controller timing (ld01-generator-field-protection)",
-            )
-        });
     // The frame-driven unit (IC-PROT's driver, residual-jump diagnostic at
     // class-S stops): the acquired protection, the PZR control and C5's
     // field controller, in the unit library's order.
-    let mut plant = Plant::new(
+    let (mut plant, rod_receipt) = live::plant(
         unit,
-        &section,
-        plant::Config {
-            field: field_parameters.as_ref(),
+        inputs,
+        live::Options {
             diagnostic: if ask.config.jump_diagnostic {
                 Diagnostic::Jump
             } else {
@@ -1666,6 +1720,7 @@ fn drive(
             },
             matrix_rebuild: ask.config.matrix_rebuild,
             clock: process_cpu_s,
+            rod_records: true,
         },
     )
     .unwrap_or_else(|e| panic!("the frame-driven unit: {e}"));
@@ -1681,6 +1736,7 @@ fn drive(
         protection,
         control,
         field,
+        rods: plant_rods,
         composition,
         ..
     } = &mut plant;
@@ -1695,6 +1751,7 @@ fn drive(
     // frequency, no phase error and no frequency rate (D2, SW-1).
     let steady_bus = Boundary::Energized {
         voltage_v: v_nominal,
+        voltage_pu: 1.,
         frequency_hz: f_nominal,
         phase_error_rad: 0.,
         frequency_rate_hz_s: 0.,
@@ -1726,9 +1783,8 @@ fn drive(
         rows: Vec::new(),
         cost: (std::env::var("LD01_OU_FRAME_COST").as_deref() == Ok("1")).then(Vec::new),
         profile: leitbild_operating_plant::cost::active().then(Vec::new),
-        operator: (gate.is_some()
-            && std::env::var("LD01_PHYS_OPERATOR_FRAMES").as_deref() == Ok("1"))
-        .then(|| (protection.readings(), protection.observed(), Vec::new())),
+        operator: (std::env::var("LD01_PHYS_OPERATOR_FRAMES").as_deref() == Ok("1"))
+            .then(|| (protection.readings(), protection.observed(), Vec::new())),
         legs: packet_json["secondary"]["feedTrain"].is_object().then(|| {
             let ids: Vec<String> = packet_json["mechanics"]["regions"]
                 .as_array()
@@ -1967,6 +2023,19 @@ fn drive(
     };
     let exchanges: Vec<(f64, bool)> = if c5 {
         s3_harness::c5::exchange_bounds(t0, zero, window_s.unwrap_or(f64::NAN), until, quiet_s)
+    } else if grid_trace.is_some() {
+        // R4-GRID: the unit's absolute exchange grid, whole multiples of the
+        // quiet interval in frames, from after t0 through the first exchange
+        // at or after the event (the armed stop the event finds; with the
+        // breaker open after it the live unit arms no more).
+        let every = (quiet_s / frame.period_s()).round() as u64;
+        let mut m = (t0 / (every as f64 * frame.period_s())).floor() as u64 + 1;
+        let mut grid = Vec::new();
+        while frame.instant(m * every) <= (zero + quiet_s).min(until) {
+            grid.push((frame.instant(m * every), false));
+            m += 1;
+        }
+        grid
     } else if exchanging {
         // A connected unit, no grid event: quiet intervals to the end.
         s3_harness::c5::exchange_bounds(t0, until, 0., until, quiet_s)
@@ -2023,23 +2092,24 @@ fn drive(
     let mut feed_record: Vec<(f64, bool)> = Vec::new();
     let mut rcp_after: Option<usize> = None;
     let mut feed_after: Option<bool> = None;
+    // R4-GRID (test-only): the auxiliary supply each whole second of a
+    // connected case: time after zero, RCPs supported, feed supplied, the
+    // reserve and unit sources in band.
+    let mut grid_aux: Vec<Value> = Vec::new();
     let outcome = {
         let mut r = {
             let mut extra: Vec<&mut dyn Client<CaseUnit>> = vec![&mut recorder];
             if let Some(f) = feed.as_mut() {
                 extra.push(f);
             }
-            if let Some(r) = rods.as_mut() {
-                extra.push(r);
-            }
-            let mut clients = plant::clients(protection, control, field, &mut extra);
+            let mut clients = plant::clients(protection, control, field, plant_rods, &mut extra);
             driver.start(&mut clients, t0, y, yp)
         };
         let mut t = t0;
         // C5: the stand-in's boundary for the first interval, decided at
         // the unit's start (an energized bus agreeing with the held
         // prediction is no event).
-        if exchanging && r.is_ok() {
+        if exchanging && grid_trace.is_none() && r.is_ok() {
             let t1 = exchanges.first().map_or(until, |e| e.0);
             r = plant::boundary(driver, ida.system(), t0, t1, steady_bus)
                 .map(|k| exchange_log.push(json!({"t_s": t0, "decided": k})));
@@ -2068,10 +2138,8 @@ fn drive(
                 if let Some(f) = feed.as_mut() {
                     extra.push(f);
                 }
-                if let Some(r) = rods.as_mut() {
-                    extra.push(r);
-                }
-                let mut clients = plant::clients(protection, control, field, &mut extra);
+                let mut clients =
+                    plant::clients(protection, control, field, plant_rods, &mut extra);
                 driver
                     .run_observed(ida, t, *b, y, yp, &mut clients, &setup, Some(&mut observer))
                     .map(|_| ())
@@ -2281,11 +2349,8 @@ fn drive(
                             if let Some(f) = feed.as_mut() {
                                 extra.push(f);
                             }
-                            if let Some(r) = rods.as_mut() {
-                                extra.push(r);
-                            }
                             let mut clients =
-                                plant::clients(protection, control, field, &mut extra);
+                                plant::clients(protection, control, field, plant_rods, &mut extra);
                             step = driver.apply_due(ida, y, yp, &mut clients, &setup);
                         }
                         if step.is_ok() {
@@ -2325,10 +2390,56 @@ fn drive(
                     } else if (!c5 || b < zero)
                         && let Some(t1) = next
                     {
-                        match plant::boundary(driver, ida.system(), b, t1, steady_bus) {
+                        let bus = grid_trace
+                            .as_ref()
+                            .map_or(steady_bus, |g| g.at(b - zero - grid_delay_s, v_nominal));
+                        match plant::boundary(driver, ida.system(), b, t1, bus) {
                             Ok(k) => exchange_log.push(json!({"t_s": b, "decided": k})),
                             Err(e) => r = Err(e),
                         }
+                    }
+                }
+            }
+            if let Some(g) = grid_trace.as_ref()
+                && r.is_ok()
+            {
+                let b = *b;
+                let every = (quiet_s / period).round() as u64;
+                let m = (b / (every as f64 * period)).round() as u64;
+                if same_instant(frame.instant(m * every), b) {
+                    // Past the last armed exchange the boundary still reaches
+                    // the auxiliary sources, each whole second, with no stop.
+                    if b > exchanges.last().map_or(f64::INFINITY, |e| e.0) {
+                        let bus = g.at(b - zero - grid_delay_s, v_nominal);
+                        match plant::boundary(driver, ida.system(), b, b + quiet_s, bus) {
+                            Ok(k) => exchange_log.push(json!({"t_s": b, "decided": k})),
+                            Err(e) => r = Err(e),
+                        }
+                    }
+                    if b >= zero {
+                        use leitbild_operating_plant::electrical::bus::Source;
+                        let u = ida.system();
+                        let net = &u.integrated().joined.network;
+                        let rcps = (0..net.rotor_count())
+                            .filter(|i| {
+                                matches!(
+                                    net.rotor_state(*i).map(|s| s.support),
+                                    Some(leitbild_operating_plant::rotor::Support::Supported(_))
+                                )
+                            })
+                            .count();
+                        let feed = u
+                            .routing
+                            .support("LD01.FW.P1")
+                            .zip(u.routing.support("LD01.FW.P2"))
+                            .map(|s| s.0.energized || s.1.energized);
+                        grid_aux.push(json!([
+                            b - zero,
+                            rcps,
+                            feed,
+                            u.routing.source_in_band(Source::Reserve),
+                            u.routing.source_in_band(Source::Unit)
+                        ]));
                     }
                 }
             }
@@ -2856,7 +2967,7 @@ fn drive(
         "configuration": {"span_after_zero_s": span, "zero_after_start_s": zero_after,
             "case_configuration": ask.config.json(),
             "rod_control": rod_receipt.clone(),
-            "rod_schedule": rods.as_ref().map(|r| r.schedule.clone()),
+            "rod_schedule": plant_rods.as_ref().map(|r| r.schedule.clone()),
             "weights": ida.weight_rule_kind(),
             "command": command.map(|c| format!("{c:?}")), "frame_s": frame.period_s(),
             "max_order": profile::MAX_ORDER, "max_step_s": max_step,
@@ -2889,6 +3000,7 @@ fn drive(
             "receipts_sum_export_J": receipts.iter().map(|q| q.export_j).sum::<f64>(),
             "cumulative_export_J": q_prev.as_ref().map(|q| q[q.len() - leitbild_operating_plant::electrical::slice::QUADRATURES.len()]),
             "rcp_supported_after_loss": rcp_after, "feed_supplied_after_loss": feed_after,
+            "grid_aux": {"columns": ["after_zero_s", "rcps_supported", "feed_supplied", "reserve_in_band", "unit_in_band"], "seconds": grid_aux, "electrical_log": ida.system().log.iter().map(|(t, what)| json!([t - zero, what])).collect::<Vec<_>>()},
             "feed_supplied": feed_record.iter().map(|(t, f)| json!([t, f])).collect::<Vec<_>>(),
             "routing_records": routing.iter().map(|(t, w)| json!([t, w])).collect::<Vec<_>>(),
             "field_controller": field.as_ref().map(|f| json!({"initiated": f.protection.initiated.as_ref().map(|i| json!({"cause": i.cause, "frame": i.frame, "t_s": i.at_s, "t_after_zero_s": i.at_s - zero})), "log": f.protection.log}))}) } else { Value::Null },
@@ -3444,7 +3556,7 @@ fn rule_i_is_judged_at_every_accepted_step() {
     let state: Value =
         serde_json::from_slice(&std::fs::read(&state_path).expect("state")).expect("state json");
     let inputs = common::inputs();
-    let config = CaseConfig::from_env().unwrap_or_else(|e| panic!("{e}"));
+    let config = CaseConfig::from_env(&inputs.ic).unwrap_or_else(|e| panic!("{e}"));
     let run = drive(
         Case::C1,
         &d,
@@ -3480,7 +3592,8 @@ fn rule_i_is_judged_at_every_accepted_step() {
 #[allow(clippy::too_many_lines)] // One case: refusals, runs, families, receipt.
 fn s3_case_run() {
     let case = Case::parse(&std::env::var("LD01_S3_CASE").expect("LD01_S3_CASE")).unwrap();
-    let config = CaseConfig::from_env().unwrap_or_else(|e| panic!("{e}"));
+    let inputs = common::inputs();
+    let config = CaseConfig::from_env(&inputs.ic).unwrap_or_else(|e| panic!("{e}"));
     let preview = std::env::var("LD01_S3_PREVIEW").as_deref() == Ok("1");
     let gates_on = std::env::var("LD01_S3_GATES").as_deref() == Ok("1");
     // N4′: C3's chattering rule is the pinned C4 block's; a rule in
@@ -3503,12 +3616,12 @@ fn s3_case_run() {
         |e| json!({"pinned": false, "error": e, "declared_sha256": guards::declared_sha256(&d.block).ok()}),
     );
     let tbd = d.tbd().unwrap();
-    // C4 runs on its pinned block r5 only (RP1-pin-s3-c4-r5).
+    // C4 runs on its pinned block r6 only (RP1-pin-s3-c4-r6).
     if case == Case::C4 {
         assert_eq!(
             guards::declared_sha256(&d.block).ok().as_deref(),
-            Some(C4_R5_SHA256),
-            "the C4 block is not RP1-pin-s3-c4-r5"
+            Some(C4_R6_SHA256),
+            "the C4 block is not RP1-pin-s3-c4-r6"
         );
     }
     let mut refusals = declaration::case_refusals(case, &pin, &tbd);
@@ -3517,7 +3630,10 @@ fn s3_case_run() {
     // so C4's `ends` do not apply, and a named end fails C4I.N2.
     let c4i = config.c4i_close_s.map(|close| {
         assert_eq!(case, Case::C4, "C4-I is C4's drive");
-        assert!(config.dc, "C4-I needs the declared DC section: LD01_DC=on");
+        assert!(
+            config.dc,
+            "C4-I needs an IC section declaring the DC groups"
+        );
         let page = std::env::var("LD01_S3_DECLARATION")
             .unwrap_or_else(|_| format!("{}/build-readiness.md", gates::wiki_model()));
         let block = Block::from_page(&page, s3_harness::c4i::FENCE)
@@ -3557,7 +3673,6 @@ fn s3_case_run() {
     let state_path = std::env::var("LD01_S3_STATE").expect("LD01_S3_STATE");
     let state: Value =
         serde_json::from_slice(&std::fs::read(&state_path).expect("state")).expect("state json");
-    let inputs = common::inputs();
     // The gate observation's declared settings: S2's blocks on the same page
     // (identity and ledger bounds, the observation and output grids, the
     // accuracy contract), read only for a gate run.
@@ -3792,6 +3907,8 @@ fn s3_case_run() {
     let mut not_implemented: Vec<&str> = Vec::new();
     let mut repeat_driven = None;
     let mut references: Vec<(String, Driven)> = Vec::new();
+    // R4-C4-R2-F: C4's R2 for family F alone, apart from the references E reads.
+    let mut f_reference: Option<(String, Driven)> = None;
     if let Some(g) = gate.as_ref() {
         let og = run.observer.gates.as_ref().unwrap();
         let units_bound = g.s2.gates.number("/ledger/boundLocalToleranceUnits");
@@ -3912,8 +4029,15 @@ fn s3_case_run() {
         let series_on = case == Case::C4
             || (std::env::var("LD01_PHYS_SERIES").as_deref() == Ok("1")
                 && matches!(case, Case::C2 | Case::C3 | Case::C5));
-        let asks = if series_on {
-            [10., 30., 100.]
+        // R4-C4-R2-F (owner, 18 November 2026): beside the series, C4 (and
+        // C4-I) runs its declared R2, which family F alone reads.
+        let (asks, f_ask) = if series_on {
+            let f_ask = if case == Case::C4 {
+                asks.into_iter().find(|a| a.0 == "R2")
+            } else {
+                None
+            };
+            let series = [10., 30., 100.]
                 .into_iter()
                 .map(|k: f64| {
                     let s = s3::Scaling {
@@ -3922,9 +4046,10 @@ fn s3_case_run() {
                     };
                     (format!("rtol/{k}"), s, None, 0., end)
                 })
-                .collect()
+                .collect();
+            (series, f_ask)
         } else {
-            asks
+            (asks, None)
         };
         let only = std::env::var("LD01_S3_GATES_REFERENCES").ok();
         let mut comparisons = Vec::new();
@@ -4056,6 +4181,36 @@ fn s3_case_run() {
                     "boundary_band_states": leitbild_operating_water::boundary_band_states()}));
             }
         }
+        // R4-C4-R2-F: C4's R2, driven as the declared references are; family F
+        // reads it, and no comparison, series, check or level does.
+        f_reference = f_ask
+            .filter(|(name, ..)| {
+                only.as_deref()
+                    .is_none_or(|o| o.split(',').any(|x| x == name))
+            })
+            .map(|(name, scaling, max_step, _, to)| {
+                let r = drive(
+                    case,
+                    &d,
+                    &spec,
+                    &inputs,
+                    &state,
+                    &state_path,
+                    span.min(to + 1.),
+                    Some(g),
+                    &Ask {
+                        label: &name,
+                        scaling,
+                        max_step,
+                        credited_from: 0.,
+                        window_state: None,
+                        observation_s: None,
+                        f_tolerances: false,
+                        config,
+                    },
+                );
+                (name, r)
+            });
         // R11-3a's series: each completed level against the next looser
         // completed one, by the same E0 comparison (looser minus tighter).
         let series = series_on.then(|| {
@@ -4241,6 +4396,7 @@ fn s3_case_run() {
                 };
                 let r2 = references
                     .iter()
+                    .chain(&f_reference)
                     .find(|(n, _)| n == "R2")
                     .and_then(|(_, r)| r.observer.gates.as_ref())
                     .filter(|rg| rg.credited_error.is_none())
@@ -4613,7 +4769,7 @@ fn s3_case_run() {
         "gates_not_yet_implemented": gates_not_yet,
         "run": run.record,
         "repeat": repeat_driven.as_ref().map(|r| json!({"failure": r.failure, "cpu": r.record["cpu"], "record": r.repeat_record})),
-        "references": references.iter().map(|(n, r)| json!({"reference": n, "failure": r.failure, "rule_i_exit_after_zero_s": r.exit_after_zero,
+        "references": references.iter().chain(&f_reference).map(|(n, r)| json!({"reference": n, "failure": r.failure, "rule_i_exit_after_zero_s": r.exit_after_zero,
             "configuration": r.record["configuration"], "cpu": r.record["cpu"], "counts_by_class": r.record["counts_by_class"]})).collect::<Vec<_>>(),
         "process_cpu_s": process_cpu_s() - process0,
     });

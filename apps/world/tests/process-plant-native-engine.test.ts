@@ -4,7 +4,8 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { compileResolvedProcessPlant } from '../src/packs/process-plant/plant-compiler.ts'
 import { ld01UnitAdvanceLimitS } from '../src/packs/process-plant/engine/child.ts'
-import { connectNativeProcessPlantEngine, type NativeEngineFailure } from '../src/packs/process-plant/engine/native-engine.ts'
+import { connectNativeProcessPlantEngine, nativeProcessPlantCheckpointSchema, type NativeEngineFailure } from '../src/packs/process-plant/engine/native-engine.ts'
+import { processPlantRuntimeStateSchema } from '../src/packs/process-plant/sim/runtime-state.ts'
 import { loadLd01UnitArtifact, resolveLd01UnitArtifact } from '../src/packs/process-plant/engine/artifact.ts'
 import { processPlantEngineKindFor } from '../src/packs/process-plant/engine/port.ts'
 import type { Ld01TagMap } from '../src/packs/process-plant/engine/tag-map.ts'
@@ -46,6 +47,7 @@ const plant = compileResolvedProcessPlant({
 const tagMap: Ld01TagMap = {
   channels: { ['PROTECTION.pressure' as VariablePath]: 'LD01.PZR.PRESSURE', ['PROTECTION.tripped' as VariablePath]: 'LD01.PROT.I1.TRIP' },
   commands: { ['PROTECTION.manualReactorTrip' as VariablePath]: { kind: 'ManualReactorTrip' } },
+  setpoints: {},
 }
 const artifactSha256 = 'a'.repeat(64)
 const fixtureChannels = [
@@ -68,7 +70,7 @@ const fixtureLoad = async (fixture: Record<string, unknown>) => {
 
 const connect = async (fixture: Record<string, unknown> = {}, extra: Partial<Parameters<typeof connectNativeProcessPlantEngine>[0]> = {}) => {
   const load = extra.load ?? await fixtureLoad(fixture)
-  const engine = await connectNativeProcessPlantEngine({ plant, tagMap, load, artifactSha256, command: double, ...extra })
+  const engine = await connectNativeProcessPlantEngine({ plant, tagMap, load, gridExchangeS: null, artifactSha256, command: double, ...extra })
   cleanups.push(async () => { await engine.close() })
   return engine
 }
@@ -110,7 +112,7 @@ describe('the LD-01 native engine', () => {
   test('sends a command at the unit time of the next exchange; writes only true to a command variable', async () => {
     const engine = await connect()
     expect(engine.runtime.readVariable('PROTECTION.tripped' as VariablePath)).toBe(false)
-    expect(() => engine.runtime.writeCommand({ type: 'setVariable', path: 'PROTECTION.pressure' as VariablePath, value: 1 })).toThrow('only its kernel commands are writable')
+    expect(() => engine.runtime.writeCommand({ type: 'setVariable', path: 'PROTECTION.pressure' as VariablePath, value: 1 })).toThrow('only its kernel commands and setpoints are writable')
     expect(() => engine.runtime.writeCommand({ type: 'setVariable', path: 'PROTECTION.manualReactorTrip' as VariablePath, value: false })).toThrow('sends nothing')
     engine.runtime.writeCommand({ type: 'setVariable', path: 'PROTECTION.manualReactorTrip' as VariablePath, value: true })
     expect(engine.runtime.readVariable('PROTECTION.manualReactorTrip' as VariablePath)).toBe(true)
@@ -201,9 +203,163 @@ describe('the LD-01 native engine', () => {
     expect(engine.failure()).toBeNull()
   })
 
+  // R4-GRID: a connected unit against the double, whose ADVANCE refuses a crossed exchange like the real unit's.
+  const gridChannels = [
+    ...fixtureChannels,
+    { id: 'LD01.GRID.OFFSITE_LOST', unit: '1', value: 0, rate: 0, setBy: 'GridBoundaryDead' },
+  ]
+  const commandsOf = async (engine: Awaited<ReturnType<typeof connect>>): Promise<ReadonlyArray<{ readonly kind: string; readonly t: number; readonly body: Record<string, unknown> }>> =>
+    (await engine.checkpoint()).snapshot!.commands as ReadonlyArray<{ readonly kind: string; readonly t: number; readonly body: Record<string, unknown> }>
+  const live = { energized: true, voltagePu: 1.002, frequencyHz: 49.99, frequencyRateHzPerS: -0.01 } as const
+
+  test('a connected unit: an advance stops at each exchange instant, takes the boundary there, and goes on', async () => {
+    const engine = await connect({ channels: gridChannels }, { gridExchangeS: 1 })
+    engine.setGridBoundary(live)
+    const receipt = await engine.advance(2_500)
+    // From the first frame (100.1 s) to 102.6 s, through the exchanges at 101 s and 102 s.
+    expect(receipt.simulatedMs).toBeCloseTo(2_500, 6)
+    const sent = await commandsOf(engine)
+    expect(sent.map(command => command.kind)).toEqual(['GridBoundary', 'GridBoundary'])
+    expect(sent.map(command => command.t)).toEqual([101, 102])
+    expect(sent[0]!.body).toMatchObject({ until: 102, energized: true, voltage_pu: 1.002, frequency_hz: 49.99, phase_error_rad: 0, frequency_rate_hz_s: -0.01 })
+    expect(engine.failure()).toBeNull()
+  })
+
+  test('how a Run slices its time changes no exchange', async () => {
+    const [whole, sliced] = [await connect({ channels: gridChannels }, { gridExchangeS: 1 }), await connect({ channels: gridChannels }, { gridExchangeS: 1 })]
+    whole.setGridBoundary(live)
+    sliced.setGridBoundary(live)
+    await whole.advance(3_000)
+    for (let i = 0; i < 30; i += 1) await sliced.advance(100)
+    expect(await commandsOf(sliced)).toEqual(await commandsOf(whole))
+  })
+
+  // R4-GRID's frame rule (engine/frame-grid.ts): frames are named by index; the unit's answer may be another name of the instant.
+  const product = (k: number): number => k * 0.1
+  test('a unit that answers a frame at another name of its instant stands at that frame: nothing asks it again, Grid off and on', async () => {
+    for (const gridExchangeS of [null, 1] as const) {
+      const engine = await connect({ t0: 3655, answerDecimal: true, channels: gridChannels }, { gridExchangeS })
+      if (gridExchangeS !== null) engine.setGridBoundary(live)
+      let below = 0
+      for (let n = 1; n <= 300; n += 1) {
+        const receipt = await engine.advance(100)
+        const k = 36551 + n
+        expect(receipt.frame!.t).toBe(Number(product(k).toFixed(9)))
+        if (receipt.frame!.t < product(k)) below += 1
+      }
+      // The unit stood an ulp below the engine's product on these frames (3719.2 for 3719.2000000000003 in the soak).
+      expect(below).toBeGreaterThan(50)
+      expect(engine.failure()).toBeNull()
+      expect(engine.runtime.advancedMs()).toBe(100 + 300 * 100)
+      if (gridExchangeS !== null) {
+        const sent = await commandsOf(engine)
+        expect(sent.map(command => command.t)).toEqual(Array.from({ length: 30 }, (_, i) => 3656 + i))
+        expect(sent.every((command, i) => Object.is(command.body.until, product(36570 + 10 * i)))).toBe(true)
+      }
+    }
+  })
+
+  test('the Run\'s whole milliseconds reach whole frames: each 100 ms tick reaches the next frame, never the one before', async () => {
+    const engine = await connect()
+    for (let n = 1; n <= 2_000; n += 1) expect(Object.is((await engine.advance(100)).frame?.t, product(1001 + n))).toBe(true)
+    expect(engine.runtime.advancedMs()).toBe(100 + 2_000 * 100)
+    await expect(engine.advance(0.5)).rejects.toThrow('a positive whole number of ms')
+  })
+
+  test('a checkpoint saved before the frame rule (requestedBits) is refused by the schema, by name, never read', async () => {
+    const engine = await connect()
+    await engine.advance(1_250)
+    const checkpoint = await engine.checkpoint()
+    expect(checkpoint.requested).toEqual({ frame: 1013, remainderMs: 50 })
+    expect(nativeProcessPlantCheckpointSchema.parse(checkpoint)).toEqual(checkpoint)
+    const { requested: _, ...rest } = checkpoint
+    const old = { ...rest, requestedBits: '4059533333333333' }
+    const parsed = nativeProcessPlantCheckpointSchema.safeParse(old)
+    expect(parsed.success).toBe(false)
+    expect(parsed.error?.issues.map(issue => [issue.code, issue.path.join('.'), 'keys' in issue ? issue.keys : []])).toEqual([
+      ['invalid_type', 'requested', []],
+      ['unrecognized_keys', '', ['requestedBits']],
+    ])
+    // The Run's saved state is refused whole: no branch of its union takes the old checkpoint.
+    const state = { schemaVersion: 1, plants: [{ plantId: 'plant:ld01-test', runtime: old, ramps: { active: [] } }] }
+    expect(processPlantRuntimeStateSchema.safeParse(state).success).toBe(false)
+    expect(processPlantRuntimeStateSchema.safeParse({ ...state, plants: [{ ...state.plants[0]!, runtime: checkpoint }] }).success).toBe(true)
+  })
+
+  test('refuses by name a start that stands on no frame instant', async () => {
+    await expect(connect({ t0: 100.05 })).rejects.toThrow('the unit starts at 100.05 s, which is no I&C frame\'s instant k · 0.1 s')
+  })
+
+  test('a dead bus goes through once and latches: a re-energised bay is not sent, the unit goes on', async () => {
+    const engine = await connect({ channels: gridChannels }, { gridExchangeS: 1 })
+    engine.setGridBoundary(live)
+    await engine.advance(1_000)
+    engine.setGridBoundary({ energized: false })
+    await engine.advance(1_000)
+    engine.setGridBoundary(live)
+    await engine.advance(2_000)
+    const sent = await commandsOf(engine)
+    expect(sent.map(command => command.kind)).toEqual(['GridBoundary', 'GridBoundaryDead'])
+    expect(engine.failure()).toBeNull()
+  })
+
+  const governedPlant = compileResolvedProcessPlant({
+    id: 'plant:ld01-governed',
+    modelRef: 'process-plant.ld01',
+    operatingPointRef: 'process-plant.ld01.s3-settled',
+    automationRef: 'process-plant.ld01.kernel',
+    graph: {
+      schemaVersion: 1,
+      id: 'ld01.governed',
+      title: 'LD-01 load request test',
+      timestep: { fixedStepMs: 100 },
+      components: [{
+        id: 'TG',
+        kind: 'nativeProtectionSystem',
+        label: 'Turbine-generator',
+        parameters: { readings: [], commands: [], setpoints: [{ path: 'loadRequest', label: 'Load request', discipline: 'electrical', quantity: 'power', unit: 'MW' }] },
+      }],
+      connections: [],
+      publishedVariables: ['TG.loadRequest'],
+    } as never,
+    automationForGraph: () => ({}) as never,
+  })
+  const governedTags: Ld01TagMap = {
+    channels: {},
+    commands: {},
+    setpoints: { ['TG.loadRequest' as VariablePath]: { kind: 'LoadRequest', channel: 'LD01.TG.LOAD.REQUEST', activeChannel: 'LD01.TG.LOAD.ACTIVE' } },
+  }
+  const governedChannels = [
+    { id: 'LD01.GRID.OFFSITE_LOST', unit: '1', value: 0, rate: 0 },
+    { id: 'LD01.TG.LOAD.REQUEST', unit: 'W', value: 1_010_000_000, rate: 0 },
+    { id: 'LD01.TG.LOAD.ACTIVE', unit: '1', value: 1, rate: 0 },
+  ]
+  const loadRequest = 'TG.loadRequest' as VariablePath
+
+  test('a load request is sent at the next exchange, in watts, and reads back on its channel', async () => {
+    const engine = await connect({ channels: governedChannels }, { plant: governedPlant, tagMap: governedTags, gridExchangeS: 1 })
+    expect(engine.runtime.readVariable(loadRequest)).toBe(1_010)
+    engine.runtime.writeCommand({ type: 'setVariable', path: loadRequest, value: 900 })
+    expect(engine.runtime.snapshot().queuedCommands).toEqual([{ type: 'setVariable', path: loadRequest, value: 900 }])
+    await engine.advance(500)
+    expect((await commandsOf(engine)).map(command => command.kind)).toEqual([])
+    await engine.advance(1_000)
+    const sent = await commandsOf(engine)
+    expect(sent.map(command => [command.kind, command.t, command.body.request_w])).toEqual([['LoadRequest', 101, 900_000_000]])
+    expect(() => engine.runtime.writeCommand({ type: 'setVariable', path: loadRequest, value: -1 })).toThrow('finite non-negative')
+  })
+
+  test('a load request with the governor out of LOAD is refused with the reason, and a Plant with no Grid takes none', async () => {
+    const tripped = await connect({ channels: governedChannels.map(channel => channel.id === 'LD01.TG.LOAD.ACTIVE' ? { ...channel, value: 0 } : channel) }, { plant: governedPlant, tagMap: governedTags, gridExchangeS: 1 })
+    expect(() => tripped.runtime.writeCommand({ type: 'setVariable', path: loadRequest, value: 900 })).toThrow('its governor is not in LOAD')
+    expect(tripped.failure()).toBeNull()
+    const unconnected = await connect({ channels: governedChannels }, { plant: governedPlant, tagMap: governedTags, gridExchangeS: null })
+    expect(() => unconnected.runtime.writeCommand({ type: 'setVariable', path: loadRequest, value: 900 })).toThrow('connected to no Grid')
+  })
+
   test('refuses at LOAD a tag map naming a channel the unit does not deliver', async () => {
     const load = await fixtureLoad({ channels: fixtureChannels.filter(channel => channel.id !== 'LD01.PROT.I1.TRIP') })
-    await expect(connectNativeProcessPlantEngine({ plant, tagMap, load, artifactSha256, command: double }))
+    await expect(connectNativeProcessPlantEngine({ plant, tagMap, load, gridExchangeS: null, artifactSha256, command: double }))
       .rejects.toThrow('PROTECTION.tripped reads channel LD01.PROT.I1.TRIP, which the unit does not deliver')
   })
 })

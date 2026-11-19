@@ -23,6 +23,16 @@ use std::time::Instant;
 
 type Point = Option<(Water, Water)>;
 
+/// R4-ROOT-DRIVES: how far one network evaluation goes. [`Until::Rows`]
+/// composes every row; [`Until::Drives`] stops once every face's drive and
+/// chart are current (after the momentum rows), for a reader of the drives
+/// alone: L1's release roots.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Until {
+    Rows,
+    Drives,
+}
+
 impl<P: Properties> Network<P> {
     /// Select only exact-zero phases with a positive leading receipt from the
     /// actual current physical face acceleration. No fixed region list, time
@@ -123,9 +133,30 @@ impl<P: Properties> Network<P> {
         yp: &[f64],
         seed: Option<&[f64]>,
         cj: f64,
+        reuse: Option<&mut Reuse<P::Caloric>>,
+        coupling: Option<&mut dyn super::Coupling>,
+        volumes: &[CellVolume],
+    ) -> Result<(), Failure> {
+        self.evaluate_joined_until(t, y, yp, seed, cj, reuse, coupling, volumes, Until::Rows)
+    }
+
+    /// [`Network::evaluate_joined`] as far as `until`: [`Until::Drives`]
+    /// stops once every face's drive is current, after the momentum rows,
+    /// and makes neither the stock, equilibrium and stratified rows nor the
+    /// PZR boundary. What it does make is exactly what [`Until::Rows`] makes
+    /// first, in the same order.
+    #[allow(clippy::too_many_arguments)] // The network's stage inputs, its two ports and the stop.
+    pub fn evaluate_joined_until(
+        &mut self,
+        t: f64,
+        y: &[f64],
+        yp: &[f64],
+        seed: Option<&[f64]>,
+        cj: f64,
         mut reuse: Option<&mut Reuse<P::Caloric>>,
         mut coupling: Option<&mut dyn super::Coupling>,
         volumes: &[CellVolume],
+        until: Until,
     ) -> Result<(), Failure> {
         if let Some((started, seconds)) = self.wall_budget
             && started.elapsed().as_secs_f64() > seconds
@@ -273,6 +304,10 @@ impl<P: Properties> Network<P> {
             .map(|(q, dq)| thermal::Scalar::new(q.viscosity_pa_s, dq.viscosity_pa_s));
         self.compose_sections(y, yp, seed, cj, &points)?;
         self.compose_momentum(t, y, yp, seed, cj, &phase_mass)?;
+        if until == Until::Drives {
+            self.counters.evaluation_wall_s += started.elapsed().as_secs_f64();
+            return Ok(());
+        }
         self.compose_stocks(y, yp, seed, cj, &points, reuse)?;
         // HOOK (PHASE-P7, S3-D-P1): equilibrium rows from the coordinates.
         self.compose_equilibrium_rows(y_coordinates, yp, seed_coordinates, cj, &saturated);

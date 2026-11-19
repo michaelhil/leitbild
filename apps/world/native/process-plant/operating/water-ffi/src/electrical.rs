@@ -96,6 +96,10 @@ pub struct Electrified<S: JoinedSystem> {
     pub configuration: Configuration,
     /// A declared loss of the offsite connection (S3-D10), at its time.
     pub offsite_loss_s: Option<f64>,
+    /// R4-GRID: the Grid's voltage and frequency for the auxiliary sources,
+    /// decided at an exchange whose band membership changed. Taken at that
+    /// restart's own instant, so nothing holds it across a snapshot.
+    pub grid_supply: Option<SourceState>,
     offsite_lost: bool,
     trip_requested: bool,
     field_bus: usize,
@@ -201,6 +205,7 @@ impl<S: JoinedSystem> Electrified<S> {
             routing,
             configuration,
             offsite_loss_s: None,
+            grid_supply: None,
             offsite_lost: false,
             trip_requested: false,
             field_bus,
@@ -1129,6 +1134,17 @@ impl<S: JoinedSystem> JoinedSystem for Electrified<S> {
             done.push(format!("GCB {:?}", c.contact));
         }
         let logged = self.routing.records.len();
+        // R4-GRID (owner 8 Nov): the Grid's voltage and frequency at the
+        // auxiliary sources, at this restart's own instant. The unit source
+        // is the generator bus, on the Grid while the breaker is closed; the
+        // reserve is the Grid's.
+        if let Some(state) = self.grid_supply.take() {
+            self.routing.set_source(t, Source::Reserve, state)?;
+            if self.breaker.contact == Contact::Closed && !self.offsite_lost {
+                self.routing.set_source(t, Source::Unit, state)?;
+            }
+            done.push(format!("Grid supply at the auxiliary sources: {state:?}"));
+        }
         self.routing.advance(t)?;
         done.extend(
             self.routing.records[logged..]

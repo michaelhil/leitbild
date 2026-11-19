@@ -36,6 +36,10 @@ pub struct Section {
     /// Whether the compile declared the DC groups (PROC T5's reports are
     /// compiled only then); composition refuses a mismatch either way.
     pub dc: GovernorDeclaration,
+    /// Whether the compile declared automatic rod control (the unit then
+    /// composes `ld01-rod-control` in AUTO, and its HOLD command); the
+    /// composition follows the declaration.
+    pub rod_control: GovernorDeclaration,
     /// PROC T5's engineering values (labelled estimates, for a person's
     /// judgement; no criterion reads them), read from the DC groups' copy.
     pub engineering: Vec<EngineeringSpec>,

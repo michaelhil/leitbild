@@ -6,9 +6,9 @@
 //! line the run cannot decide is reported as such, never passed.
 use serde_json::{Value, json};
 
-/// Revision 5 (owner, 7 November, after result). Revision 3 stays pinned under
-/// its own fence for C3's chattering check.
-pub const FENCE: &str = "ld01-s3-cases-c4-r5";
+/// Revision 6 (owner, 18 November, R4-C4-R2-F: family F reads R2). Revision 3
+/// stays pinned under its own fence for C3's chattering check.
+pub const FENCE: &str = "ld01-s3-cases-c4-r6";
 
 /// A regular cell's declared volume class.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]

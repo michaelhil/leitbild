@@ -52,6 +52,7 @@ const graph = {
 const tagMap = {
   channels: { 'PROTECTION.pressure': 'LD01.PZR.PRESSURE', 'PROTECTION.tripped': 'LD01.PROT.I1.TRIP' },
   commands: { 'PROTECTION.manualReactorTrip': { kind: 'ManualReactorTrip' } },
+  setpoints: {},
 }
 
 /** An artifact whose binary starts the protocol double, its fixture as the joined packet. */

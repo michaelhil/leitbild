@@ -101,6 +101,7 @@ const icSchema = z.object({
   // PROC T5's labelled engineering values: for a person's judgement, no criterion reads them.
   engineering: z.array(z.object({ id: z.string().min(1), group: z.string().min(1), field: z.enum(['requested_w', 'delivered_w', 'energy_j', 'depletion_s']), unit: z.string().min(1), label: z.string().min(1) }).strict()).default([]),
   dc: z.object({ declared: z.boolean() }).passthrough().optional(),
+  rod_control: z.object({ declared: z.boolean() }).passthrough(),
   functions: z.array(z.object({
     id: z.string().min(1),
     rule: z.record(z.string(), z.object({ family: z.string().min(1).optional(), side: side.optional() }).passthrough()),
@@ -144,6 +145,15 @@ type Reading = {
   /** Other tag ids this reading answers for (a procedure's single tag read on one declared channel). */
   readonly externalRefs?: ReadonlyArray<string>
   readonly limits?: Record<string, unknown>
+}
+interface Setpoint {
+  readonly path: string
+  readonly label: string
+  readonly discipline: Reading['discipline']
+  readonly quantity: string
+  readonly unit: ProcessUnit
+  readonly channel: string
+  readonly activeChannel: string
 }
 type Command = { readonly path: string; readonly label: string; readonly actuation: 'command' | 'faultInjection'; readonly command: Ld01Command; readonly momentary: boolean }
 
@@ -235,6 +245,8 @@ interface Equipment {
   readonly parameters: Record<string, unknown>
   readonly readings: Reading[]
   readonly commands: Command[]
+  /** Numeric setpoints the unit takes at a Grid exchange (R4-GRID). */
+  setpoints?: Setpoint[]
   readonly keyValues: string[]
   loopId?: string
   ordinal?: number
@@ -427,6 +439,19 @@ export const compileOperatingGraph = (input: { readonly packet: unknown; readonl
     ...packet.rods.clusters.map(cluster => reading(`rod.${cluster.id}`, `Rod cluster ${cluster.id} travel`, 'state', 'nuclear', 'length', 'm', `LD01.ROD.${cluster.id}.TRAVEL`, 'm')),
     reading('rodTravelMean', 'Rod cluster mean travel', 'state', 'nuclear', 'length', 'm', 'LD01.ROD.TRAVEL.MEAN', 'm'),
   )
+  // AUTO rod control, where the section declares it: the bank HOLD and its release, whether HOLD is in force, and the
+  // values the law compares at each frame (its lagged Tavg and the Tavg program at its lagged load, ld01-unit's own).
+  if (ic.rod_control.declared) {
+    coreEquipment.readings.push(
+      reading('bankHoldInForce', 'Control bank HOLD in force', 'discrete', 'control', 'boolean', 'boolean', 'LD01.CORE.BANK.HOLD', '1'),
+      reading('bankTavg', 'Rod control Tavg (its lagged input)', 'derived', 'control', 'temperature', 'degC', 'LD01.CORE.BANK.TAVG', 'K'),
+      reading('bankTref', 'Rod control Tref (the Tavg program at its lagged turbine load)', 'derived', 'control', 'temperature', 'degC', 'LD01.CORE.BANK.TREF', 'K'),
+    )
+    coreEquipment.commands.push(
+      { path: 'bankHold', label: 'Control bank HOLD', actuation: 'command', command: { kind: 'BankHold' }, momentary: true },
+      { path: 'bankAuto', label: 'Control bank release HOLD to AUTO', actuation: 'command', command: { kind: 'BankAuto' }, momentary: true },
+    )
+  }
   // Each cluster's travel moves over the packet's maximum travel. The generated displays draw an insertion part by part,
   // at most 16 to a node; the 52 clusters move as one bank (EVT-RODS-BANK), so the core leads with their mean travel instead.
   const maximumTravel = packet.feedback_metadata.parameters.rod_maximum_travel_m
@@ -471,7 +496,25 @@ export const compileOperatingGraph = (input: { readonly packet: unknown; readonl
   for (const family of ic.families) {
     if (family.quantity === 'admission_position' || (typeof family.quantity === 'object' && 'stop_valve_position' in family.quantity)) turbine.readings.push(...familyReadings(ic, family))
   }
+  // R4-GRID: the load path, with a governor composed; the setpoint in force reads back on its channel.
+  if (ic.families.some(family => family.quantity === 'admission_position')) {
+    if (!ld01ConversionExists('W', 'MW')) throw new Error('no W to MW conversion for the load request')
+    turbine.setpoints = [{ path: 'loadRequest', label: 'Load request', discipline: 'electrical', quantity: 'power', unit: 'MW', channel: 'LD01.TG.LOAD.REQUEST', activeChannel: 'LD01.TG.LOAD.ACTIVE' }]
+  }
   equipment.set(turbine.id, turbine)
+  // R4-GRID: the unit's port to a Grid. Its voltage and limits are the Halden 420 kV bays' (the Grid model addition
+  // electric-grid.halden.four-unit: 1,100 MW into the Grid, 100 MW out), the shaft constant the generator page's H.
+  equipment.set('GRID', {
+    id: 'GRID', kind: 'nativeGridBoundary', label: 'Grid boundary',
+    parameters: { externalPortId: 'grid-420kv', nominalVoltageKv: 420, maximumExportMw: 1_100, maximumImportMw: 100, generatorInertiaSeconds: 5 },
+    readings: [
+      reading('netExport', 'Net power to the Grid', 'state', 'electrical', 'power', 'MW', 'LD01.GRID.NET_EXPORT', 'W'),
+      reading('frequency', 'Grid frequency held at the boundary', 'state', 'electrical', 'frequency', 'Hz', 'LD01.GRID.FREQUENCY', 'Hz'),
+      reading('voltage', 'Grid voltage held at the boundary (per unit)', 'state', 'electrical', 'ratio', 'fraction', 'LD01.GRID.VOLTAGE', '1', 'voltage'),
+      reading('offsiteLost', 'Offsite connection lost', 'discrete', 'electrical', 'boolean', 'boolean', 'LD01.GRID.OFFSITE_LOST', '1'),
+    ],
+    commands: [], keyValues: ['netExport', 'frequency'],
+  })
   // The IC section's state reports (ld01-unit.rs reads each as a 0/1 channel and its quality): the turbine's
   // retained-trip report on the turbine-generator, the complete-bank inserted report on the core.
   // PHYS2's electrical reports (the AC routing's and the report-only DC groups' state) read on the turbine-generator,
@@ -609,6 +652,7 @@ export const compileOperatingGraph = (input: { readonly packet: unknown; readonl
         ...item.parameters,
         readings: item.readings.map(({ channel: _channel, channelUnit: _unit, tagId: _tag, externalRefs: _refs, limits: _limits, span: _span, ...rest }) => rest),
         commands: item.commands.map(({ command: _command, momentary: _momentary, ...rest }) => rest),
+        ...(item.setpoints === undefined ? {} : { setpoints: item.setpoints.map(({ channel: _channel, activeChannel: _active, ...rest }) => rest) }),
         keyValues: item.keyValues,
       },
       ...(item.loopId === undefined && item.commands.every(command => !command.momentary) ? {} : {
@@ -642,11 +686,12 @@ export const compileOperatingGraph = (input: { readonly packet: unknown; readonl
         ]),
       ]),
     ] as unknown as PlantGraphSpec['connections'],
-    publishedVariables: [...equipment.values()].flatMap(item => [...item.readings, ...item.commands].map(entry => `${item.id}.${entry.path}`)) as unknown as PlantGraphSpec['publishedVariables'],
+    publishedVariables: [...equipment.values()].flatMap(item => [...item.readings, ...item.commands, ...(item.setpoints ?? [])].map(entry => `${item.id}.${entry.path}`)) as unknown as PlantGraphSpec['publishedVariables'],
   }
   const tagMap: Ld01TagMap = {
     channels: Object.fromEntries([...equipment.values()].flatMap(item => item.readings.map(entry => [`${item.id}.${entry.path}`, entry.span === undefined ? entry.channel : { channel: entry.channel, span: { min: entry.span.min, max: entry.span.max }, declaredBy: entry.span.declaredBy }]))),
     commands: Object.fromEntries([...equipment.values()].flatMap(item => item.commands.map(entry => [`${item.id}.${entry.path}`, entry.command]))),
+    setpoints: Object.fromEntries([...equipment.values()].flatMap(item => (item.setpoints ?? []).map(entry => [`${item.id}.${entry.path}`, { kind: 'LoadRequest' as const, channel: entry.channel, activeChannel: entry.activeChannel }]))),
   }
   // The graph compiles against the registry as a Plant would load it.
   compilePlantGraph(graph, processPlantComponentRegistry)
