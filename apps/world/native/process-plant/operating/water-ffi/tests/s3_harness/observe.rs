@@ -812,9 +812,12 @@ pub fn entry_consistency<S: leitbild_operating_water::ida::System + JoinedSystem
     let identity = system.differential_all(network_ids);
     let nnz = system.nonzeros();
     let (mut data, mut rows, mut pointers) = (vec![0.; nnz], vec![0i64; nnz], vec![0i64; n + 1]);
-    system
-        .jacobian(t, 0., y, yp, &mut data, &mut rows, &mut pointers)
-        .map_err(|e| format!("Jacobian: {e:?}"))?;
+    // R4-OBS-PURE: `∂F/∂y` in full at this state; a live climb's kept
+    // matrices are set aside, unread, and put back, so no step changes.
+    let aside = system.integrated_mut().set_climb_aside();
+    let jacobian = system.jacobian(t, 0., y, yp, &mut data, &mut rows, &mut pointers);
+    system.integrated_mut().put_climb_back(aside);
+    jacobian.map_err(|e| format!("Jacobian: {e:?}"))?;
     let alg: Vec<usize> = (0..n).filter(|i| identity[*i] == 0.).collect();
     let mut at = vec![usize::MAX; n];
     for (k, i) in alg.iter().enumerate() {
