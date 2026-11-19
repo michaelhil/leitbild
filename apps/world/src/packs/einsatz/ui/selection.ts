@@ -1,6 +1,7 @@
 import type { GeoJsonPoint } from '../../../core/model/index.ts'
 import type { Stop, UnitOrderInput } from '../order-schema.ts'
 import type { SituationUnit, UnitOptions } from '../situation/schema.ts'
+import { dispatchWords } from './presenters.ts'
 
 /** Opening an asset selects it for dispatch; only a subsequent target selection may issue an order. */
 export const doubleClickMs = 500
@@ -16,7 +17,8 @@ type PlannedStop = Pick<SituationUnit['plan'][number], 'id' | 'state' | 'label' 
 
 export type Decision =
   | { readonly kind: 'order'; readonly target: Stop; readonly expectedPlan: PlanExpectation; readonly job: CurrentJob | null; readonly replace: boolean; readonly add: boolean; readonly assigned: boolean; readonly currentLabel: string | null; readonly replaceReason?: string; readonly addReason?: string }
-  | { readonly kind: 'remove'; readonly stops: ReadonlyArray<{ readonly id: string; readonly label: string; readonly index: number }>; readonly expectedPlan: PlanExpectation }
+  /** Asked by the × on a plan row, never by a map tap: a map tap is only ever a target. */
+  | { readonly kind: 'remove'; readonly stop: { readonly id: string; readonly label: string; readonly index: number }; readonly expectedPlan: PlanExpectation }
 
 export type Selection =
   | { readonly kind: 'none'; readonly marked: string | null }
@@ -32,8 +34,9 @@ export interface SelectionState {
 export type SelectionEvent =
   | { readonly kind: 'click'; readonly on: Clicked; readonly atMs: number }
   | { readonly kind: 'target-row'; readonly target: Stop }
+  /** The × on a plan row of the unit card. */
   | { readonly kind: 'stop'; readonly stopId: string }
-  | { readonly kind: 'decide'; readonly choice: 'replace' | 'add' | 'cancel' | { readonly remove: string } }
+  | { readonly kind: 'decide'; readonly choice: 'replace' | 'add' | 'remove' | 'cancel' }
   | { readonly kind: 'initial-order-accepted'; readonly unitId: string }
   | { readonly kind: 'back' | 'cleared' }
 
@@ -97,31 +100,30 @@ const transition = (state: SelectionState, next: Selection): SelectionStep => {
 const decisionFor = (state: SelectionState, unitId: string, decision: Decision): SelectionStep =>
   unchanged({ ...state, selection: { kind: 'unit', unitId, decision } })
 
-const removeDecision = (state: SelectionState, unit: TargetingUnit, predicate: (stop: PlannedStop) => boolean): SelectionStep => {
-  const stops = unit.plan.flatMap((stop, index) => predicate(stop) ? [{ id: stop.id, label: stop.label, index: index + 1 }] : [])
-  if (!stops.length) return unchanged(state)
-  return decisionFor(state, unit.id, { kind: 'remove', stops, expectedPlan: planExpectation(unit.plan) })
+const removeDecision = (state: SelectionState, unit: TargetingUnit, stopId: string): SelectionStep => {
+  const index = unit.plan.findIndex(stop => stop.id === stopId)
+  if (index < 0) return unchanged(state)
+  return decisionFor(state, unit.id, { kind: 'remove', stop: { id: stopId, label: unit.plan[index]!.label, index: index + 1 }, expectedPlan: planExpectation(unit.plan) })
 }
 
 const targetStep = (state: SelectionState, target: Stop, unit: TargetingUnit | undefined, options: UnitOptions | null): SelectionStep => {
   if (!unit || !canTarget(unit)) return unchanged(state)
   const match = stopKey(target)
-  if (unit.plan.some(stop => stopKey(stop.target) === match)) return removeDecision(state, unit, stop => stopKey(stop.target) === match)
   const current = matchingOptions(unit, options)
-  if (current === null) return feedback(state, 'Reading targets. Try again in a moment.')
+  if (current === null) return feedback(state, dispatchWords.loadingTargets)
   const listed: Option | undefined = current.targets.find(entry => stopKey(entry.target) === match)
   if (!('point' in target) && listed === undefined) {
-    return feedback(state, current.refused.find(entry => stopKey(entry.target) === match)?.text ?? 'This target is not available.')
+    return feedback(state, current.refused.find(entry => stopKey(entry.target) === match)?.text ?? dispatchWords.targetUnavailable)
   }
   const assigned = current.plan.length > 0 || current.busy !== null
   const loaded = unit.carry?.load.some(entry => entry.count > 0) ?? false
   const replace = listed?.canReplace ?? (current.moveRefusal === undefined && !loaded && (!assigned || unit.plan[0]?.state === 'active'))
   const add = listed?.canAdd ?? assigned
   if (!assigned && !('point' in target)) {
-    if (!replace) return feedback(state, 'This target is not available.')
+    if (!replace) return feedback(state, dispatchWords.targetUnavailable)
     return { state, effects: [{ kind: 'submit', input: { units: [unit.id], stops: [target], expectedPlan: current.plan }, job: null }] }
   }
-  if (!assigned && !replace) return feedback(state, current.moveRefusal ?? 'This unit cannot move here.')
+  if (!assigned && !replace) return feedback(state, current.moveRefusal ?? dispatchWords.cannotMoveHere)
   return decisionFor(state, unit.id, {
     kind: 'order', target, expectedPlan: current.plan, job: current.busy, replace, add, assigned,
     currentLabel: unit.plan.find(stop => stop.state === 'active')?.label ?? null,
@@ -153,17 +155,16 @@ export const reduceSelection = (state: SelectionState, event: SelectionEvent, op
       }
     }
     case 'target-row': return selection.kind === 'unit' && selection.decision === undefined ? targetStep(state, event.target, selected, options) : unchanged(state)
-    case 'stop': return selection.kind === 'unit' && selection.decision === undefined && selected && canTarget(selected) ? removeDecision(state, selected, stop => stop.id === event.stopId) : unchanged(state)
+    case 'stop': return selection.kind === 'unit' && selection.decision === undefined && selected && canTarget(selected) ? removeDecision(state, selected, event.stopId) : unchanged(state)
     case 'decide': {
       if (selection.kind !== 'unit' || !selection.decision) return unchanged(state)
       const { unitId, decision } = selection
       const next: SelectionState = { ...state, selection: { kind: 'unit', unitId } }
       if (event.choice === 'cancel') return unchanged(next)
-      if (!selected || !canTarget(selected) || !samePlan(planExpectation(selected.plan), decision.expectedPlan)) return feedback(next, 'The plan changed. Pick the target again.')
+      if (!selected || !canTarget(selected) || !samePlan(planExpectation(selected.plan), decision.expectedPlan)) return feedback(next, dispatchWords.planChanged)
       if (decision.kind === 'remove') {
-        const choice = event.choice
-        if (typeof choice !== 'object' || !decision.stops.some(stop => stop.id === choice.remove)) return unchanged(state)
-        return { state: next, effects: [{ kind: 'remove', unitId, stopId: choice.remove, expectedPlan: decision.expectedPlan }] }
+        if (event.choice !== 'remove') return unchanged(state)
+        return { state: next, effects: [{ kind: 'remove', unitId, stopId: decision.stop.id, expectedPlan: decision.expectedPlan }] }
       }
       const add = event.choice === 'add'
       if ((event.choice !== 'replace' && !add) || (add ? !decision.add : !decision.replace)) return unchanged(state)
@@ -182,16 +183,6 @@ export const reduceSelection = (state: SelectionState, event: SelectionEvent, op
       ? unchanged({ ...state, selection: { kind: 'unit', unitId: selection.unitId } })
       : transition(state, none)
   }
-}
-
-/** Swap neighbouring queued stops only; the engine also validates the resulting order. */
-export const moveQueuedStop = (plan: PlanExpectation, stopId: string, direction: -1 | 1): string[] | null => {
-  const queued = plan.filter(step => step.state === 'queued').map(step => step.id)
-  const from = queued.indexOf(stopId)
-  const to = from + direction
-  if (from < 0 || to < 0 || to >= queued.length) return null
-  ;[queued[from], queued[to]] = [queued[to]!, queued[from]!]
-  return queued
 }
 
 export const activationActs = (quietFromMs: number | null, atMs: number): boolean => quietFromMs === null || atMs - quietFromMs >= doubleClickMs

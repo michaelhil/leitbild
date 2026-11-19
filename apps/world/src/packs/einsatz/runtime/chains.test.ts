@@ -49,37 +49,27 @@ const pointOf = (run: OpenRun, id: string) => run.object(id)?.spatial.position?.
 const healthy = (run: OpenRun) => expect(run.connection.health?.().map(entry => entry.state)).toEqual(['ready'])
 
 describe('Einsatz job chains on a running clock', () => {
-  test('plan edits use the observed stop order, and reordering the queue preserves the current leg', async () => {
+  test('plan edits use the observed stop order: an order or a removal against a plan that changed since is refused plan_changed', async () => {
     await withRun(async run => {
       const unitId = 'c1'
       const plan = async () => (await run.query<UnitOptions>(einsatzQueryIds.unitOptions, { unitId })).plan
       await accepted(run, ids.order, { units: [unitId], stops: [{ point: point(0.05) }], expectedPlan: [] })
-      await accepted(run, ids.order, {
-        units: [unitId], stops: [{ point: point(0.03) }, { point: point(0.04) }], when: 'after', expectedPlan: await plan(),
-      })
       const before = await plan()
-      const leg = run.unit(unitId).leg
-      expect(leg).toBeDefined()
-      expect((await run.refusal(ids.planReorder, {
-        unitId, expectedPlan: before, stopIds: ['step-2', 'step-1'],
-      })).code).toBe('invalid_stop_order')
-      await accepted(run, ids.planReorder, { unitId, expectedPlan: before, stopIds: ['step-3', 'step-2'] })
-      expect((await plan()).map(stop => stop.id)).toEqual(['step-1', 'step-3', 'step-2'])
-      expect(run.unit(unitId).leg).toEqual(leg)
+      await accepted(run, ids.order, {
+        units: [unitId], stops: [{ point: point(0.03) }, { point: point(0.04) }], when: 'after', expectedPlan: before,
+      })
+      expect((await plan()).map(stop => stop.id)).toEqual(['step-1', 'step-2', 'step-3'])
       expect((await run.refusal(ids.order, {
         units: [unitId], stops: [{ point: point(0.06) }], when: 'now', expectedPlan: before,
       })).code).toBe('plan_changed')
       expect((await run.refusal(ids.stopRemove, {
         unitId, stopId: 'step-2', expectedPlan: before,
       })).code).toBe('plan_changed')
-      expect((await run.refusal(ids.planReorder, {
-        unitId, expectedPlan: before, stopIds: ['step-2', 'step-3'],
-      })).code).toBe('plan_changed')
-      expect((await plan()).map(stop => stop.id)).toEqual(['step-1', 'step-3', 'step-2'])
+      expect((await plan()).map(stop => stop.id)).toEqual(['step-1', 'step-2', 'step-3'])
       await accepted(run, ids.order, {
         units: [unitId], stops: [{ point: point(0.06) }], when: 'now', expectedPlan: await plan(),
       })
-      expect((await plan()).map(stop => stop.id)).toEqual(['step-4', 'step-3', 'step-2'])
+      expect((await plan()).map(stop => stop.id)).toEqual(['step-4', 'step-2', 'step-3'])
       await accepted(run, ids.stopRemove, { unitId, stopId: 'step-3', expectedPlan: await plan() })
       expect((await plan()).map(stop => stop.id)).toEqual(['step-4', 'step-2'])
       healthy(run)
@@ -156,10 +146,6 @@ describe('Einsatz job chains on a running clock', () => {
       expect(await run.refusal(ids.order, { units: ['d1'], stops: [{ taskId: 'mid1' }], when: 'after' })).toEqual({ code: 'unit_loaded', reason: 'unit_loaded: D1 will have 1 person on board by then; add a delivery stop first' })
       await accepted(run, ids.order, { units: ['d1'], stops: [{ siteId: 's1' }], when: 'after' })
       await accepted(run, ids.order, { units: ['d1'], stops: [{ taskId: 'mid1' }], when: 'after' })
-      expect(steps(run, 'd1')).toEqual([['step-1', 'serve', 'active'], ['step-2', 'deliver', 'queued'], ['step-3', 'serve', 'queued']])
-      const options = await run.query<UnitOptions>(einsatzQueryIds.unitOptions, { unitId: 'd1' })
-      const reordered = await run.refusal(ids.planReorder, { unitId: 'd1', expectedPlan: options.plan, stopIds: ['step-3', 'step-2'] })
-      expect(reordered.code).toBe('unit_loaded')
       expect(steps(run, 'd1')).toEqual([['step-1', 'serve', 'active'], ['step-2', 'deliver', 'queued'], ['step-3', 'serve', 'queued']])
       run.forward(120_000)
       await run.settle()

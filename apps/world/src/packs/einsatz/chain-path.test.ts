@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'bun:test'
 import { packMapFeatureSchema } from '../../core/packs/protocol.ts'
 import type { IsoTimestamp } from '../../core/model/index.ts'
-import { plannedPaths, queuedPlanRoutesInputSchema, waypointItemId } from './chain-path.ts'
+import { plannedPaths, queuedPlanRoutesInputSchema, waypointFeatureId } from './chain-path.ts'
 import type { Intent } from './engine/intents.ts'
 import type { EngineState } from './engine/model.ts'
 import { engineObjects } from './engine/objects.ts'
@@ -77,7 +77,7 @@ describe('Einsatz job chain paths', () => {
     expect(await unavailable(state, visible, viewer, input)).toEqual({ features: [] })
   })
 
-  test('coordinate stops of the selected unit have red pins that select their exact plan entry', async () => {
+  test('coordinate stops of the selected unit have red pins that take no tap: a tap there is a point target, never a removal', async () => {
     const state = await runAll(emptyState(), [
       newUnit('c1', types.roadCarrier, at(0)),
       newUnit('c2', types.roadCarrier, at(-0.02)),
@@ -91,9 +91,10 @@ describe('Einsatz job chain paths', () => {
     }).filter(feature => feature.geometry.type === 'Point')
     expect(points()).toEqual([])
     expect(points('c1').map(feature => packMapFeatureSchema.parse(feature))).toMatchObject([
-      { geometry: at(0.01), color: '#a83f4d', selection: { panelId: 'einsatz.dispatch', itemId: waypointItemId('c1', 'step-1') } },
-      { geometry: at(0.02), color: '#a83f4d', selection: { panelId: 'einsatz.dispatch', itemId: waypointItemId('c1', 'step-2') } },
+      { id: waypointFeatureId('c1', 'step-1'), geometry: at(0.01), color: '#a83f4d' },
+      { id: waypointFeatureId('c1', 'step-2'), geometry: at(0.02), color: '#a83f4d' },
     ])
-    expect(points('c2').map(feature => feature.selection?.itemId)).toEqual([waypointItemId('c2', 'step-1')])
+    expect(points('c2').map(feature => feature.id)).toEqual([waypointFeatureId('c2', 'step-1')])
+    expect(points('c1').filter(feature => feature.selection !== undefined)).toEqual([])
   })
 })

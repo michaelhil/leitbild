@@ -15,6 +15,8 @@ import {
   ownReceipt,
   pinProposal,
   receiptsFromSituation,
+  receiptText,
+  receiptUndoable,
   stopLabelOf,
   toggledChip,
   withReceipts,
@@ -22,12 +24,11 @@ import {
   type OverviewView,
   type PinnedProposal,
   type Receipt,
+  type UndoRefusal,
 } from '../ui/presenters.ts'
 import {
   activationActs,
   initialSelection,
-  moveQueuedStop,
-  planExpectation,
   reduceSelection,
   selectionChangeEvent,
   stopObjectId,
@@ -78,8 +79,11 @@ export interface ScreenCall {
 /** A button of the selection block's card or of the footer, by what it does. */
 export type CardControl =
   | { readonly kind: 'recall' }
+  /** The unit card's "Undo last order". */
+  | { readonly kind: 'undo' }
+  /** The footer's Undo on the latest receipt, this screen's own order. */
+  | { readonly kind: 'receipt-undo' }
   | { readonly kind: 'remove-stop'; readonly stopId: string }
-  | { readonly kind: 'move-stop'; readonly stopId: string; readonly direction: -1 | 1 }
   | { readonly kind: 'target-row'; readonly objectId: string }
   /** The call card's Dispatch. */
   | { readonly kind: 'dispatch' }
@@ -158,6 +162,7 @@ export const openCardScreen = async (run: OpenRun, options: { readonly actor?: A
   let opened: ReadonlySet<string> = new Set()
   let lastSeenCall: SituationCall | null = null
   let receipts: ReadonlyArray<Receipt> = []
+  let undoRefusal: UndoRefusal | null = null
   let feedback: string | null = null
   let confirming: string | null = null
   let mapSelection: string | null = null
@@ -177,7 +182,7 @@ export const openCardScreen = async (run: OpenRun, options: { readonly actor?: A
     return current.kind === 'unit' ? shown().units.find(unit => unit.id === current.unitId) : undefined
   }
   const currentDecision = (): Decision | null => selection.selection.kind === 'unit' ? selection.selection.decision ?? null : null
-  const currentCard = (): CardView | null => cardFor(shown(), selection.selection, { options: unitOptions, pinned, opened, lastSeenCall, elapsedS: 0 })
+  const currentCard = (): CardView | null => cardFor(shown(), selection.selection, { options: unitOptions, pinned, opened, lastSeenCall, elapsedS: 0, undoRefusal })
   const currentLists = (): OverviewView => overview(shown(), selection.selection, opened, 0)
 
   const readSituation = async (): Promise<void> => {
@@ -220,19 +225,32 @@ export const openCardScreen = async (run: OpenRun, options: { readonly actor?: A
     }
   }
 
-  const command = async (run: () => Promise<CommandOutcome>, receipt: { readonly unitIds: ReadonlyArray<string>; readonly target: string; readonly dropped?: string | null } | null): Promise<void> => {
+  const command = async (run: () => Promise<CommandOutcome>, receipt: { readonly unitIds: ReadonlyArray<string>; readonly target: string; readonly dropped?: string | null; readonly undoable: boolean } | null): Promise<void> => {
     feedback = null
     const outcome = await outcomeOf(run)
     if (!outcome.ok) {
       feedback = outcome.text
       return
     }
-    if (receipt !== null) receipts = withReceipts(receipts, [ownReceipt({ commandId: outcome.commandId, unitIds: receipt.unitIds, unitLabel: receipt.unitIds.map(unitLabel).join(', '), targetLabel: receipt.target, dropped: receipt.dropped ?? null, atMs: wallMs })])
+    if (receipt !== null) receipts = withReceipts(receipts, [ownReceipt({ commandId: outcome.commandId, unitIds: receipt.unitIds, unitLabel: receipt.unitIds.map(unitLabel).join(', '), targetLabel: receipt.target, dropped: receipt.dropped ?? null, undoable: receipt.undoable, atMs: wallMs })])
   }
 
   const order = async (input: UnitOrderInput): Promise<void> => {
-    await command(async () => await client.order(input), { unitIds: input.units, target: input.stops.map(stopLabel).join(' → ') })
+    await command(async () => await client.order(input), { unitIds: input.units, target: input.stops.map(stopLabel).join(' → '), undoable: true })
   }
+
+  /** As the panel: each unit the command named, in turn; the engine's refusal stops there and is kept for that unit card's Undo. */
+  const undoEach = async (unitIds: ReadonlyArray<string>, commandId: string): Promise<CommandOutcome> => {
+    const [unitId, ...rest] = unitIds
+    if (unitId === undefined) throw new Error(`Undo of ${commandId} names no unit`)
+    const outcome = await client.undo(unitId, commandId)
+    if (!outcome.ok) {
+      undoRefusal = { unitId, commandId, text: outcome.text }
+      return outcome
+    }
+    return rest.length === 0 ? outcome : await undoEach(rest, commandId)
+  }
+  const undo = async (unitIds: ReadonlyArray<string>, commandId: string): Promise<void> => await command(async () => await undoEach(unitIds, commandId), null)
 
   const perform = async (effect: SelectionEffect): Promise<void> => {
     switch (effect.kind) {
@@ -255,6 +273,7 @@ export const openCardScreen = async (run: OpenRun, options: { readonly actor?: A
           unitIds: effect.input.units,
           target: stopLabel(effect.input.stops[0]!),
           dropped: effect.job === null ? null : jobText(effect.job),
+          undoable: true,
         })
         return
       case 'remove':
@@ -292,7 +311,9 @@ export const openCardScreen = async (run: OpenRun, options: { readonly actor?: A
     return { controller: selected !== null && targeting.isController(selected) ? selected : null, selectedObjectId: selected?.id ?? null, targeting, context, panel, closedMapTargetPanels: [], opensDisplay: () => false }
   }
 
+  /** As the panel: a map target in the double-click interval of a row tap or a command is that double-click's second half. */
   const onMapTarget = async (target: PackMapTarget): Promise<void> => {
+    if (!activationActs(quietFromMs, wallMs)) return
     if (target.kind === 'point') return await send({ kind: 'click', on: { kind: 'ground', point: target.point }, atMs: wallMs })
     const kind = kindOf(target.objectId)
     if (kind === null) return
@@ -342,24 +363,22 @@ export const openCardScreen = async (run: OpenRun, options: { readonly actor?: A
   const pressed = async (control: CardControl): Promise<void> => {
     const card = currentCard()
     if (control.kind === 'back') return await send({ kind: 'back' })
+    if (control.kind === 'receipt-undo') {
+      const latest = required(receipts[0], 'receipt')
+      if (!receiptUndoable(latest, wallMs)) throw new Error(`The latest receipt offers no Undo: ${receiptText(latest)}`)
+      return await undo(latest.unitIds, latest.commandId)
+    }
     if (card === null) throw new Error(`No card is open for ${control.kind}`)
     if (card.kind === 'unit') {
       const enabled = (button: { readonly enabled: boolean } | null, what: string): void => {
         if (button === null || !button.enabled) throw new Error(`${what} is not enabled on ${card.title}`)
       }
       switch (control.kind) {
-        case 'recall': enabled(card.recall, 'Return'); return await command(async () => await client.recall(card.id), { unitIds: [card.id], target: shown().words.return })
+        case 'recall': enabled(card.recall, 'Return'); return await command(async () => await client.recall(card.id), { unitIds: [card.id], target: shown().words.return, undoable: false })
+        case 'undo': enabled(card.undo, 'Undo'); return await undo([card.id], required(card.undo.commandId, 'command to undo'))
         case 'remove-stop': {
           required(card.removable ? card.plan.find(stop => stop.id === control.stopId) : null, `removable stop ${control.stopId}`)
           return await send({ kind: 'stop', stopId: control.stopId })
-        }
-        case 'move-stop': {
-          const stop = required(card.plan.find(entry => entry.id === control.stopId), `stop ${control.stopId}`)
-          const available = control.direction < 0 ? stop.canMoveUp : stop.canMoveDown
-          if (!available) throw new Error(`Stop ${control.stopId} cannot move in that direction`)
-          const expectedPlan = planExpectation(required(selectedUnit(), 'selected unit').plan)
-          const stopIds = required(moveQueuedStop(expectedPlan, control.stopId, control.direction), 'new stop order')
-          return await command(async () => await client.reorder(card.id, expectedPlan, stopIds), null)
         }
         case 'target-row': {
           const row = required(card.targets.find(entry => stopObjectId(entry.target) === control.objectId), `target row for ${control.objectId}`)

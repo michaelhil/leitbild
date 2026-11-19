@@ -200,7 +200,7 @@ export const einsatzPackView = {
       { id: trackIndexesCategory, label: 'Track indexes', emptyLabel: 'No track indexes', matches: object => typeOf(object) === 'track-index', rail: false },
     ],
     presentObject: (object, context) => presentEinsatzObject(object, context),
-    mapFeatures: context => plannedWaypointFeatures(context.objects, unitsCategory, einsatzDispatchPanelId, context.selectedObjectId),
+    mapFeatures: context => plannedWaypointFeatures(context.objects, unitsCategory, context.selectedObjectId),
     mapFeatureQueries: context => queuedPlanRoutesQuery(context.objects, context.selectedObjectId),
     mapFeaturesFollowSelection: true,
     mapFeatureLayers: ['routes'],

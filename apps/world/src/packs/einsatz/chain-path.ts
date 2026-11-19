@@ -111,14 +111,17 @@ export const queuedRouteFeature = (path: PlannedPath, segment: PlannedSegment, g
   summary: `${path.label} · next: ${segment.targetLabel ?? 'a map point'}`,
 })
 
-/** Stop IDs repeat across units, so a map selection names both records. */
-export const waypointItemId = (unitId: string, stopId: string): string => `einsatz-waypoint:${encodeURIComponent(unitId)}:${stopId}`
+/** Stop ids repeat across units, so a waypoint's feature id names both records. */
+export const waypointFeatureId = (unitId: string, stopId: string): string => `einsatz-waypoint:${encodeURIComponent(unitId)}:${stopId}`
 
-/** Draw a selectable pin where the selected unit's stop has no map object. */
+/**
+ * Draw a pin where the selected unit's stop has no map object. The pin takes
+ * no tap: a tap there is open ground, a point target for the selected unit.
+ * A stop is removed only with the × on its row in the unit card.
+ */
 export const plannedWaypointFeatures = (
   objects: ReadonlyArray<OperationalObject>,
   categoryId: string,
-  panelId: string,
   selectedId?: string,
 ): PackMapFeature[] => {
   if (selectedId === undefined) return []
@@ -128,14 +131,12 @@ export const plannedWaypointFeatures = (
   if (unit.integrity === 'destroyed') return []
   return unit.orders.flatMap((step, index) => {
     if (!('point' in step.target)) return []
-    const itemId = waypointItemId(object.id, step.id)
     return [{
-      id: itemId,
+      id: waypointFeatureId(object.id, step.id),
       categoryId,
       geometry: step.target.point,
       symbol: { icon: 'map-pin' },
       color: '#a83f4d',
-      selection: { panelId, itemId },
       summary: `${object.label} · Stop ${index + 1}`,
     }]
   })

@@ -164,7 +164,7 @@ describe('Einsatz coverage and eligibility', () => {
     expect(unitOf(state, 'g1').taskId).toBeUndefined()
     state = await run(state, send(['g1', 'g2'], { taskId: 'pair' }))
     expect(taskOf(state, 'pair').coverage.requirements[0]).toMatchObject({ enRoute: 2, completed: 0 })
-    expect((await refusalOf(state, send(['g3'], { taskId: 'pair' }))).reason).toBe('requirement_covered: PAIR needs nothing more that G3 provides')
+    expect((await refusalOf(state, send(['g3'], { taskId: 'pair' }))).reason).toBe('requirement_covered: PAIR needs nothing more than G3 provides')
     state = await advance(state, start + 120_000)
     expect(taskOf(state, 'pair')).toMatchObject({ served: { guard: 2 } })
     expect(taskOf(state, 'pair').closedAtMs).toBeDefined()
