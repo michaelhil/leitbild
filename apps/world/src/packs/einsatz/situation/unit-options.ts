@@ -1,5 +1,6 @@
 import { capabilityRejection } from '../../../simulation/capability-rejection.ts'
 import { etasFrom, turnoutFor, type TablePort } from '../eta.ts'
+import { loadAfter } from '../engine/chain.ts'
 import { planIntent } from '../engine/engine.ts'
 import { freeInS } from '../engine/estimates.ts'
 import type { EngineActor } from '../engine/intents.ts'
@@ -7,6 +8,7 @@ import { taskIn } from '../engine/draft.ts'
 import { motionOf, priorityOf, unitTypeOf, type EngineState } from '../engine/model.ts'
 import { isBusy } from '../engine/plan-order.ts'
 import { hasLoad, isDestroyed } from '../engine/rules.ts'
+import { total } from '../engine/values.ts'
 import { refusal, refusalCode } from '../refusal.ts'
 import type { StepTarget } from '../steps.ts'
 import { targetLabel } from '../engine/chain-steps.ts'
@@ -87,7 +89,8 @@ export const readUnitOptions = async (input: {
     }
     targets.push({
       target: entry.target,
-      verb: stopVerb(state, unit, stepKindFor(entry.target, hasLoad(unit)), entry.target),
+      // Only "after" takes it: the verb is the one the stop gets once the plan is done, as the engine queues it.
+      verb: stopVerb(state, unit, stepKindFor(entry.target, entry.replace.ok ? hasLoad(unit) : total(loadAfter(state, unit)) > 0), entry.target),
       label: targetLabel(state, entry.target),
       afterOnly: !entry.replace.ok,
       canReplace: entry.replace.ok,
