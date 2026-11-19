@@ -1329,6 +1329,13 @@ body.rail-resizing {
   cursor: default;
 }
 
+/* A screen's surface is the pane itself: it has no window edge to draw, round or lift, so its box is exactly its bounds. */
+.display-window.as-surface {
+  border: 0;
+  border-radius: 0;
+  box-shadow: none;
+}
+
 .display-window-title strong {
   min-width: 0;
   overflow: hidden;

@@ -88,6 +88,7 @@
   import { observedAssetsOf, packObserves, type DeckRunJoin, type DisplayWindowRequest, type DisplayWindowTarget } from '../process-display/display-deck.ts'
   import { displayWindowReadyMessage, readDisplayWindowHostMessage } from '../process-display/display-window-messages.ts'
   import { readRunAssistantOffer, requestRunAssistant } from '../run-assistant-messages.ts'
+  import { presentSurface, procedureWindowSurface, readSurfaceRoute, requestSurfacePlace, surfaceRouteQuery, type TitledSurface } from '../surface-route.ts'
   import { createProcedureSession, type ProcedureSession } from '../procedures/procedure-session.ts'
   import ProcedureInputRequests from '../procedures/ProcedureInputRequests.svelte'
   import { procedureInputViews, readProcedureInputTarget, resolveProcedureInputFocus, type ProcedureInputFocus, type ProcedureInputView } from '../procedures/procedure-input.ts'
@@ -116,6 +117,7 @@
     startupHasFailed,
     startupIsReady,
     startupModalShouldShow,
+    startupStepsAwaited,
     startStartupStep,
     type StartupStep,
     type StartupStepId,
@@ -266,7 +268,12 @@
   let surfacePanelOpen = $state<Record<string, boolean>>({})
   let guidancePreferences = $state<RunViewPreferences['guidance']>(initialRunViewPreferences().guidance)
   let timedCardRequested = $state(false)
-  const routeFocus = objectIdSchema.safeParse(new URLSearchParams(location.search).get('focus')).data ?? null
+  // A screen's surface (surface-route.ts): one window of this Run fills the pane. The one switch for all a surface page
+  // leaves out: the dock, the guidance briefing, the stored view preferences, the focus and planning-guide openings,
+  // and placing on another screen.
+  const surfaceRoute = readSurfaceRoute(location.search)
+  const surfaceMode = surfaceRoute.kind !== 'run'
+  const routeFocus = surfaceMode ? null : objectIdSchema.safeParse(new URLSearchParams(location.search).get('focus')).data ?? null
   const routeElement = idSchema.safeParse(new URLSearchParams(location.search).get('element')).data ?? null
   let focusedMapObjectId = $state<ObjectId | null>(null)
   let mapFocusRequested = false
@@ -443,10 +450,14 @@
   const systemStatusTone = $derived<StatusTone>(
     startupHasFailed(startupSteps) ? 'error' : startupIsReady(startupSteps) ? 'ready' : 'working',
   )
+  // A surface needs nothing from the base map: its startup neither waits for the map nor fails with it. The map
+  // still starts underneath and reports where it always does.
+  const startupAwaitsMap = $derived(mapVisible && !surfaceMode)
+  const awaitedStartupSteps = $derived(startupStepsAwaited(startupSteps, { map: !surfaceMode }))
   const startupModalVisible = $derived(rolePicker === null && (startupModalShouldShow({
     routeMode,
     dismissed: startupDismissed,
-    steps: startupSteps,
+    steps: awaitedStartupSteps,
   }) || startupStatusModalOpen))
   const runRoles = $derived(scenarioDefinition ? runRolesOf(scenarioDefinition) : null)
   // A surface panel plays the screen's role set; a role switch remounts it.
@@ -471,10 +482,6 @@
 
   const toggleTheme = (): void => {
     theme = toggleThemeMode()
-  }
-
-  const toggleWeatherLayer = (): void => {
-    weatherLayerVisible = !weatherLayerVisible
   }
 
   const setCategoryMapVisibility = (categoryId: string, visible: boolean): void => {
@@ -535,7 +542,7 @@
   })
 
   $effect(() => {
-    if (routeFocus !== null || planningGuideOpened || !planningDemoHref || !viewControls || !startupDismissed || foregroundProcedure) return
+    if (surfaceMode || routeFocus !== null || planningGuideOpened || !planningDemoHref || !viewControls || !startupDismissed || foregroundProcedure) return
     planningGuideOpened = true
     void viewControls.reveal('guide', false)
   })
@@ -613,7 +620,7 @@
   }
 
   const viewPanels = $derived<ReadonlyArray<RunViewChoice>>([
-    ...(activePhysicalLayoutBindings.length > 0 ? [{ id: 'layout-controls', label: 'Physical layout controls', visible: layoutControlsVisible }] : []),
+    ...(activePhysicalLayoutBindings.length > 0 ? [{ id: 'layout-controls', label: 'Layout controls', visible: layoutControlsVisible }] : []),
     // The open map-target panel stays while it arms an order, which it shows by its targeting (plan B.10: only in SA).
     ...surfacePanels.map(panel => ({ id: `panel:${panel.id}`, label: panel.label, visible: isSurfacePanelOpen(panel), ...(mapTargetPanelContribution?.id === panel.id && panelMapTargetings[panel.id] != null ? { disabledReason: 'Finish or cancel the armed order before hiding this panel' } : {}) })),
   ])
@@ -627,7 +634,6 @@
     { id: 'home', label: 'Home', ...(!mapReady ? { disabledReason: 'Map is not ready' } : {}) },
     { id: 'fit-selected', label: 'Fit selection', ...(!mapReady ? { disabledReason: 'Map is not ready' } : !fitSelectedTarget ? { disabledReason: 'Select an object with a map position' } : {}) },
     { id: 'fit-visible', label: 'Fit all visible', ...(!mapReady ? { disabledReason: 'Map is not ready' } : !objects.some(object => object.spatial.position !== undefined && !hiddenObjectCategoryIds.includes(presentationFor(object).categoryId)) ? { disabledReason: 'No visible object positions' } : {}) },
-    { id: 'north', label: 'North up', ...(!mapReady || !panelMapView ? { disabledReason: 'Map is not ready' } : {}) },
   ])
   const viewResetDisabledReason = $derived(viewPanels.find(panel => panel.disabledReason)?.disabledReason)
   const viewAlarmCount = $derived(alertRows(objects, object => ({ label: object.label, categoryId: presentationFor(object).categoryId })).filter(row => row.priority !== 'none' && unacknowledged(row)).length)
@@ -637,7 +643,7 @@
     try { writeRunViewPreferences(sessionStorage, key, { guidance: guidancePreferences, alarms: alarmStripVisible, layout: layoutControlsVisible, panels: surfacePanelOpen }) } catch { /* A denied storage getter must not prevent local presentation. */ }
   })
   const actOnView = (id: string): void => {
-    if (['home', 'fit-selected', 'fit-visible', 'north'].includes(id)) guidanceSession?.manualCamera()
+    if (['home', 'fit-selected', 'fit-visible'].includes(id)) guidanceSession?.manualCamera()
     if (id === 'home' && mapConfig) focusMapTarget(homeMapTarget(mapConfig))
     else if (id === 'fit-selected' && fitSelectedTarget) focusMapTarget(fitSelectedTarget)
     else if (id === 'fit-visible') {
@@ -645,7 +651,6 @@
       if (!target) throw new Error('No visible object positions')
       focusMapTarget(target)
     }
-    else if (id === 'north' && panelMapView) focusMapTarget({ kind: 'view', center: panelMapView.center, zoom: panelMapView.zoom, bearing: 0 })
     else throw new Error(`View action is unavailable: ${id}`)
   }
   const setViewChoice = (id: string, visible: boolean): void => {
@@ -1135,8 +1140,8 @@
 
   const completeReadyWhenReady = (): void => {
     if (!snapshotReady || !realtimeAttached) return
-    if (mapVisible && !mapReady) return
-    if (startupSteps.find(step => step.id === 'objects')?.status !== 'done' || startupHasFailed(startupSteps)) return
+    if (startupAwaitsMap && !mapReady) return
+    if (startupSteps.find(step => step.id === 'objects')?.status !== 'done' || startupHasFailed(awaitedStartupSteps)) return
     completeStep('ready')
     startupDismissed = true
     reportStartupDebug()
@@ -1145,11 +1150,11 @@
 
   const completeObjectsWhenReady = async (): Promise<void> => {
     if (!snapshotReady) return
-    if (mapVisible && !mapReady) return
+    if (startupAwaitsMap && !mapReady) return
     const generation = surfaceLoadGeneration
     startStep('objects')
     await tick()
-    if (generation !== surfaceLoadGeneration || !snapshotReady || (mapVisible && !mapReady)) return
+    if (generation !== surfaceLoadGeneration || !snapshotReady || (startupAwaitsMap && !mapReady)) return
     completeStep('objects')
     completeReadyWhenReady()
   }
@@ -1349,7 +1354,7 @@
     }),
   )
   const foregroundProcedure = $derived(Boolean(ProcedureSystemModal && simulationRunId && procedureSession && procedureSystemWindowModels.length))
-  const mapGuidanceVisible = $derived(guidanceOverlayVisible && !displayWindowOpen && !foregroundProcedure)
+  const mapGuidanceVisible = $derived(!surfaceMode && guidanceOverlayVisible && !displayWindowOpen && !foregroundProcedure)
   const visibleGuidanceBottom = $derived(mapGuidanceVisible ? guidanceBottom : 0)
   const timelineOutcome = $derived(scenarioState?.timeline?.executions?.filter(cue => cue.status !== 'complete')
     .map(cue => `${cue.cueId}: ${cue.status}; ${cue.actions.filter(action => action === 'accepted').length}/${cue.actions.length} accepted`).join(' · ') ?? '')
@@ -1424,6 +1429,41 @@
       },
     ]
     void loadProcedureSystemModal()
+  }
+
+  // The surface's window opens once the Run is joined, and again after a reset or a role change closed it; a surface
+  // this Run cannot show is said in the pane instead (surface-route.ts decides which).
+  const surfacePresentation = $derived(surfaceRoute.kind === 'run' || !startupDismissed || !snapshotReady || activePack === null || simulationRunId === null
+    ? null
+    : presentSurface(surfaceRoute, objectId => {
+        const object = objectById.get(objectId)
+        return object === undefined ? null : { label: object.label, hasOverview: observedAssetObjects.some(asset => asset.id === object.id), runsProcedures: procedureScopeForObject(object) !== null }
+      }))
+  const surfaceRefusal = $derived(surfacePresentation?.kind === 'refused' ? surfacePresentation.reason : null)
+  const surfaceOpens = $derived(surfacePresentation !== null && surfacePresentation.kind !== 'refused')
+  let surfaceProcedureWindowId = $state<string | null>(null)
+  $effect(() => {
+    void perspectiveEpoch
+    if (!surfaceOpens) return
+    untrack(() => {
+      const presentation = surfacePresentation
+      if (presentation === null || presentation.kind === 'refused') return
+      if (presentation.kind === 'display') {
+        requestDisplayWindow(presentation.target, false)
+        return
+      }
+      // The unit shown may have been changed inside the window: it stays the surface's window while it is open.
+      if (procedureSystemWindows.some(entry => entry.id === surfaceProcedureWindowId)) return
+      const object = objectById.get(presentation.objectId)
+      if (object === undefined) throw new Error('A procedures surface was presented for an object the Run does not hold')
+      openProcedureWindowAt(object)
+      surfaceProcedureWindowId = procedureSystemWindows.find(entry => entry.objectId === object.id)?.id ?? null
+    })
+  })
+
+  const placeOnScreen = (placed: TitledSurface): void => {
+    if (displayWindowRunId === null) throw new Error('A surface was placed before the page knew its Run')
+    requestSurfacePlace({ workspaceId: activeWorkspaceId(), simulationRunId: displayWindowRunId }, placed, { parent: window.parent, origin: location.origin })
   }
 
   const procedureInputRequests = $derived(simulationRunId === null ? [] : procedureInputViews(
@@ -1969,7 +2009,7 @@
     const route = activeRoute()
     if (route.mode !== 'simulation-run') throw new Error('simulation run route expected')
     if (location.pathname !== route.canonicalPath) {
-      const search = routeFocus === null ? '' : new URLSearchParams({ focus: routeFocus }).toString()
+      const search = new URLSearchParams({ ...(routeFocus === null ? {} : { focus: routeFocus }), ...surfaceRouteQuery(surfaceRoute) }).toString()
       history.replaceState(null, '', `${route.canonicalPath}${searchWithRoleSet(search, roleSetFromSearch(location.search))}`)
     }
     return route.simulationRunId
@@ -2148,6 +2188,7 @@
     if (window.self === window.top) {
       const search = new URLSearchParams({ world: route.simulationRunId })
       if (routeFocus !== null) search.set('focus', routeFocus)
+      for (const [name, value] of Object.entries(surfaceRouteQuery(surfaceRoute))) search.set(name, value)
       window.location.replace(`/workspaces/${encodeURIComponent(route.workspaceId)}?${search}`)
       return () => {
         cleanupInternalDiagnosticsGlobal()
@@ -2160,9 +2201,10 @@
     // Before any awaited startup: the Host may relay displays as soon as this page listens.
     displayWindowRunId = route.simulationRunId
     const workspaceId = route.workspaceId
-    const key = runViewPreferencesKey(workspaceId, route.simulationRunId)
+    // A surface page neither reads nor writes them: a window opened from another starts with a copy of its opener's session storage.
+    const key = surfaceMode ? null : runViewPreferencesKey(workspaceId, route.simulationRunId)
     let preferences = initialRunViewPreferences()
-    try { preferences = readRunViewPreferences(sessionStorage, key) } catch { /* Storage can be denied. */ }
+    if (key !== null) try { preferences = readRunViewPreferences(sessionStorage, key) } catch { /* Storage can be denied. */ }
     guidancePreferences = preferences.guidance
     alarmStripVisible = preferences.alarms
     layoutControlsVisible = preferences.layout
@@ -2423,6 +2465,7 @@
       {#if activePack && alarmStripVisible && !foregroundProcedure}
         <AlertStrip onClose={() => { alarmStripVisible = false; document.getElementById('run-alarms-trigger')?.focus({ preventScroll: true }) }} {objects} categoryOf={object => presentationFor(object).categoryId} openDisplay={openStripDisplay} {theme} raised={displayWindowOpen} onBounds={setAlarmStripBounds} belowRoles={Boolean(runRoles && heldRoleIds)} railWidth={railVisible ? railLayout.width : 0} clear={{ left: mapCameraPadding.left, right: mapCameraPadding.right, top: visibleGuidanceBottom }} />
       {/if}
+      {#if !surfaceMode}
       <RunViewControls bind:this={viewControls} camera={viewCamera} layers={viewLayers} panels={viewPanels} act={actOnView} toggle={setViewChoice}
         reset={resetLocalView} resetDisabledReason={viewResetDisabledReason} alarms={viewAlarmCount} alarmsVisible={alarmStripVisible} showAlarms={visible => alarmStripVisible = visible}
         guidance={{ available: Boolean(scenarioState?.guidance), visible: mapGuidanceVisible, unread: guidanceUnread, instruction: scenarioState?.guidance ?? null }} setGuidance={mode => { timedCardRequested = mode === 'running'; setGuidanceMode(mode) }}
@@ -2432,6 +2475,7 @@
           <GuidePanel screen={guidanceScreen} session={guidanceSession} {planningDemoHref} explore={() => { guidanceSession?.explore(); viewControls?.dismiss() }} />
         {/snippet}
       </RunViewControls>
+      {/if}
       {#if timelineOutcome && dismissedTimelineOutcome !== timelineOutcome && !foregroundProcedure && !displayWindowOpen}
         <div class="timeline-outcome">
           <span role="status">Scenario cue actions are incomplete or uncertain. {timelineOutcome}</span>
@@ -2470,6 +2514,10 @@
     {/key}
     {/if}
   </div>
+{/if}
+
+{#if surfaceRefusal !== null}
+  <div class="surface-refusal" role="alert"><p>{surfaceRefusal}</p></div>
 {/if}
 
 {#if DroneControlModal && simulationRunId}
@@ -2516,6 +2564,8 @@
     focusMap={focusMapTarget}
     close={closeDisplayWindow}
     planningDemoHref={routeFocus === null ? null : planningDemoHref}
+    asSurface={surfaceRoute.kind === 'surface' && surfaceRoute.surface.kind !== 'procedures'}
+    placeOnScreen={surfaceMode ? null : placeOnScreen}
   />
 {/if}
 
@@ -2547,6 +2597,8 @@
       inputFocus={windowEntry.inputFocus}
       selectUnit={(objectId: ObjectId) => retargetProcedureSystem(windowEntry.id, objectId)}
       openDisplay={(listing) => requestDisplayWindow({ kind: 'listing', listing }, true)}
+      asSurface={windowEntry.id === surfaceProcedureWindowId}
+      placeOnScreen={surfaceMode ? undefined : () => placeOnScreen(procedureWindowSurface({ objectId: windowEntry.object.id, label: windowEntry.object.label }))}
       close={() => closeProcedureSystem(windowEntry.id)}
     />
   {/each}
@@ -2599,12 +2651,9 @@
 {#if settingsModalOpen && SettingsModal}
   <SettingsModal
     {theme}
-    weatherLayerAvailable={mapConfig?.layers.includes('weather') ?? false}
-    {weatherLayerVisible}
     close={closeSettings}
     {goToStartPage}
     {toggleTheme}
-    {toggleWeatherLayer}
     resetScenario={controllerControls ? resetScenario : null}
   />
 {/if}
@@ -2616,5 +2665,8 @@
   .presentation-panel-host { position: absolute; inset: 0; pointer-events: none; }
   :global(:where(.presentation-panel-host) > :where(*)) { pointer-events: auto; }
   :global(.world-presentation-target) { outline: 3px solid var(--accent) !important; outline-offset: 3px; }
+  /* A surface this Run cannot show, said over the whole pane: above the map and its chrome, below the dialogs and windows. */
+  .surface-refusal { position: fixed; inset: 0; z-index: 39; display: grid; place-items: center; padding: 24px; background: var(--panel); color: var(--text); }
+  .surface-refusal p { max-width: 56ch; margin: 0; font-size: 18px; line-height: 1.45; text-align: center; overflow-wrap: anywhere; }
 
 </style>

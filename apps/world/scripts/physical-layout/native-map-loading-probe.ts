@@ -29,7 +29,7 @@ const evaluate = async (expression: string) => { const response = await call('Ru
 const W = `document.querySelector('iframe[src*="/world/runs/"]').contentWindow`
 const world = (body: string) => evaluate(`(()=>{const w=${W},d=w.document,q=w.__nativeMapLoadingProof;${body}})()`)
 const until = async (body: string, label: string) => { const started = performance.now(); while (performance.now() - started < 45000) { if (await world(body)) return; await Bun.sleep(50) }; throw Error(`Timed out: ${label}`) }
-const selected = `{mode:d.querySelector('.modes button[aria-pressed=true]')?.textContent.trim()==='3D'?'3d':'2d',levelId:d.querySelector('select[aria-label="Layout level"]')?.value}`
+const selected = `{mode:d.querySelector('.view-mode-control')?.getAttribute('aria-pressed')==='true'?'3d':'2d',levelId:d.querySelector('select[aria-label="Layout level"]')?.value}`
 const actions: any[] = [], gc: any[] = []
 const action = async (name: string, setup: string, dispatch: string, expected = selected, surface = 'maplibregl-canvas') => {
   const value = await world(`${setup};q.begin(${JSON.stringify(name)},${expected},${JSON.stringify(surface)});${dispatch};return q.current.promise`)
@@ -38,6 +38,7 @@ const action = async (name: string, setup: string, dispatch: string, expected = 
   actions.push(value); await writeFile(join(folder, 'partial.json'), JSON.stringify({ actions, gc }, null, 2)); console.log(name, JSON.stringify({ milestone:value.milestone, firstDrawMs:value.actionToFirstDrawMs, allSourceDrawMs:value.actionToAllRequiredSourcesFirstDrawMs, gpuCompleteMs:value.actionToGpuCompletedMs, firstInkMs:value.actionToFirstInkMs, paintOpportunityMs:value.actionToPaintOpportunityMs, prepares:value.jobs.filter((job:any)=>job.kind==='prepare').length, expected:value.expected }))
 }
 const button = async (label: string, name: string, expected = selected, surface = 'maplibregl-canvas') => action(name, `const b=[...d.querySelectorAll('button')].find(b=>b.textContent.trim()===${JSON.stringify(label)}&&b.getBoundingClientRect().width>0);if(!b)throw Error('Missing button '+${JSON.stringify(label)})`, 'b.click()', expected, surface)
+const mode = async (next: '2d' | '3d', name: string, expected = selected, surface = 'maplibregl-canvas') => action(name, `const b=d.querySelector('.view-mode-control');if(!b)throw Error('Missing 3D switch');if((b.getAttribute('aria-pressed')==='true')===${next === '3d'})throw Error('3D switch already shows '+${JSON.stringify(next)})`, 'b.click()', expected, surface)
 const floor = (label: string, name: string) => action(name, `const input=d.querySelector('select[aria-label="Layout level"]'),option=[...input.options].find(o=>o.text.toLowerCase().includes(${JSON.stringify(label.toLowerCase())}));if(!option)throw Error('Missing floor '+${JSON.stringify(label)})`, `input.value=option.value;input.dispatchEvent(new w.Event('change',{bubbles:true}))`, `{...${selected},levelId:option.value}`)
 const collect = async (name: string) => { const before = await world('return {jobs:q.jobs.length,sources:q.sources.length,at:w.performance.now()}'); await call('HeapProfiler.collectGarbage'); await world('return new Promise(resolve=>w.requestAnimationFrame(resolve))'); gc.push({ name, before, after: await world('return {jobs:q.jobs.length,sources:q.sources.length,at:w.performance.now()}') }) }
 const scope = async () => {
@@ -48,9 +49,9 @@ const scope = async () => {
   await action('first-turbine-hall-focus', `const b=[...d.querySelectorAll('.scopes button[title]')].find(b=>b.title===${JSON.stringify(path)})`, 'b.click()')
 }
 const cutaway = async (enabled: boolean, name: string) => {
-  await world(`const b=[...d.querySelectorAll('button')].find(b=>b.textContent.trim()==='View');b.click()`)
+  await world(`const b=[...d.querySelectorAll('button')].find(b=>b.textContent.trim()==='Options');b.click()`)
   await action(name, `const input=[...d.querySelectorAll('.settings label')].find(l=>l.textContent.includes('Inspection cutaway')).querySelector('input');if(input.checked===${enabled})throw Error('Cutaway action would be a no-op')`, 'input.click()', `{...${selected},cutaway:${enabled}}`)
-  await world(`const b=[...d.querySelectorAll('button')].find(b=>b.textContent.trim()==='View');b.click()`)
+  await world(`const b=[...d.querySelectorAll('button')].find(b=>b.textContent.trim()==='Options');b.click()`)
 }
 try {
   let port = 0
@@ -66,7 +67,7 @@ try {
   const startup=await evaluate(`(${nativeMapStartup.toString()})(true)`)
   const mounted = { navigationToControlsMs: performance.now() - navigationStarted, world: await world('return {at:w.performance.now(),pending:q.pending,jobs:q.jobs.length,sources:q.sources.length}') }
   await world(`d.querySelector('button[aria-label="Close grid overview panel"]')?.click()`)
-  await world(`q.begin('cold-native-full-site-3d',{mode:'3d',levelId:'all',readyCount:5,sourceInstances:[1,4]},'maplibregl-canvas');const b=[...d.querySelectorAll('button')].find(b=>b.textContent.trim()==='3D');b.click();d.querySelector('.explorer-controls .scope').click()`)
+  await world(`q.begin('cold-native-full-site-3d',{mode:'3d',levelId:'all',readyCount:5,sourceInstances:[1,4]},'maplibregl-canvas');const b=d.querySelector('.view-mode-control');if(b.getAttribute('aria-pressed')!=='true')b.click();d.querySelector('.explorer-controls .scope').click()`)
   await until(`return [...d.querySelectorAll('.scopes button')].some(b=>b.textContent.trim()==='All available layouts')`,'native full-site action')
   await world(`[...d.querySelectorAll('.scopes button')].find(b=>b.textContent.trim()==='All available layouts').click()`)
   const cold=await world('return q.current.promise');if(cold.pending||cold.glError||cold.sourceDraws.length!==2||cold.actionToGpuCompletedMs<cold.actionToAllRequiredSourcesFirstDrawMs)throw Error('Invalid all-family cold completion');actions.push(cold)
@@ -77,11 +78,11 @@ try {
   await collect('before-operating-return'); await floor('Turbine and main control', 'gc-return-operating-3d')
   await collect('before-stack-return'); await floor('Stack', 'gc-return-stack-3d')
   await cutaway(false, 'first-uncut-stack'); await collect('before-cutaway-return'); await cutaway(true, 'gc-return-cutaway-stack')
-  await button('Plan', 'first-plan', `{mode:'2d'}`)
+  await mode('2d', 'first-plan', `{mode:'2d'}`)
   await floor('Turbine and main control', 'first-plan-operating')
   await floor('Lower', 'first-plan-lower')
   await collect('before-plan-return'); await floor('Turbine and main control', 'gc-return-plan-operating')
-  await button('3D', 'return-3d-operating', `{mode:'3d',levelId:'operating'}`)
+  await mode('3d', 'return-3d-operating', `{mode:'3d',levelId:'operating'}`)
   const shot = await call('Page.captureScreenshot', { format: 'png' }); await writeFile(join(folder, 'final-native-map.png'), Buffer.from(shot.data, 'base64'))
   const observer = await world('return {sources:q.sources,jobs:q.jobs,draws:q.draws,uploads:q.uploads,errors:q.errors,pending:q.pending,overheadMs:q.overheadMs,userAgent:w.navigator.userAgent,timeOrigin:w.performance.timeOrigin}'), source = Bun.spawnSync(['git', 'rev-parse', 'HEAD'], { cwd: repository }).stdout.toString().trim()
   for (const item of network.values()) { item.startedWorldMs=item.wallTime*1000-observer.timeOrigin; item.phase=[...actions].reverse().find((action:any)=>item.startedWorldMs>=action.started)?.name??'navigation'; item.responseMs=item.response===undefined?null:(item.response-item.start)*1000 }

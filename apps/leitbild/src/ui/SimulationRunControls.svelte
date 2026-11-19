@@ -3,7 +3,7 @@
   import type { ModuleCapabilityDescriptor, ModuleResourceDescriptor } from '@leitbild/contracts'
   import ConfirmDialog from './ConfirmDialog.svelte'
   import Icon from './Icon.svelte'
-  import MoreMenu from './MoreMenu.svelte'
+  import MoreMenu, { type MoreMenuItem } from './MoreMenu.svelte'
   import { jsonRequest, request } from './api.ts'
   import { catalogDeleteBody, catalogDeleteItem, catalogNoun, createCatalogRemover, type CatalogDeleteItem } from './catalog-delete.ts'
   import { createRecoverableError } from './recoverable-error.ts'
@@ -56,9 +56,11 @@
     readonly reportError: (message: string) => void
     /** Takes back an error reported here once its cause is gone, where the page still shows it. */
     readonly retractError: (message: string) => void
+    /** The page's own entries for the More menu, shown before Delete. */
+    readonly moreItems?: ReadonlyArray<MoreMenuItem>
   }
 
-  let { workspaceId, resource, resources, capabilities, onSwitch, onClose, refreshResources, reportError, retractError }: Props = $props()
+  let { workspaceId, resource, resources, capabilities, onSwitch, onClose, refreshResources, reportError, retractError, moreItems = [] }: Props = $props()
   let execution = $state<ExecutionState | null>(null)
   let actionBusy = $state(false)
   let actionError = $state('')
@@ -373,6 +375,7 @@
     { label: 'Copy this Run', disabled: actionBusy || !capabilityAvailable('world.simulation-run.copy'), onselect: openCopyDialog },
     { label: execution?.pace === 'maximum' ? 'Switch to realtime pace' : 'Run at maximum pace', title: execution?.pace === 'maximum' ? 'Resume realtime pace' : execution?.maximumPace.available === false ? execution.maximumPace.reason ?? 'Maximum pace unavailable' : 'Run continuously as fast as the simulation allows', disabled: !execution || actionBusy || !capabilityAvailable('world.simulation-run.execution.set') || !execution.maximumPace.available && execution.pace !== 'maximum', onselect: togglePace },
     { label: 'AI restrictions for this Run', disabled: restrictionBusy || !capabilityAvailable('world.simulation-run.agent-restrictions.read') || !capabilityAvailable('world.simulation-run.agent-restrictions.set'), onselect: openRestrictions },
+    ...moreItems,
     { label: 'Delete this Run', danger: true, disabled: deletableRun(resource) === null, onselect: () => askDelete(resource) },
   ]} /></div>
 </div>

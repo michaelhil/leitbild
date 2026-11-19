@@ -25,6 +25,7 @@ const W = `document.querySelector('iframe[src*="/world/runs/"]').contentWindow`
 const inWorld = (body: string) => evaluate(`(()=>{const w=${W},d=w.document.querySelector('.layout-browser')??w.document;${body}})()`)
 const until = async (body: string, label: string) => { const start = Date.now(); while (Date.now() - start < 45000) { if (await inWorld(body)) return; await Bun.sleep(100) } throw Error(`Timed out: ${label}: ${await inWorld('return w.document.body.innerText.slice(-2500)')}`) }
 const button = (label: string) => inWorld(`const b=[...d.querySelectorAll('button')].find(b=>b.textContent.trim()===${JSON.stringify(label)} && b.getBoundingClientRect().width>0);if(!b)throw Error(${JSON.stringify('Missing button '+label)});b.click()`)
+const mode = (next: '2d' | '3d') => inWorld(`const b=d.querySelector('.view-mode-control');if(!b)throw Error('Missing 3D switch');if((b.getAttribute('aria-pressed')==='true')!==${next==='3d'})b.click()`)
 const scope = async (path: string, search: string) => {
   await inWorld(`d.querySelector('.explorer-controls .scope').click()`)
   await inWorld(`const input=d.querySelector('.scopes input[type=search]');input.value=${JSON.stringify(search)};input.dispatchEvent(new w.Event('input',{bubbles:true}))`)
@@ -77,16 +78,16 @@ try {
       const value = { name, wallMs: Date.now()-start, ...await stats(), responses: await inWorld(`return w.__productProof.responses.slice(${before})`) }
       transitions.push(value); console.log(name,JSON.stringify(value))
     }
-    await transition('initial-site-3d',()=>button('3D'))
+    await transition('initial-site-3d',()=>mode('3d'))
     await transition('first-room-focus',()=>scope('Halden Unit 1 full plant / PWR unit / Turbine hall','Turbine hall'))
     await transition('first-operating-floor',()=>floor('Turbine and main control'))
     await transition('first-stack-all-floors',()=>floor('Stack'))
     await transition('return-operating-floor',()=>floor('Turbine and main control'))
     await transition('return-stack-all-floors',()=>floor('Stack'))
     await transition('first-uncut-stack',async()=>{
-      await button('View')
+      await button('Options')
       await inWorld(`const label=[...d.querySelectorAll('.settings label')].find(l=>l.textContent.includes('Inspection cutaway'));label.querySelector('input').click()`)
-      await button('View')
+      await button('Options')
     })
     await screenshot('product-cold-stack.png')
     const result={source:(await new Response(Bun.spawn(['git','rev-parse','HEAD'],{cwd:repository,stdout:'pipe'}).stdout).text()).trim(),run:info,cold,initial:phases[0],transitions,messages:await inWorld('return w.__productProof.messages'),responses:await inWorld('return w.__productProof.responses'),pending:await inWorld('return w.__productProof.pending'),exceptions:events.filter(e=>e.method==='Runtime.exceptionThrown').map(e=>e.params.exceptionDetails),limits:['Real built product, fresh isolated Chrome profile and paused local Run; no production Run changes.','Worker timings include queueing and response transfer; transition wall time includes the existing test helper polling/UI waits, not isolated geometry CPU.','One Apple M2, DPR1, local services and read-only HTTPS vector assets; not WAN or constrained-device qualification.']}
@@ -99,13 +100,13 @@ try {
   await scope('Halden Unit 1 full plant / PWR unit / Turbine hall','Turbine hall');await floor('Turbine and main control');await button('Home');await Bun.sleep(800)
   await screenshot('product-browser-turbine.png');await movement('browser-room-paused','.layout-canvas')
   await execution('playing');await Bun.sleep(1500);await movement('browser-room-playing','.layout-canvas');await execution('paused')
-  await button('Plan');await Bun.sleep(800);await screenshot('product-browser-plan.png');await movement('browser-plan-paused','.layout-canvas',null)
+  await mode('2d');await Bun.sleep(800);await screenshot('product-browser-plan.png');await movement('browser-plan-paused','.layout-canvas',null)
   await execution('playing');await Bun.sleep(1000);await movement('browser-plan-playing','.layout-canvas',null);await execution('paused')
-  await button('Back to map');await scope('Halden Unit 1 full plant / PWR unit / Turbine hall','Turbine hall');await button('3D');await floor('Turbine and main control');await button('Home');await Bun.sleep(1000)
+  await button('Back to map');await scope('Halden Unit 1 full plant / PWR unit / Turbine hall','Turbine hall');await mode('3d');await floor('Turbine and main control');await button('Home');await Bun.sleep(1000)
   await screenshot('product-map-turbine.png');if(traceMap)await call('Tracing.start',{categories:'devtools.timeline,v8,disabled-by-default-v8.cpu_profiler',transferMode:'ReturnAsStream'});await movement('map-room-paused','.maplibregl-canvas')
   if(traceMap){await call('Tracing.end');while(!events.some(e=>e.method==='Tracing.tracingComplete'))await Bun.sleep(50);const stream=events.find(e=>e.method==='Tracing.tracingComplete')!.params.stream;let data='';for(;;){const chunk=await call('IO.read',{handle:stream});data+=chunk.data;if(chunk.eof)break}await call('IO.close',{handle:stream});await writeFile(join(folder,'product-map-trace.json'),data)}
   await execution('playing');await Bun.sleep(1500);await movement('map-room-playing','.maplibregl-canvas');await execution('paused')
-  await button('Plan');await Bun.sleep(800);await screenshot('product-map-plan.png');await movement('map-plan-paused','.maplibregl-canvas',null);await button('3D');await Bun.sleep(500)
+  await mode('2d');await Bun.sleep(800);await screenshot('product-map-plan.png');await movement('map-plan-paused','.maplibregl-canvas',null);await mode('3d');await Bun.sleep(500)
   await button('Open layout browser');await until(`return d.querySelector('select[aria-label="Layout level"]')?.selectedOptions[0]?.text.includes('Turbine and main control')`,'entry preserves floor')
   await screenshot('product-browser-entry-preserves.png')
   await call('Emulation.setDeviceMetricsOverride',{width:319,height:827,deviceScaleFactor:1,mobile:false});await Bun.sleep(800);await button('Home');await Bun.sleep(500);await screenshot('product-browser-narrow.png')

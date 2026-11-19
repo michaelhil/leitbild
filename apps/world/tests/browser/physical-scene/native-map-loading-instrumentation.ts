@@ -119,8 +119,8 @@
   const planCandidate = () => {
     const current=q.current
     if(!current||current.finished||current.expected.mode!=='2d')return null
-    const selected=document.querySelector<HTMLSelectElement>('select[aria-label="Layout level"]'),mode=document.querySelector('.modes button[aria-pressed=true]')?.textContent?.trim()
-    if(mode!=='Plan'||(current.expected.levelId&&selected?.value!==current.expected.levelId))return null
+    const selected=document.querySelector<HTMLSelectElement>('select[aria-label="Layout level"]'),planShown=document.querySelector('.view-mode-control')?.getAttribute('aria-pressed')==='false'
+    if(!planShown||(current.expected.levelId&&selected?.value!==current.expected.levelId))return null
     const prepared=[...q.prepared.values()].filter((value:any)=>matches(value.key,current.expected)&&(!current.expected.sourceKey||value.sourceKey===current.expected.sourceKey))
     if((window as any).__nativeLoadingConfiguration?.planInkOnly){
       const drawings=q.sources.filter((source:any)=>source.ok&&source.planLevels.some((floor:any)=>(!current.expected.levelId||floor.levelId===current.expected.levelId)&&floor.primitives>0))
