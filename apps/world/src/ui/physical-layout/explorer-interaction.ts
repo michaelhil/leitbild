@@ -1,4 +1,5 @@
-import type { PhysicalScenePresentation } from '../map/physical-scene/types.ts'
+import type { PhysicalScenePresentation, PhysicalSceneView } from '../map/physical-scene/types.ts'
+import type { ViewModeControlInput } from '../map/view-mode-control.ts'
 
 /** Event ownership comes from the actual composed DOM path, including shadow hosts. */
 export const physicalExplorerKeyboardRoute = (input: {
@@ -35,3 +36,14 @@ export const physicalExplorerOperationalCapture = (input: {
   readonly targetPicking: boolean
   readonly controllerSelected: boolean
 }): boolean => input.placement || input.targetPicking || input.controllerSelected
+
+/**
+ * What the map's 3D switch shows. Every layout shares one representation, so
+ * the focused layout's mode stands for all; null means no layout is on the map.
+ * The switch waits, and says why, while it could not act.
+ */
+export const physicalExplorerViewModeInput = (input: {
+  readonly mode: PhysicalSceneView['mode'] | null
+  readonly suspended: boolean
+}): ViewModeControlInput => input.mode === null ? { mode: '2d', disabledReason: 'No physical layout is shown on this map' }
+  : { mode: input.mode, disabledReason: input.suspended ? 'Plan and 3D wait while an object is being placed or directed on the map' : null }

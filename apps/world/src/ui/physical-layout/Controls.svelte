@@ -65,11 +65,10 @@
  <div class="toolbar" data-layout-camera-cover>
   <div class="scope-row">
     <button class="scope" type="button" title={path} aria-label={`Choose physical scope: ${path}`} aria-expanded={scopeOpen} onclick={() => { scopeOpen = !scopeOpen; viewOpen = false; floorsOpen = false }}><strong>{title}</strong><span>{scopeKey === null ? 'All admitted layouts' : path} ▾</span></button>
-    <div class="modes" role="group" aria-label="Layout representation"><button type="button" aria-pressed={view.mode === '2d'} onclick={() => change({ mode: '2d' })}>Plan</button><button type="button" aria-pressed={view.mode === '3d'} onclick={() => change({ mode: '3d' })}>3D</button></div>
   </div>
   {#if levels.length > 0}<label class="floor-row primary-floor"><span>Floor</span><select aria-label="Layout level" value={view.levelId} onchange={event => changeFloor(event.currentTarget.value)}>{#each levels as level (level.id)}<option value={level.id}>{levelLabel(level)}</option>{/each}{#if view.mode === '3d'}<option value="all">Stack · all floors</option>{/if}</select></label>
   {:else if floorGroups.length > 0}<button class="floors-toggle" type="button" aria-expanded={floorsOpen} onclick={() => { floorsOpen = !floorsOpen; scopeOpen = false; viewOpen = false }}>Floors <span>· {floorGroups.length} {floorGroups.length === 1 ? 'model' : 'models'} ▾</span></button>{/if}
-  <div class="action-row"><button type="button" onclick={() => { scopeOpen = false; viewOpen = false; floorsOpen = false; onfind() }}>Find</button><button type="button" onclick={() => { scopeOpen = false; viewOpen = false; floorsOpen = false; onfit() }}>Fit</button><button type="button" aria-expanded={viewOpen} onclick={() => { viewOpen = !viewOpen; scopeOpen = false; floorsOpen = false }}>View</button>{#if onclose}<button class="close" type="button" aria-label="Close layout controls" onclick={onclose}>×</button>{/if}</div>
+  <div class="action-row"><button type="button" onclick={() => { scopeOpen = false; viewOpen = false; floorsOpen = false; onfind() }}>Find</button><button type="button" onclick={() => { scopeOpen = false; viewOpen = false; floorsOpen = false; onfit() }}>Fit</button><button type="button" aria-expanded={viewOpen} onclick={() => { viewOpen = !viewOpen; scopeOpen = false; floorsOpen = false }}>Options</button>{#if onclose}<button class="close" type="button" aria-label="Close layout controls" onclick={onclose}>×</button>{/if}</div>
  </div>
   {#if floorsOpen && floorGroups.length > 0}<section data-layout-camera-cover class="sheet collection-floors" aria-label="Floors by physical model"><header><strong>Floors by model</strong><button type="button" aria-label="Close floor choices" onclick={() => floorsOpen = false}>×</button></header>{#each floorGroups as group (group.key)}<label class="floor-row collection-floor" title={group.memberLabels.join(', ')}><span>{group.label}<small>{group.scenes.length} {group.scenes.length === 1 ? 'layout' : 'layouts'} · {group.memberLabels.join(', ')}</small></span><select aria-label={`Layout level: ${group.label} · ${group.memberLabels.join(', ')}`} value={group.levelId ?? ''} onchange={event => { floorsOpen = false; onfloorchange?.(group.key, event.currentTarget.value) }}>{#if group.levelId === null}<option value="" disabled>Mixed floors</option>{/if}{#each group.levels as level (level.id)}<option value={level.id}>{levelLabel(level)}</option>{/each}{#if view.mode === '3d'}<option value="all">Stack · all floors</option>{/if}</select></label>{/each}</section>{/if}
   {#if scopeOpen}
@@ -85,7 +84,7 @@
     </nav>
   {/if}
   {#if viewOpen}
-    <section data-layout-camera-cover class="sheet settings" aria-label="Layout view and information layers"><header><strong>View</strong><button type="button" aria-label="Close view settings" onclick={() => viewOpen = false}>×</button></header>
+    <section data-layout-camera-cover class="sheet settings" aria-label="Layout view and information layers"><header><strong>Options</strong><button type="button" aria-label="Close view settings" onclick={() => viewOpen = false}>×</button></header>
       <label><input type="checkbox" checked={view.live} indeterminate={mixedSettings.includes('live')} onchange={event => change({ live: event.currentTarget.checked })} /> Live status{mixedSettings.includes('live') ? ' · Mixed' : ''}</label>
       <label><input type="checkbox" checked={view.cutaway} indeterminate={mixedSettings.includes('cutaway')} onchange={event => change({ cutaway: event.currentTarget.checked })} /> Inspection cutaway{mixedSettings.includes('cutaway') ? ' · Mixed' : ''}</label>
       {#if choices.find(choice => choice.key === scopeKey)?.sceneId}<label><input type="checkbox" checked={view.surroundings ?? false} onchange={event => change({ surroundings: event.currentTarget.checked })} /> Surrounding buildings</label>{/if}
@@ -105,9 +104,8 @@
   .explorer-controls { color: var(--text); font: inherit; font-size: 12px; }
   button, select { box-sizing: border-box; min-height: 44px; min-width: 44px; padding: 7px 10px; border: 1px solid var(--border); border-radius: 7px; color: var(--text); background: var(--panel); font: inherit; cursor: pointer; }
   button:hover { border-color: var(--accent); } button:focus-visible, select:focus-visible, input:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
-  button[aria-pressed="true"], button[aria-current="location"] { color: var(--accent); border-color: var(--accent); background: var(--panel-strong); font-weight: 700; }
+  button[aria-current="location"] { color: var(--accent); border-color: var(--accent); background: var(--panel-strong); font-weight: 700; }
   .toolbar { display: flex; flex-wrap: wrap; align-items: stretch; gap: 6px; }.scope-row { display: flex; gap: 6px; flex: 1 1 280px; min-width: 0; } .scope { flex: 1; min-width: 0; text-align: left; display: grid; gap: 2px; }.scope strong,.scope span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }.scope span { color: var(--muted); font-size: 11px; }
-  .modes { display: flex; gap: 4px; } .modes button { min-width: 52px; }
   .action-row { display: flex; gap: 6px; flex: 0 0 auto; }.action-row button { flex: 1; }.action-row .close { flex: none; padding: 0; }
   .floor-row { display: flex; align-items: center; gap: 8px; padding-left: 8px; background: var(--panel); border-radius: 7px; }.floor-row select { flex: 1; min-width: 0; }.primary-floor { flex: 1 1 220px; min-width: 0; }.floors-toggle { flex: 0 0 auto; }.floors-toggle span { color: var(--muted); font-size: 11px; }
   .collection-floors { display: grid; gap: 4px; }.collection-floor > span { min-width: 0; max-width: 42%; overflow-wrap: anywhere; }.collection-floor small { display: block; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; color: var(--muted); font-size: 10px; }.collection-floor select { width: 0; }
@@ -120,5 +118,5 @@
   .evidence button { margin-right: 8px; }
   .control-footer { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-top: 5px; }
   .evidence { flex: 1 1 20rem; min-width: 0; margin: 0; color: var(--muted); background: var(--panel); border-radius: 4px; padding: 4px 6px; font-size: 11px; line-height: 1.4; }
-  @container (max-width: 440px) { .modes button { min-width: 48px; }.action-row { flex: 1 0 auto; }.scope-row { flex-basis: 100%; }.primary-floor { flex-basis: 100%; } }
+  @container (max-width: 440px) { .action-row { flex: 1 0 auto; }.scope-row { flex-basis: 100%; }.primary-floor { flex-basis: 100%; } }
 </style>
