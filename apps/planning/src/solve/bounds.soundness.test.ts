@@ -9,6 +9,8 @@ import { laneKVerify } from './fixtures/lane-k.ts'
 // and judged by lane K's checker. No bound may exceed the exhaustive optimum, no certificate may stand where
 // a valid schedule exists, and every certificate on an infeasible instance must re-verify in lane K with
 // nothing left unverified (adversary fix 1: support-order steps are named as such).
+// The timeout catches a hang, not slowness: the run takes about 60 s of CPU (76 s alone on the Mac, 19 Nov) and
+// 125-149 s at nice 5 beside other sessions' work, past the 120 s it had.
 describe('bounds soundness on small instances (lane K harness)', () => {
   test('120 seeds: no unsound bound, and every certificate proves in lane K', async () => {
     let certificates = 0
@@ -30,5 +32,5 @@ describe('bounds soundness on small instances (lane K harness)', () => {
     expect(result.failures).toEqual([])
     expect(certificates).toBeGreaterThan(0)
     expect(notProven).toEqual([])
-  }, 120_000)
+  }, 300_000)
 })
