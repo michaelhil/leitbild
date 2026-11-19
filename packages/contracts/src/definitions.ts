@@ -29,6 +29,20 @@ export const workspaceDefinitionRevisionReferenceSchema = workspaceDefinitionRef
 }).strict()
 export type WorkspaceDefinitionRevisionReference = z.infer<typeof workspaceDefinitionRevisionReferenceSchema>
 
+/**
+ * A link relation any Module may publish on a Resource or a Definition: it is
+ * about the linked one and belongs with it wherever that one is in scope (a
+ * plan about a Simulation Run; a plan Definition about a Scenario). The Module
+ * that publishes the link owns the pairing; a reader follows it one level.
+ */
+export const ABOUT_RELATION = 'about'
+
+export const moduleDefinitionLinkSchema = z.object({
+  rel: z.string().trim().min(1).max(128),
+  ref: workspaceDefinitionReferenceSchema,
+}).strict()
+export type ModuleDefinitionLink = z.infer<typeof moduleDefinitionLinkSchema>
+
 export const moduleDefinitionDescriptorSchema = z.object({
   ref: workspaceDefinitionReferenceSchema,
   title: z.string().trim().min(1).max(256),
@@ -40,7 +54,14 @@ export const moduleDefinitionDescriptorSchema = z.object({
   inspectionCapabilityId: capabilityIdSchema.optional(),
   primaryCapabilityId: capabilityIdSchema.optional(),
   deleteCapabilityId: capabilityIdSchema.optional(),
+  // Absent where a Definition links to nothing; never defaulted, so a descriptor without links is unchanged on the wire.
+  links: z.array(moduleDefinitionLinkSchema).min(1).max(16).optional(),
 }).strict().superRefine((definition, ctx) => {
+  definition.links?.forEach((link, index) => {
+    if (link.ref.workspaceId !== definition.ref.workspaceId) {
+      ctx.addIssue({ code: 'custom', path: ['links', index, 'ref', 'workspaceId'], message: 'Linked Definition must belong to the same Workspace' })
+    }
+  })
   const seen = new Set<string>()
   definition.capabilityIds.forEach((capabilityId, index) => {
     if (!capabilityId.startsWith(`${definition.ref.moduleId}.`)) {
