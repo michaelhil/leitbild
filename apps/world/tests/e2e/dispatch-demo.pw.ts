@@ -118,7 +118,7 @@ test('selecting a unit allows direct dispatch and editing its assigned stops', a
     await unitCommand(page, 'order', () => add.click())
     const removeTriage = unit.getByRole('button', { name: /Remove stop 3:.*Remmen triage post/ })
 
-    // The numbered stop row exercises the same confirmation as clicking a red map destination.
+    // Only the × on a stop's row removes it, after its confirmation; a map tap is only ever a target.
     await removeTriage.click()
     const removal = world.getByRole('dialog', { name: 'Remove stop?' })
     await expect(removal).toBeVisible()

@@ -5,7 +5,6 @@
   import { loadMapSymbols } from '../../../ui/map-runtime/map-symbols.ts'
   import type { SurfacePanelProps } from '../../../ui/surface-panel-interaction.ts'
   import { runOnMount } from '../../../ui/svelte-lifecycle.svelte.ts'
-  import { waypointItemId } from '../chain-path.ts'
   import { neutralLexicon } from '../lexicon.ts'
   import type { Stop, UnitOrderInput } from '../order-schema.ts'
   import type { Situation, SituationCall, UnitOptions } from '../situation/schema.ts'
@@ -281,17 +280,14 @@
   }
 
   const decisionTitle = $derived(decision === undefined ? '' : decision.kind === 'remove'
-    ? decision.stops.length === 1 ? 'Remove stop?' : 'Which stop should be removed?'
+    ? 'Remove stop?'
     : decision.assigned ? 'Change the plan?' : 'Move here?')
   const decisionText = $derived(decision === undefined ? '' : decision.kind === 'remove'
-    ? `${selectedUnit?.label ?? 'Unit'}: ${decision.stops.length === 1 ? `Stop ${decision.stops[0]!.index} · ` : ''}${decision.stops[0]?.label ?? 'selected stop'}`
+    ? `${selectedUnit?.label ?? 'Unit'}: Stop ${decision.stop.index} · ${decision.stop.label}`
     : `${selectedUnit?.label ?? 'Unit'} → ${stopLabel(decision.target)}${decision.currentLabel === null ? '' : ` · Current: ${decision.currentLabel}`}`)
   const decisionActions = $derived.by(() => {
     if (!decision) return []
-    if (decision.kind === 'remove') return decision.stops.map(stop => ({
-      label: decision.stops.length === 1 ? 'Remove stop' : `Remove stop ${stop.index}`,
-      danger: true, run: () => send({ kind: 'decide', choice: { remove: stop.id } }),
-    }))
+    if (decision.kind === 'remove') return [{ label: 'Remove stop', danger: true, run: () => send({ kind: 'decide', choice: 'remove' }) }]
     const replace = {
       label: decision.assigned ? 'Replace current target' : 'Move here',
       run: () => send({ kind: 'decide', choice: 'replace' }),
@@ -419,19 +415,6 @@
     untrack(() => props.onMapTargeting(targeting))
   })
 
-  // Ground waypoints have no object id. They select their stable plan stop instead.
-  $effect(() => {
-    const item = props.selectedItemId
-    if (item === null) return
-    untrack(() => {
-      const unit = selectedUnit
-      const stop = unit?.plan.find(stop => 'point' in stop.target && waypointItemId(unit.id, stop.id) === item)
-      if (stop === undefined) return
-      send({ kind: 'stop', stopId: stop.id })
-      props.onSelectItem(null)
-    })
-  })
-
   // The camera centres clear of the docked panel or the open sheet.
   $effect(() => {
     const cover = dispatchMapCover(layout, panelSize, open)
@@ -480,7 +463,7 @@
             confirming={confirming !== null && confirming === card.id}
             back={act(() => send({ kind: 'back' }))}
             targetRow={(target: Stop) => send({ kind: 'target-row', target })}
-            chooseStop={(stopId: string) => send({ kind: 'stop', stopId })}
+            removeStop={(stopId: string) => send({ kind: 'stop', stopId })}
             recall={(unitId: string) => { void editUnit(unitId, async () => await client.recall(unitId), { unitIds: [unitId], target: situation === null ? dispatchWords.panel : situation.words.return, undoable: false }) }}
             undo={act((unitId: string, commandId: string) => undo([unitId], commandId))}
             order={act(order)}

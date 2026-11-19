@@ -22,7 +22,8 @@
     readonly targetRow: (target: Stop) => void
     readonly recall: (unitId: string) => void
     readonly undo: (unitId: string, commandId: string) => void
-    readonly chooseStop: (stopId: string) => void
+    /** The × on a plan row: asks to confirm removing that stop. */
+    readonly removeStop: (stopId: string) => void
     readonly order: (input: UnitOrderInput) => void
     readonly toggleChip: (unitId: string) => void
     readonly refresh: (callId: string) => void
@@ -82,12 +83,11 @@
       <ol class="plan">
         {#each card.plan as stop (stop.id)}
           <li class:active={stop.active} aria-current={stop.active ? 'step' : undefined}>
+            <span class="stop-target">{@render planStop(stop)}</span>
             {#if card.removable}
-              <button type="button" class="stop-target" title={stop.removeLabel} aria-label={stop.removeLabel} disabled={props.unitPending} onclick={() => props.chooseStop(stop.id)}>
-                {@render planStop(stop)}
+              <button type="button" class="icon-action" title={stop.removeLabel} aria-label={stop.removeLabel} disabled={props.unitPending} onclick={() => props.removeStop(stop.id)}>
+                <X size={16} aria-hidden="true" />
               </button>
-            {:else}
-              <span class="stop-target">{@render planStop(stop)}</span>
             {/if}
           </li>
         {/each}
@@ -247,8 +247,6 @@
   .target { width: 100%; display: flex; flex-wrap: wrap; gap: 6px; align-items: center; justify-content: space-between; }
   .plan li, .stop-target { display: flex; align-items: center; gap: 6px; }
   .stop-target { flex: 1; min-width: 44px; padding: 4px; }
-  button.stop-target { border-color: transparent; }
-  button.stop-target:hover { border-color: var(--border); }
   .undo-row { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; }
   .plan li.active .what { font-weight: 650; }
   .plan .predicted { color: var(--muted); font-style: italic; }

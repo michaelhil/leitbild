@@ -716,7 +716,7 @@ describe('Dispatch panel click counts', () => {
     })
   })
 
-  test('add two targets, then click a selected target to remove it', async () => {
+  test('remove a stop: 2 clicks with the unit\'s card open (the × on its plan row, "Remove stop")', async () => {
     await scene(async ({ run, screen, callId, answer }) => {
       const unitId = answer.proposal!.units[0]!.unitId
       expect((await run.invoke(ids.order, answer.proposal!.order)).ok).toBe(true)
@@ -732,15 +732,38 @@ describe('Dispatch panel click counts', () => {
       expect(before.map(stop => stop.state)).toEqual(['active', 'queued', 'queued'])
       const [, firstQueued] = before
       screen.resetActions()
-      await screen.mapTap(second)
-      expect(screen.decision()).toMatchObject({ kind: 'remove', stops: [{ id: firstQueued!.id, index: 2 }] })
+      await screen.press({ kind: 'remove-stop', stopId: firstQueued!.id })
+      expect(screen.decision()).toMatchObject({ kind: 'remove', stop: { id: firstQueued!.id, index: 2 } })
       expect(screen.calls).toHaveLength(2)
-      await screen.decide({ remove: firstQueued!.id })
+      await screen.decide('remove')
       expect(screen.actions()).toBe(2)
       expect(sent(screen).at(-1)).toEqual([
         ids.stopRemove, { unitId, stopId: firstQueued!.id, expectedPlan: before }, 'ok',
       ])
       expect(run.unit(unitId).orders.map(stop => stop.target)).toEqual([{ taskId: callId }, { taskId: third }])
+    })
+  })
+
+  test('a map tap on a target already in the plan is a target like any other: the options read answers it, and it never removes a stop', async () => {
+    await scene(async ({ run, screen, callId, answer }) => {
+      const unitId = answer.proposal!.units[0]!.unitId
+      expect((await run.invoke(ids.order, answer.proposal!.order)).ok).toBe(true)
+      const second = await newCall(run, screen, callId, 'C-9 Second call', 0.003)
+      await screen.mapTap(unitId)
+      await screen.mapTap(second)
+      await screen.decide('add')
+      const plan = displayedPlan(screen, unitId)
+      const options = await run.query<UnitOptions>(einsatzQueryIds.unitOptions, { unitId })
+      for (const target of [second, callId]) {
+        // The options read lists the planned call: taking it now is allowed, adding it again is not, with the engine's reason.
+        const listed = options.targets.find(entry => 'taskId' in entry.target && entry.target.taskId === target)
+        expect(listed).toMatchObject({ canReplace: true, canAdd: false })
+        await screen.mapTap(target)
+        expect(screen.decision()).toMatchObject({ kind: 'order', target: { taskId: target }, replace: true, add: false, addReason: listed!.addRefusal })
+        await screen.decide('cancel')
+      }
+      expect(screen.calls).toHaveLength(1)
+      expect(displayedPlan(screen, unitId)).toEqual(plan)
     })
   })
 
