@@ -15,6 +15,7 @@
     type WorkspaceDefinitionRevisionReference,
     type WorkspaceResourceReference,
     type WorkspaceSubjectReference,
+    type WorkspaceSurface,
   } from '@leitbild/contracts'
   import JsonTree from './JsonTree.svelte'
   import WikiLink from './WikiLink.svelte'
@@ -53,6 +54,8 @@
   import { readScenarioEditorMessage, sameSavedScenario } from './scenario-editor-messages.ts'
   import { invokeDefinitionStart } from './start-invocation.ts'
   import { continueItems, featuredStartRevision, openedFromGuide, workspaceDemos, type FeaturedCard } from './workspace-page.ts'
+  import ScreensPanel from './screens/ScreensPanel.svelte'
+  import { browserScreenStore, definitionKeyOf, offersShowOnScreens, scenarioTitle, screenStorageChange, showOnScreens, type ScreensRun } from './screens/screen-setup.ts'
 
   type Page = { readonly kind: 'workspace'; readonly id: string }
   interface InvocationResponse {
@@ -165,6 +168,38 @@
     run: selectedPlanningResource?.title ?? (planningPath !== null ? 'Planning' : selectedWorldResource?.title ?? null),
     room: selectedAgentsResource?.title ?? null,
   }))
+
+  // Screens (screens/screen-setup.ts): the screens this browser remembers and the Run they show.
+  // A browser that never set one up reads two absent keys here and shows nothing of it but "Screens…" in the Run's More menu.
+  const screens = browserScreenStore()
+  const readScreens = () => ({ setup: screens.readSetup(), target: screens.readTarget() })
+  let screensStored = $state.raw(readScreens())
+  let screensPanelOpen = $state(false)
+  let placingSurface = $state.raw<WorkspaceSurface | null>(null)
+  const screensRun = $derived<ScreensRun | null>(workspace && selectedWorldResource
+    ? { workspaceId: workspace.id, runId: selectedWorldResource.ref.id, definition: definitionKeyOf(selectedWorldResource) } : null)
+  const showOnScreensOffered = $derived(screensRun !== null && offersShowOnScreens(screensStored.setup, screensStored.target, screensRun))
+  const showRunOnScreens = (): void => {
+    if (!screensRun) return
+    const written = showOnScreens(screens, screensRun)
+    if (!written.ok) error = `The screens were not changed: ${written.reason}`
+    screensStored = readScreens()
+  }
+  const openScreensPanel = (placing: WorkspaceSurface | null): void => {
+    if (!screensRun) { error = 'Screen placement refused: this Workspace does not list the Run shown here'; return }
+    placingSurface = placing
+    screensPanelOpen = true
+  }
+  // The panel belongs to the open Run: when that closes, so does the panel, and it does not come back with the next Run.
+  $effect(() => {
+    if (screensRun !== null) return
+    screensPanelOpen = false
+    placingSurface = null
+  })
+  const screensStorageChanged = (event: StorageEvent): void => {
+    const change = screenStorageChange(event.key)
+    if (change?.kind === 'setup' || change?.kind === 'target' || change?.kind === 'cleared') screensStored = readScreens()
+  }
 
   /** The Modules' answers to the last Resource read, so Back and Forward can check a restored selection too. */
   let resourceOutcomes: ReadonlyArray<ModuleQueryOutcome> = []
@@ -809,7 +844,7 @@
   })
 </script>
 
-<svelte:window onmessage={handleWindowMessage} />
+<svelte:window onmessage={handleWindowMessage} onstorage={screensStorageChanged} />
 
 {#if showingComposer && !workspace}
   <header class="workspace-bar"><div class="workspace-identity"><Wordmark href="/workspaces" tone="dark" label="Leitbild.ai home" /></div></header>
@@ -833,7 +868,9 @@
           refreshResources={() => refreshResources(workspace!.id)}
           reportError={message => { error = message }}
           retractError={message => { error = bannerAfterRetract(error, message) }}
+          moreItems={[{ label: 'Screens…', onselect: () => openScreensPanel(null) }]}
         />
+        {#if showOnScreensOffered}<button class="screens-chip" type="button" title="Show this Run on every screen of this browser's screen setup" onclick={showRunOnScreens}><Icon name="screen" size={15} />Show on screens</button>{/if}
         {#if agentsVisible && selectedRunFamily && !runDeclaresRoles(selectedWorldResource)}
           {@const familyResource = resources.find(resource => resource.ref.type === 'world.run-family' && resource.ref.id === selectedRunFamily.id)}
           {#if familyResource}
@@ -908,7 +945,9 @@
       onResourceCatalogChange={() => { void refreshResources(workspace!.id).catch(cause => { refreshError = String(cause) }) }}
       {focusedSubjects} agentsRoomId={selectedAgentsRoomId} {agentsVisible} onShowAgents={showRunAssistant}
       {runRefusal} onOpenRun={runId => switchWorldRun(runId)} {runAssistantAvailable} onOpenRunAssistant={openRunAssistant}
-      onError={message => { error = message }} bind:worldPane />
+      onPlaceSurface={openScreensPanel} onError={message => { error = message }} bind:worldPane />
+    {#if screensRun && selectedWorldResource}<ScreensPanel bind:open={screensPanelOpen} bind:placing={placingSurface} store={screens} run={screensRun}
+      runTitle={selectedWorldResource.title} scenario={scenarioTitle(screensRun.definition, definitions)} onchange={() => { screensStored = readScreens() }} />{/if}
     {#if peopleShown && people && peopleState?.chat}<PeopleChat session={people} chat={peopleState.chat} notice={peopleState.notice} outboxSaved={peopleState.outboxSaved} anchor={worldPane}
       focusRequest={chatFocusRequest} onClose={closePeopleChat} />{/if}
     {:else}

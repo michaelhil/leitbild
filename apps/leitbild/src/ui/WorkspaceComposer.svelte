@@ -1,6 +1,6 @@
 <script lang="ts">
   import { onDestroy, untrack, tick } from 'svelte'
-  import { WORKSPACE_SURFACE_PARAMETER, type EmbeddedViewListing, type WorkspaceResourceReference, type WorkspaceSubjectReference } from '@leitbild/contracts'
+  import { WORKSPACE_SURFACE_PARAMETER, type EmbeddedViewListing, type WorkspaceResourceReference, type WorkspaceSubjectReference, type WorkspaceSurface } from '@leitbild/contracts'
   import { embeddedViewFragment, embeddedViewPath } from '@leitbild/contracts/embedded-view-route'
   import Modal from './Modal.svelte'
   import { closeEmbeddedViewOnEscape } from './embedded-view-keyboard.ts'
@@ -10,6 +10,7 @@
   import type { RunAssistantResolution } from './run-assistant-opening.ts'
   import { workspaceSubjectFocusMessage } from './workspace-focus.ts'
   import { isCurrentResourceCatalogChange } from './resource-catalog-message.ts'
+  import { readSurfacePlace } from './screens/surface-place.ts'
 
   interface Props {
     readonly workspaceId: string
@@ -34,6 +35,8 @@
     readonly runAssistantAvailable: boolean
     /** Shows the shown Run's Assistant room, creating it where none serves the Run; it never hides the room. */
     readonly onOpenRunAssistant: (signal?: AbortSignal, assertDelivery?: () => void) => Promise<RunAssistantResolution>
+    /** The World page asked to show one of the Run's surfaces on another screen (screens/surface-place.ts). */
+    readonly onPlaceSurface: (surface: WorkspaceSurface) => void
     readonly onError: (message: string) => void
     /** The World pane, for overlays anchored to it (the people chat); null without a Run. */
     worldPane?: HTMLElement | null
@@ -47,7 +50,7 @@
 
   let {
     workspaceId, worldRunId, worldFocus = null, worldElement = null, worldOption = null, worldSurface = null, planningPath = null, planningResource = null, onResourceCatalogChange, focusedSubjects, agentsRoomId, agentsVisible, onShowAgents, runRefusal, onOpenRun,
-    runAssistantAvailable, onOpenRunAssistant, onError, worldPane = $bindable(null),
+    runAssistantAvailable, onOpenRunAssistant, onPlaceSurface, onError, worldPane = $bindable(null),
   }: Props = $props()
   let splitPercent = $state(initialSplit)
   let lastOpenSplit = $state(initialSplit)
@@ -221,6 +224,9 @@
     if (planningPath !== null && isCurrentResourceCatalogChange(event, {
       origin: location.origin, source: planningFrame?.contentWindow ?? null, resource: planningResource,
     })) onResourceCatalogChange()
+    const place = readSurfacePlace(event.data, { fromWorld: event.source === worldFrame?.contentWindow, workspaceId, runId: planningPath === null ? worldRunId : null })
+    if (place.kind === 'refused') onError(place.message)
+    else if (place.kind === 'place') onPlaceSurface(place.surface)
     if (event.source === agentsFrame?.contentWindow) { relay.fromAgents(event.data); presentation.fromAgents(event.data) }
     else if (event.source === worldFrame?.contentWindow) {
       if ((event.data as { readonly type?: unknown } | null)?.type === 'leitbild:view-window-ready') listeningWorldDocument = worldFrame?.contentDocument ?? null
