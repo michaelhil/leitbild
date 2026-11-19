@@ -2,7 +2,7 @@ import { createHash } from 'node:crypto'
 import { engineeringCaptureInputSchema, engineeringInputBasisSchema, engineeringQualifyInputSchema, type EngineeringInputBasis, type EngineeringProfile } from '@leitbild/contracts'
 import { engineeringOwnerBasisSchema, engineeringOwnerOutputSchema } from '../../simulation/engineering-inputs.ts'
 import type { PackRuntimeQuery } from '../../simulation/protocol.ts'
-import { scenarioDefinitionSchema } from '../scenarios/definition.ts'
+import { scenarioDefinitionSchema, type ScenarioDefinition } from '../scenarios/definition.ts'
 import thermal from '../../scenarios/engineering-thermal.scenario.json'
 import grid from '../../scenarios/engineering-grid.scenario.json'
 import maintenance from '../../scenarios/nuclear-maintenance-planning.scenario.json'
@@ -22,6 +22,21 @@ const profiles = {
   'grid-balance': { definition: scenarioDefinitionSchema.parse(grid), subjectId: 'grid:engineering', capabilityId: 'world.electric-grid.engineering-basis' },
 } as const
 
+/**
+ * Maintenance admits read-only pump observations at the Run's own observed time,
+ * not a private continuation. Presentation and the absolute clock origin do not
+ * define that Plant configuration. Keep every other authored field, including
+ * Pack/model/operating-point choices, environment, timeline, connections and
+ * access scope. The receipt still binds the complete original compiled Scenario
+ * digest and its own simulation time; no retained document is rewritten.
+ */
+const engineeringConfiguration = (definition: ScenarioDefinition, profile: EngineeringProfile) => {
+  if (profile !== 'plant-maintenance') return definition
+  const { title: _title, description: _description, objectives: _objectives, view: _view, guide: _guide, world, ...scope } = definition
+  const { startsAt: _startsAt, ...worldScope } = world
+  return { ...scope, world: worldScope }
+}
+
 export const engineeringSourceContext = async (registry: SimulationRunRegistry, id: SimulationRunId, profile: EngineeringProfile, subjectId: string) => {
   const selected = profiles[profile]
   const runtime = await registry.load(id)
@@ -29,7 +44,7 @@ export const engineeringSourceContext = async (registry: SimulationRunRegistry, 
   const epoch = await registry.sourceEpoch(id)
   const snapshot = runtime.snapshot()
   const restrictions = snapshot.scenario?.agentRestrictions
-  if (!revision || !Bun.deepEquals(revision.document, selected.definition) || epoch === null || runtime.roles() !== null
+  if (!revision || !Bun.deepEquals(engineeringConfiguration(revision.document, profile), engineeringConfiguration(selected.definition, profile)) || epoch === null || runtime.roles() !== null
     || subjectId !== selected.subjectId || !snapshot.objects.some(object => object.id === subjectId)
     || restrictions?.operationIds.length || restrictions?.objects.some(item => item.deny.length > 0)
     || snapshot.procedures?.runs.some(run => run.status === 'active' || run.status === 'transferred')) return engineeringRefusal()

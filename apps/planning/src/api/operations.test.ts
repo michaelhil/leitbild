@@ -364,13 +364,13 @@ describe('the linked simulation against the plan window (walk 2, R2-6)', () => {
       ] })
       const read = await local.call('planning.sources.refresh', { input: { plan: plan.id }, expectedRevision: 1 })
       expect(read.body.result.changed.slice(0, 2)).toEqual([
-        'Read 1 World value describing Thu 3 Sep 10:00 (simulation time): 1 new or changed',
-        "The simulation's time, Thu 3 Sep 10:00, is outside the plan window (Thu 12 Nov 09:00 to Tue 17 Nov 09:00): align the window to it.",
+        expect.stringMatching(/^Read 1 World value describing Thu 3 Sept? 10:00 \(simulation time\): 1 new or changed$/),
+        expect.stringMatching(/^The simulation's time, Thu 3 Sept? 10:00, is outside the plan window \(Thu 12 Nov 09:00 to Tue 17 Nov 09:00\): align the window to it\.$/),
       ])
       const aligned = await local.call('planning.plan.edit', { resource: plan.id, expectedRevision: 2, input: { edits: [{ edit: 'plan', window: { start: '2026-09-03T08:00:00Z', end: '2026-09-08T08:00:00Z' } }] } })
       expect(aligned.status).toBe(200)
       const again = await local.call('planning.sources.refresh', { input: { plan: plan.id }, expectedRevision: 3 })
-      expect(again.body.result.changed).toEqual(['Read 1 World value describing Thu 3 Sep 10:00 (simulation time): none changed'])
+      expect(again.body.result.changed).toEqual([expect.stringMatching(/^Read 1 World value describing Thu 3 Sept? 10:00 \(simulation time\): none changed$/)])
     } finally { await local.close() }
   })
 })

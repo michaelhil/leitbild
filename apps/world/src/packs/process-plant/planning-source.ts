@@ -27,7 +27,7 @@ export const readProcessPlantPlanningSource = (config: {
   const choices = new Map<string, { plantId: string; componentId: string; system: ProcessPlantRuntimeInstance }>()
   for (const [plantId, system] of config.plants) {
     if (!config.policy.canInspect(plantId)) unavailableQueryReadScope('Plant planning source is unavailable to the shared research audience')
-    for (const component of system.plant.graph.components) if (component.kind === 'centrifugalPump') {
+    for (const component of system.plant.graph.components) if (component.kind === 'centrifugalPump' || component.kind === 'heatExchanger') {
       choices.set(locator(plantId, component.id), { plantId, componentId: component.id, system })
     }
   }
@@ -40,13 +40,14 @@ export const readProcessPlantPlanningSource = (config: {
   const subjects: PlanningSubject[] = selected.map(id => {
     const { plantId, componentId, system } = choices.get(id)!
     const component = system.plant.graph.components.find(item => item.id === componentId)!
-    const parameters = pumpParametersSchema.parse(component.parameters)
     const prefix = `${plantId}/${componentId}`
     // Model parameters are design values; nominal flows are those of the full-power operating point.
     const facts: PlanningFact[] = [
       fact(`${prefix}/model-digest`, 'Plant model revision', 'state', system.plant.modelDigest, 'design'),
-      fact(`${prefix}/nominal-flow`, 'Nominal pump flow at full-power operating point', 'mass-flow', parameters.nominalFlowKgPerS, 'design', 'kg/s'),
     ]
+    if (component.kind === 'heatExchanger') return { locator: id, label: component.label, kind: 'heat-exchanger', facts }
+    const parameters = pumpParametersSchema.parse(component.parameters)
+    facts.push(fact(`${prefix}/nominal-flow`, 'Nominal pump flow at full-power operating point', 'mass-flow', parameters.nominalFlowKgPerS, 'design', 'kg/s'))
     if (parameters.runUpTimeS !== undefined) facts.push(fact(`${prefix}/runup-seconds`, 'Modeled run-up duration', 'time', parameters.runUpTimeS, 'design', 's'))
     if (parameters.coastdownTimeConstantS !== undefined) facts.push(fact(`${prefix}/coastdown-seconds`, 'Modeled coastdown half-time', 'time', parameters.coastdownTimeConstantS, 'design', 's'))
     // Only these public operational readings are projected. Neither writable

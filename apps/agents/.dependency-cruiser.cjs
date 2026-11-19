@@ -33,7 +33,7 @@ module.exports = {
       from: { path: '^src/ui/' },
       to: {
         path: '^src/core/',
-        pathNot: ['^src/core/types/', '/types\\.ts$', '/render-validators/', '/scripts/script-md-parser\\.ts$', '^src/core/display-request\\.ts$', '^src/core/proposal-resume\\.ts$', '^src/core/tool-evidence\\.ts$'],
+        pathNot: ['^src/core/types/', '/types\\.ts$', '/render-validators/', '/scripts/script-md-parser\\.ts$', '^src/core/display-request\\.ts$', '^src/core/diagram-request\\.ts$', '^src/core/proposal-resume\\.ts$', '^src/core/tool-evidence\\.ts$'],
       },
     },
     {

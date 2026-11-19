@@ -2,7 +2,7 @@
 // Handles markdown rendering via bundled marked + DOMPurify.
 
 import type { UIMessage, AgentInfo } from '../render/render-types.ts'
-import { marked } from 'marked'
+import { renderDiagramMarkdown } from './mermaid-markdown.ts'
 import DOMPurify from 'dompurify'
 // Import order matters: mermaid first, then map. Each module self-registers
 // its post-render processor at module-load (see ../mermaid/index.ts and
@@ -40,7 +40,7 @@ const writeClipboard = async (text: string): Promise<boolean> => {
 // Render Markdown content safely, then post-process diagrams and source links.
 const renderMarkdownContent = (el: HTMLElement, text: string): void => {
   el.className += ' msg-prose'
-  el.innerHTML = DOMPurify.sanitize(marked.parse(text) as string)
+  el.innerHTML = DOMPurify.sanitize(renderDiagramMarkdown(text))
   decorateProductSourceReferences(el)
   for (const proc of getPostRenderProcessors()) void proc(el)
 }
@@ -445,6 +445,8 @@ export const renderMessage = (opts: RenderMessageOptions): void => {
     const stepFragment = msg.cause.step !== undefined ? ` step ${msg.cause.step + 1}` : ''
     const label = msg.cause.kind === PROPOSAL_RESUME_CAUSE
       ? proposalResumeCaption(msg.cause.name)
+      : msg.cause.kind === 'diagram-request'
+        ? `Diagram ${msg.cause.diagramIndex + 1} revision requested by ${msg.cause.name}`
       : `via ${msg.cause.kind}: ${msg.cause.name}${stepFragment}`
     cap.textContent = label
     cap.title = label

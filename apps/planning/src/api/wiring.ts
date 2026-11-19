@@ -42,6 +42,28 @@ const bounded = (result: ExplainResult): ExplainResult => {
   return next
 }
 
+const finishOffset = (cursor: string | undefined, length: number): number => {
+  if (cursor === undefined) return 0
+  const offset = Number(cursor)
+  if (!/^(0|[1-9]\d*)$/.test(cursor) || !Number.isSafeInteger(offset) || offset >= length) {
+    throw planningError(400, 'invalid_request', 'The cursor is not one this finish explanation gave', { expected: { cursor: 'the "more" value of the previous page of the same option and finish job' } })
+  }
+  return offset
+}
+
+/** Pages the existing bounded finish walk without losing its trailing causes. */
+const finishPage = (inputs: PlanInputs, items: readonly ExplainItem[], from: number, limiting: ExplainResult['limiting']): ExplainResult => {
+  let count = Math.min(20, items.length - from)
+  for (;;) {
+    const page = items.slice(from, from + count)
+    const result: ExplainResult = { lines: page.map(item => lineOf(inputs, item)), items: page,
+      ...(limiting === undefined ? {} : { limiting }), ...(from + count < items.length ? { more: String(from + count) } : {}) }
+    if (byteLength(result) <= resultLimitBytes - 64) return result
+    if (count <= 1) throw planningError(413, 'record_too_large', 'One finish-chain item is too large for an explanation page', { about: page.map(item => item.job) })
+    count--
+  }
+}
+
 /** The explainer on `option`'s own compile and schedule, in this process. */
 const explainerOf = (inputs: PlanInputs, option: Option) => {
   const { problem, index, prep } = compiled(inputs, option)
@@ -72,9 +94,10 @@ export const createRealSolver = (pool: SolverPool): SolverPort => {
         })).optionSet
       } finally { generating = false }
     },
-    explain: async ({ inputs, option, ask, job }) => {
+    explain: async ({ inputs, option, ask, job, cursor }) => {
       // Why recommended and versus are the service's (api/operations.ts), from stored options; any other ask is refused.
       if (!Object.hasOwn(solverAsks, ask)) throw planningError(500, 'invalid_planning_request', `The solver has no explain ask ${String(ask)}`)
+      if (cursor !== undefined && ask !== 'finish') throw planningError(400, 'invalid_request', 'Only a finish explanation has another solver page')
       if (ask === 'refusal') {
         if (option.status.word !== 'proven infeasible') {
           const attempt = option.status.word === 'unresolved' ? option.status.attempt : undefined
@@ -106,15 +129,17 @@ export const createRealSolver = (pool: SolverPool): SolverPort => {
       const items = ask === 'why-start'
         ? [explainer.whyStart(activity ?? index.jobs.findIndex(key => key !== null))]
         : explainer.finishChain(activity)
+      const from = ask === 'finish' ? finishOffset(cursor, items.length) : 0
       // 'finish': what one more unit of the most limiting resource does, checked by lane K in a solver child
       // (a gain in hours, or no gain). Left out when not computed: the chain names no resource, a Generate
       // holds the solver, or the child fails. Absent never means "no gain".
-      const candidates = ask === 'finish' ? mostLimiting(items) : []
+      const candidates = ask === 'finish' && from === 0 ? mostLimiting(items) : []
       const limiting = candidates.length === 0 || generating ? null : await pool.limiting(inputs, option, candidates).catch((error: unknown) => {
         if (isPlanningError(error) && error.code === 'solver_busy') return null
         throw error
       })
-      return bounded({ lines: items.map(item => lineOf(inputs, item)), items, ...(limiting === null ? {} : { limiting }) })
+      return ask === 'finish' ? finishPage(inputs, items, from, limiting ?? undefined)
+        : bounded({ lines: items.map(item => lineOf(inputs, item)), items })
     },
     // The first cause on the finish chain of the option's own schedule; no solver child.
     finishCause: async ({ inputs, option }) => explainerOf(inputs, option).explainer.finishChain()[0]?.because[0],

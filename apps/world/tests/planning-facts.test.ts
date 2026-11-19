@@ -121,8 +121,9 @@ describe('World planning facts', () => {
     const run = await registry.create({ scenarioId: 'planning-facts-both' })
     const startsAt = new Date(Date.parse(run.snapshot().clock!.currentTime)).toISOString()
     const pumps = (await allPages(cursor => read(run, { kind: 'pump', limit: 20, ...(cursor === undefined ? {} : { cursor }) }))).flatMap(page => page.items.map(item => item.locator))
-    const subjects = [...caseSubjects, 'process-plant/plant%3Atrain-a/serviceWaterPumpA', 'process-plant/plant%3Atrain-a/serviceWaterPumpB', 'process-plant/plant%3Atrain-a/auxFeedwaterPumpTurbine']
-    for (const locator of subjects.slice(caseSubjects.length)) expect(pumps).toContain(locator)
+    const heatExchanger = 'process-plant/plant%3Atrain-a/componentCoolingHeatExchangerA'
+    const subjects = [...caseSubjects, 'process-plant/plant%3Atrain-a/serviceWaterPumpA', 'process-plant/plant%3Atrain-a/serviceWaterPumpB', 'process-plant/plant%3Atrain-a/auxFeedwaterPumpTurbine', heatExchanger]
+    for (const locator of subjects.slice(caseSubjects.length, -1)) expect(pumps).toContain(locator)
     const facts = [...merged(await allPages(cursor => read(run, { subjects, ...(cursor === undefined ? {} : { cursor }) }))).values()].flat()
     expect(facts.length).toBeGreaterThan(40)
     for (const fact of facts) {
@@ -144,6 +145,9 @@ describe('World planning facts', () => {
     expect(byId.get('plant:train-a/serviceWaterPumpB/runningState')).toMatchObject({ quantity: 'state', value: true, basis: 'observed' })
     expect(byId.get('plant:train-a/serviceWaterPumpB/flowKgPerS')).toMatchObject({ quantity: 'mass-flow', basis: 'observed' })
     expect(byId.get('plant:train-a/serviceWaterPumpB/model-digest')).toMatchObject({ quantity: 'state', basis: 'design' })
+    const exchanger = await read(run, { subjects: [heatExchanger] })
+    expect(exchanger.items[0]).toMatchObject({ locator: heatExchanger, kind: 'heat-exchanger', label: 'Component Cooling Heat Exchanger A' })
+    expect(exchanger.items[0]!.facts).toEqual([expect.objectContaining({ id: 'plant:train-a/componentCoolingHeatExchangerA/model-digest', basis: 'design' })])
   })
 
   test('a search fans out to every Pack projection, lists without estimates, and pages within 4 KB', async () => {
@@ -160,9 +164,9 @@ describe('World planning facts', () => {
     expect(pages.length).toBeGreaterThan(1)
     const locators = pages.flatMap(page => page.items.map(item => item.locator))
     expect(new Set(locators).size).toBe(locators.length)
-    // Supply run: two depots, three trucks, two requests. The four-loop plant: four reactor coolant pumps and 20 others.
+    // Supply run: two depots, three trucks, two requests. The plant has 24 pumps and four heat exchangers.
     expect(locators.filter(locator => locator.startsWith('einsatz/'))).toHaveLength(7)
-    expect(locators.filter(locator => locator.startsWith('process-plant/'))).toHaveLength(4 + 20)
+    expect(locators.filter(locator => locator.startsWith('process-plant/'))).toHaveLength(24 + 4)
     for (const item of pages.flatMap(page => page.items)) {
       expect(item.facts.length).toBeLessThanOrEqual(2)
       expect(item.facts.every(fact => fact.basis === 'observed' && fact.quantity === 'state')).toBe(true)

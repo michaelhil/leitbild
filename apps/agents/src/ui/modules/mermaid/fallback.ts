@@ -11,7 +11,7 @@ export type FallbackReason = 'render-failed' | 'too-large' | 'unavailable'
 
 const REASON_TEXT: Record<FallbackReason, string> = {
   'render-failed': "Diagram couldn't render — showing source.",
-  'too-large': 'Diagram too large (>50 KB) — showing truncated source.',
+  'too-large': 'Diagram source exceeds the rendering limit — showing the full source.',
   'unavailable': 'Diagram rendering unavailable. Reload the page to try again.',
 }
 
@@ -19,6 +19,7 @@ export const showRenderFallback = (
   el: HTMLElement,
   source: string,
   reason: FallbackReason = 'render-failed',
+  error?: unknown,
 ): void => {
   // Clear existing content.
   el.replaceChildren()
@@ -27,8 +28,11 @@ export const showRenderFallback = (
   el.setAttribute('aria-label', 'Diagram rendering failed')
 
   const notice = document.createElement('div')
-  notice.className = 'text-text-muted mb-1'
-  notice.textContent = REASON_TEXT[reason]
+  notice.className = 'text-text-muted whitespace-pre-wrap mb-1'
+  // Actual parser/limit messages help the author repair the source. Keep only
+  // the message, never a stack or HTML, and retain the complete source below.
+  const detail = error instanceof Error ? error.message : typeof error === 'string' ? error : undefined
+  notice.textContent = reason === 'render-failed' && detail ? `${REASON_TEXT[reason]}\n${detail}` : REASON_TEXT[reason]
   el.appendChild(notice)
 
   if (source) {

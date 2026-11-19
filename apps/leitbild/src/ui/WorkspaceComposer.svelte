@@ -328,6 +328,7 @@
       class="module-frame active"
       src={`/workspaces/${encodeURIComponent(workspaceId)}/agents?room=${encodeURIComponent(agentsRoomId)}&view=focused`}
       title="Agents room"
+      allowfullscreen
       onload={agentsFrameLoaded}
     ></iframe>
   </section>{/if}

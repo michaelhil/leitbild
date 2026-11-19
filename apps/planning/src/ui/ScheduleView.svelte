@@ -6,6 +6,8 @@
   import { createTimeFormat, moneyText, spanText } from './format.ts'
   import { loadPlan, loadRows } from './read-plan.ts'
   import type { DatedRow, PlanModel } from './model.ts'
+  import MaintenanceSchedule from './MaintenanceSchedule.svelte'
+  import { maintenanceDefinitionId } from './maintenance-demo.ts'
 
   let { client, workspaceId }: { client: PlanningClient; workspaceId: string } = $props()
   let reading = $state<ScheduleDisplayResult['schedule'] | null>(null)
@@ -16,6 +18,8 @@
   let loading = $state(true)
   let root: HTMLElement
   let readSequence = 0
+  let publication = $state<{ plan: string; option: string; reference: string | null; digest: string } | null>(null)
+  let guard = $state<{ validate: () => Promise<void>; invalid: (cause: unknown) => void } | null>(null)
 
   const time = $derived(createTimeFormat(reading?.plan.timeZone ?? null))
   const deadline = $derived(reading?.deadline === null || reading?.deadline === undefined ? null : Date.parse(reading.deadline.finishBy))
@@ -25,12 +29,8 @@
   const dueFinish = $derived(dueRow === undefined ? null : Date.parse(dueRow.finish))
   const dueJob = $derived(model?.inputs.jobs.find(job => job.key === reading?.deadline?.job))
   const start = $derived(reading?.plan.window === null || reading?.plan.window === undefined ? 0 : Date.parse(reading.plan.window.start))
-  const end = $derived(reading?.plan.window === null || reading?.plan.window === undefined ? 0 : Date.parse(reading.plan.window.end))
-  const ticks = $derived(Array.from({ length: 5 }, (_, index) => start + (end - start) * index / 4))
   const certificateJobs = $derived(new Set(reading?.certificate?.kind === 'temporal' ? reading.certificate.steps.map(step => step.job)
     : reading?.certificate !== null && reading?.certificate !== undefined && 'jobs' in reading.certificate ? reading.certificate.jobs : []))
-  const percent = (at: number): number => end <= start ? 0 : (at - start) / (end - start) * 100
-  const rowFor = (key: string): DatedRow | undefined => rows.find(row => row.job === key)
 
   const read = async (): Promise<void> => {
     const sequence = ++readSequence
@@ -59,6 +59,12 @@
       rows = dated
       reasons = explanation
       reading = schedule
+      publication = state
+      const pin = { ...state }
+      guard = {
+        validate: async () => { await client.display(pin.plan, { option: pin.option, digest: pin.digest, reference: pin.reference }) },
+        invalid: cause => { if (readSequence === sequence) error = refusalText(cause) },
+      }
     } catch (cause) {
       if (sequence === readSequence) error = refusalText(cause)
     } finally {
@@ -92,11 +98,11 @@
       <p class="eyebrow">{reading.plan.title}</p>
       <h1>{reading.option.label}</h1>
       <p class="date">{reading.plan.window === null ? '' : `${time.day(start)} · `}{time.zoneSet ? time.zone : 'Time zone not set'}</p>
-      {#if deadline !== null}<p class="requested">Requested finish by <strong>{time.time(deadline)}</strong>{dueJob === undefined ? '' : ` · ${dueJob.title}`}</p>{/if}
+      {#if deadline !== null}<p class="requested">Requested finish by <strong>{time.when(deadline)}</strong>{dueJob === undefined ? '' : ` · ${dueJob.title}`}</p>{/if}
       <p class="verdict" class:checked={reading.option.fresh && reading.option.status.word === 'validated feasible'} class:refused={reading.option.status.word === 'proven infeasible'}>
         {#if !reading.option.fresh}This option needs a new check against the current plan.
         {:else if reading.option.status.word === 'validated feasible'}
-          {#if finish !== null}Checked finish <strong>{time.time(finish)}</strong>. {#if deadline !== null && dueFinish !== null}{dueFinish <= deadline ? 'Meets the requested deadline.' : 'Finishes after the requested deadline.'}{/if}{/if}
+          {#if finish !== null}Checked finish <strong>{time.when(finish)}</strong>. {#if deadline !== null && dueFinish !== null}{dueFinish <= deadline ? 'Meets the requested deadline.' : 'Finishes after the requested deadline.'}{/if}{/if}
         {:else if reading.option.status.word === 'proven infeasible'}{deadline === null ? 'This option is proven infeasible under the recorded constraints.' : 'The requested deadline is proven infeasible for this option.'}
         {:else}{reading.option.status.word}{/if}
       </p>
@@ -105,27 +111,15 @@
 
     {#if reasons.length > 0}<ul class="reasons">{#each reasons as reason}<li>{reason}</li>{/each}</ul>{/if}
     {#if reading.reference}
-      <p class="reference">Checked reference schedule · {reading.reference.label} · finishes {time.time(reading.reference.finish)}{deadline === null || dueFinish === null ? '' : ` · ${spanText(Math.abs(dueFinish - deadline))} ${dueFinish > deadline ? 'after' : 'before'} the requested deadline`}</p>
+      <p class="reference">Checked reference schedule · {reading.reference.label} · finishes {time.when(reading.reference.finish)}{deadline === null || dueFinish === null ? '' : ` · ${spanText(Math.abs(dueFinish - deadline))} ${dueFinish > deadline ? 'after' : 'before'} the requested deadline`}</p>
     {/if}
     {#if rows.length > 0}
       <section aria-label="Checked schedule" class="gantt">
-        <div class="chart-scroll"><div class="chart" role="table" aria-label="Checked work schedule">
-          <div class="axis" role="row"><span role="columnheader">Work</span><div role="columnheader" class="axis-times">{#each ticks as tick}<span style:left={`${percent(tick)}%`}>{time.time(tick)}</span>{/each}</div></div>
-          {#each model.inputs.jobs as job (job.key)}
-            {@const row = rowFor(job.key)}
-            {#if row}
-              <div class="chart-row" role="row" class:proof={certificateJobs.has(job.key)}>
-                <div role="rowheader" class="job-name">{job.title}<small>{time.time(row.start)}–{time.time(row.finish)}</small></div>
-                <div class="track" role="cell">
-                  {#if deadline !== null}<span class="deadline-line" style:left={`${percent(deadline)}%`}></span>{/if}
-                  <div class="bar" style:left={`${percent(Date.parse(row.start))}%`} style:width={`${percent(Date.parse(row.finish)) - percent(Date.parse(row.start))}%`}><span class="sr-only">{time.time(row.start)}–{time.time(row.finish)}</span></div>
-                </div>
-              </div>
-            {/if}
-          {/each}
-        </div></div>
-        {#if deadline !== null}<p class="legend">Dashed line · requested deadline {time.time(deadline)}</p>{/if}
-        {#if certificateJobs.size > 0}<p class="legend">Highlighted work belongs to the infeasibility proof.</p>{/if}
+        {#if shown && guard}
+          {#key `${publication?.digest}:${shown.key}`}
+            <MaintenanceSchedule {client} {model} option={shown.key} {rows} label="Checked work schedule" sharedLabel={model.inputs.settings.scenario?.id === maintenanceDefinitionId ? 'Shared gates and return to service' : 'Shared work'} target={reading.deadline?.finishBy ?? null} targetLabel="Requested deadline" proofJobs={certificateJobs} validate={guard.validate} onInvalid={guard.invalid} />
+          {/key}
+        {/if}
       </section>
     {/if}
     <footer>Plan revision {reading.option.inputsRevision} · {reading.option.status.word} · forecast using the plan’s recorded inputs</footer>
@@ -135,7 +129,7 @@
 <style>
   .schedule-view { padding: 18px; background: var(--paper); }
   h1 { font-size: 21px; }
-  .date, .cost, footer, .legend { font-size: 11px; color: var(--ink-2); }
+  .date, .cost, footer { font-size: 11px; color: var(--ink-2); }
   .date { margin-bottom: 10px; }
   .requested { margin-bottom: 8px; }
   .verdict { padding: 10px 12px; background: var(--card); border-left: 3px solid var(--line); }
@@ -143,21 +137,5 @@
   .verdict.refused { background: var(--refusal-bg); border-color: var(--refusal); }
   .reasons { font-size: 12px; padding-left: 18px; }
   .reference { padding: 8px 10px; border: 1px solid var(--line); font-size: 12px; }
-  .chart-scroll { overflow-x: auto; padding-right: 14px; }
-  .chart { min-width: 460px; }
-  .axis, .chart-row { display: grid; grid-template-columns: 165px minmax(0, 1fr); gap: 10px; }
-  .axis { height: 24px; font-size: 10px; color: var(--ink-2); }
-  .axis-times, .track { position: relative; }
-  .axis-times > span { position: absolute; transform: translateX(-50%); }
-  .axis-times > span:first-child { transform: none; }
-  .chart-row { min-height: 48px; align-items: center; border-top: 1px solid var(--line); }
-  .job-name { font-size: 12px; line-height: 1.3; }
-  .job-name small { font-size: 10px; margin-top: 3px; }
-  .track { height: 48px; }
-  .bar { position: absolute; top: 12px; height: 24px; background: var(--accent); border-radius: 3px; }
-  .deadline-line { position: absolute; top: 0; bottom: 0; border-left: 2px dashed var(--warning); z-index: 1; }
-  .proof .job-name { font-weight: 650; color: var(--refusal); }
-  .proof .bar { outline: 2px solid var(--refusal); outline-offset: 2px; }
-  .legend { margin: 7px 0; }
   footer { margin-top: 14px; border-top: 1px solid var(--line); padding-top: 8px; }
 </style>

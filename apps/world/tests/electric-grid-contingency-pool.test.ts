@@ -21,6 +21,7 @@ import {
   sizedContingencyScreen,
 } from '../src/packs/electric-grid/runtime/contingency-execution.ts'
 import { contingencyPoolConfigFromEnv, createContingencyPool, type ContingencyPool } from '../src/packs/electric-grid/runtime/contingency-pool.ts'
+import { currentHostCpus } from '../src/packs/electric-grid/runtime/contingency-pool-size.ts'
 import { screenContingencies, selectContingencies, type BranchOutageScope, type ContingencySelection, type ScreeningSummary } from '../src/packs/electric-grid/runtime/contingency-screen.ts'
 import { sharedScreeningRecords, type ContingencySnapshot, type GridContingency } from '../src/packs/electric-grid/runtime/contingency-snapshot.ts'
 import { createGridRuntimeInstance, type GridRuntimeInstance } from '../src/packs/electric-grid/runtime/instance.ts'
@@ -248,8 +249,11 @@ describe('electric grid N-1 worker pool', () => {
   }, 60_000)
 
   test('the process pool does not exist at adapter start, stays without workers for small screenings and empties when idle', async () => {
+    const env = { ...process.env, LEITBILD_GRID_N1_MAX_WORKERS: '2', LEITBILD_GRID_N1_IDLE_MS: '150' }
+    // The cap is a maximum: this host's cores or cgroup quota can select fewer workers.
+    const expectedPool = contingencyPoolConfigFromEnv(env, currentHostCpus())
     const child = Bun.spawn([process.execPath, join(import.meta.dir, 'fixtures/contingency-pool-process.ts')], {
-      env: { ...process.env, LEITBILD_GRID_N1_MAX_WORKERS: '2', LEITBILD_GRID_N1_IDLE_MS: '150' },
+      env,
       stdout: 'pipe',
       stderr: 'pipe',
     })
@@ -257,12 +261,12 @@ describe('electric grid N-1 worker pool', () => {
     expect(stderr).toBe('')
     expect(exitCode).toBe(0)
     const report = JSON.parse(stdout.trim().split('\n').at(-1)!)
-    expect(report).toMatchObject({ poolAtStart: null, workersAfterSmall: 0, workersAfterLarge: 2, workersAfterIdle: 0 })
+    expect(report).toMatchObject({ poolAtStart: null, workersAfterSmall: 0, workersAfterLarge: expectedPool.size, workersAfterIdle: 0 })
     // grid.summary reports the pool once a screening created it, with how its size was chosen.
     expect(report.poolAtStart).toBeNull()
     expect(report.summaryPoolAtStart).toBeNull()
-    expect(report.summaryPoolAfterLarge).toMatchObject({ size: 2, liveWorkerCount: 2 })
-    expect(report.summaryPoolAfterLarge.sizeReason).toStartWith('2 workers = min of cores ')
+    expect(report.summaryPoolAfterLarge).toMatchObject({ size: expectedPool.size, liveWorkerCount: expectedPool.size })
+    expect(report.summaryPoolAfterLarge.sizeReason).toBe(expectedPool.sizeReason)
     expect(report.summaryPoolAfterLarge.sizeReason).toContain('cap 2 (LEITBILD_GRID_N1_MAX_WORKERS)')
   }, 60_000)
 

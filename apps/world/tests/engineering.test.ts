@@ -12,7 +12,8 @@ import { scenarioAuthoringCatalogFor } from '../src/core/scenarios/authoring.ts'
 import { createSimulationRunRegistry } from '../src/core/simulation-runs/registry.ts'
 import { actorIdSchema, objectIdSchema } from '../src/core/model/ids.ts'
 import { worldWorkspacePaths } from '../src/core/workspaces/paths.ts'
-import { scenarioDefinitionSchema } from '../src/core/scenarios/definition.ts'
+import { scenarioDefinitionSchema, type ScenarioDefinition } from '../src/core/scenarios/definition.ts'
+import { compiledScenarioDigest } from '../src/core/simulation-runs/compiled-scenario-store.ts'
 import { guardPlantTests } from './plant-hang-guard.ts'
 
 guardPlantTests()
@@ -27,10 +28,11 @@ const coupled = scenarioDefinitionSchema.parse({
 })
 const qualify = (basis: EngineeringInputBasis) => ({ profile: basis.profile, profileRevision: basis.profileRevision, subjectId: basis.subjectId,
   frame: { epoch: basis.frame.epoch, scenarioDigest: basis.frame.scenarioDigest, restrictionRevision: basis.frame.restrictionRevision } })
-const setup = async () => {
+const setup = async (source?: ScenarioDefinition) => {
   const dataDir = await mkdtemp(join(tmpdir(), 'engineering-'))
   const routing = createDirectRoutingAdapter(), assembly = createWorldApplicationAssembly({ routing }), workspaceId = newWorkspaceId()
-  const config = { dataDir, workspaceId, scenarioDefinitions: [...builtinScenarioDefinitions, coupled],
+  const definitions = source === undefined ? builtinScenarioDefinitions : builtinScenarioDefinitions.map(definition => definition.id === source.id ? source : definition)
+  const config = { dataDir, workspaceId, scenarioDefinitions: [...definitions, coupled],
     compileScenarioDefinition: (source: unknown) => compileScenarioDefinition(source, assembly.packs, { routing }),
     scenarioAuthoringCatalog: scenarioAuthoringCatalogFor(assembly.packs), scenarioRuntimeResolver: createScenarioRuntimeResolver({ packs: assembly.packs }),
     runtimeAdapters: assembly.runtimeAdapters, idleRuntimeCloseTimer: () => () => {} }
@@ -71,7 +73,7 @@ test('a real coupled Plant/Grid clone is refused rather than silently dropping t
   expect(registry.engineering.busy()).toBe(false)
 }, 60_000)
 
-test('the maintenance profile captures only actual pump flows and retains exact scenario admission', async () => {
+test('the maintenance profile captures only actual pump flows and keeps its admitted Plant scope', async () => {
   const { registry } = await setup()
   const run = await registry.create({ scenarioId: 'nuclear-maintenance-planning' })
   const selection = { profile: 'plant-maintenance' as const, subjectId: 'plant:maintenance' }
@@ -89,6 +91,62 @@ test('the maintenance profile captures only actual pump flows and retains exact 
   await expect(registry.engineering.capture(trainA.id, { ...selection, subjectId: 'plant:train-a' })).rejects.toThrow('shared engineering')
   await run.setAgentRestrictions(controller, { operationIds: [], objects: [{ objectId: objectIdSchema.parse(selection.subjectId), deny: ['inspect'] }] }, 0)
   expect((await registry.engineering.qualify(run.id, qualify(basis))).allowed).toBe(false)
+}, 60_000)
+
+test('maintenance capture admits the current Plant configuration independently of presentation and preserves a retained Run clock and digest', async () => {
+  const source = builtinScenarioDefinitions.find(definition => definition.id === 'nuclear-maintenance-planning')!
+  const presentation = scenarioDefinitionSchema.parse({ ...source, title: 'Another maintenance presentation', description: 'Different explanatory text', objectives: ['Inspect the same supported Plant'],
+    world: { ...source.world, startsAt: '2026-11-18T08:00:00.000Z' }, view: { ...source.view, map: { ...source.view.map, zoom: 12 } },
+    guide: { ...source.guide!, title: 'Another guide title', steps: source.guide!.steps.map(step => ({ ...step, instruction: 'Presentation-only guidance.' })) },
+  })
+  const { registry, config } = await setup(presentation)
+  const run = await registry.create({ scenarioId: presentation.id })
+  const selection = { profile: 'plant-maintenance' as const, subjectId: 'plant:maintenance' }
+  const original = await registry.engineering.capture(run.id, selection)
+  expect(original.frame.simulationAt).toBe('2026-11-18T08:00:00.000Z')
+  expect(original.frame.scenarioDigest).toBe(compiledScenarioDigest(registry.loadedCompiledScenario(run.id)))
+  await registry.shutdown()
+  const restored = createSimulationRunRegistry({ ...config, scenarioDefinitions: [...builtinScenarioDefinitions, coupled] })
+  cleanups.push(() => restored.shutdown())
+  const retained = await restored.engineering.capture(run.id, selection)
+  expect(retained.quantities.map(row => row.value)).toEqual([350, 350])
+  expect(retained.frame.simulationAt).toBe(original.frame.simulationAt)
+  expect(retained.frame.scenarioDigest).toBe(original.frame.scenarioDigest)
+  expect(retained.frame.epoch).toBe(original.frame.epoch)
+  expect((await restored.scenarioRevisionForRun(run.id))?.document).toEqual(presentation)
+  expect(await restored.engineering.qualify(run.id, qualify(original))).toEqual({ allowed: true })
+  const current = await restored.create({ scenarioId: source.id })
+  const currentBasis = await restored.engineering.capture(current.id, selection)
+  expect(currentBasis.frame.simulationAt).toBe('2026-11-18T06:00:00.000Z')
+  expect(currentBasis.frame.scenarioDigest).not.toBe(original.frame.scenarioDigest)
+  expect((await restored.engineering.qualify(current.id, qualify(original))).allowed).toBe(false)
+}, 60_000)
+
+test('maintenance admission still refuses changed Plant, environment, timeline, restrictions or extra objects; other profiles remain exact', async () => {
+  const source = builtinScenarioDefinitions.find(definition => definition.id === 'nuclear-maintenance-planning')!
+  const pack = source.packs[0]!, plant = pack.items[0]!
+  const changed = [
+    { ...source, packs: [{ ...pack, items: [{ ...plant, model: { ref: 'process-plant.pwr.reference', parameters: { loopCount: 3 } } }] }] },
+    { ...source, world: { ...source.world, environment: { ...source.world.environment, changedBoundary: true } } },
+    { ...source, timeline: { cues: [] } },
+    { ...source, agentRestrictions: { operationIds: ['world.process-plant.control.write'], objects: [] } },
+    { ...source, packs: [{ ...pack, items: [plant, { ...plant, id: 'plant:unexpected', label: 'Unexpected extra Plant' }] }] },
+  ]
+  for (const variant of changed) {
+    const definition = scenarioDefinitionSchema.parse(variant)
+    const { registry } = await setup(definition)
+    const run = await registry.create({ scenarioId: definition.id })
+    await expect(registry.engineering.capture(run.id, { profile: 'plant-maintenance', subjectId: 'plant:maintenance' })).rejects.toThrow('shared engineering')
+    await registry.shutdown()
+  }
+  for (const [id, profile, subjectId] of [['engineering-thermal', 'plant-thermal', 'plant:engineering-thermal'], ['engineering-grid', 'grid-balance', 'grid:engineering']] as const) {
+    const exact = builtinScenarioDefinitions.find(definition => definition.id === id)!
+    const definition = scenarioDefinitionSchema.parse({ ...exact, title: 'A presentation change outside the exact profile' })
+    const { registry } = await setup(definition)
+    const run = await registry.create({ scenarioId: id })
+    await expect(registry.engineering.capture(run.id, { profile, subjectId })).rejects.toThrow('shared engineering')
+    await registry.shutdown()
+  }
 }, 60_000)
 
 test('active cancellation removes private runtimes; restart returns interrupted receipt for the original key and never resumes', async () => {

@@ -36,12 +36,18 @@ export type MessageErrorCode =
 // IMPORTANT: this is metadata, not LLM context. The agent's context-builder
 // strips `cause` so it doesn't bleed into the prompt as noise.
 
-export type MessageCauseKind = 'script' | 'trigger' | 'biometric' | 'resource-event' | 'display-request' | 'proposal-approved'
+export type MessageCauseKind = 'script' | 'trigger' | 'biometric' | 'resource-event' | 'display-request' | 'proposal-approved' | 'diagram-request'
 
-export interface MessageCause {
-  readonly kind: MessageCauseKind
+export type MessageCause = {
+  readonly kind: Exclude<MessageCauseKind, 'diagram-request'>
   readonly name: string                 // script/trigger name; for biometric, the captureId; for display-request, the requester's name; for proposal-approved, who approved what
   readonly step?: number                // 0-based step index (scripts)
+} | {
+  readonly kind: 'diagram-request'
+  readonly name: string                 // requesting person
+  readonly requestId: string            // one requested turn, not an artifact id
+  readonly diagramIndex: number         // Mermaid fence in the immutable inReplyTo message
+  readonly step?: never
 }
 
 /** Durable execution provenance for a progress notice, not final-answer generation metadata. */
