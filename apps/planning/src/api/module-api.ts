@@ -48,6 +48,9 @@ export interface PlanningCallContext {
   readonly signal: AbortSignal
 }
 
+/** A place in an input that names a World Simulation Run by id: a caller bound to a Scope may name only a Run in it. */
+const worldRunAt = (path: string) => ({ path, moduleId: 'world', type: 'world.simulation-run' }) as const
+
 interface Operation<T> {
   readonly id: string
   readonly kind: 'command' | 'query'
@@ -57,6 +60,7 @@ interface Operation<T> {
   readonly description: string
   readonly searchTerms: readonly string[]
   readonly publishes?: ReadonlyArray<'embedded-view'>
+  readonly resourceInputs?: ReadonlyArray<ReturnType<typeof worldRunAt>>
   readonly input: z.ZodType<T>
   readonly output: z.ZodType
   readonly invoke: (context: PlanningCallContext, invocation: ModuleCapabilityInvocation, input: T) => Promise<{ readonly result: unknown; readonly created?: unknown }>
@@ -75,6 +79,7 @@ export const planningOperations: ReadonlyArray<Operation<any>> = [
     title: 'Create a plan',
     description: 'Start a new plan from a template. The standard start leaves the plan unlinked so you can choose its World simulation later. Optional edits use the same words as changing a plan and are applied as it is made. For a guided planning demo, pass its matching World Run as demoRun to create or reopen that run’s plan with World values already read. Starting a plan only reads World.',
     searchTerms: ['new', 'blank', 'empty', 'template', 'example', 'demo', 'start', 'outage', 'maintenance', 'work week'],
+    resourceInputs: [worldRunAt('demoRun'), worldRunAt('edits[].run')],
     input: createInputSchema, output: writeResultSchema,
     invoke: async ({ operations, signal }, invocation, input: z.infer<typeof createInputSchema>) => {
       const definition = invocation.definition!
@@ -87,6 +92,7 @@ export const planningOperations: ReadonlyArray<Operation<any>> = [
     title: 'Change a plan',
     description: 'Change a plan with named edits: add, change or remove a job and its estimate, crew, equipment, link, shift calendar, purchase such as overtime, method choice, rule or goal order, or lock a job to a start time. A field you give replaces that field; null clears it. All edits apply together or not at all. With preview nothing is saved: you see what moves and which rule breaks. Removing or weakening a hard rule, a support, a precondition or a test minimum is a person\'s change: an Assistant is refused and asks a person to make it in the plan screen. Needs the plan\'s current revision.',
     searchTerms: ['job', 'activity', 'crew', 'shift', 'calendar', 'buy', 'scope', 'supported by', 'tag-out', 'link', 'FS', 'SS', 'FF', 'lag', 'protected', 'off limits', 'keep in service', 'at least one', 'available', 'finish on or before', 'data date', 'simulation run', 'schedule'],
+    resourceInputs: [worldRunAt('edits[].run')],
     input: editInputSchema, output: writeResultSchema,
     invoke: async ({ operations, signal }, invocation, input: z.infer<typeof editInputSchema>) => ({ result: await operations.edit(invocation.workspaceId, planIdOf(invocation), input, invocation.expectedRevision, invocation.access, signal) }),
   },
@@ -176,6 +182,7 @@ const registrationFor = (operation: Operation<unknown>): CapabilityRegistration<
     title: operation.title, description: operation.description, searchTerms: [...operation.searchTerms],
     risk: operation.risk, idempotent: operation.kind === 'query',
     ...(operation.publishes === undefined ? {} : { publishes: [...operation.publishes] }),
+    ...(operation.resourceInputs === undefined ? {} : { resourceInputs: [...operation.resourceInputs] }),
     inputSchema: publishedInputSchema(operation.input),
     outputSchema: z.toJSONSchema(operation.output, { unrepresentable: 'any' }) as Record<string, unknown>,
   },

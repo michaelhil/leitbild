@@ -72,6 +72,27 @@ describe('the Planning operations as published (design §5.1)', () => {
     }
   })
 
+  test('create and edit declare every place their input names a World Run, and no other operation names one', () => {
+    const run = (path: string) => ({ path, moduleId: 'world', type: 'world.simulation-run' })
+    expect(JSON.stringify(byId.get('planning.plan.create')!.resourceInputs)).toBe(JSON.stringify([run('demoRun'), run('edits[].run')]))
+    expect(JSON.stringify(byId.get('planning.plan.edit')!.resourceInputs)).toBe(JSON.stringify([run('edits[].run')]))
+    for (const descriptor of capabilities) {
+      if (descriptor.id !== 'planning.plan.create' && descriptor.id !== 'planning.plan.edit') expect(descriptor).not.toHaveProperty('resourceInputs')
+    }
+    // The declared places are the published ones: `demoRun` at the top of create, and `run` on the `plan` edit
+    // alone, so `edits[].run` means a Run on every edit that can carry it.
+    type Node = { properties?: Record<string, Node & { const?: string }>; items?: Node; oneOf?: Node[] }
+    const named = (schema: unknown, key: string, path = ''): string[] => schema === null || typeof schema !== 'object' ? []
+      : Object.entries(schema).flatMap(([name, child]) => [...(path.endsWith('.properties') && name === key ? [`${path}.${name}`] : []), ...named(child, key, `${path}.${name}`)])
+    for (const descriptor of capabilities) {
+      const edits = (descriptor.inputSchema as Node).properties?.edits?.items?.oneOf
+      expect(named(descriptor.inputSchema, 'demoRun')).toEqual(descriptor.id === 'planning.plan.create' ? ['.properties.demoRun'] : [])
+      expect(named(descriptor.inputSchema, 'run')).toEqual(edits === undefined ? [] : ['.properties.edits.items.oneOf.0.properties.run'])
+      if (edits !== undefined) expect(edits[0]!.properties!.edit!.const).toBe('plan')
+      expect(edits === undefined).toBe(descriptor.id !== 'planning.plan.create' && descriptor.id !== 'planning.plan.edit')
+    }
+  })
+
   test('only the plans that can start independently expose a primary action', async () => {
     const definitions = (await harness.request(`/internal/workspaces/${harness.workspaceId}/definitions`)).body.definitions
     expect(definitions.map((entry: { ref: { id: string } }) => entry.ref.id)).toEqual(['blank', 'nuclear-maintenance-planning', 'halden-delivery-planning', 'train-a-work-week', 'supply-run'])

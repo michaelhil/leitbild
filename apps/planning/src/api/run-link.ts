@@ -17,6 +17,8 @@ export interface RunLinks {
 }
 
 export const createRunLinks = (read: PlanStore['read']): RunLinks => {
+  // A plan whose body is damaged under a valid `linked` summary line is remembered as "no Run" under that
+  // line's key, so a repair by hand that keeps the summary line is not noticed until the service restarts.
   const byWorkspace = new Map<string, Map<string, Remembered>>()
   return {
     forListing: async (workspaceId, plans) => {
