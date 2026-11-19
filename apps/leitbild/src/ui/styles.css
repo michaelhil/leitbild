@@ -402,13 +402,13 @@ html:has(dialog.lb-modal[open]) { overflow: hidden; }
 }
 
 /* ---------- A screen window (screens/ScreenBadge.svelte): strip, Identify, Standby ---------- */
-.screen-strip { min-width: 0; display: flex; align-items: center; gap: var(--lb-s2); min-height: 26px; padding: 2px var(--lb-s2); border-bottom: 1px solid var(--lb-line);
-  color: var(--lb-ink-2); background: var(--lb-canvas-deep); font-size: var(--lb-fs-micro); line-height: 1.2; }
-.screen-strip-name { min-width: 0; overflow: hidden; color: var(--lb-ink); font-weight: 650; text-overflow: ellipsis; white-space: nowrap; }
-.screen-strip-note { min-width: 0; overflow: hidden; color: var(--lb-warn); font-weight: 600; text-overflow: ellipsis; white-space: nowrap; }
-.screen-strip button { flex: none; min-height: 20px; margin-left: auto; padding: 0 var(--lb-s2); border-color: var(--lb-line-strong); border-radius: var(--lb-r-xs); color: var(--lb-ink-2); background: transparent; font-size: inherit; font-weight: 600; }
-.screen-strip button:hover { border-color: var(--lb-control); color: var(--lb-ink); background: var(--lb-surface); }
-.screen-strip button:focus-visible { outline: 2px solid var(--lb-focus); outline-offset: 1px; }
+.screen-strip { min-width: 0; display: flex; align-items: center; gap: var(--lb-s2); min-height: 26px; padding: 2px var(--lb-s2); border-bottom: 1px solid #0d150f;
+  color: var(--lb-on-dark-2); background: var(--lb-brand-900); font-size: var(--lb-fs-micro); line-height: 1.2; }
+.screen-strip-name { min-width: 0; overflow: hidden; color: var(--lb-on-dark); font-weight: 650; text-overflow: ellipsis; white-space: nowrap; }
+.screen-strip-note { min-width: 0; overflow: hidden; color: var(--lb-on-dark); font-weight: 600; text-overflow: ellipsis; white-space: nowrap; }
+.screen-strip button { flex: none; min-height: 20px; margin-left: auto; padding: 0 var(--lb-s2); border-color: var(--lb-on-dark-line); border-radius: var(--lb-r-xs); color: var(--lb-on-dark); background: transparent; font-size: inherit; font-weight: 600; }
+.screen-strip button:hover { border-color: var(--lb-on-dark-2); background: rgba(255, 255, 255, .08); }
+.screen-strip button:focus-visible { outline: 2px solid var(--lb-focus-on-dark); outline-offset: 1px; }
 .screen-strip button:disabled, .screen-standby button:disabled { cursor: not-allowed; }
 /* Fullscreen entered with the browser's own key or menu, which the page is not told about. */
 @media (display-mode: fullscreen) { .screen-strip { display: none; } }
