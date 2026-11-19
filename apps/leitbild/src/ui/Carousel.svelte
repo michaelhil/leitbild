@@ -21,7 +21,7 @@
     slide: Snippet<[item: T, index: number]>
     /** Thumbnail content for a picker (`nav: 'thumbs'`); the title is added below it. */
     thumb?: Snippet<[item: T, index: number]>
-    /** 'dots' everywhere, or thumbnails at ≥ 1081 px with dots below that. */
+    /** 'dots' everywhere, or titled pickers: a thumbnail above the title at ≥ 1081 px, the title alone below that. */
     nav?: 'dots' | 'thumbs'
     /** hero: framed card, controls inside the caption band at ≥ 1181 px. panel: unframed, controls in a row below. */
     variant?: 'hero' | 'panel'
@@ -205,19 +205,23 @@
   .credit { margin: 10px 4px 0; font-size: var(--lb-fs-micro); color: var(--lb-ink-3); }
   .credit :global(a) { color: inherit; }
 
-  /* Demos: thumbnails at ≥ 1081 px, dots below that. */
+  /* Demos: every picker is labelled with its title, never a bare dot; at ≥ 1081 px a thumbnail sits above the title. */
+  .thumbs .pickers { flex: 1 1 auto; gap: 6px; }
+  .thumbs .picker, .thumbs .picker[aria-selected="true"] { flex: 1 1 0; width: auto; height: auto; place-items: stretch; padding: 0;
+    border: 1px solid var(--lb-line); background: var(--lb-surface); text-align: left; overflow: hidden; }
+  .thumbs .picker[aria-selected="true"] { border-color: var(--lb-brand-700); box-shadow: 0 0 0 1px var(--lb-brand-700); }
+  .thumbs .dot { display: none; }
+  .thumbs .thumb { position: relative; display: block; }
+  .thumb :global(img) { display: none; }
+  /* The space under the title is a margin: Chromium paints a clamped third line inside bottom padding. */
+  .thumb-title { display: -webkit-box; -webkit-line-clamp: 2; line-clamp: 2; -webkit-box-orient: vertical; height: 2.5em; box-sizing: content-box;
+    margin-bottom: 6px; padding: 4px 7px 0; overflow: hidden; color: var(--lb-ink-2); font-size: .6875rem; font-weight: 600; line-height: 1.25; }
+  .thumb .bar { inset: 0 0 auto; height: 3px; border-radius: 0; }
   @media (min-width: 1081px) {
-    .thumbs .pickers { gap: 8px; }
-    .thumbs .picker, .thumbs .picker[aria-selected="true"] { width: 128px; height: auto; place-items: stretch; padding: 0;
-      border: 1px solid var(--lb-line); background: var(--lb-surface); text-align: left; overflow: hidden; }
-    .thumbs .picker[aria-selected="true"] { border-color: var(--lb-brand-700); box-shadow: 0 0 0 1px var(--lb-brand-700); }
-    .thumbs .dot { display: none; }
-    .thumbs .thumb { position: relative; display: block; }
+    .thumbs .pickers { flex: none; gap: 8px; }
+    .thumbs .picker, .thumbs .picker[aria-selected="true"] { flex: none; width: 128px; }
     .thumb :global(img) { display: block; width: 100%; aspect-ratio: 16 / 10; object-fit: cover; object-position: center top; opacity: .82; }
     .picker:hover .thumb :global(img), .picker[aria-selected="true"] .thumb :global(img) { opacity: 1; }
-    .thumb-title { display: -webkit-box; -webkit-line-clamp: 2; line-clamp: 2; -webkit-box-orient: vertical; height: 2.5em; box-sizing: content-box;
-      padding: 4px 7px 6px; overflow: hidden; color: var(--lb-ink-2); font-size: .6875rem; font-weight: 600; line-height: 1.25; }
-    .thumb .bar { inset: 0 0 auto; height: 3px; border-radius: 0; }
   }
   /* Hero: controls sit inside the caption band, bottom right; captions reserve the room. */
   @media (min-width: 1181px) {
@@ -228,6 +232,9 @@
     .count { display: none; }
     .picker { width: 24px; }
     .picker[aria-selected="true"] { width: 40px; }
+    /* Phones: the titles take their own rows, two to a row, before Play, Previous and Next. */
+    .thumbs .controls { flex-wrap: wrap; }
+    .thumbs .pickers { order: -1; display: grid; flex-basis: 100%; grid-template-columns: repeat(2, minmax(0, 1fr)); }
   }
   @media (pointer: coarse) {
     .car-btn { width: 48px; height: 48px; }
