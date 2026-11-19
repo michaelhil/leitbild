@@ -6,9 +6,10 @@ import { prepareCommand, type CommandContext } from './commands.ts'
 import { einsatzConfigSchema } from './config-validation.ts'
 import { executeIntent } from './engine/engine.ts'
 import { emptyEngineState, type EngineState } from './engine/model.ts'
-import { at, controller, emptyState, low, newTask, newUnit, ports, runAll, start, templates, types } from './fixtures/engine-harness.ts'
+import { at, commanding, controller, emptyState, low, newTask, newUnit, ports, runAll, start, templates, types } from './fixtures/engine-harness.ts'
 import fixture from './fixtures/engine.config.json'
 import { recommend } from './recommend.ts'
+import { readSituation } from './situation/situation.ts'
 import { refusalCode } from './refusal.ts'
 import { attributionOf, commandsUnit, inPicture, listText, openViewer, queuesTask, resolveViewer, type EinsatzViewer } from './viewer.ts'
 
@@ -109,6 +110,16 @@ describe('Einsatz viewer', () => {
     const north = resolveViewer({ roleIds: ['north-ground'], class: 'operator', sees: ['north'] }, [{ id: 'north-ground', label: 'North ground', class: 'operator', sees: ['north'] }])
     expect(['n1', 's1', 'site'].filter(id => inPicture(state.catalog, north, state.units.get(id)!))).toEqual(['n1', 'site'])
     expect(refusalOf(state, north, ids.recall, { unitId: 's1' })).toBe('not_in_picture: Not in your picture')
+  })
+
+  test('the situation says Undo would apply only to a viewer that commands the unit, refused in unit.undo\'s own words otherwise', async () => {
+    const outcome = await executeIntent(await withGroups(), { kind: 'order', units: ['d1'], stops: [{ taskId: 't1' }] }, commanding('cmd-d1'), ports)
+    if (!outcome.ok) throw new Error(outcome.reason)
+    const undoFor = (viewer: EinsatzViewer) => readSituation({ state: outcome.state, viewer, roles: declared }).units.find(unit => unit.id === 'd1')!.lastOrder?.undo
+    expect(undoFor(operatorOf('group:air'))).toEqual({ applies: true })
+    expect(undoFor(resolveViewer({ roleIds: ['control'], class: 'controller', sees: 'all' }, declared))).toEqual({ applies: true })
+    expect(undoFor(operatorOf('group:ground'))).toEqual({ applies: false, refusal: 'Ground lead does not command D1. It belongs to Air lead: add that role to command it' })
+    expect(refusalOf(outcome.state, operatorOf('group:ground'), ids.undo, { unitId: 'd1', commandId: 'cmd-d1' })).toBe('unit_not_authorized: Ground lead does not command D1. It belongs to Air lead: add that role to command it')
   })
 
   test('a side role never commands a public unit; a controller does', async () => {

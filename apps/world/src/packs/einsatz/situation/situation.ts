@@ -13,7 +13,7 @@ import { planUndo } from '../engine/plan-order.ts'
 import { byId, countOf } from '../engine/values.ts'
 import { loadText, propertyValueText } from '../engine/wording.ts'
 import { targetLabel } from '../engine/chain-steps.ts'
-import { actorFor, commandsUnit, inPicture, rolesText, type EinsatzViewer } from '../viewer.ts'
+import { actorFor, commandsUnit, inPicture, rolesText, unitAuthority, type EinsatzViewer } from '../viewer.ts'
 import type { ScenarioRole } from '../../../core/model/index.ts'
 import { roleCommands } from '../picture.ts'
 import { planEstimate } from './estimates.ts'
@@ -97,13 +97,16 @@ const commandedByOf = (state: EngineState, viewer: EinsatzViewer, roles: Readonl
 }
 
 /**
- * Whether `unit.undo` would take back the unit's last command now: the
- * engine's own `planUndo` on this state, never applied. Null while no
- * command changed the unit's plan.
+ * Whether `unit.undo` would take back the unit's last command now for this
+ * viewer: refused as `unit.undo` refuses a unit the viewer does not command,
+ * else the engine's own `planUndo` on this state, never applied. Null while
+ * no command changed the unit's plan.
  */
-const undoVerdict = (state: EngineState, unit: UnitRecord, actor: EngineActor): NonNullable<SituationUnit['lastOrder']>['undo'] => {
+const undoVerdict = (state: EngineState, viewer: EinsatzViewer, roles: ReadonlyArray<ScenarioRole>, unit: UnitRecord, actor: EngineActor): NonNullable<SituationUnit['lastOrder']>['undo'] => {
   const command = unit.lastCommand
   if (command === undefined) return null
+  const authority = unitAuthority(state.catalog, viewer, roles, unit)
+  if (authority) return { applies: false, refusal: authority.reason.slice(refusalCode(authority.reason).length + 2) }
   const plan = planUndo(state, { kind: 'undo', unitId: unit.id, commandId: command.id }, actor)
   return plan.ok ? { applies: true } : { applies: false, refusal: plan.reason.slice(refusalCode(plan.reason).length + 2) }
 }
@@ -132,7 +135,7 @@ const unitRow = (state: EngineState, viewer: EinsatzViewer, roles: ReadonlyArray
       by: actorWords(step.by, viewer),
     })),
     predictedDelivery: estimate.delivery === undefined ? null : { siteId: estimate.delivery.site.id, label: estimate.delivery.site.label, eta: estimate.delivery.eta },
-    lastOrder: last === undefined ? null : { by: actorWords(last.by, viewer), commandId: unit.lastCommand?.id ?? null, undo: undoVerdict(state, unit, actor) },
+    lastOrder: last === undefined ? null : { by: actorWords(last.by, viewer), commandId: unit.lastCommand?.id ?? null, undo: undoVerdict(state, viewer, roles, unit, actor) },
     carry: type.components.carry === undefined ? null : { capacity: type.components.carry.capacity, load: loadCounts(state, unit.load) },
     properties: type.properties.filter(property => property.show).map(property => ({ id: property.id, label: property.label, value: propertyValueText(property, unit.properties[property.id]!) })),
     commandedBy: commandedByOf(state, viewer, roles, unit),
