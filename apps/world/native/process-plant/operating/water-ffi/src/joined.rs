@@ -109,16 +109,24 @@ pub struct Report {
 /// R4-CLIMB: a start's `dF/dy` and `dF/dy'`, kept for the climb after a restart
 /// while a regular cell is in equilibrium mode. No case without vapor outside
 /// the PZR reads them. R4-CLIMB-SEAT: also after a restart that seats rods
-/// with the relief shut ([`Integrated::climb_matrix`]).
+/// with the relief shut ([`Integrated::climb_matrix`]). R4-CLIMB-RELIEF: also
+/// after a restart with the PZR relief out of its seat and no cell in
+/// equilibrium: a seat's climb after located roots, R4-CLIMB's after a
+/// command or an owner time event.
 #[derive(Clone, Debug)]
 pub struct ClimbMatrices {
     a: Vec<f64>,
     b: Vec<f64>,
     last_cj: f64,
     /// R4-CLIMB-SEAT: this climb follows a rod seat, and the next full matrix
-    /// re-anchors `a`.
+    /// re-anchors `a`. R4-CLIMB-RELIEF: also located roots with the relief
+    /// out of its seat.
     seat: bool,
     anchor: bool,
+    /// R4-CLIMB-RELIEF: this climb follows a command or an owner time event
+    /// with the relief out of its seat; it ends as R4-CLIMB's does, and a
+    /// refused limited assembly falls back to a full one as a seat's does.
+    relief: bool,
 }
 
 /// The correction of the coordinates a start exempts from its WRMS guard:
@@ -207,8 +215,13 @@ pub struct Analyses {
     retained: Option<Retained>,
     kept_passes: usize,
     /// R4-CLIMB-SEAT: this start seats rods, so it leaves its matrices for the
-    /// climb after it.
+    /// climb after it. R4-CLIMB-RELIEF: also located roots with the relief
+    /// out of its seat.
     seat_climb: bool,
+    /// R4-CLIMB-RELIEF: this start follows a command or an owner time event
+    /// with the relief out of its seat, so it leaves its matrices for a climb
+    /// on R4-CLIMB's rule.
+    relief_climb: bool,
 }
 /// R4-CLIMB-START: dF/dy and dF/dy' of the last start, and the differential
 /// identity they were read under.
@@ -241,6 +254,11 @@ impl Analyses {
     /// seat's climb.
     pub fn keep_for_seat(&mut self, seat: bool) {
         self.seat_climb = seat;
+    }
+    /// R4-CLIMB-RELIEF: whether the next start leaves its matrices for a
+    /// climb on R4-CLIMB's rule after a command or an owner time event.
+    pub fn keep_for_relief(&mut self, relief: bool) {
+        self.relief_climb = relief;
     }
 }
 
@@ -711,13 +729,15 @@ pub fn consistent_start_exempting<P: Properties + WaterProperties>(
         });
     }
     let seat = matches!(&matrices, Matrices::Blocks { analyses, .. } if analyses.seat_climb);
-    if (equilibrium || seat) && matches!(matrices, Matrices::Blocks { .. }) {
+    let relief = matches!(&matrices, Matrices::Blocks { analyses, .. } if analyses.relief_climb);
+    if (equilibrium || seat || relief) && matches!(matrices, Matrices::Blocks { .. }) {
         report.climb = Some(ClimbMatrices {
             a: a.clone(),
             b: ab.iter().zip(&a).map(|(x, y)| x - y).collect(),
             last_cj: f64::INFINITY,
             seat,
             anchor: false,
+            relief,
         });
     }
     // Each row's magnitude of terms from its linearization at the state:
@@ -1797,7 +1817,17 @@ mod integrated {
             .network
             .pzr_boundary()
             .is_none_or(|(b, _)| b.relief.as_ref().is_none_or(|r| r.lift.value == 0.));
-        analyses.keep_for_seat(seat && relief_shut);
+        // R4-CLIMB-RELIEF: with the relief out of its seat (its motion, after
+        // this instant's transactions, not Closed) and no cell in equilibrium
+        // (so R4-CLIMB does not arm), located roots take the seat's climb and
+        // a command or an owner time event takes R4-CLIMB's.
+        let relief_out = !joined.network.has_equilibrium_cells()
+            && joined.pzr().relief().is_some_and(|r| {
+                r.motion != leitbild_operating_plant::network::stratified::ReliefMotion::Closed
+            });
+        let roots = matches!(discrete, Discrete::Roots(_));
+        analyses.keep_for_seat((seat && relief_shut) || (roots && relief_out));
+        analyses.keep_for_relief(!roots && relief_out);
         let matrices = match assembly {
             Assembly::Blocks(structure) => Matrices::Blocks {
                 structure,
@@ -2196,6 +2226,9 @@ mod integrated {
         base: Base,
     }
 
+    /// R4-OBS-PURE: a climb set aside for an observer's matrix request.
+    pub struct ClimbAside(Option<super::ClimbMatrices>);
+
     /// PERF2 (E-LIN, R4-JAC-BASE): the state of the last residual call.
     /// Stock IDA sets up its linear system
     /// right after a residual at the same `(t, y, y')` (SUNNonlinSol_Newton
@@ -2495,6 +2528,19 @@ mod integrated {
                     .for_each_held(|(_, analyses)| analyses.retained = None);
             }
         }
+        /// R4-OBS-PURE: an observer's matrix request at a state of its own
+        /// (N4′'s `∂F/∂y` at a restart's left side) neither reads nor writes
+        /// a climb: its kept matrices are set aside for the request, which is
+        /// then a full assembly at the observer's state and `cj`, and put
+        /// back unread. Stock IDA's requests are unchanged.
+        pub fn set_climb_aside(&mut self) -> ClimbAside {
+            ClimbAside(self.climb.take())
+        }
+        /// R4-OBS-PURE: the climb [`Self::set_climb_aside`] set aside, back
+        /// as it was.
+        pub fn put_climb_back(&mut self, aside: ClimbAside) {
+            self.climb = aside.0;
+        }
         /// R4-CLIMB: while `cj` falls after a restart, the iteration matrix is
         /// the start's `A + cj B`, with the equilibrium columns refreshed at
         /// the climb's first state. A request that does not lower `cj` (stock
@@ -2516,6 +2562,11 @@ mod integrated {
         /// like any other. An error in the limited assembly falls back to a full
         /// one at once and ends the climb ([`Integrated::forget_kept_matrices`]
         /// at a copy point).
+        ///
+        /// R4-CLIMB-RELIEF: with the PZR relief out of its seat and no cell in
+        /// equilibrium, a restart on located roots climbs as after a seat, and
+        /// one at a command or an owner time event climbs as R4-CLIMB's (no
+        /// column is refreshed: none is in equilibrium) with a seat's fallback.
         fn climb_matrix(
             &mut self,
             time: f64,
@@ -2582,8 +2633,9 @@ mod integrated {
                 crate::basis_assembly(false);
                 leitbild_operating_plant::network::heaters::hold_endpoints(false);
                 // R4-CLIMB-SEAT: a refused limited assembly falls back to a full
-                // one; the kept matrices are not used again.
-                if climb.seat && result.is_err() {
+                // one; the kept matrices are not used again. R4-CLIMB-RELIEF's
+                // climbs likewise.
+                if (climb.seat || climb.relief) && result.is_err() {
                     return Ok(false);
                 }
                 result.map_err(failure)?;
