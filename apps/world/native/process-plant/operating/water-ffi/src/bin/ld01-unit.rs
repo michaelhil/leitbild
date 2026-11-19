@@ -1095,8 +1095,6 @@ struct Unit {
     /// The composed DC groups (their names and charger buses), when the
     /// section declares them.
     dc: Option<Dc>,
-    /// Receipt cursors: driver, protection, field controller and slice logs.
-    seen: [usize; 4],
     failed: Option<String>,
     /// R4-ENDED: the named domain end the unit stands at.
     ended: Option<Ended>,
@@ -1451,7 +1449,6 @@ impl Unit {
             channels,
             v_nominal,
             dc,
-            seen: [0; 4],
             failed: None,
             ended: None,
             exchanges: 0,
@@ -1692,39 +1689,35 @@ impl Unit {
             .collect()
     }
 
-    /// Move the receipt cursors past every log line so far: the next frame
-    /// reports only its own exchange (a copy point's and a restore's restart
-    /// belong to no exchange, so a source and its copy report alike).
+    /// Drop every log line so far (driver, protection, field controller and
+    /// slice logs): the next frame reports only its own exchange (a copy
+    /// point's and a restore's restart belong to no exchange, so a source and
+    /// its copy report alike). R4-MEM: a reported line is read again by
+    /// nothing, so the host keeps none (a live unit's logs grew without
+    /// bound, one class-S line per Grid exchange).
     fn mark_seen(&mut self) -> Result<(), String> {
-        let p = &self.plant;
-        self.seen = [
-            p.driver.log.len(),
-            p.protection.protection.log.len(),
-            p.field
-                .as_ref()
-                .ok_or("no field controller")?
-                .protection
-                .log
-                .len(),
-            p.ida.system().log.len(),
-        ];
+        let p = &mut self.plant;
+        let field = p.field.as_mut().ok_or("no field controller")?;
+        field.protection.log.clear();
+        p.driver.log.clear();
+        p.protection.protection.log.clear();
+        p.ida.system_mut().log.clear();
         Ok(())
     }
 
-    /// The events since the last frame (receipt cursors advance).
+    /// The events since the last frame: the four logs whole, then dropped.
     fn events(&mut self) -> Result<Value, String> {
         let p = &self.plant;
-        let log = &p.driver.log[self.seen[0]..];
+        let log = &p.driver.log[..];
         let tl = timeline::Timeline::from_logs(log, &[], None, 0., self.t)?;
-        let protection = &p.protection.protection.log[self.seen[1]..];
+        let protection = &p.protection.protection.log[..];
         let field = &p
             .field
             .as_ref()
             .ok_or("no field controller")?
             .protection
-            .log;
-        let field = &field[self.seen[2]..];
-        let electrical = &p.ida.system().log[self.seen[3]..];
+            .log[..];
+        let electrical = &p.ida.system().log[..];
         let empty =
             log.is_empty() && protection.is_empty() && field.is_empty() && electrical.is_empty();
         let events = if empty {

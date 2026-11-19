@@ -95,7 +95,8 @@ impl Credited {
             .ok_or_else(|| format!("no credited output {key}"))
     }
     /// The samples on the grid `origin + j dt` over `[from, to]` (seconds
-    /// from `origin`), every grid point present: their index range.
+    /// from `origin`), every grid point present: their index range. The
+    /// grid ends after `round((to - from) / dt)` intervals ([`GridEnd::Rounded`]).
     pub fn grid(
         &self,
         origin: f64,
@@ -103,13 +104,52 @@ impl Credited {
         to: f64,
         dt: f64,
     ) -> Result<std::ops::Range<usize>, String> {
+        self.grid_ending(origin, from, to, dt, GridEnd::Rounded)
+    }
+    /// [`Self::grid`], ending as `end` says.
+    pub fn grid_ending(
+        &self,
+        origin: f64,
+        from: f64,
+        to: f64,
+        dt: f64,
+        end: GridEnd,
+    ) -> Result<std::ops::Range<usize>, String> {
         let at = |s: f64| origin + s;
         let first = self
             .t
             .iter()
             .position(|t| *t >= at(from) - 1e-9 * dt)
             .ok_or_else(|| format!("no sample from {from} s"))?;
-        let n = ((to - from) / dt).round() as usize;
+        let n = match end {
+            GridEnd::Rounded => ((to - from) / dt).round() as usize,
+            GridEnd::RunEnd => {
+                // The sampler's instants are `origin + k dt`, k whole
+                // (observe.rs `grid_after`): the first sample's own k, then
+                // the largest k whose instant is at or before the run's end.
+                let instant = |k: u64| origin + k as f64 * dt;
+                let t0 = self.t[first];
+                let guess = ((t0 - origin) / dt).round().max(0.) as u64;
+                let k0 = [guess.saturating_sub(1), guess, guess + 1]
+                    .into_iter()
+                    .find(|k| instant(*k) == t0)
+                    .ok_or_else(|| {
+                        format!("the sample at {t0} s is no instant {origin} + k {dt} s")
+                    })?;
+                let end = at(to);
+                let mut k = ((end - origin) / dt).floor().max(0.) as u64;
+                while instant(k + 1) <= end {
+                    k += 1;
+                }
+                while k > 0 && instant(k) > end {
+                    k -= 1;
+                }
+                if k < k0 || instant(k) > end {
+                    return Err(format!("no grid instant over [{from}, {to}] s"));
+                }
+                (k - k0) as usize
+            }
+        };
         let range = first..first + n + 1;
         let Some(times) = self.t.get(range.clone()) else {
             return Err(format!(
@@ -127,6 +167,28 @@ impl Credited {
             return Err(format!("samples leave the {dt} s grid by {off} s"));
         }
         Ok(range)
+    }
+}
+
+/// Where a grid over `[from, to]` ends.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum GridEnd {
+    /// R4-E-GRID-END (owner, 19 November 2026: "End the 2 ms check grid at or
+    /// before each run's end"): `to` is a compared run's own end (or a named
+    /// end), and the grid ends at its last instant at or before it, never past.
+    RunEnd,
+    /// A window ending at a fixed instant inside the runs: `round((to - from)
+    /// / dt)` intervals from the first sample, as before the ruling.
+    Rounded,
+}
+impl GridEnd {
+    /// [`GridEnd::RunEnd`] when `to` is one of the compared runs' `ends`.
+    pub fn of(to: f64, ends: &[f64]) -> Self {
+        if ends.contains(&to) {
+            Self::RunEnd
+        } else {
+            Self::Rounded
+        }
     }
 }
 
@@ -242,7 +304,7 @@ impl Budgets {
 pub const COMPARISON_RULE: &str = "E0: each credited output's difference run - reference on the observation grid, low-passed by the declared zero-phase 4th-order Butterworth at the credited band; pzr_roof_bias_pa = mean |filtered difference|; pzr_roof_sample_noise_pa = population standard deviation of the filtered difference's change between output-interval samples; every other metric = max over instances and samples of |filtered difference| / scale (core power: the declared power basis; otherwise 1); within = evaluable and every metric at or below its budget";
 
 /// E0 of `run` against `reference` over `[from, to]` seconds from their
-/// common `origin`.
+/// common `origin`, on the rounded grid ([`GridEnd::Rounded`]).
 pub fn compare(
     run: &Credited,
     reference: &Credited,
@@ -251,10 +313,23 @@ pub fn compare(
     to: f64,
     b: &Budgets,
 ) -> Value {
+    compare_ending(run, reference, origin, from, to, b, GridEnd::Rounded)
+}
+
+/// [`compare`], its grid ending as `end` says.
+pub fn compare_ending(
+    run: &Credited,
+    reference: &Credited,
+    origin: f64,
+    from: f64,
+    to: f64,
+    b: &Budgets,
+    end: GridEnd,
+) -> Value {
     let dt = b.observation_s;
     let (ra, rb) = match (
-        run.grid(origin, from, to, dt),
-        reference.grid(origin, from, to, dt),
+        run.grid_ending(origin, from, to, dt, end),
+        reference.grid_ending(origin, from, to, dt, end),
     ) {
         (Ok(a), Ok(b)) => (a, b),
         (ea, eb) => {
@@ -826,4 +901,50 @@ pub fn drift_ceilings(d: &Declaration) -> Vec<(&'static str, f64, bool)> {
             false,
         ),
     ]
+}
+
+#[cfg(test)]
+mod grid_end_tests {
+    use super::{Credited, GridEnd};
+
+    /// The sampler's instants `origin + k dt` for k in `0..=last`.
+    fn sampled(origin: f64, dt: f64, last: u64) -> Credited {
+        let mut c = Credited::default();
+        for k in 0..=last {
+            c.push(origin + k as f64 * dt, &[("x", vec![k as f64])])
+                .unwrap();
+        }
+        c
+    }
+
+    /// R4-E-GRID-END (owner, 19 November 2026): the grid ends at the last
+    /// instant at or before the run's end, never past it.
+    #[test]
+    fn r4_e_grid_end_ends_at_the_last_instant_at_or_before_the_run_end() {
+        let dt = 0.002;
+        let c = sampled(0., dt, 1000);
+        let last = 1000. * dt;
+        let run_end = |from: f64, to: f64| c.grid_ending(0., from, to, dt, GridEnd::RunEnd);
+        // The end on a grid instant: that instant is the last point.
+        assert_eq!(run_end(0., last), Ok(0..1001));
+        // The end in the lower and in the upper half of an interval: the
+        // instant before it; the rounded grid asks for one past the end.
+        assert_eq!(run_end(0., last + 0.3 * dt), Ok(0..1001));
+        assert_eq!(run_end(0., last + 0.7 * dt), Ok(0..1001));
+        assert!(c.grid(0., 0., last + 0.7 * dt, dt).is_err());
+        // The end at `from`: one point.
+        let at = 500. * dt;
+        assert_eq!(run_end(at, at), Ok(500..501));
+        // relief-2's C4 (24d5777cf): its solidPzr end 9.2 us before 49.490 s.
+        let origin = 3655.;
+        let c4 = sampled(origin, dt, 24744);
+        assert_eq!(
+            c4.grid_ending(origin, 0., 49.48999080248177, dt, GridEnd::RunEnd),
+            Ok(0..24745)
+        );
+        assert!(c4.grid(origin, 0., 49.48999080248177, dt).is_err());
+        // A span ending at a compared run's end takes the rule; a window does not.
+        assert_eq!(GridEnd::of(last, &[last]), GridEnd::RunEnd);
+        assert_eq!(GridEnd::of(at, &[last]), GridEnd::Rounded);
+    }
 }
