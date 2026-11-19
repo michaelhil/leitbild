@@ -114,9 +114,9 @@ const optionsFor = (unitId: string, extra: object = {}): UnitOptions => unitOpti
   unitId,
   busy: null,
   targets: [
-    { target: { taskId: 'job-1' }, verb: 'pick-up', label: 'J-1 Ridge', etaS: 240 },
-    { target: { siteId: 'depot-a' }, verb: 'go-to', label: 'Depot A', etaS: 400 },
-    { target: { point: { type: 'Point', coordinates: [11, 59] } }, verb: 'go-to', label: 'the map point', etaS: 60 },
+    { target: { taskId: 'job-1' }, verb: 'pick-up', label: 'J-1 Ridge', etaS: 240, now: true },
+    { target: { siteId: 'depot-a' }, verb: 'go-to', label: 'Depot A', etaS: 400, now: true },
+    { target: { point: { type: 'Point', coordinates: [11, 59] } }, verb: 'go-to', label: 'the map point', etaS: 60, now: true },
   ],
   refused: [{ target: { siteId: 'depot-b' }, label: 'Depot B', code: 'site_not_accepting', text: 'Depot B is closed for arrivals' }],
   ...extra,
@@ -202,18 +202,23 @@ describe('Unit card', () => {
     expect([card.dispatch.enabled, card.recall.enabled, card.undo.enabled, card.removable]).toEqual([false, false, false, false])
   })
 
-  test('armed: the banner, one list of targets in the order fixed at arming, valid ones with verb, ETA and what is dropped, refused ones dimmed with their reason; loading until options arrive', () => {
+  test('armed: the banner, one list of targets in the order fixed at arming, valid ones with verb, ETA and what is dropped where an order now takes them, "after current job" where only after does, refused ones dimmed with their reason; loading until options arrive', () => {
     const loading = unitCard(situation, situation.units[0]!, sa('r1'), null, 0)
     expect(loading.armed).toEqual({ banner: 'Task R1…', slot: { kind: 'empty' }, rows: [], loading: true })
     const busy = optionsFor('r1', {
       busy: { taskId: 'job-2', label: 'J-2 Bay', code: 'Q1', freeInS: 300 },
-      targets: [{ target: { taskId: 'job-1' }, verb: 'pick-up', label: 'J-1 Ridge', etaS: 240 }],
+      targets: [
+        { target: { taskId: 'job-1' }, verb: 'pick-up', label: 'J-1 Ridge', etaS: 240, now: true },
+        { target: { taskId: 'job-3' }, verb: 'serve', label: 'J-3 Pier', etaS: 700, now: false },
+      ],
     })
     const armed = unitCard(situation, situation.units[0]!, armedWith(busy, { refusal: { targetId: 'depot-b', text: 'Depot B is closed', untilMs: 9 } }), null, 0).armed!
     expect(armed.loading).toBe(false)
+    // M3: J-3 Pier is taken only after the job, so choosing it drops nothing and its row says so.
     expect(armed.rows).toEqual([
-      { key: JSON.stringify({ taskId: 'job-1' }), target: { taskId: 'job-1' }, text: 'Pick up at J-1 Ridge', eta: '4 min', drops: 'drops J-2 Bay · Q1', refused: null },
-      { key: JSON.stringify({ siteId: 'depot-b' }), target: { siteId: 'depot-b' }, text: 'Depot B', eta: null, drops: null, refused: 'Depot B is closed for arrivals' },
+      { key: JSON.stringify({ taskId: 'job-1' }), target: { taskId: 'job-1' }, text: 'Pick up at J-1 Ridge', eta: '4 min', drops: 'drops J-2 Bay · Q1', after: null, refused: null },
+      { key: JSON.stringify({ taskId: 'job-3' }), target: { taskId: 'job-3' }, text: 'Task J-3 Pier', eta: '12 min', drops: null, after: dispatchWords.after.toLowerCase(), refused: null },
+      { key: JSON.stringify({ siteId: 'depot-b' }), target: { siteId: 'depot-b' }, text: 'Depot B', eta: null, drops: null, after: null, refused: 'Depot B is closed for arrivals' },
     ])
     expect(armed.slot).toEqual({ kind: 'refusal', text: 'Depot B is closed' })
     // Armed by "+ Add stop" the order drops nothing.
@@ -229,9 +234,9 @@ describe('Unit card', () => {
     // The next read has the point nearest, a new call, and J-1 Ridge gone.
     const next = optionsFor('r1', {
       targets: [
-        { target: { point: { type: 'Point', coordinates: [11, 59] } }, verb: 'go-to', label: 'the map point', etaS: 30 },
-        { target: { taskId: 'job-3' }, verb: 'serve', label: 'J-3 Pier', etaS: 90 },
-        { target: { siteId: 'depot-a' }, verb: 'go-to', label: 'Depot A', etaS: 380 },
+        { target: { point: { type: 'Point', coordinates: [11, 59] } }, verb: 'go-to', label: 'the map point', etaS: 30, now: true },
+        { target: { taskId: 'job-3' }, verb: 'serve', label: 'J-3 Pier', etaS: 90, now: true },
+        { target: { siteId: 'depot-a' }, verb: 'go-to', label: 'Depot A', etaS: 380, now: true },
       ],
     })
     const kept = armedRowsWith(first, next)
@@ -441,7 +446,7 @@ describe('Armed feedback, prompts and receipts', () => {
   })
 
   test('E3: dimmed means not a valid target: every valid target is listed however far, only the nearest are tagged, and a refused one is not listed', () => {
-    const many = optionsFor('r1', { targets: Array.from({ length: 12 }, (_, index) => ({ target: { taskId: `job-${index}` }, verb: 'serve', label: `J-${index}`, etaS: index * 60 })) })
+    const many = optionsFor('r1', { targets: Array.from({ length: 12 }, (_, index) => ({ target: { taskId: `job-${index}` }, verb: 'serve', label: `J-${index}`, etaS: index * 60, now: true })) })
     const targeting = targetingFor(armedWith(many))!
     expect(targeting.targets.map(target => target.id)).toEqual(Array.from({ length: 12 }, (_, index) => oid(`job-${index}`)))
     expect(targeting.targets.filter(target => target.tag !== undefined).map(target => target.id)).toEqual(Array.from({ length: mapTargetingMaxTags }, (_, index) => oid(`job-${index}`)))

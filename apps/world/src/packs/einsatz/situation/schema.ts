@@ -231,7 +231,8 @@ export const unitOptionsSchema = z.object({
     verb: z.enum(stopVerbs).describe('What the unit would do there.'),
     label: text.describe('The target\'s label.'),
     etaS: seconds.describe('Seconds to arrive, turnout included; routed for road units, straight-line for direct ones.'),
-  }).strict()).describe('Valid targets, nearest first; for a busy unit, those an order "after" its current job or "now" would take.'),
+    now: z.boolean().describe('Whether an order now takes it: for a busy unit one with when "now", dropping its job; for any other one without when. False: only an order with when "after" takes it, after the unit\'s plan.'),
+  }).strict()).describe('Valid targets, nearest first: those an order now or "after" the unit\'s plan would take.'),
   refused: z.array(z.object({
     target: stopSchema.describe('The stop, in world.einsatz.unit.order form.'),
     label: text.describe('The target\'s label.'),

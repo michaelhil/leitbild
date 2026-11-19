@@ -224,8 +224,10 @@ export interface ArmedRowView {
   readonly text: string
   /** The ETA of a valid target; null for a refused one. */
   readonly eta: string | null
-  /** "drops C-3 · P3" for a busy unit's current task. */
+  /** "drops C-3 · P3": a busy unit's current task, on a target an order now takes. */
   readonly drops: string | null
+  /** "after current job" on a target only an order after the unit's plan takes. */
+  readonly after: string | null
   /** Why an order to it is refused, for a dimmed row that still submits; null for a valid one. */
   readonly refused: string | null
 }
@@ -301,7 +303,7 @@ const armedView = (unit: SituationUnit, words: Words, selection: Extract<Selecti
   const own = selection.options
   const valid = new Map((own?.targets ?? []).map(target => [stopKey(target.target), target]))
   const refused = new Map((own?.refused ?? []).map(entry => [stopKey(entry.target), entry]))
-  // Armed by "+ Add stop", the order goes after the current job and drops nothing.
+  // Armed by "+ Add stop", the order goes after the current job and drops nothing; else a busy unit drops its job where an order now takes the target.
   const drops = own?.busy == null || selection.when === 'after' ? null : `drops ${jobText(own.busy)}`
   return {
     banner: `${words.send} ${unit.label}…${selection.when === 'after' ? ` (${dispatchWords.after.toLowerCase()})` : ''}`,
@@ -309,9 +311,9 @@ const armedView = (unit: SituationUnit, words: Words, selection: Extract<Selecti
     rows: selection.rows.map(row => {
       const target = valid.get(row.key)
       if (target !== undefined) {
-        return { key: row.key, target: row.target, text: `${verbText(target.verb, words)} ${target.label}`, eta: minutesText(target.etaS), drops, refused: null }
+        return { key: row.key, target: row.target, text: `${verbText(target.verb, words)} ${target.label}`, eta: minutesText(target.etaS), drops: target.now ? drops : null, after: target.now ? null : dispatchWords.after.toLowerCase(), refused: null }
       }
-      return { key: row.key, target: row.target, text: row.label, eta: null, drops: null, refused: refused.get(row.key)?.text ?? dispatchWords.notListed }
+      return { key: row.key, target: row.target, text: row.label, eta: null, drops: null, after: null, refused: refused.get(row.key)?.text ?? dispatchWords.notListed }
     }),
     loading: own === null,
   }

@@ -115,6 +115,7 @@
                 <span>{row.text}</span>
                 {#if row.eta !== null}<span class="num">{row.eta}</span>{/if}
                 {#if row.drops !== null}<span class="drops">{row.drops}</span>{/if}
+                {#if row.after !== null}<span class="after">{row.after}</span>{/if}
                 {#if row.refused !== null}<span class="why">{row.refused}</span>{/if}
               </button>
             </li>
@@ -268,7 +269,7 @@
   .status[data-tone='busy'] .dot { color: var(--accent); }
   .status[data-tone='returning'] .dot { color: var(--muted); }
   .status[data-tone='attention'] .dot, .status[data-tone='out'] .dot { color: var(--critical); }
-  .note, .reason, .facts, .by, .why, .priority { color: var(--muted); font-size: 12px; }
+  .note, .reason, .facts, .by, .why, .after, .priority { color: var(--muted); font-size: 12px; }
   .refusal, .state, .overdue { color: var(--critical); font-size: 12px; }
   .code { font-weight: 750; color: var(--critical); }
   .new { padding: 1px 6px; border-radius: 6px; background: var(--warning); color: var(--panel); font-size: 11px; font-weight: 750; }

@@ -48,7 +48,7 @@ const step = (selection: Selection, event: SelectionEvent) => reduceSelection(st
 const kinds = (effects: ReadonlyArray<SelectionEffect>) => effects.map(effect => effect.kind)
 const job: CurrentJob = { taskId: 't-9', label: 'C-9', code: 'P3', freeInS: 300 }
 /** A unit's options read: its job, or none while free, and one valid target. */
-const optionsOf = (unitId: string, busy: CurrentJob | null): UnitOptions => ({ unitId, busy, targets: [{ target: { taskId: call.id }, verb: 'serve', label: 'T-1', etaS: 60 }], refused: [] })
+const optionsOf = (unitId: string, busy: CurrentJob | null): UnitOptions => ({ unitId, busy, targets: [{ target: { taskId: call.id }, verb: 'serve', label: 'T-1', etaS: 60, now: true }], refused: [] })
 /** SA holding these options, as an arming with them held or a read since leaves it. */
 const holding = (options: UnitOptions): Extract<Selection, { kind: 'armed' }> => ({ ...sa, options, rows: armedRowsWith([], options) })
 

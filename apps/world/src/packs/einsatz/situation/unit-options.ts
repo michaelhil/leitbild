@@ -24,7 +24,9 @@ import { stopVerb } from './situation.ts'
  * one `world.einsatz.unit.order` accepts, unless the Run moves on meanwhile.
  * A busy unit names its current job once (`busy`, with the task's priority
  * code), and its target is valid when an order "after" that job or "now",
- * dropping it, would be accepted. ETAs are routed for road units in one router request, as an
+ * dropping it, would be accepted; each valid target says whether an order
+ * now takes it (`now`): for a busy unit one with `when: 'now'`, for any
+ * other one without `when`. ETAs are routed for road units in one router request, as an
  * order would route them; a target the router cannot reach is refused with
  * that refusal. Points on open ground are not listed: any may be named.
  */
@@ -62,11 +64,11 @@ export const readUnitOptions = async (input: {
     }, input.actor)
     if (busyTask === undefined) {
       const plan = verdict(undefined)
-      return { target, refusal: plan.ok ? undefined : plan.reason }
+      return { target, now: true, refusal: plan.ok ? undefined : plan.reason }
     }
-    const now = verdict('now')
+    if (verdict('now').ok) return { target, now: true, refusal: undefined }
     const after = verdict('after')
-    return { target, refusal: now.ok ? undefined : after.ok ? undefined : after.reason }
+    return { target, now: false, refusal: after.ok ? undefined : after.reason }
   })
   const accepted = judged.filter(entry => entry.refusal === undefined)
   const from = type.components.mobility === undefined ? undefined : motionOf(state, unit.id).point
@@ -88,6 +90,7 @@ export const readUnitOptions = async (input: {
       verb: stopVerb(state, unit, stepKindFor(entry.target, hasLoad(unit)), entry.target),
       label: targetLabel(state, entry.target),
       etaS: eta === undefined ? 0 : eta.seconds,
+      now: entry.now,
     })
   }
   targets.sort((a, b) => a.etaS - b.etaS || a.label.localeCompare(b.label, 'en', { numeric: true }))

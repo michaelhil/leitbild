@@ -41,17 +41,18 @@ describe('Einsatz unit options', () => {
     }
   })
 
-  test('a busy unit names its task once, with its priority code and when it is free; a target "after" its job takes is valid, a refused divert "now" is the server\'s', async () => {
+  test('a busy unit names its task once, with its priority code and when it is free; each valid target says whether "now" takes it, a refused divert "now" is the server\'s', async () => {
     const state = await run(await field(), send(['c1'], { taskId: 'far' }))
     const answer = await options(state, 'c1')
     expect(answer.busy).toMatchObject({ taskId: 'far', label: 'FAR', code: 'Q1' })
     expect(answer.busy!.freeInS).toBeGreaterThan(0)
-    // No target repeats the job: the targets carry none of it.
-    for (const target of answer.targets) expect(Object.keys(target).sort()).toEqual(['etaS', 'label', 'target', 'verb'])
-    // NEAR ranks lower than FAR, so a "now" divert from FAR is refused; "after" is still valid, so NEAR is listed.
-    expect(answer.targets.find(target => target.label === 'NEAR')).toMatchObject({ verb: 'pick-up' })
-    expect(answer.targets.find(target => target.label === 'CLINIC')).toBeDefined()
+    // No target repeats the job: the targets carry none of it, only whether "now" takes them.
+    for (const target of answer.targets) expect(Object.keys(target).sort()).toEqual(['etaS', 'label', 'now', 'target', 'verb'])
+    // NEAR ranks lower than FAR, so a "now" divert from FAR is refused; "after" is still valid, so NEAR is listed, taken only after.
+    expect(answer.targets.find(target => target.label === 'NEAR')).toMatchObject({ verb: 'pick-up', now: false })
+    expect(answer.targets.find(target => target.label === 'CLINIC')).toMatchObject({ now: true })
     expect((await refusalOf(state, { kind: 'order', units: ['c1'], stops: [{ taskId: 'near' }], when: 'now', drops: 'far' })).code).toBe('divert_from_higher_priority')
+    expect((await run(state, { kind: 'order', units: ['c1'], stops: [{ taskId: 'near' }], when: 'after' })).units.get('c1')!.orders).toHaveLength(2)
   })
 
   test('a unit not in the picture is refused, as a Capability rejection', async () => {
