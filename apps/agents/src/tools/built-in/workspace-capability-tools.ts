@@ -2,6 +2,7 @@ import { z } from 'zod'
 import { viewRefFor } from '../../core/render-validators/view-fence.ts'
 import { embeddedViewFor } from '../../core/render-validators/view-envelope.ts'
 import {
+  ABOUT_RELATION,
   capabilityIdSchema,
   definitionTypeSchema,
   moduleIdSchema,
@@ -195,22 +196,39 @@ export const resolveScope = (
   const references = scope.kind === 'resource'
     ? [scope.resource]
     : [scope.collection, ...selectedCollectionMembers(scope, resources)]
-  const resourceKeys = new Set(references.map(referenceKey))
-  const scopedResources = resources.filter(resource => resourceKeys.has(referenceKey(resource.ref)))
-  const definitionKeys = new Set(scopedResources.flatMap(resource => resource.sourceDefinition ? [referenceKey(resource.sourceDefinition)] : []))
+  const namedKeys = new Set(references.map(referenceKey))
+  const named = resources.filter(resource => namedKeys.has(referenceKey(resource.ref)))
+  const listedNamedKeys = new Set(named.map(resource => referenceKey(resource.ref)))
+  // A Resource that is `about` a Resource the Scope names belongs with it. One
+  // level: a Resource about one admitted this way is not admitted, and what
+  // an excluded or unselected member has about it stays out with the member.
+  const aboutKeys = resources
+    .filter(resource => resource.links.some(link => link.rel === ABOUT_RELATION && listedNamedKeys.has(referenceKey(link.ref))))
+    .map(resource => referenceKey(resource.ref))
+  const resourceKeys = new Set([...namedKeys, ...aboutKeys])
+  // A running Resource pins a revision, not the library's moving head. Only the
+  // Resources the Scope names bring their source Definition.
+  const pinned = named.flatMap(resource => {
+    const source = resource.sourceDefinition
+    if (!source) return []
+    const descriptor = definitions.find(definition => referenceKey(definition.ref) === referenceKey(source))
+    return descriptor ? [{ ...descriptor, currentRevisionId: source.revisionId }] : []
+  })
+  const pinnedKeys = new Set(pinned.map(definition => referenceKey(definition.ref)))
+  // A Definition that is `about` one of those belongs with it, at its own
+  // current revision. One level, as for Resources.
+  const about = definitions.filter(definition =>
+    definition.links?.some(link => link.rel === ABOUT_RELATION && pinnedKeys.has(referenceKey(link.ref))) === true)
   return {
     scope,
-    resources: scopedResources,
-    // A running Resource pins a revision, not the library's moving head.
-    definitions: scopedResources.flatMap(resource => {
-      const source = resource.sourceDefinition
-      if (!source) return []
-      const descriptor = definitions.find(definition => referenceKey(definition.ref) === referenceKey(source))
-      return descriptor ? [{ ...descriptor, currentRevisionId: source.revisionId }] : []
-    }).filter((definition, index, all) => all.findIndex(other =>
+    resources: resources.filter(resource => resourceKeys.has(referenceKey(resource.ref))),
+    definitions: [...pinned, ...about].filter((definition, index, all) => all.findIndex(other =>
       referenceKey(other.ref) === referenceKey(definition.ref) && other.currentRevisionId === definition.currentRevisionId) === index),
     resourceKeys,
-    definitionKeys,
+    definitionKeys: new Set([
+      ...named.flatMap(resource => resource.sourceDefinition ? [referenceKey(resource.sourceDefinition)] : []),
+      ...about.map(definition => referenceKey(definition.ref)),
+    ]),
   }
 }
 
