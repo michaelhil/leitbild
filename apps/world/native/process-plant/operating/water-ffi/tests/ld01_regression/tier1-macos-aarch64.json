@@ -1,31 +1,31 @@
 {
  "kind": "ld01-tier1-expectation",
  "platform": "macos-aarch64",
- "reason": "The r4u re-pin (lane REPIN6, lead 18 Nov) on claude/ld01-r4-join 7b0a57588: Grid 62f086c18 (R4-GRID, R4-GRID-AUX), live composition 16972fdf5 (unit/live.rs), rod-seat climb and fat LTO 8eb0ade92 (the arming tightened to seat events by JOIN6, cbc5b4edd), origin/main ff202a8d9; wiki 67265146 (the join wiki a563a634 on 6a5037fe, FRAME's rows, wiki main 76fa64d6, windowInterval_s 0.1 per owner A1 8 Nov). The T1 spans now run the live composition (cvcs-ic-live: governor, DC, AUTO rods, field; the governed state; lead 8 Nov), and the pin environment names the IC section (ic_section_sha256, lead F4). Packets against r4t: provenance only (12 products twice identical; joined-cvcs 5fc0b695 -> 961a4995); states carried bitwise and proven (C1 and C2 60 s digests, governed and live governed 60 s series equal). Instructions against the previous pin (406755d77, r4t; 5.306 and 11.176 G): C2@0 -> 5.392 G (+1.6 %), digest c6957835 -> bb8433fd; C2@2.5 -> 10.105 G (-9.6 %), digest 5bc91ebd -> dd15ddbc. Attribution, medians of 3 interleaved at load 33-59, G at C2@0 / C2@2.5: A the previous control on r4t 5.352 / 11.256 (its digests the pin's; about 0.9 % above the pin, recorded at load 3-5); B0 the head on r4t with r4t's T1 composition 5.160 / 10.539 (the code, climb and LTO: -3.6 % / -6.4 %; C2@2.5 digest.py fd22c8f7 -> 1c31adb8, C2@0 unchanged); B the head on r4t with x4-4's trip composition 5.304 / 11.014 (AUTO rods: +2.8 % / +4.5 %; C2@2.5 -> 024eadb1); C the head on r4u with that composition 5.331 / 11.055 (the tuple: digests equal B's, +0.5 % / +0.4 % within the spread); D the head on r4u live 5.339 / 10.120 (the composition, governor, DC, field and the governed state: +0.2 % / -8.5 %; both spans move, digest.py 140c2b61 / 15861b0a). windowInterval_s is read by nothing at run time. Fat LTO is digest-equal (FRAME, 14 digests). With the Grid absent, digests are equal (GRIDFIN, 16 runs). Cost, the head on r4t live against the head on r4u live, 3 a side: every line keeps (ld01-cost, no rise above 1 %): worst 0.5 s C2 0.195, C3 0.221, C5 0.215; worst frames 0.377, 0.337, 0.431; steady (600 s) 0.0039, 0.0040, 0.0027; B-prod and B-dedicated met on all three. Control recorded under T1LOCK.",
- "recorded_from": "r4-repin6/t1-record-r4u",
- "app": "561e2c5ce",
+ "reason": "The land-7 re-pin (lane LAND7, lead 19 Nov) on claude/ld01-r4-land-7 b97da6be4 = r4u 4a860f433 + FLOOR6 80f8f1f03 (R4-FLOOR-UNIT: the live unit judges the kinetics domain; R4-UNIT-STDERR: SUNDIALS's output on the unit's stderr; both ld01-unit only) + 7f5b33b3d (F5: the feed-train settle selects the governor from its IC section; a test only) + 0e0252ef2 R4-START-RATE-ONCE and c5d9a981e R4-ROOT-DRIVES (CLIMBR6's two digest-equal refactors, without the relief-out climb) + 8cfcc61f6 (R4-ROOT-DRIVES's drives evaluation held for the unit's kinetics check) + TIME7 ec1a670cf (the World engine's frame grid; no T1 effect) + RODOBS7 3e45af682 (the rod law's Tavg and Tref as unit channels; ld01-unit only) + SOAK7 bdb79c01b (the soak driver script) + CLIMBR6 eed48ca85 (R4-C4-R2-F: C4's and C4-I's gated recipe runs R2 for family F; no T1 effect) + NUM7 81e196c87 (F1, owner-approved 19 Nov: R4-CLIMB-SEAT's kept requests refresh the rods' and equilibrium columns at their own state; it fixes x4-5's T4 rtol/30 stop and moves the seat trajectories); wiki 6dfa683b (its 150 ld01 blocks equal 6726514's, plus C4 r6 and C4-I r2). Environment env-land7.sh: tuple r4u unchanged (cvcs-ic-live, the governed state), every wiki path on 6dfa683b. Digests (digest.py form): C2@0 unchanged (140c2b61); C2@2.5 15861b0a -> d6787980, F1's. Instructions on LAND7's digest runs of b97da6be4 against the r4u pin's 5.392 and 10.105 G: C2@0 5.368 G (-0.4 %), C2@2.5 10.675 G (+5.6 %). Part of the rise is the harness's case observer (rule I, whole-only, it reads the joined rows): R4-ROOT-DRIVES's release-root calls no longer leave a whole evaluation, so the observer evaluates the accepted state itself, where it reused the root call's before (+3.7 % on C2@2.5 before F1); the rest is F1's own seat ladder. The cost judge (ld01-cost, R4-COST-UNIT r2, observer excluded) on T1 against r4u before F1: worst frame -1.8 %, worst 0.5 s -2.5 %, steady -7.9 %; F1's effect on the cost judge is NUM7's (C3's worst 0.5 s +5.5 %, owner-approved). Control recorded under T1LOCK.",
+ "recorded_from": "r4-land7/t1-record-land7",
+ "app": "b97da6be4",
  "environment": {
   "packet_sha256": "961a499557eeacaea530607c38f69248b45e1b3e9c0f7a30a3a9c31256ae4b77",
   "state_sha256": "fc7c534afae6286b56522279304820c278358ff41f4aa06b610860242b364f67",
   "elec_packet_sha256": "3faa25f3beee5a5a66068d1c1ed7a296bce8216719752726062f994baeee44e5",
   "ic_section_sha256": "5666613c062953b05b5967e25200373c5ef5e6f7814617b49039ef2b1b3c11fe",
-  "wiki_commit": "6726514",
+  "wiki_commit": "6dfa683b",
   "water_lib_dir": "../../operating-water-sbtl-repin-dd021f1",
   "sundials_prefix": "../../idas-klu-7.5.0/prefix"
  },
  "instruction_tolerance": 0.01,
  "spans": {
   "C2@0": {
-   "instructions": 5391998169,
+   "instructions": 5349908629,
    "digest": "bb8433fd36a5d1523c18b8f2c36a548d2e9397fb6adff9bef0510ac154497bef"
   },
   "C2@2.5": {
-   "instructions": 10104894596,
-   "digest": "dd15ddbc427abb8406d5090750d9b6525950fe8c161f69b188ae2126b569b9b3"
+   "instructions": 10669251994,
+   "digest": "faa6ecb252228df9fe88a21eeab298a4117329eba127b7e70eef1ba272e99da7"
   }
  },
  "control": {
-  "binary": "r4-repin6/t1-record-r4u/control-s3_cases",
-  "sha256": "2693f29275bda8f33c80688db5c5ffae38041edbc1fbe7e98cb43195024ee9aa"
+  "binary": "r4-land7/t1-record-land7/control-s3_cases",
+  "sha256": "3faa4e289ca4161e2e045ac3a93df41f806b4ec717f3c981f1a29f8ddbcc9fdc"
  }
 }
