@@ -20,7 +20,9 @@ const LEITBILD_ASSISTANCE_BODY_MAX_CHARS = 8_000
 const PROCEDURE_RUNNER_BODY_MAX_CHARS = 1_000
 // Paged work packages, human authorization and unsaved retiming need explicit
 // boundaries alongside deadline advice; this remains one ordinary Assistant skill.
-const PLANNING_ADVICE_BODY_MAX_CHARS = 4_400
+// Raised from 4,400 for the same question asked beside a World Run: opening
+// that Run's own plan, and what stands in for a refresh where none is offered.
+const PLANNING_ADVICE_BODY_MAX_CHARS = 5_500
 const DESCRIPTION_MAX_CHARS = 1_024
 
 describe('Leitbild Assistant skills', () => {
@@ -75,13 +77,37 @@ describe('Leitbild Assistant skills', () => {
     expect(assistantRoom.room.agents[0]!.skills).toContain('planning-advice')
     const planning = store.get('planning-advice')!
     expect(planning.body.length).toBeLessThanOrEqual(PLANNING_ADVICE_BODY_MAX_CHARS)
+    // World values are settled before any schedule is generated: by a refresh where a Room offers one,
+    // and beside a Run, where none is offered, by what opening the plan read or by saying how old they are.
     expect(planning.body.indexOf('planning.sources.refresh')).toBeGreaterThan(0)
     expect(planning.body.indexOf('planning.sources.refresh')).toBeLessThan(planning.body.indexOf('planning.plan.generate'))
+    expect(planning.body).toContain('Where `planning.sources.refresh` is offered (a Workspace-scoped Room), call it first with the Plan id.')
+    expect(planning.body).toContain("Beside a Run it is not offered: count the open as a new World read only if `planning.plan.create`'s description says opening an existing plan reads World again; otherwise say the plan's World values are as stored and when they were read")
+    expect(planning.body).toContain('If a refresh or open changed values, schedules published earlier are not current.')
     expect(planning.body).toContain('Unless the question is explicitly historical')
     expect(planning.body).toContain('`expectedRevision` beside `input` on each refresh/generate call')
     expect(planning.body).toContain('Ground reported times in its owner-localized `lines` and actual schedule rows.')
     expect(planning.body).toContain("ISO timestamps ending `Z` are UTC; convert them to the plan's time zone")
-    expect(planning.body).not.toMatch(/17:00|job:\s*["']restore|extra-maintenance-crew|nuclear-maintenance-planning/)
+    expect(planning.body).not.toMatch(/17:00|job:\s*["']restore|extra-maintenance-crew|nuclear-maintenance-planning|halden/i)
+  })
+
+  test('beside a World Run the first step opens that Run\'s own plan, once, before any refresh or schedule', async () => {
+    const store = createSkillStore()
+    await loadSkills(join(import.meta.dir, '..', '..', 'skills'), store, createToolRegistry())
+    const planning = store.get('planning-advice')!
+    const open = planning.body.indexOf('planning.plan.create')
+    expect(open).toBeGreaterThan(0)
+    expect(open).toBeLessThan(planning.body.indexOf('planning.sources.refresh'))
+    expect(open).toBeLessThan(planning.body.indexOf('planning.plan.generate'))
+    expect(planning.body).toContain("first open the focused Run's own plan: call `planning.plan.create` on the plan Definition in scope with `{demoRun: <that Run's id>}`")
+    expect(planning.body).toContain("returns that Run's own plan as `target` (beside a copy, the copy's plan)")
+    expect(planning.body).toContain('Open at most once per question: each open of an existing plan writes a history entry.')
+    expect(planning.body).toContain('If the open is refused, report the refusal and present no schedule as current.')
+    expect(planning.body).toContain('say plainly that no plan exists for this scenario')
+    expect(planning.body).toContain('Never use a Plan `about` another Run without naming that Run.')
+    // What an Assistant may not do is unchanged by the Run-side path.
+    expect(planning.body).toContain('it does not authorize changing authored inputs, weakening rules, committing a baseline or operating World')
+    expect(planning.body).toContain('Regenerate stale options.')
   })
 
   test('richer planning advice distinguishes scheduled gates, current-order previews and owner explanations', async () => {
