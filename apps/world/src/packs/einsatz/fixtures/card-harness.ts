@@ -17,6 +17,7 @@ import {
   receiptsFromSituation,
   receiptText,
   receiptUndoable,
+  saysBesideUndo,
   stopLabelOf,
   toggledChip,
   withReceipts,
@@ -229,7 +230,8 @@ export const openCardScreen = async (run: OpenRun, options: { readonly actor?: A
     feedback = null
     const outcome = await outcomeOf(run)
     if (!outcome.ok) {
-      feedback = outcome.text
+      // As the panel: a refused Undo's text shows once, beside the shown card's disabled Undo, else here.
+      feedback = saysBesideUndo(currentCard(), outcome.text) ? null : outcome.text
       return
     }
     if (receipt !== null) receipts = withReceipts(receipts, [ownReceipt({ commandId: outcome.commandId, unitIds: receipt.unitIds, unitLabel: receipt.unitIds.map(unitLabel).join(', '), targetLabel: receipt.target, dropped: receipt.dropped ?? null, undoable: receipt.undoable, atMs: wallMs })])

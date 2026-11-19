@@ -737,6 +737,39 @@ describe('Dispatch panel click counts', () => {
     })
   })
 
+  test('a refused Undo says why once: in the feedback slot while its unit\'s card is not shown, only beside the card\'s disabled Undo while it is', async () => {
+    await scene(async ({ run, screen, situation, callId, answer }) => {
+      const unitId = chosenCarrier(situation, answer)
+      await screen.mapTap(unitId)
+      await screen.mapTap(callId)
+      await screen.press({ kind: 'back' })
+      expect(screen.card()).toBeNull()
+      // Within the receipt's 8 s the Run moves on and the unit arrives, so the engine takes nothing back.
+      await run.run.setClock({ paused: false })
+      for (let i = 0; i < 400 && !['on-task', 'transporting'].includes(run.unit(unitId).phase); i++) {
+        run.forward(2_000)
+        await run.settle()
+      }
+      await run.run.setClock({ paused: true })
+      await screen.sync()
+      await screen.press({ kind: 'receipt-undo' })
+      expect(sent(screen).at(-1)?.[2]).toBe('nothing_to_undo')
+      const text = screen.feedback()
+      expect(text).toMatch(/has arrived|past the first stop/)
+      await screen.mapTap(unitId)
+      const card = () => {
+        const shown = screen.card()
+        if (shown?.kind !== 'unit') throw new Error('The unit card is not shown')
+        return shown
+      }
+      expect(card().undo).toMatchObject({ enabled: false, reason: text })
+      await screen.press({ kind: 'receipt-undo' })
+      expect(sent(screen).at(-1)?.[2]).toBe('nothing_to_undo')
+      expect(screen.feedback()).toBeNull()
+      expect(card().undo).toMatchObject({ enabled: false, reason: text })
+    })
+  })
+
   test('remove a stop: 2 clicks with the unit\'s card open (the × on its plan row, "Remove stop")', async () => {
     await scene(async ({ run, screen, callId, answer }) => {
       const unitId = answer.proposal!.units[0]!.unitId

@@ -252,6 +252,14 @@ export interface UndoRefusal {
   readonly text: string
 }
 
+/**
+ * Whether the shown card already says this refusal beside its disabled
+ * Undo. A refused Undo's text shows once: there while that unit's card is
+ * shown, else in the feedback slot.
+ */
+export const saysBesideUndo = (card: CardView | null, text: string): boolean =>
+  card !== null && card.kind === 'unit' && card.readOnly === null && !card.undo.enabled && card.undo.reason === text
+
 const undoButton = (unit: SituationUnit, readOnly: string | null, refusal: UndoRefusal | null): UnitCardView['undo'] => {
   const commandId = unit.lastOrder?.commandId ?? null
   const verdict = unit.lastOrder?.undo ?? null

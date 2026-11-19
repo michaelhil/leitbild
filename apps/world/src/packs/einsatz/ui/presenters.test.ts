@@ -24,6 +24,7 @@ import {
   receiptText,
   receiptUndoable,
   receiptUndoMs,
+  saysBesideUndo,
   siteCard,
   stopLabelOf,
   targetingFor,
@@ -170,6 +171,20 @@ describe('Compact unit card', () => {
     // A unit whose last order no command gave (a standing order) has nothing the engine takes back.
     const standing = situationOf({ units: [unit('r1', { lastOrder: { by: { label: 'Standing order', isViewer: false }, commandId: null, undo: null } })] })
     expect(unitCard(standing, standing.units[0]!, null, 0).undo).toMatchObject({ label: dispatchWords.undoLast, enabled: false, reason: dispatchWords.nothingToUndo, commandId: null })
+  })
+
+  test('a refused Undo\'s text is said once: the shown card says it beside its disabled Undo, so the slot need not', () => {
+    const text = 'R2\'s last order has been carried out: it has arrived'
+    const refused = situationOf({ units: [unit('r2', { ...situation.units[1]!, lastOrder: { by: assistant, commandId: 'cmd-7', undo: { applies: false, refusal: text } } })] })
+    const card = unitCard(refused, refused.units[0]!, null, 0)
+    expect(saysBesideUndo(card, text)).toBe(true)
+    expect(saysBesideUndo(card, 'Another refusal')).toBe(false)
+    expect(saysBesideUndo(null, text)).toBe(false)
+    // No Undo row on a read-only unit, and an enabled Undo says no reason.
+    const other = situationOf({ units: [unit('r2', { ...refused.units[0]!, commandedBy: 'Blue command' })] })
+    expect(saysBesideUndo(unitCard(other, other.units[0]!, null, 0), 'Commanded by Blue command')).toBe(false)
+    expect(saysBesideUndo(unitCard(situation, situation.units[1]!, null, 0), text)).toBe(false)
+    expect(saysBesideUndo(callCard(situation, situation.calls[0]!, null, opened, 0), text)).toBe(false)
   })
 
   test('lists the plan in order, the active stop first, each stop with the words of its ×; no stop can be moved', () => {

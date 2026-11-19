@@ -25,6 +25,7 @@
     receiptsFromSituation,
     receiptText,
     receiptUndoable,
+    saysBesideUndo,
     stopLabelOf,
     targetingFor,
     toggledChip,
@@ -232,13 +233,16 @@
     }
   }
 
-  /** A card's command: a refusal shows in the card's slot; an accepted order leaves a receipt, with Undo when the engine can take the order back. */
+  /**
+   * A card's command: a refusal shows in the card's slot, unless the shown card already says it beside its disabled Undo;
+   * an accepted order leaves a receipt, with Undo when the engine can take the order back.
+   */
   const command = async (run: () => Promise<CommandOutcome>, receipt: { readonly unitIds: ReadonlyArray<string>; readonly target: string; readonly dropped?: string | null; readonly undoable: boolean } | null): Promise<boolean> => {
     feedback = null
     const outcome = await outcomeOf(run)
     if (disposed) return false
     if (!outcome.ok) {
-      feedback = outcome.text
+      feedback = open && saysBesideUndo(card, outcome.text) ? null : outcome.text
       return false
     }
     if (receipt !== null) {
