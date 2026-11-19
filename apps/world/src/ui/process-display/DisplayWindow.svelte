@@ -10,6 +10,7 @@
     Maximize2,
     Minimize2,
     Minus,
+    MonitorUp,
     Pin,
     Plus,
     X,
@@ -26,6 +27,7 @@
   import { loadUiPack } from '../pack-loader.ts'
   import ProcedureRunBadges from '../procedures/ProcedureRunBadges.svelte'
   import type { ProcedureRunSummaryGroup } from '../procedures/procedure-run-selectors.ts'
+  import { deckEntrySurface, type TitledSurface } from '../surface-route.ts'
   import { runOnMount } from '../svelte-lifecycle.svelte.ts'
   import {
     floatingWindowBoundsForDrag,
@@ -128,6 +130,10 @@
     readonly onPresentation?: (sequence: number, applied: boolean, reason?: string) => void
     readonly close: () => void
     readonly planningDemoHref?: string | null
+    /** The page shows this window as a screen's surface (surface-route.ts): it fills the pane for good, with no restore and no close. */
+    readonly asSurface?: boolean
+    /** Asks the Host to show the display on another screen; null on a page that is itself a screen's surface. */
+    readonly placeOnScreen?: ((placed: TitledSurface) => void) | null
   }
 
   let {
@@ -147,6 +153,8 @@
     onPresentation = () => {},
     close,
     planningDemoHref = null,
+    asSurface = false,
+    placeOnScreen = null,
   }: Props = $props()
 
   type DefaultView =
@@ -217,7 +225,7 @@
   let viewport = $state.raw<DisplaySize>(currentViewport())
   let windowBounds = $state.raw<ProcessDisplayWindowBounds>(rememberedWindowBounds())
   let windowDrag = $state.raw<WindowDragState | null>(null)
-  let maximised = $state(false)
+  let maximised = $state(untrack(() => asSurface))
   let shown = $state.raw<ShownDeckEntry | null>(null)
   let acknowledgement = $state.raw<DeckAcknowledgement>(openingAcknowledgement(untrack(() => listings)))
   let mountedFrames = $state.raw<ReadonlyArray<MountedDeckFrame>>([])
@@ -276,6 +284,8 @@
   const currentEnvelope = $derived(current === null ? null : envelopeFor(current))
   // A listing this window cannot show (another view type) says so in place of a frame.
   const currentRefusal = $derived(current?.source === 'answer' ? current.refusal : null)
+  // Only an asset's overview and the dashboard have an address another screen can open.
+  const placeable = $derived(placeOnScreen === null || current === null ? null : deckEntrySurface(current))
   // The display the shown one was opened after: Back returns there.
   const backTarget = $derived(current === null ? null : returnTo.get(current.key) ?? null)
   const connecting = $derived(current !== null && currentDefault?.state !== 'failed' && currentRefusal === null
@@ -694,7 +704,8 @@
   }
 
   const setMaximised = (next: boolean): void => {
-    if (maximised === next) return
+    // A surface keeps the size of its pane, and the Host keeps its split.
+    if (asSurface || maximised === next) return
     maximised = next
     postToHost(displayWindowMaximiseMessage(next))
   }
@@ -822,7 +833,7 @@
         flushZoomWrites()
       }
       // The Host gets its split back when the window goes.
-      if (maximised) postToHost(displayWindowMaximiseMessage(false))
+      if (maximised && !asSurface) postToHost(displayWindowMaximiseMessage(false))
     }
   })
 </script>
@@ -994,6 +1005,12 @@
         <button type="button" class="display-window-button" aria-label={pinTitle} title={pinTitle} aria-disabled={pinnable === null || pinning} onclick={() => { void pinShown() }}>
           <Pin size={16} aria-hidden="true" />
         </button>
+        {#if placeable !== null}
+          {@const placed = placeable}
+          <button type="button" class="display-window-button" aria-label="Open {placed.title} on another screen…" title="Open on another screen…" onclick={() => placeOnScreen?.(placed)}>
+            <MonitorUp size={16} aria-hidden="true" />
+          </button>
+        {/if}
       {/if}
       {#if (tier === 'wide' || tier === 'medium') && proceduresShown}
         <div class="display-window-procedures" role="group" aria-label="Procedures">
@@ -1026,6 +1043,7 @@
         {/key}
       {/if}
       {#if tier === 'wide' || tier === 'medium'}
+        {#if !asSurface}
         <button
           type="button"
           class="display-window-button"
@@ -1035,12 +1053,13 @@
         >
           {#if maximised}<Minimize2 size={16} aria-hidden="true" />{:else}<Maximize2 size={16} aria-hidden="true" />{/if}
         </button>
+        {/if}
       {:else}
         <button
           bind:this={moreButton}
           type="button"
           class="display-window-button display-window-more"
-          aria-label={`More: ${[...(proceduresShown ? ['procedures'] : []), 'pin to dashboard', ...(toolsMenu !== null ? ['tools'] : []), 'maximise'].join(', ')}`}
+          aria-label={`More: ${[...(proceduresShown ? ['procedures'] : []), 'pin to dashboard', ...(placeable !== null ? ['open on another screen'] : []), ...(toolsMenu !== null ? ['tools'] : []), ...(asSurface ? [] : ['maximise'])].join(', ')}`}
           title="More"
           aria-haspopup="true"
           aria-expanded={popover === 'more'}
@@ -1052,6 +1071,7 @@
           {/if}
         </button>
       {/if}
+      {#if !asSurface}
       <button
         type="button"
         class="display-window-button"
@@ -1061,6 +1081,7 @@
       >
         <X size={19} aria-hidden="true" />
       </button>
+      {/if}
     </header>
 
     <div class="display-window-body" bind:this={bodyElement}>
@@ -1204,9 +1225,17 @@
           <Pin size={16} aria-hidden="true" />
           <span>Pin to dashboard</span>
         </button>
+        {#if placeable !== null}
+          {@const placed = placeable}
+          <button type="button" class="display-window-menu-item" onclick={() => { popover = null; placeOnScreen?.(placed) }}>
+            <MonitorUp size={16} aria-hidden="true" />
+            <span>Open on another screen…</span>
+          </button>
+        {/if}
         {#if toolsMenu !== null}
           {@render toolsMenu(() => closePopover(true))}
         {/if}
+        {#if !asSurface}
         <button
           type="button"
           class="display-window-menu-item"
@@ -1215,6 +1244,7 @@
           {#if maximised}<Minimize2 size={16} aria-hidden="true" />{:else}<Maximize2 size={16} aria-hidden="true" />{/if}
           <span>{maximised ? 'Restore the window' : 'Maximise the window'}</span>
         </button>
+        {/if}
       </div>
     {/if}
 
