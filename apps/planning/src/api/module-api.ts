@@ -3,7 +3,7 @@
 // validated with the exact schemas; what is published is stripForPublication(exact).
 import { z } from 'zod'
 import {
-  inspectionViewSchema, moduleActivitySchema, moduleCapabilityInvocationSchema, moduleIdSchema, moduleResourceDescriptorSchema,
+  ABOUT_RELATION, inspectionViewSchema, moduleActivitySchema, moduleCapabilityInvocationSchema, moduleIdSchema, moduleResourceDescriptorSchema,
   workspaceIdSchema, workspaceModuleManifestSchema,
   type ModuleCapabilityInvocation, type ModuleResourceDescriptor, type WorkspaceId,
 } from '@leitbild/contracts'
@@ -17,7 +17,8 @@ import {
   baselineInputSchema, createInputSchema, deleteInputSchema, editInputSchema, explainInputSchema, explainResultSchema,
   generateInputSchema, generateResultSchema, publishedInputSchema, readInputSchema, refreshInputSchema, writeResultSchema,
 } from './contract.ts'
-import { planReference, type PlanningOperations } from './operations.ts'
+import { planReference, runReference, type PlanningOperations } from './operations.ts'
+import { createRunLinks } from './run-link.ts'
 import type { PlanDefinitionsPort } from '../definitions/index.ts'
 import { scheduleDisplayInputSchema, scheduleDisplayResultSchema } from './schedule-display-contract.ts'
 
@@ -194,19 +195,27 @@ const statusLabel = (plan: PlanSummary): string => {
 export const createPlanningModuleApi = (config: {
   readonly operations: PlanningOperations
   readonly definitions: PlanDefinitionsPort
-  readonly store: Pick<PlanStore, 'hasWorkspace' | 'provision' | 'removeWorkspace'>
+  readonly store: Pick<PlanStore, 'hasWorkspace' | 'provision' | 'removeWorkspace' | 'read'>
 }) => {
+  // One per Module API, so it lives as long as the service: the Run each linked plan is about.
+  const runLinks = createRunLinks(config.store.read)
   const registry = createModuleCapabilityRegistry<PlanningCallContext, Response>(moduleId, planningOperations.map(registrationFor))
   const planCapabilities = registry.idsForResourceType(planType)
   const definitionCapabilities = registry.idsForDefinitionType(planDefinitionType)
 
   const resourcesFor = async (workspaceId: WorkspaceId): Promise<ModuleResourceDescriptor[]> => {
     const { plans, damaged } = await config.operations.list(workspaceId)
+    const runs = await runLinks.forListing(workspaceId, plans)
+    const linksOf = (planId: string) => {
+      const runId = runs.get(planId)
+      return runId === undefined ? {} : { links: [{ rel: ABOUT_RELATION, ref: runReference(workspaceId, runId) }] }
+    }
     const observedAt = new Date().toISOString()
     return [
       ...plans.map(plan => moduleResourceDescriptorSchema.parse({
         ref: planReference(workspaceId, plan.id), title: plan.title,
         ...(plan.purpose === undefined ? {} : { description: plan.purpose }),
+        ...linksOf(plan.id),
         uiPath: `/workspaces/${workspaceId}/planning?plan=${plan.id}`,
         capabilityIds: planCapabilities, inspectionCapabilityId: 'planning.plan.read', deleteCapabilityId: 'planning.plan.delete',
         summary: [
@@ -243,7 +252,7 @@ export const createPlanningModuleApi = (config: {
           if (input.workspaceId !== workspaceId) throw planningError(409, 'workspace_scope_mismatch', 'Lifecycle body belongs to another Workspace')
           return json({ workspaceId, moduleId: 'planning' }, await config.store.provision(workspaceId) ? 201 : 200)
         }
-        if (request.method === 'DELETE') { await config.store.removeWorkspace(workspaceId); return new Response(null, { status: 204 }) }
+        if (request.method === 'DELETE') { await config.store.removeWorkspace(workspaceId); runLinks.forgetWorkspace(workspaceId); return new Response(null, { status: 204 }) }
       }
       if (!await config.store.hasWorkspace(workspaceId)) throw planningError(404, 'workspace_not_found', 'Planning is not provisioned in this Workspace')
       if (collection === 'definitions' && request.method === 'GET') return json({ definitions: definitionDescriptors(workspaceId, config.definitions, definitionCapabilities) })

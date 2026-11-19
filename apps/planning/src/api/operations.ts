@@ -176,7 +176,7 @@ export const storedActor = (access: AccessContext): StoredActor => {
 export const planReference = (workspaceId: WorkspaceId, planId: string): WorkspaceResourceReference =>
   workspaceResourceReferenceSchema.parse({ workspaceId, moduleId: 'planning', type: 'planning.plan', id: planId })
 
-const runReference = (workspaceId: WorkspaceId, runId: string): WorkspaceResourceReference =>
+export const runReference = (workspaceId: WorkspaceId, runId: string): WorkspaceResourceReference =>
   workspaceResourceReferenceSchema.parse({ workspaceId, moduleId: 'world', type: 'world.simulation-run', id: runId })
 
 /** One guided plan per Run, including when the launcher retries an interrupted request. */
