@@ -10,6 +10,7 @@ import {
   refusalShownMs,
   selectedObjectOf,
   selectionChangeEvent,
+  submitOrder,
   type Clicked,
   type CurrentJob,
   type Selection,
@@ -103,6 +104,10 @@ describe('B.3: a click on a call or a site', () => {
   test('SA: a target the options list as refused (a dimmed target) submits all the same: the server decides', () => {
     // The reducer never reads the options: the glow is only a hint.
     expect(kinds(step(sa, click(call2)).effects)).toEqual(['submit'])
+  })
+  test('the order a submit sends, as the panel and the card harness both send it: when only when given, drops only as the job\'s task', () => {
+    expect(submitOrder({ kind: 'submit', unitId: unitA.id, target: { taskId: call.id }, when: null, drops: null })).toEqual({ units: [unitA.id], stops: [{ taskId: call.id }] })
+    expect(submitOrder({ kind: 'submit', unitId: unitA.id, target: { taskId: call.id }, when: 'now', drops: job })).toEqual({ units: [unitA.id], stops: [{ taskId: call.id }], when: 'now', drops: job.taskId })
   })
   test('SA armed by "+ Add stop" submits with when "after"', () => {
     const armed = reduceSelection(start(su), { kind: 'arm', unitId: unitA.id, when: 'after', held: null }).state

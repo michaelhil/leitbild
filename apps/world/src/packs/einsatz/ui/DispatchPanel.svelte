@@ -11,7 +11,6 @@
   import { dispatchMapCover, panelBottomClearancePx, panelEdgeGapPx, panelLayoutFor, panelTopClearancePx, sheetOpen, shownClearOfPanel } from './dispatch-layout.ts'
   import { createIconCache, runEinsatzClient, situationIconIds, type CommandOutcome } from './einsatz-client.ts'
   import {
-    busyChoices,
     cardFor,
     contactRows,
     deliverToOrder,
@@ -21,14 +20,16 @@
     einsatzRecordsKey,
     emptySelectionText,
     jobText,
-    movePromptText,
     overview,
     ownReceipt,
     pinProposal,
+    promptChoices,
     receiptsFromSituation,
     receiptText,
     receiptUndoable,
+    stopLabelOf,
     targetingFor,
+    toggledChip,
     withReceipts,
     type PinnedProposal,
     type Receipt,
@@ -40,8 +41,8 @@
     selectedObjectOf,
     selectionChangeEvent,
     stopObjectId,
+    submitOrder,
     type ClickedObject,
-    type CurrentJob,
     type DispatchObjectKind,
     type SelectionEffect,
     type SelectionEvent,
@@ -225,7 +226,7 @@
         void pin(effect.callId)
         return
       case 'submit':
-        void submit(effect.unitId, effect.target, effect.when, effect.drops)
+        void submit(effect)
         return
       case 'late-refusal':
         feedback = `${unitLabel(effect.unitId)} → ${stopLabel(effect.target)}: ${effect.text}`
@@ -234,14 +235,7 @@
   }
 
   const unitLabel = (unitId: string): string => situation?.units.find(unit => unit.id === unitId)?.label ?? unitId
-  const stopLabel = (stop: Stop): string => {
-    const listed = options?.targets.find(target => JSON.stringify(target.target) === JSON.stringify(stop))?.label
-    if (listed !== undefined) return listed
-    if ('taskId' in stop) return situation?.calls.find(call => call.id === stop.taskId)?.label ?? stop.taskId
-    if ('siteId' in stop) return situation?.sites.find(site => site.id === stop.siteId)?.label ?? stop.siteId
-    if ('trackId' in stop) return props.objects.find(object => object.id === stop.trackId)?.label ?? stop.trackId
-    return dispatchWords.mapPoint
-  }
+  const stopLabel = (stop: Stop): string => stopLabelOf(stop, situation, options, props.objects)
 
   const outcomeOf = async (run: () => Promise<CommandOutcome>): Promise<CommandOutcome> => {
     try {
@@ -251,15 +245,14 @@
     }
   }
 
-  /** The armed unit's order for one stop: `now` drops exactly the job the busy prompt named. */
-  const submit = async (unitId: string, target: Stop, when: UnitOrderInput['when'] | null, drops: CurrentJob | null): Promise<void> => {
-    const input: UnitOrderInput = { units: [unitId], stops: [target], ...(when === null ? {} : { when }), ...(drops === null ? {} : { drops: drops.taskId }) }
-    const outcome = await outcomeOf(async () => await client.order(input))
+  /** The armed unit's order for one stop (`submitOrder`); its result goes back to the selection table. */
+  const submit = async (effect: Extract<SelectionEffect, { kind: 'submit' }>): Promise<void> => {
+    const outcome = await outcomeOf(async () => await client.order(submitOrder(effect)))
     if (disposed) return
-    send({ kind: 'result', unitId, target, outcome: outcome.ok ? { ok: true } : { ok: false, code: outcome.code, text: outcome.text }, atMs: Date.now() })
+    send({ kind: 'result', unitId: effect.unitId, target: effect.target, outcome: outcome.ok ? { ok: true } : { ok: false, code: outcome.code, text: outcome.text }, atMs: Date.now() })
     if (outcome.ok) {
-      const dropped = drops === null ? null : jobText(drops)
-      receipts = withReceipts(receipts, [ownReceipt({ commandId: outcome.commandId, unitIds: [unitId], unitLabel: unitLabel(unitId), targetLabel: stopLabel(target), dropped, atMs: Date.now() })])
+      const dropped = effect.drops === null ? null : jobText(effect.drops)
+      receipts = withReceipts(receipts, [ownReceipt({ commandId: outcome.commandId, unitIds: [effect.unitId], unitLabel: unitLabel(effect.unitId), targetLabel: stopLabel(effect.target), dropped, atMs: Date.now() })])
     }
   }
 
@@ -286,12 +279,7 @@
   }
 
   const toggleChip = (unitId: string): void => {
-    const current = pinned
-    if (current === null) return
-    const dropped = new Set(current.dropped)
-    if (dropped.has(unitId)) dropped.delete(unitId)
-    else dropped.add(unitId)
-    pinned = { ...current, dropped }
+    if (pinned !== null) pinned = toggledChip(pinned, unitId)
   }
 
   /** The map point of a stop: its own point, or the position of the object it names. */
@@ -421,21 +409,14 @@
     const shown = selection.selection
     const current = situation
     let prompt: MapPrompt | null = null
-    if (shown.kind === 'armed' && shown.prompt !== null && current !== null) {
-      if (shown.prompt.kind === 'move') {
-        prompt = { point: shown.prompt.point, options: [{ label: movePromptText(current, shown.unitId), onConfirm: () => send({ kind: 'prompt', choice: 'move' }) }], onDismiss: promptDismissed }
-      } else if (shown.prompt.job !== null) {
-        const choices = busyChoices(shown.prompt.job)
-        const point = pointOf(shown.prompt.target)
-        if (point !== undefined) {
-          prompt = {
-            point,
-            options: [
-              { label: choices.after, onConfirm: () => send({ kind: 'prompt', choice: 'after' }) },
-              { label: choices.now, tone: 'warning', onConfirm: () => send({ kind: 'prompt', choice: 'now' }) },
-            ],
-            onDismiss: promptDismissed,
-          }
+    const choices = current === null ? null : promptChoices(current, shown)
+    if (choices !== null && shown.kind === 'armed' && shown.prompt !== null) {
+      const point = shown.prompt.kind === 'move' ? shown.prompt.point : pointOf(shown.prompt.target)
+      if (point !== undefined) {
+        prompt = {
+          point,
+          options: choices.map(entry => ({ label: entry.label, ...(entry.warning ? { tone: 'warning' as const } : {}), onConfirm: () => send({ kind: 'prompt', choice: entry.choice }) })),
+          onDismiss: promptDismissed,
         }
       }
     }

@@ -2,7 +2,7 @@ import { z } from 'zod'
 import { objectIdSchema, type OperationalObject } from '../../../core/model/index.ts'
 import { einsatzPackId } from '../ids.ts'
 import { neutralLexicon, unitPhases } from '../lexicon.ts'
-import type { Stop, UnitOrderInput } from '../order-schema.ts'
+import type { OrderWhen, Stop, UnitOrderInput } from '../order-schema.ts'
 import type { Eta, RecommendAnswer } from '../recommendation-schema.ts'
 import type { Situation, SituationCall, SituationSite, SituationUnit, StopVerb, UnitOptions, UnitTone } from '../situation/schema.ts'
 import { clockText, contactIcon } from '../text.ts'
@@ -855,6 +855,45 @@ export const targetingFor = (selection: Selection): MapTargeting | null => {
 export const movePromptText = (situation: Situation, unitId: string): string => {
   const unit = situation.units.find(entry => entry.id === unitId)
   return `${situation.words.move} ${unit?.label ?? ''} here`.replace(/\s+/g, ' ')
+}
+
+export interface PromptChoice {
+  readonly label: string
+  readonly choice: 'move' | OrderWhen
+  /** "Now", which drops the current job, is drawn in warning style. */
+  readonly warning: boolean
+}
+
+/**
+ * The armed unit's map prompt options, in order: "Move A4 here" for a tap
+ * on open ground, or the busy prompt's "After current job" and "Now (drops
+ * …)", labelled from the job it opened with; null while no prompt shows,
+ * and while the busy prompt waits for the job.
+ */
+export const promptChoices = (situation: Situation, selection: Selection): ReadonlyArray<PromptChoice> | null => {
+  if (selection.kind !== 'armed' || selection.prompt === null) return null
+  const prompt = selection.prompt
+  if (prompt.kind === 'move') return [{ label: movePromptText(situation, selection.unitId), choice: 'move', warning: false }]
+  if (prompt.job === null) return null
+  const choices = busyChoices(prompt.job)
+  return [{ label: choices.after, choice: 'after', warning: false }, { label: choices.now, choice: 'now', warning: true }]
+}
+
+/** A stop in words, for a receipt or a refusal: as the unit's options list it, else its call's, site's or object's label; a point is the map point. */
+export const stopLabelOf = (stop: Stop, situation: Situation | null, options: UnitOptions | null, objects: ReadonlyArray<Pick<OperationalObject, 'id' | 'label'>>): string => {
+  const listed = options?.targets.find(target => stopKey(target.target) === stopKey(stop))?.label
+  if (listed !== undefined) return listed
+  const id = stopObjectId(stop)
+  if (id === null) return dispatchWords.mapPoint
+  return situation?.calls.find(call => call.id === id)?.label ?? situation?.sites.find(site => site.id === id)?.label ?? objects.find(object => object.id === id)?.label ?? id
+}
+
+/** The pinned proposal with one unit's chip toggled: dropped from the order, or restored to it. */
+export const toggledChip = (pinned: PinnedProposal, unitId: string): PinnedProposal => {
+  const dropped = new Set(pinned.dropped)
+  if (dropped.has(unitId)) dropped.delete(unitId)
+  else dropped.add(unitId)
+  return { ...pinned, dropped }
 }
 
 // ——— Receipts ———

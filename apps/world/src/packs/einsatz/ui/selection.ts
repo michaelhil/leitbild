@@ -1,5 +1,5 @@
 import type { GeoJsonPoint } from '../../../core/model/index.ts'
-import type { OrderWhen, Stop } from '../order-schema.ts'
+import type { OrderWhen, Stop, UnitOrderInput } from '../order-schema.ts'
 import type { UnitOptions } from '../situation/schema.ts'
 
 /**
@@ -165,6 +165,14 @@ export type SelectionEffect =
   | { readonly kind: 'recommend'; readonly callId: string }
   /** A refused order of a unit the selection has left: the panel reports it, since no target shows it any more. */
   | { readonly kind: 'late-refusal'; readonly unitId: string; readonly target: Stop; readonly text: string }
+
+/** The `world.einsatz.unit.order` a submit sends: `now` drops exactly the job the busy prompt named. */
+export const submitOrder = (effect: Extract<SelectionEffect, { kind: 'submit' }>): UnitOrderInput => ({
+  units: [effect.unitId],
+  stops: [effect.target],
+  ...(effect.when === null ? {} : { when: effect.when }),
+  ...(effect.drops === null ? {} : { drops: effect.drops.taskId }),
+})
 
 export interface SelectionStep {
   readonly state: SelectionState
