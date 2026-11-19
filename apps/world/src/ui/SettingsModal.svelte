@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { Eye, EyeOff, House, Moon, RotateCcw, Sun } from 'lucide-svelte'
+  import { House, Moon, RotateCcw, Sun } from 'lucide-svelte'
   import type { ThemeMode } from './theme.ts'
   import IconButton from './components/IconButton.svelte'
   import InlineConfirmation from './components/InlineConfirmation.svelte'
@@ -7,24 +7,18 @@
 
   interface Props {
     readonly theme: ThemeMode
-    readonly weatherLayerAvailable: boolean
-    readonly weatherLayerVisible: boolean
     readonly close: () => void
     readonly goToStartPage: () => void
     readonly toggleTheme: () => void
-    readonly toggleWeatherLayer: () => void
     /** Null where this screen may not reset: a role Run screen without a controller role. */
     readonly resetScenario: (() => Promise<void>) | null
   }
 
   let {
     theme,
-    weatherLayerAvailable,
-    weatherLayerVisible,
     close,
     goToStartPage,
     toggleTheme,
-    toggleWeatherLayer,
     resetScenario,
   }: Props = $props()
 
@@ -69,23 +63,6 @@
         onClick={goToStartPage}
       />
     </section>
-
-    {#if weatherLayerAvailable}
-      <section class="settings-row">
-        <div>
-          <strong>Weather overlay</strong>
-          <span>Show or hide the weather field layer on the map.</span>
-        </div>
-        <IconButton
-          label={weatherLayerVisible ? 'Hide weather overlay' : 'Show weather overlay'}
-          title={weatherLayerVisible ? 'Hide weather overlay' : 'Show weather overlay'}
-          icon={weatherLayerVisible ? Eye : EyeOff}
-          pressed={weatherLayerVisible}
-          variant="ghost"
-          onClick={toggleWeatherLayer}
-        />
-      </section>
-    {/if}
 
     {#if resetScenario}
     <section class="settings-row">

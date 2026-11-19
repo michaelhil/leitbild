@@ -1,6 +1,7 @@
 <script lang="ts">
   import { onDestroy, onMount, tick, untrack } from 'svelte'
   import {
+    WORKSPACE_SURFACE_PARAMETER,
     workspaceResourceReferenceSchema,
     type FeaturedDefinitionCatalog,
     type InspectionView,
@@ -14,6 +15,7 @@
     type WorkspaceDefinitionRevisionReference,
     type WorkspaceResourceReference,
     type WorkspaceSubjectReference,
+    type WorkspaceSurface,
   } from '@leitbild/contracts'
   import JsonTree from './JsonTree.svelte'
   import WikiLink from './WikiLink.svelte'
@@ -38,7 +40,7 @@
   import { keptSelection, planningDemoQuery } from './open-selection.ts'
   import { withUnreadCount, workspacePageTitle } from './page-title.ts'
   import { ageText, moduleReadiness, moduleTitle, workspaceLabel } from './launch-workspace.ts'
-  import { workspacePath, workspaceUrl } from './launch-destination.ts'
+  import { WORKSPACE_SCREEN_PARAMETER, workspacePath, workspaceUrl } from './launch-destination.ts'
   import { createPeopleSession, type PeopleSession, type PeopleState } from './people-session.ts'
   import { browserPeoplePorts } from './people-browser.ts'
   import { PEOPLE_SYNC_CAPABILITY_ID, type PersonWire } from './people-wire.ts'
@@ -52,6 +54,12 @@
   import { readScenarioEditorMessage, sameSavedScenario } from './scenario-editor-messages.ts'
   import { invokeDefinitionStart } from './start-invocation.ts'
   import { continueItems, featuredStartRevision, openedFromGuide, workspaceDemos, type FeaturedCard } from './workspace-page.ts'
+  import ScreenBadge from './screens/ScreenBadge.svelte'
+  import ScreensPanel from './screens/ScreensPanel.svelte'
+  import { NOT_FOLLOWING_TEXT, screenAddress, screenShows, standbyText, type FollowTrigger, type ScreenShow, type StandbyReason } from './screens/screen-follow.ts'
+  import {
+    browserScreenStore, createBoundsReporter, definitionKeyOf, offersShowOnScreens, scenarioTitle, screenOfAddress, screenStorageChange, showOnScreens, type ScreensRun,
+  } from './screens/screen-setup.ts'
 
   type Page = { readonly kind: 'workspace'; readonly id: string }
   interface InvocationResponse {
@@ -70,6 +78,25 @@
   }
 
   const currentPage = page()
+  // Screens (screens/screen-setup.ts): the screens this browser remembers and the Run they show.
+  // A browser that never set one up reads two absent keys and shows nothing of it but "Screens…" in the Run's More menu.
+  const screens = browserScreenStore()
+  // A `screen=<id>` window decides what it shows before the address is read below, so the composer mounts on that
+  // decision. Inside this page's Workspace the stored target selects the Run and this screen's content; it never
+  // takes the page to another Workspace on load (screens/screen-follow.ts).
+  const screenWindow = screenOfAddress(new URLSearchParams(location.search).get(WORKSPACE_SCREEN_PARAMETER))
+  const screenId = screenWindow.id
+  const screenShowNow = (id: string, trigger: FollowTrigger): ScreenShow => {
+    const address = new URLSearchParams(location.search)
+    return screenShows({
+      screenId: id, workspaceId: currentPage.id, trigger, target: screens.readTarget(), setup: screens.readSetup(),
+      address: { world: address.get('world'), surface: address.get(WORKSPACE_SURFACE_PARAMETER), planning: address.get('planning') },
+    })
+  }
+  const openingShow = screenId === null ? null : screenShowNow(screenId, 'load')
+  const openingAddress = screenId === null || openingShow === null ? null
+    : screenAddress(openingShow, { workspaceId: currentPage.id, screenId, agents: new URLSearchParams(location.search).get('agents') })
+  if (openingAddress !== null) history.replaceState(null, '', openingAddress)
   const initialSelection = new URLSearchParams(location.search)
   const initialAgentsVisible = initialSelection.get('agents') !== null
   let selectedPlanningId = $state(initialSelection.get('planning'))
@@ -78,6 +105,8 @@
   let selectedWorldFocus = $state(initialSelection.get('focus'))
   let selectedWorldElement = $state(initialSelection.get('element'))
   let selectedWorldOption = $state(initialSelection.get('option'))
+  // One surface of the Run's page (a unit's overview, its procedures). The string is World's: it is forwarded, never read.
+  let selectedWorldSurface = $state(initialSelection.get(WORKSPACE_SURFACE_PARAMETER))
   let selectedAgentsRoomId = $state(initialSelection.get('agents'))
   let agentsVisible = $state(initialAgentsVisible)
   // A conversation the Getting started guide opened links back to it (plan v2 §2).
@@ -163,12 +192,93 @@
     room: selectedAgentsResource?.title ?? null,
   }))
 
+  const readScreens = () => ({ setup: screens.readSetup(), target: screens.readTarget() })
+  let screensStored = $state.raw(readScreens())
+  let screensPanelOpen = $state(false)
+  let placingSurface = $state.raw<WorkspaceSurface | null>(null)
+  const screensRun = $derived<ScreensRun | null>(workspace && selectedWorldResource
+    ? { workspaceId: workspace.id, runId: selectedWorldResource.ref.id, definition: definitionKeyOf(selectedWorldResource) } : null)
+  const showOnScreensOffered = $derived(screensRun !== null && offersShowOnScreens(screensStored.setup, screensStored.target, screensRun))
+  const showRunOnScreens = (): void => {
+    if (!screensRun) return
+    const written = showOnScreens(screens, screensRun)
+    if (!written.ok) error = `The screens were not changed: ${written.reason}`
+    screensStored = readScreens()
+  }
+  const openScreensPanel = (placing: WorkspaceSurface | null): void => {
+    if (screenId !== null) { error = 'Screen placement refused: a screen window does not set up screens. Use the main window.'; return }
+    if (!screensRun) { error = 'Screen placement refused: this Workspace does not list the Run shown here'; return }
+    placingSurface = placing
+    screensPanelOpen = true
+  }
+  // The panel belongs to the open Run: when that closes, so does the panel, and it does not come back with the next Run.
+  $effect(() => {
+    if (screensRun !== null) return
+    screensPanelOpen = false
+    placingSurface = null
+  })
+
+  // A screen window: Standby instead of the Workspace page, its name, and what it does when another window changes the stored state.
+  let screenStandby = $state.raw<StandbyReason | null>(openingShow?.kind === 'standby' ? openingShow.reason : null)
+  let screenFollowing = $state(openingShow?.kind !== 'address' || openingShow.following)
+  let screenRunGone = $state(false)
+  let screenIdentify = $state(0)
+  const shownStandby = $derived<StandbyReason | null>(screenId === null || loading || !workspace ? null
+    : screenStandby ?? (showingComposer ? null : { kind: screenRunGone ? 'run-gone' : 'no-run' }))
+  const screenName = $derived(screensStored.setup.status === 'ok' ? screensStored.setup.value.screens.find(screen => screen.id === screenId)?.name ?? null : null)
+  // Another Workspace is reached only from here, the direct result of a press in another window, and only once that
+  // Workspace is known to exist. A newer change overtakes one still being checked.
+  let screenFollow = 0
+  const followScreens = async (id: string): Promise<void> => {
+    const sequence = ++screenFollow
+    let show = screenShowNow(id, 'storage')
+    screenFollowing = show.kind !== 'address' || show.following
+    if (show.kind === 'navigate') {
+      const destination = show
+      try {
+        await request(`/api/workspaces/${encodeURIComponent(destination.workspaceId)}`)
+        if (sequence === screenFollow) location.assign(destination.href)
+        return
+      } catch (cause) {
+        if (sequence !== screenFollow) return
+        show = { kind: 'standby', reason: { kind: 'elsewhere', href: destination.href, problem: plainErrorText(cause) } }
+      }
+    }
+    if (show.kind === 'select' && workspace) {
+      // The Run may have been started after this window last read the Workspace's Runs.
+      const runId = show.runId
+      if (!resources.some(resource => resource.ref.type === 'world.simulation-run' && resource.ref.id === runId)) {
+        await refreshResources(workspace.id).catch(cause => { refreshError = String(cause) })
+        if (sequence !== screenFollow) return
+      }
+    }
+    screenStandby = show.kind === 'standby' ? show.reason : null
+    const address = screenAddress(show, { workspaceId: currentPage.id, screenId: id, agents: agentsVisible ? selectedAgentsRoomId : null })
+    if (address === null || address === `${location.pathname}${location.search}`) return
+    // In-page, so a fullscreen screen stays fullscreen.
+    history.pushState(null, '', address)
+    restoreUrlSelection()
+  }
+  // Where this screen's window is: on load, resize and leaving, and once it is first shown if it had no size at load.
+  const screenBounds = screenId === null ? null : createBoundsReporter(screens, screenId, window)
+  const screensStorageChanged = (event: StorageEvent): void => {
+    const change = screenStorageChange(event.key)
+    if (change === null) return
+    const stored = change.kind === 'setup' || change.kind === 'target' || change.kind === 'cleared'
+    if (stored) screensStored = readScreens()
+    if (screenId === null) return
+    if (stored) void followScreens(screenId)
+    else if (change.kind === 'identify' && event.newValue !== null) screenIdentify += 1
+    else if (change.kind === 'roll-call' && event.newValue !== null) screens.answer(screenId, event.newValue)
+  }
+
   /** The Modules' answers to the last Resource read, so Back and Forward can check a restored selection too. */
   let resourceOutcomes: ReadonlyArray<ModuleQueryOutcome> = []
   const normalizeOpenSelection = (catalog: ReadonlyArray<ModuleResourceDescriptor>, modules: ReadonlyArray<ModuleQueryOutcome>): void => {
     resourceOutcomes = modules
     const requestedDemo = selectedPlanningId === 'demo'
     const kept = keptSelection({ world: selectedWorldRunId, planning: selectedPlanningId, agents: selectedAgentsRoomId, agentsVisible }, catalog, modules)
+    if (screenId !== null && selectedWorldRunId !== null) screenRunGone = kept.world === null
     selectedWorldRunId = kept.world
     selectedAgentsRoomId = kept.agents
     agentsVisible = kept.agentsVisible
@@ -185,8 +295,10 @@
       url.searchParams.delete('world')
       url.searchParams.delete('focus')
       url.searchParams.delete('element')
+      url.searchParams.delete(WORKSPACE_SURFACE_PARAMETER)
       selectedWorldFocus = null
       selectedWorldElement = null
+      selectedWorldSurface = null
     }
     if (selectedPlanningId) url.searchParams.set('planning', selectedPlanningId)
     else url.searchParams.delete('planning')
@@ -203,7 +315,8 @@
   // People and direct chat (Agents' people Capabilities). One session per page,
   // made the first time a Run is open and Agents publishes people; it lives
   // across Run switches, so an open chat stays open. Its failures stay inside
-  // the control: they never reach this page's error banner.
+  // the control: they never reach this page's error banner. A screen window
+  // has no workspace bar and is nobody in the Run: it never starts a session.
   const peopleAvailable = $derived(capabilities.some(capability => capability.id === PEOPLE_SYNC_CAPABILITY_ID))
   let people = $state.raw<PeopleSession | null>(null)
   let peopleState = $state.raw<PeopleState | null>(null)
@@ -213,7 +326,7 @@
   const peopleShown = $derived(people !== null && peopleState !== null && peopleAvailable && selectedWorldResource !== undefined)
   const peopleRunUrl = $derived(workspace && selectedWorldRunId ? `${location.origin}${workspaceUrl(workspace.id, { world: selectedWorldRunId })}` : '')
   $effect(() => {
-    if (people !== null || !workspace || !peopleAvailable || !selectedWorldResource) return
+    if (screenId !== null || people !== null || !workspace || !peopleAvailable || !selectedWorldResource) return
     const workspaceId = workspace.id
     untrack(() => {
       const session = createPeopleSession({ workspaceId, ports: browserPeoplePorts() })
@@ -439,7 +552,7 @@
   // The featured list needs no Workspace runtime; it is read once, when the home first shows.
   let featuredRequested = false
   $effect(() => {
-    if (workspace && !showingComposer && !featuredRequested) {
+    if (workspace && !showingComposer && screenId === null && !featuredRequested) {
       featuredRequested = true
       void loadFeatured()
     }
@@ -592,6 +705,7 @@
     selectedWorldFocus = null
     selectedWorldElement = null
     selectedWorldOption = null
+    selectedWorldSurface = null
     const nextRun = resources.find(candidate => candidate.ref.type === 'world.simulation-run' && candidate.ref.id === runId)
     if (selectedAgentsResource && nextRun && !roomServesRun(selectedAgentsResource, nextRun)) {
       selectedAgentsRoomId = null
@@ -605,6 +719,7 @@
     url.searchParams.delete('focus')
     url.searchParams.delete('element')
     url.searchParams.delete('option')
+    url.searchParams.delete(WORKSPACE_SURFACE_PARAMETER)
     if (selectedAgentsRoomId) url.searchParams.set('agents', selectedAgentsRoomId)
     else url.searchParams.delete('agents')
     if (replace) history.replaceState(null, '', url)
@@ -643,8 +758,10 @@
     selectedWorldFocus = selection.get('focus')
     selectedWorldElement = selection.get('element')
     selectedWorldOption = selection.get('option')
+    selectedWorldSurface = selection.get(WORKSPACE_SURFACE_PARAMETER)
     selectedAgentsRoomId = selection.get('agents')
     agentsVisible = selectedAgentsRoomId !== null
+    screenRunGone = false
     // Back to a Run or conversation deleted since is the Workspace page, not a dead view.
     if (!loading) normalizeOpenSelection(resources, resourceOutcomes)
   }
@@ -788,7 +905,7 @@
     item.kind === 'timestamp' ? ageText(new Date(item.value), new Date(summaryClock)) : String(item.value)
   const refreshInterval = setInterval(() => {
     summaryClock = Date.now()
-    if (workspace && !showingComposer) {
+    if (workspace && !showingComposer && screenId === null) {
       void refreshResources(workspace.id).catch(cause => { refreshError = String(cause) })
     }
   }, 20_000)
@@ -797,13 +914,20 @@
   onMount(() => {
     window.addEventListener('popstate', restoreUrlSelection)
     void load()
+    if (screenWindow.refused !== null) error = screenWindow.refused
+    screenBounds?.report()
     return () => window.removeEventListener('popstate', restoreUrlSelection)
   })
 </script>
 
-<svelte:window onmessage={handleWindowMessage} />
+<svelte:window onmessage={handleWindowMessage} onstorage={screensStorageChanged}
+  onresize={() => screenBounds?.report()} onpagehide={() => screenBounds?.report()} onfocus={() => screenBounds?.shown()} />
+<svelte:document onvisibilitychange={() => { if (document.visibilityState === 'visible') screenBounds?.shown() }} />
 
-{#if showingComposer && !workspace}
+{#if screenId !== null}
+  <ScreenBadge id={screenId} name={screenName} identify={screenIdentify} notice={screenFollowing ? null : NOT_FOLLOWING_TEXT}
+    standby={shownStandby === null ? null : standbyText(shownStandby, definition => scenarioTitle(definition, definitions))} />
+{:else if showingComposer && !workspace}
   <header class="workspace-bar"><div class="workspace-identity"><Wordmark href="/workspaces" tone="dark" label="Leitbild.ai home" /></div></header>
 {:else if showingComposer && workspace}
   <header class="workspace-bar">
@@ -825,7 +949,9 @@
           refreshResources={() => refreshResources(workspace!.id)}
           reportError={message => { error = message }}
           retractError={message => { error = bannerAfterRetract(error, message) }}
+          moreItems={[{ label: 'Screens…', onselect: () => openScreensPanel(null) }]}
         />
+        {#if showOnScreensOffered}<button class="screens-chip" type="button" title="Show this Run on every screen of this browser's screen setup" onclick={showRunOnScreens}><Icon name="screen" size={15} />Show on screens</button>{/if}
         {#if agentsVisible && selectedRunFamily && !runDeclaresRoles(selectedWorldResource)}
           {@const familyResource = resources.find(resource => resource.ref.type === 'world.run-family' && resource.ref.id === selectedRunFamily.id)}
           {#if familyResource}
@@ -879,7 +1005,7 @@
   </header>
 {/if}
 
-<main id="main" tabindex="-1" class:workspace-main={showingComposer} class:ws-page={!showingComposer}>
+<main id="main" tabindex="-1" class:workspace-main={showingComposer || screenId !== null} class:ws-page={!showingComposer && screenId === null} class:screen-window={screenId !== null}>
   {#if loading}
     <section class="notice">Loading Workspace…</section>
   {:else if error && !workspace}
@@ -895,12 +1021,16 @@
     {/each}
     {#each catalogFailures as outcome (outcome.moduleId)}{#if outcome.status === 'failed'}<p class="notice error" role="alert">{moduleTitle(outcome.moduleId)}: {outcome.failure.message}</p>{/if}{/each}
     {#if refreshError}<p class="notice error" role="alert">Catalog refresh failed: {refreshError}</p>{/if}
-    {#if showingComposer}
-    <WorkspaceComposer workspaceId={workspace.id} worldRunId={selectedWorldRunId} worldFocus={selectedWorldFocus} worldElement={selectedWorldElement} worldOption={selectedWorldOption} {planningPath} planningResource={selectedPlanningResource?.ref ?? null}
+    {#if shownStandby !== null}
+      <!-- A screen with nothing to show: the badge's Standby fills the window, and no Run is joined. -->
+    {:else if showingComposer}
+    <WorkspaceComposer workspaceId={workspace.id} worldRunId={selectedWorldRunId} worldFocus={selectedWorldFocus} worldElement={selectedWorldElement} worldOption={selectedWorldOption} worldSurface={selectedWorldSurface} {planningPath} planningResource={selectedPlanningResource?.ref ?? null}
       onResourceCatalogChange={() => { void refreshResources(workspace!.id).catch(cause => { refreshError = String(cause) }) }}
       {focusedSubjects} agentsRoomId={selectedAgentsRoomId} {agentsVisible} onShowAgents={showRunAssistant}
       {runRefusal} onOpenRun={runId => switchWorldRun(runId)} {runAssistantAvailable} onOpenRunAssistant={openRunAssistant}
-      onError={message => { error = message }} bind:worldPane />
+      onPlaceSurface={openScreensPanel} onError={message => { error = message }} bind:worldPane />
+    {#if screenId === null && screensRun && selectedWorldResource}<ScreensPanel bind:open={screensPanelOpen} bind:placing={placingSurface} store={screens} run={screensRun}
+      runTitle={selectedWorldResource.title} scenario={scenarioTitle(screensRun.definition, definitions)} onchange={() => { screensStored = readScreens() }} />{/if}
     {#if peopleShown && people && peopleState?.chat}<PeopleChat session={people} chat={peopleState.chat} notice={peopleState.notice} outboxSaved={peopleState.outboxSaved} anchor={worldPane}
       focusRequest={chatFocusRequest} onClose={closePeopleChat} />{/if}
     {:else}

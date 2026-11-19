@@ -8,6 +8,7 @@ import {
   startupHasFailed,
   startupIsReady,
   startupModalShouldShow,
+  startupStepsAwaited,
   startStartupStep,
 } from '../src/ui/startup.ts'
 
@@ -87,6 +88,37 @@ describe('startup progress model', () => {
 
     for (const step of steps) steps = completeStartupStep(steps, step.id, 20)
     expect(startupModalShouldShow({ routeMode: 'simulation-run', dismissed: false, steps })).toBe(false)
+  })
+
+  test('a surface page\'s startup neither waits for the base map nor fails with it; every other failure still counts', () => {
+    let steps = createStartupSteps(10)
+    expect(startupStepsAwaited(steps, { map: true })).toBe(steps)
+    expect(startupStepsAwaited(steps, { map: false }).map(step => step.id)).toEqual(['route', 'interface', 'simulation-run', 'snapshot', 'objects', 'realtime', 'ready'])
+
+    // The map still starting: the Run page waits behind its checklist, the surface page is ready.
+    for (const step of steps.filter(step => step.id !== 'map')) steps = completeStartupStep(steps, step.id, 20)
+    steps = startStartupStep(steps, 'map', 25)
+    const surface = (list: typeof steps) => startupStepsAwaited(list, { map: false })
+    expect(startupIsReady(surface(steps))).toBe(true)
+    expect(startupModalShouldShow({ routeMode: 'simulation-run', dismissed: false, steps: surface(steps) })).toBe(false)
+
+    // The map failed ("Base map did not become ready"): the Run page says so, the surface page is neither failed nor covered.
+    const mapFailed = failStartupStep(steps, 'map', 'Base map did not become ready', 30)
+    expect(startupHasFailed(mapFailed)).toBe(true)
+    expect(startupModalShouldShow({ routeMode: 'simulation-run', dismissed: false, steps: mapFailed })).toBe(true)
+    expect(startupHasFailed(surface(mapFailed))).toBe(false)
+    expect(startupIsReady(surface(mapFailed))).toBe(true)
+    expect(startupModalShouldShow({ routeMode: 'simulation-run', dismissed: false, steps: surface(mapFailed) })).toBe(false)
+    // The failure itself is kept for the page's status and diagnostics.
+    expect(mapFailed.find(step => step.id === 'map')).toMatchObject({ status: 'failed', error: 'Base map did not become ready' })
+
+    // A refused join or a failed realtime channel keeps today's dialog on a surface page too.
+    for (const id of ['simulation-run', 'snapshot', 'objects', 'realtime'] as const) {
+      const failed = failStartupStep(mapFailed, id, `${id} failed`, 40)
+      expect(startupHasFailed(surface(failed))).toBe(true)
+      expect(startupIsReady(surface(failed))).toBe(false)
+      expect(startupModalShouldShow({ routeMode: 'simulation-run', dismissed: false, steps: surface(failed) })).toBe(true)
+    }
   })
 
   test('does not show startup modal on the picker route', () => {

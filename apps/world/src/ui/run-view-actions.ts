@@ -32,11 +32,6 @@ export interface RunViewCameraAction {
   readonly disabledReason?: string
 }
 
-/** Keep camera recovery within reach. Selection fitting only matters with an actionable selection. */
-export const arrangeRunViewCamera = (actions: ReadonlyArray<RunViewCameraAction>): {
-  readonly quick: ReadonlyArray<RunViewCameraAction>
-  readonly more: ReadonlyArray<RunViewCameraAction>
-} => ({
-  quick: actions.filter(action => action.id === 'home' || action.id === 'fit-visible' || (action.id === 'fit-selected' && !action.disabledReason)),
-  more: actions.filter(action => !['home', 'fit-selected', 'fit-visible'].includes(action.id)),
-})
+/** Camera recovery stays in reach. Selection fitting only matters with an actionable selection. */
+export const arrangeRunViewCamera = (actions: ReadonlyArray<RunViewCameraAction>): ReadonlyArray<RunViewCameraAction> =>
+  actions.filter(action => action.id !== 'fit-selected' || !action.disabledReason)

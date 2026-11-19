@@ -14,7 +14,8 @@
   import { physicalCollectionFloorGroups, physicalCollectionFloorChanges, physicalCollectionMixedSettings, physicalPlanLevelAfterModeChange } from './collection-floors.ts'
   import { physicalCollectionLayerChoices, physicalCollectionLayerChanges } from './collection-layers.ts'
   import { physicalExplorerCameraCovers, physicalExplorerFitPadding, type ExplorerViewportPadding, type ExplorerViewportRect } from './explorer-viewport.ts'
-  import { physicalExplorerKeyboardRoute, physicalExplorerNeedsLive } from './explorer-interaction.ts'
+  import { physicalExplorerKeyboardRoute, physicalExplorerNeedsLive, physicalExplorerViewModeInput } from './explorer-interaction.ts'
+  import { createViewModeControl, type ViewMode, type ViewModeControl } from '../map/view-mode-control.ts'
   import { createPhysicalSceneOverview } from '../map/physical-scene/overview.ts'
   import type { PhysicalSceneHit, PhysicalScenePresentation, PhysicalSceneView, PhysicalScenePalette, PhysicalSceneFitRequest } from '../map/physical-scene/types.ts'
   import { physicalSceneLayerAnchorId } from '../map/physical-scene/order.ts'
@@ -86,6 +87,7 @@
   let cameraControls = $state<{ dismiss: () => boolean } | null>(null)
   let overlayElement = $state<HTMLElement | null>(null)
   let controller = $state.raw<PhysicalSceneController | null>(null)
+  let viewModeControl = $state.raw<ViewModeControl | null>(null)
   let viewportFailure = $state<string | null>(null)
   let componentsOpen = $state(false)
   let componentScope = $state<{ readonly sceneId: string; readonly label: string; readonly subjectIds: ReadonlyArray<string> } | null>(null)
@@ -579,6 +581,17 @@
       void afterPanels(() => { if (sceneId === null) controller?.fitAll(ids, { preservePose: !changedRepresentation }); else controller?.focus(sceneId, { scopeId: scopeId ?? undefined, preservePose: !changedRepresentation }) })
     }
   }
+  const viewModeInput = $derived(physicalExplorerViewModeInput({ mode: focused?.view.mode ?? null, suspended }))
+  $effect(() => { viewModeControl?.update(viewModeInput) })
+  // The map's 3D switch. With nothing focused the whole collection is framed,
+  // and 3D brings the layout toolbar with its camera strip, status and floors.
+  const changeMapViewMode = (mode: ViewMode): void => {
+    const scene = focused
+    if (suspended || !scene) return
+    if (mode === '3d') controlsOpen = true
+    if (focusedId === null) collectionInspection = true
+    changeView({ ...scene.view, mode }, { mode })
+  }
   const changeCollectionFloor = (key: string, levelId: string): void => {
     if (suspended || focusedId !== null) return
     const group = collectionFloorGroups.find(group => group.key === key)
@@ -669,6 +682,9 @@
       return
     }
     controller = next
+    // Added after the navigation group, so it stacks directly above zoom and compass.
+    const viewMode = createViewModeControl({ initial: viewModeInput, onChange: changeMapViewMode })
+    map.addControl(viewMode, 'bottom-right'); viewModeControl = viewMode
     size = next.surface.getSize()
     overviewLayer = createPhysicalSceneOverview({ map, palette: options.palette, beforeId: () => physicalSceneLayerAnchorId(map.getStyle()), reportError: error => onerror(`Physical overview: ${error.message}`) })
     annotationScheduler = createPhysicalAnnotationScheduler<Badge | FlowMark>({ test: value => next.visibleAt(value.sceneId, value.occurrenceId, value.point), onChange: value => { testedBadges = value.visible.filter((value): value is Badge => value.kind === 'status'); testedFlowMarks = value.visible.filter((value): value is FlowMark => value.kind === 'flow'); pendingBadges = value.pending } })
@@ -742,6 +758,7 @@
     onconnect({ dismiss: () => { closeInspection(); leave() }, activate })
     return () => {
       onconnect(null); onDetailedOwners([]); leave(); clearInterval(clock); disposers.forEach(dispose => dispose())
+      viewModeControl = null; map.removeControl(viewMode)
       surface.removeEventListener('pointermove', move); surface.removeEventListener('pointerdown', cancel); surface.removeEventListener('pointercancel', cancel); surface.removeEventListener('pointerleave', cancel)
       document.removeEventListener('visibilitychange', visibility); document.removeEventListener('focusin', cancel); window.removeEventListener('blur', cancel); window.removeEventListener('message', receive); window.removeEventListener('keydown', key)
       for (const entry of sessions.values()) entry.session.close()
@@ -808,5 +825,10 @@
   .layout-status { position: absolute; z-index: 4; pointer-events: auto; min-width: 44px; min-height: 44px; font-size: 11px; transform: translate(-50%, -50%); padding: 0; background: transparent; border: 0; }.layout-status span { display: inline-block; max-width: 96px; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; padding: 2px 5px; border: 1px solid var(--border); border-radius: 4px; background: var(--panel); }
   .layout-hover-label { position: absolute; z-index: 4; pointer-events: none; box-sizing: border-box; width: max-content; max-width: min(300px, calc(100% - 16px)); max-height: calc(100% - 16px); overflow: hidden; padding: 7px 10px; border: 1px solid var(--accent); border-radius: 6px; background: var(--panel); color: var(--text); font-size: 11px; box-shadow: var(--shadow-floating); }.layout-hover-label strong,.layout-hover-label small { display: block; overflow-wrap: anywhere; }.layout-hover-label small { color: var(--muted); margin-top: 3px; }
   .layout-inspection { position: absolute; z-index: 8; width: min(360px, calc(100% - 16px)); box-sizing: border-box; pointer-events: auto; background: var(--panel); border: 1px solid var(--border); border-radius: 9px; overflow: hidden; box-shadow: var(--shadow-floating); }.layout-inspection iframe { display: block; width: 100%; height: 100%; border: 0; }
+  /* The map's 3D switch sits in MapLibre's control stack, which is white in both themes: its ink matches the navigation icons. */
+  :global(.maplibregl-ctrl.maplibregl-ctrl-group button.view-mode-control) { border-radius: inherit; color: #333; font-family: inherit; font-size: 12px; font-weight: 700; line-height: 1; }
+  :global(.maplibregl-ctrl.maplibregl-ctrl-group button.view-mode-control[aria-pressed="true"]) { color: #fff; background: #333; }
+  :global(.maplibregl-ctrl.maplibregl-ctrl-group button.view-mode-control[aria-disabled="true"]) { color: #aaa; background: transparent; cursor: not-allowed; }
+  @media (forced-colors: active) { :global(.maplibregl-ctrl.maplibregl-ctrl-group button.view-mode-control[aria-pressed="true"]) { forced-color-adjust: none; color: HighlightText; background: Highlight; } }
   @container (max-width: 440px) { .layout-tools { left: 8px; right: 8px !important; }.component-row { flex-wrap: wrap; }.component-row > span { flex-basis: 100%; }.component-row button { flex: 1; } }
 </style>

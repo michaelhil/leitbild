@@ -38,6 +38,7 @@ const settled=async(expectedCount?:number)=>{
   await inWorld('return new Promise(resolve=>w.requestAnimationFrame(()=>w.requestAnimationFrame(resolve)))')
 }
 const button=async(label:string)=>{await inWorld(`const b=[...d.querySelectorAll('button')].find(b=>b.textContent.trim()===${JSON.stringify(label)}&&b.getBoundingClientRect().width>0);if(!b)throw Error(${JSON.stringify('Missing button '+label)});b.click()`);await settled()}
+const mode=async(next:'2d'|'3d')=>{await inWorld(`const b=d.querySelector('.view-mode-control');if(!b)throw Error('Missing 3D switch');if((b.getAttribute('aria-pressed')==='true')!==${next==='3d'})b.click()`);await settled()}
 const home=async()=>{await inWorld(`const surface=d.querySelector('.maplibregl-canvas');if(!surface)throw Error('Missing physical keyboard surface');surface.focus()`);await call('Input.dispatchKeyEvent',{type:'keyDown',key:'Home',code:'Home',windowsVirtualKeyCode:36});await call('Input.dispatchKeyEvent',{type:'keyUp',key:'Home',code:'Home',windowsVirtualKeyCode:36});await settled()}
 const floor=async(label:string)=>{await inWorld(`const input=d.querySelector('select[aria-label="Layout level"]'),option=[...input.options].find(o=>o.text.includes(${JSON.stringify(label)}));if(!option)throw Error('Missing authored floor');input.value=option.value;input.dispatchEvent(new w.Event('change',{bubbles:true}))`);await settled()}
 const scope=async()=>{await inWorld(`d.querySelector('.explorer-controls .scope').click()`);await until(`return Boolean(d.querySelector('.scopes input[type=search]'))`,'rendered area search');await inWorld(`const input=d.querySelector('.scopes input[type=search]');input.value='Turbine hall';input.dispatchEvent(new w.Event('input',{bubbles:true}))`);await until(`return [...d.querySelectorAll('.scopes button[title]')].some(b=>b.title==='Halden Unit 1 full plant / PWR unit / Turbine hall and feedwater pump annex')`,'authored hall scope');await inWorld(`[...d.querySelectorAll('.scopes button[title]')].find(b=>b.title==='Halden Unit 1 full plant / PWR unit / Turbine hall and feedwater pump annex').click()`);await settled()}
@@ -52,12 +53,12 @@ const enableAllDeclaredLayers=async()=>{
     await inWorld(`d.querySelector('.explorer-controls .scope').click()`);await until(`return Boolean(d.querySelector('.scopes input[type=search]'))`,'root chooser')
     await inWorld(`const input=d.querySelector('.scopes input[type=search]');input.value=${JSON.stringify(title)};input.dispatchEvent(new w.Event('input',{bubbles:true}))`);await until(`return [...d.querySelectorAll('.choose-area')].some(button=>button.title===${JSON.stringify(title)})`,'exact declared layout')
     await inWorld(`[...d.querySelectorAll('.choose-area')].find(button=>button.title===${JSON.stringify(title)}).click()`);await settled()
-    await button('View')
+    await button('Options')
     const labels=await inWorld(`const declared=new Set(q.declaredSources.flatMap(source=>source.layers.map(layer=>layer.label)));return [...d.querySelectorAll('.settings label')].filter(label=>declared.has(label.textContent.trim())).map(label=>({label:label.textContent.trim(),before:label.querySelector('input').checked}))`)
     for(const value of labels){if(!value.before){await inWorld(`const input=[...d.querySelectorAll('.settings label')].find(label=>label.textContent.trim()===${JSON.stringify(value.label)}).querySelector('input');input.click()`);await settled()}}
     const after=await inWorld(`const declared=new Set(q.declaredSources.flatMap(source=>source.layers.map(layer=>layer.label)));return [...d.querySelectorAll('.settings label')].filter(label=>declared.has(label.textContent.trim())).map(label=>({label:label.textContent.trim(),checked:label.querySelector('input').checked}))`)
     if(after.some((layer:any)=>!layer.checked))throw Error('Requested source layer did not remain enabled')
-    layerSelections.push({title,labels,after,responses:await inWorld(`return q.responses.slice(${responseStart})`)});await button('View')
+    layerSelections.push({title,labels,after,responses:await inWorld(`return q.responses.slice(${responseStart})`)});await button('Options')
   }
   await inWorld(`d.querySelector('.explorer-controls .scope').click()`);await until(`return [...d.querySelectorAll('.scopes button')].some(b=>b.textContent.trim()==='All available layouts')`,'collection return');await inWorld(`[...d.querySelectorAll('.scopes button')].find(b=>b.textContent.trim()==='All available layouts').click()`);await settled(5)
 }
@@ -111,9 +112,9 @@ const movement=async(name:string,selector:string,orbit:boolean,playing:boolean,k
   if(profileThis&&process.env.LEITBILD_NATIVE_PROFILE_ONLY==='1')throw Error('Requested diagnostic-only CPU profile completed; this run does not issue a qualification verdict')
 }
 const setting=async(label:string,checked:boolean)=>{
-  await button('View')
+  await button('Options')
   const evidence=await inWorld(`const label=[...d.querySelectorAll('.settings label')].find(label=>label.textContent.trim()===${JSON.stringify(label)});if(!label)throw Error('Missing public diagnostic setting');const input=label.querySelector('input[type=checkbox]');const before=input.checked;if(before!==${checked})input.click();return{label:${JSON.stringify(label)},before,requested:${checked},nativeBefore:q.snapshot().nativeCameraProjection}`)
-  await button('View');await settled();controlSelections.push({...evidence,after:await snapshot()})
+  await button('Options');await settled();controlSelections.push({...evidence,after:await snapshot()})
 }
 const mapOnlyControl=async(playing:boolean)=>{
   // Home is applied while physical inspection is visible. The public detail
@@ -132,12 +133,12 @@ try{
   await inWorld(`d.querySelector('button[aria-label="Close grid overview panel"]')?.click()`)
   const earlyPlanOnly=process.env.LEITBILD_NATIVE_EARLY_PLAN_ONLY==='1',sitePlanOnly=process.env.LEITBILD_NATIVE_SITE_PLAN_ONLY==='1',site3dOnly=process.env.LEITBILD_NATIVE_ONLY_SITE_3D==='1'
   if(earlyPlanOnly){
-    await scope();await floor('Turbine and main control');await button('Plan');await home();await shot('room-plan.png')
+    await scope();await floor('Turbine and main control');await mode('2d');await home();await shot('room-plan.png')
     await movement('map-room-plan-paused','.maplibregl-canvas',false,false)
     if(process.env.LEITBILD_NATIVE_ROOM_PLAN_PAIR==='1')await movement('map-room-plan-playing','.maplibregl-canvas',false,true)
   }else{
   await until(`return !d.querySelector('.layout-browser,.layout-canvas')`,'one native map without an alternate viewport')
-  await button('3D')
+  await mode('3d')
   await inWorld(`d.querySelector('.explorer-controls .scope').click()`)
   await until(`return [...d.querySelectorAll('.scopes button')].some(b=>b.textContent.trim()==='All available layouts')`,'native collection chooser')
   await inWorld(`[...d.querySelectorAll('.scopes button')].find(b=>b.textContent.trim()==='All available layouts').click()`)
@@ -157,16 +158,16 @@ try{
     }
   }
   if (!site3dOnly) {
-    await execution('paused'); await button('Plan'); await settled(5)
+    await execution('paused'); await mode('2d'); await settled(5)
     if (planLiveOff) await setting('Live status', false)
     await shot('site-plan.png')
     await movement(`map-site-plan${planLiveOff ? '-live-off' : ''}-paused`, '.maplibregl-canvas', false, false)
     if (!highRatePlan) await movement(`map-site-plan${planLiveOff ? '-live-off' : ''}-playing`, '.maplibregl-canvas', false, true)
     if (!sitePlanOnly) {
-      await execution('paused'); await scope(); await floor('Turbine and main control'); await button('3D'); await home(); await shot('room-3d.png')
+      await execution('paused'); await scope(); await floor('Turbine and main control'); await mode('3d'); await home(); await shot('room-3d.png')
       await movement('map-room-3d-paused', '.maplibregl-canvas', true, false)
       await movement('map-room-3d-playing', '.maplibregl-canvas', true, true)
-      await execution('paused'); await button('Plan'); await home(); await shot('room-plan.png')
+      await execution('paused'); await mode('2d'); await home(); await shot('room-plan.png')
       await movement('map-room-plan-paused', '.maplibregl-canvas', false, false)
       await movement('map-room-plan-playing', '.maplibregl-canvas', false, true)
     }

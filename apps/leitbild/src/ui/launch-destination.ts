@@ -1,5 +1,13 @@
 // Canonical Workspace URLs. Identity is in the path; the query only selects
-// what the Workspace shell shows (`world` Run, `agents` conversation).
+// what the Workspace shell shows (`world` Run, `agents` conversation), which
+// `surface` of the Run fills its pane, and whether the window is a `screen`.
+
+// The contract's surface parameter (`WORKSPACE_SURFACE_PARAMETER`). It is named
+// here because the landing page builds its URLs with this file and loads no
+// contract code; the test holds the two names together.
+export const WORKSPACE_URL_SURFACE_PARAMETER = 'surface'
+/** Marks the window as screen `<id>` of this browser's screen setup (screens/screen-setup.ts). */
+export const WORKSPACE_SCREEN_PARAMETER = 'screen'
 
 export interface CreatedResourceRef {
   readonly moduleId: string
@@ -9,8 +17,11 @@ export interface CreatedResourceRef {
 
 export interface WorkspaceSelection {
   readonly world?: string | null
+  /** One surface of the Run's page, a string its Module owns; written only beside the Run it is relative to. */
+  readonly surface?: string | null
   readonly agents?: string | null
   readonly planning?: string | null
+  readonly screen?: string | null
 }
 
 export const workspacePath = (workspaceId: string): string => `/workspaces/${encodeURIComponent(workspaceId)}`
@@ -18,8 +29,10 @@ export const workspacePath = (workspaceId: string): string => `/workspaces/${enc
 export const workspaceUrl = (workspaceId: string, selection: WorkspaceSelection = {}): string => {
   const params = new URLSearchParams()
   if (selection.world) params.set('world', selection.world)
+  if (selection.world && selection.surface) params.set(WORKSPACE_URL_SURFACE_PARAMETER, selection.surface)
   if (selection.agents) params.set('agents', selection.agents)
   if (selection.planning) params.set('planning', selection.planning)
+  if (selection.screen) params.set(WORKSPACE_SCREEN_PARAMETER, selection.screen)
   return `${workspacePath(workspaceId)}${params.size > 0 ? `?${params}` : ''}`
 }
 

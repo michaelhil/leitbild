@@ -37,7 +37,7 @@ try{
  await W(`d.querySelector('.scope').click()`);await until(`return !!d.querySelector('.scopes input')`,'scope search');await W(`const i=d.querySelector('.scopes input');i.value='Turbine hall';i.dispatchEvent(new w.Event('input',{bubbles:true}))`)
  await until(`return [...d.querySelectorAll('.choose-area')].some(b=>b.title==='Halden Unit 1 full plant / PWR unit / Turbine hall and feedwater pump annex')`,'authored area');await W(`[...d.querySelectorAll('.choose-area')].find(b=>b.title==='Halden Unit 1 full plant / PWR unit / Turbine hall and feedwater pump annex').click()`)
  await until(`return d.querySelector('select[aria-label="Layout level"]')&&!/Loading this/.test(d.querySelector('.evidence')?.textContent??'')`,'area');await W(`const s=d.querySelector('select[aria-label="Layout level"]');s.value='operating';s.dispatchEvent(new w.Event('change',{bubbles:true}))`)
- await until(`return /Paused · fresh/.test(d.querySelector('.evidence')?.textContent??'')`,'operating');await W(`[...d.querySelectorAll('.modes button')].find(b=>b.textContent==='3D').click()`)
+ await until(`return /Paused · fresh/.test(d.querySelector('.evidence')?.textContent??'')`,'operating');await W(`const b=d.querySelector('.view-mode-control');if(b.getAttribute('aria-pressed')!=='true')b.click()`)
  await until(`return /Paused · fresh/.test(d.querySelector('.evidence')?.textContent??'')`,'3D');await W(`const s=d.querySelector('select[aria-label="Layout level"]');s.value='all';s.dispatchEvent(new w.Event('change',{bubbles:true}))`)
  await until(`return /Paused · fresh/.test(d.querySelector('.evidence')?.textContent??'')`,'Stack')
  let scriptId='',source='';for(const [id,item]of scripts)if(/PhysicalExplorer[^/]*\.js/.test(item.url)){const text=await call('Debugger.getScriptSource',{scriptId:id});if(text.scriptSource.includes('An authored physical focus must yield')){scriptId=id;source=text.scriptSource;break}}
@@ -47,7 +47,7 @@ try{
  variables={input:param,distance:returns[1]!,target:returns[2]!,eye:returns[3]!,focus:returns[4]!}
  const location={scriptId,lineNumber:source.slice(0,returnAt).split('\n').length-1,columnNumber:returnAt-(source.lastIndexOf('\n',returnAt)+1)}
  await call('Debugger.setBreakpoint',{location})
- phase='pending-home';await W(`const b=[...d.querySelectorAll('.action-row button')].find(b=>b.textContent==='View');b.click()`);await until(`return !!d.querySelector('.settings')`,'settings')
+ phase='pending-home';await W(`const b=[...d.querySelectorAll('.action-row button')].find(b=>b.textContent==='Options');b.click()`);await until(`return !!d.querySelector('.settings')`,'settings')
  await W(`const label=[...d.querySelectorAll('.settings label')].find(e=>e.textContent.trim()==='Utility routes');if(!label)throw Error('No declared utility route layer');const i=label.querySelector('input');if(!i.checked)i.click();d.querySelector('.settings [aria-label="Close view settings"]').click()`)
  const before=await W(`return {status:d.querySelector('.evidence')?.textContent,layerPending:/Preparing additional/.test(d.querySelector('.evidence')?.textContent??'')}`)
  await W(`[...d.querySelectorAll('.camera-primary button')].find(b=>b.textContent==='Home').click()`)
@@ -60,7 +60,7 @@ try{
  const hiddenShot=await call('Page.captureScreenshot',{format:'png'});await writeFile(join(out,'controls-hidden.png'),Buffer.from(hiddenShot.data,'base64'))
  await E(`(${nativeMapStartup.toString()})(true)`)
  const restored=await W(`return{tools:!!d.querySelector('.layout-tools'),camera:!!d.querySelector('.camera-controls'),overflow:d.documentElement.scrollWidth>d.documentElement.clientWidth}`)
- phase='plan';await W(`[...d.querySelectorAll('.modes button')].find(b=>b.textContent==='Plan').click()`)
+ phase='plan';await W(`const b=d.querySelector('.view-mode-control');if(b.getAttribute('aria-pressed')==='true')b.click()`)
  await until(`return /Paused · fresh/.test(d.querySelector('.evidence')?.textContent??'')`,'restored Plan');await W(`const s=d.querySelector('select[aria-label="Layout level"]');if(s.value!=='operating'){s.value='operating';s.dispatchEvent(new w.Event('change',{bubbles:true}))}`)
  await until(`return /Paused · fresh/.test(d.querySelector('.evidence')?.textContent??'')`,'operating Plan');await W(`[...d.querySelectorAll('.action-row button')].find(b=>b.textContent==='Fit').click()`);await W(`return new Promise(resolve=>w.requestAnimationFrame(()=>w.requestAnimationFrame(resolve)))`)
  const plan=await W(`const rect=e=>{const r=e.getBoundingClientRect();return{x:r.x,y:r.y,width:r.width,height:r.height}};return{levelId:d.querySelector('select[aria-label="Layout level"]').value,map:rect(d.querySelector('.maplibregl-canvas')),tools:rect(d.querySelector('.layout-tools')),cameraPresent:!!d.querySelector('.camera-controls')}`)
