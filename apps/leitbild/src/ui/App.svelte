@@ -58,7 +58,7 @@
   import ScreensPanel from './screens/ScreensPanel.svelte'
   import { NOT_FOLLOWING_TEXT, screenAddress, screenShows, standbyText, type FollowTrigger, type ScreenShow, type StandbyReason } from './screens/screen-follow.ts'
   import {
-    browserScreenStore, definitionKeyOf, offersShowOnScreens, scenarioTitle, screenOfAddress, screenStorageChange, showOnScreens, windowBounds, type ScreensRun,
+    browserScreenStore, createBoundsReporter, definitionKeyOf, offersShowOnScreens, scenarioTitle, screenOfAddress, screenStorageChange, showOnScreens, type ScreensRun,
   } from './screens/screen-setup.ts'
 
   type Page = { readonly kind: 'workspace'; readonly id: string }
@@ -259,9 +259,8 @@
     history.pushState(null, '', address)
     restoreUrlSelection()
   }
-  const reportScreenBounds = (): void => {
-    if (screenId !== null) screens.writeBounds(screenId, windowBounds(window))
-  }
+  // Where this screen's window is: on load, resize and leaving, and once it is first shown if it had no size at load.
+  const screenBounds = screenId === null ? null : createBoundsReporter(screens, screenId, window)
   const screensStorageChanged = (event: StorageEvent): void => {
     const change = screenStorageChange(event.key)
     if (change === null) return
@@ -916,12 +915,14 @@
     window.addEventListener('popstate', restoreUrlSelection)
     void load()
     if (screenWindow.refused !== null) error = screenWindow.refused
-    reportScreenBounds()
+    screenBounds?.report()
     return () => window.removeEventListener('popstate', restoreUrlSelection)
   })
 </script>
 
-<svelte:window onmessage={handleWindowMessage} onstorage={screensStorageChanged} onresize={reportScreenBounds} onpagehide={reportScreenBounds} />
+<svelte:window onmessage={handleWindowMessage} onstorage={screensStorageChanged}
+  onresize={() => screenBounds?.report()} onpagehide={() => screenBounds?.report()} onfocus={() => screenBounds?.shown()} />
+<svelte:document onvisibilitychange={() => { if (document.visibilityState === 'visible') screenBounds?.shown() }} />
 
 {#if screenId !== null}
   <ScreenBadge id={screenId} name={screenName} identify={screenIdentify} notice={screenFollowing ? null : NOT_FOLLOWING_TEXT}

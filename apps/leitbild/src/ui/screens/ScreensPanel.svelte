@@ -6,7 +6,8 @@
   // - Opening it calls the roll (a stamp in storage); each open screen window
   //   answers under its id, so a row can say whether its window is there.
   // - Open is one `window.open` per click, at the window's remembered
-  //   rectangle; a `null` answer is a pop-up the browser blocked, said on the row.
+  //   rectangle and outer size; a `null` answer is a pop-up the browser
+  //   blocked, said on the row.
   // - "Show on screens" and placing a surface are the only things that move
   //   the screens: they write the target (screen-setup.ts).
   // An unreadable stored value is shown with Reset and never written over.
@@ -16,7 +17,7 @@
   import Modal from '../Modal.svelte'
   import {
     addScreen, assign, assignmentFor, EMPTY_SCREEN_SETUP, hasStoredAssignment, isTarget, miniature, newStamp, removeScreen, renameScreen,
-    SCREEN_NAME_MAX_LENGTH, screenName, screenStorageChange, screenUrl, screenWindowFeatures, screenWindowName, showOnScreens,
+    openScreenWindow, SCREEN_NAME_MAX_LENGTH, screenName, screenStorageChange, screenUrl, showOnScreens,
     type ScreenBounds, type ScreenContent, type ScreenSetup, type ScreenStore, type ScreenTarget, type ScreensRun, type Stored, type Written,
   } from './screen-setup.ts'
 
@@ -160,12 +161,11 @@
   const openWindow = (screenId: string): void => {
     const content = assignment[screenId] ?? null
     const position = positions.get(screenId)
-    const opened = window.open(
-      screenUrl(run.workspaceId, screenId, content === null ? null : { runId: run.runId, content }),
-      screenWindowName(screenId),
-      screenWindowFeatures(position?.status === 'ok' ? position.value : null),
-    )
-    windows = new Map(windows).set(screenId, opened === null ? 'blocked' : 'opened')
+    windows = new Map(windows).set(screenId, openScreenWindow((url, name, features) => window.open(url, name, features), {
+      id: screenId,
+      url: screenUrl(run.workspaceId, screenId, content === null ? null : { runId: run.runId, content }),
+      bounds: position?.status === 'ok' ? position.value : null,
+    }))
   }
 
   const windowText = (screenId: string): string => {
