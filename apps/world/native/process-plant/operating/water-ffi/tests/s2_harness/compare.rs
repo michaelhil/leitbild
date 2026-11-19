@@ -173,12 +173,23 @@ impl Credited {
 /// Where a grid over `[from, to]` ends.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum GridEnd {
-    /// R4-E-GRID-END (owner, 19 November 2026): `to` is the run's end, and E's
-    /// observation grid ends at its last instant at or before it, never past it.
+    /// R4-E-GRID-END (owner, 19 November 2026: "End the 2 ms check grid at or
+    /// before each run's end"): `to` is a compared run's own end (or a named
+    /// end), and the grid ends at its last instant at or before it, never past.
     RunEnd,
-    /// Any other span: `round((to - from) / dt)` intervals from the first
-    /// sample, as before the ruling.
+    /// A window ending at a fixed instant inside the runs: `round((to - from)
+    /// / dt)` intervals from the first sample, as before the ruling.
     Rounded,
+}
+impl GridEnd {
+    /// [`GridEnd::RunEnd`] when `to` is one of the compared runs' `ends`.
+    pub fn of(to: f64, ends: &[f64]) -> Self {
+        if ends.contains(&to) {
+            Self::RunEnd
+        } else {
+            Self::Rounded
+        }
+    }
 }
 
 /// The contract's budgets and the comparison's declared settings.
@@ -932,5 +943,8 @@ mod grid_end_tests {
             Ok(0..24745)
         );
         assert!(c4.grid(origin, 0., 49.48999080248177, dt).is_err());
+        // A span ending at a compared run's end takes the rule; a window does not.
+        assert_eq!(GridEnd::of(last, &[last]), GridEnd::RunEnd);
+        assert_eq!(GridEnd::of(at, &[last]), GridEnd::Rounded);
     }
 }
