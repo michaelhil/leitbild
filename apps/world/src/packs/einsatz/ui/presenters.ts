@@ -25,7 +25,7 @@ import { canTarget, matchingOptions, selectedObjectOf, stopKey, stopObjectId, ty
  * the panel's clocks follow the Run clock between reads.
  */
 
-/** How long a receipt of this screen's own order offers Undo. The card's "Undo last order" stays until the engine refuses it. */
+/** How long a receipt of this screen's own order offers Undo. The card's "Undo last order" is enabled while the engine would take the order back. */
 export const receiptUndoMs = 8_000
 /** The most receipts the footer keeps, newest on top. */
 export const maxReceipts = 3
@@ -223,10 +223,10 @@ export interface UnitCardView {
   readonly readOnly: string | null
   readonly recall: ButtonView
   /**
-   * "Undo last order (by Assistant: C-2 → Depot B)": who gave the order it
-   * takes back and where it sent the unit. Disabled with a reason while the
-   * situation names no command to take back, and with the engine's own
-   * refusal once the engine refused to take back this command.
+   * "Undo last order": takes back the unit's last command. Enabled only
+   * while the situation says the engine would take it back; disabled with a
+   * reason while it names no command, with the engine's verdict when that
+   * refuses, and with the engine's own refusal once it refused this command.
    */
   readonly undo: ButtonView & { readonly commandId: string | null }
   readonly planHeading: string
@@ -252,22 +252,12 @@ export interface UndoRefusal {
   readonly text: string
 }
 
-/** Who gave the unit's last order and where it sent the unit: the stops that actor gave, else the unit's status. */
-const lastOrderText = (unit: SituationUnit): string | null => {
-  const last = unit.lastOrder
-  if (last === null) return null
-  const stops = unit.plan.filter(stop => stop.by.isViewer === last.by.isViewer && stop.by.label === last.by.label).map(stop => stop.label)
-  return `by ${last.by.label}: ${stops.length === 0 ? unit.status.word : stops.join(' → ')}`
-}
-
 const undoButton = (unit: SituationUnit, readOnly: string | null, refusal: UndoRefusal | null): UnitCardView['undo'] => {
   const commandId = unit.lastOrder?.commandId ?? null
-  const lastOrder = lastOrderText(unit)
+  const verdict = unit.lastOrder?.undo ?? null
   const refused = refusal !== null && refusal.unitId === unit.id && refusal.commandId === commandId ? refusal.text : null
-  return {
-    ...button(lastOrder === null ? dispatchWords.undoLast : `${dispatchWords.undoLast} (${lastOrder})`, readOnly ?? (commandId === null ? dispatchWords.nothingToUndo : refused)),
-    commandId,
-  }
+  const reason = readOnly ?? (commandId === null || verdict === null ? dispatchWords.nothingToUndo : verdict.applies ? refused : verdict.refusal)
+  return { ...button(dispatchWords.undoLast, reason), commandId }
 }
 
 // Keep list ordering independent of live ETA changes so rows do not shift under a pointer.

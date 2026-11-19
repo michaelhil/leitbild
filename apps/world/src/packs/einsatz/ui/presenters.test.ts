@@ -87,7 +87,7 @@ const baseSituation = {
       status: { word: 'Moving', tone: 'busy' }, phase: 'en-route',
       plan: [{ id: 'leg-1', verb: 'pick-up', target: { taskId: 'job-2' }, label: 'J-2 Bay', state: 'active', eta: routed(180), by: assistant }],
       predictedDelivery: { siteId: 'depot-a', label: 'Depot A', eta: routed(360) },
-      lastOrder: { by: assistant, commandId: 'cmd-7' },
+      lastOrder: { by: assistant, commandId: 'cmd-7', undo: { applies: true } },
     }),
     unit('k1', { typeLabel: 'Kite', group: null, carry: null, properties: [] }),
   ],
@@ -147,10 +147,20 @@ describe('Compact unit card', () => {
     expect(unitCard(situation, situation.units[0]!, optionsFor('k1'), 0).targetsLoading).toBe(true)
   })
 
-  test('Undo last order names who gave the order and where it sent the unit, sends its commandId, and is disabled with the engine\'s refusal once the engine refused that command', () => {
+  test('Undo last order reads just that, sends its commandId, and is enabled only while the situation says the engine would take the order back', () => {
     const busy = situation.units[1]!
     const card = unitCard(situation, busy, null, 0)
-    expect(card.undo).toEqual({ label: `${dispatchWords.undoLast} (by Assistant: J-2 Bay)`, enabled: true, reason: null, commandId: 'cmd-7' })
+    expect(card.undo).toEqual({ label: dispatchWords.undoLast, enabled: true, reason: null, commandId: 'cmd-7' })
+    // The engine's verdict refuses: disabled with its words, before any click.
+    const verdict = (text: string, by = assistant) => situationOf({ units: [unit('r2', { ...busy, lastOrder: { by, commandId: 'cmd-7', undo: { applies: false, refusal: text } } })] })
+    for (const text of ['R2\'s last order has been carried out: it has arrived', 'R2 is past the first stop of its last order', 'R2\'s last order gave it no stop to take back']) {
+      const refused = verdict(text)
+      expect(unitCard(refused, refused.units[0]!, null, 0).undo).toEqual({ label: dispatchWords.undoLast, enabled: false, reason: text, commandId: 'cmd-7' })
+    }
+    // A standing order acted last: the label names no actor, and the verdict on the operator's command decides.
+    const delivered = verdict('R2 is past the first stop of its last order', { label: 'Standing order', isViewer: false })
+    expect(unitCard(delivered, delivered.units[0]!, null, 0).undo).toMatchObject({ label: dispatchWords.undoLast, enabled: false })
+    // The engine's own refusal of a click on this command keeps it disabled with that refusal, even if the last read still said it applies.
     const refusal = { unitId: 'r2', commandId: 'cmd-7', text: 'R2\'s last order has been carried out: it has arrived' }
     expect(unitCard(situation, busy, null, 0, refusal).undo).toMatchObject({ enabled: false, reason: refusal.text, commandId: 'cmd-7' })
     // A refusal of another command, or of another unit, leaves the current order's Undo alone.
@@ -158,8 +168,8 @@ describe('Compact unit card', () => {
     expect(unitCard(situation, busy, null, 0, { ...refusal, unitId: 'r1' }).undo.enabled).toBe(true)
     expect(cardFor(situation, su('r2'), { options: null, pinned: null, opened, lastSeenCall: null, elapsedS: 0, undoRefusal: refusal })).toMatchObject({ undo: { enabled: false, reason: refusal.text } })
     // A unit whose last order no command gave (a standing order) has nothing the engine takes back.
-    const standing = situationOf({ units: [unit('r1', { lastOrder: { by: { label: 'Standing order', isViewer: false }, commandId: null } })] })
-    expect(unitCard(standing, standing.units[0]!, null, 0).undo).toMatchObject({ enabled: false, reason: dispatchWords.nothingToUndo, commandId: null })
+    const standing = situationOf({ units: [unit('r1', { lastOrder: { by: { label: 'Standing order', isViewer: false }, commandId: null, undo: null } })] })
+    expect(unitCard(standing, standing.units[0]!, null, 0).undo).toMatchObject({ label: dispatchWords.undoLast, enabled: false, reason: dispatchWords.nothingToUndo, commandId: null })
   })
 
   test('lists the plan in order, the active stop first, each stop with the words of its ×; no stop can be moved', () => {
@@ -454,9 +464,9 @@ describe('Map targeting and feedback', () => {
 
   test('no word says "You": the viewer\'s own orders read in the situation\'s actor word on every surface', () => {
     expect(Object.values(dispatchWords)).not.toContain('You')
-    const mine = situationOf({ units: [unit('r1', { plan: [{ id: 'leg-1', verb: 'serve', target: { taskId: 'job-1' }, label: 'J-1 Ridge', state: 'active', eta: routed(60), by: { label: 'Operator', isViewer: false } }], lastOrder: { by: { label: 'Operator', isViewer: false }, commandId: 'cmd-9' } })] })
+    const mine = situationOf({ units: [unit('r1', { plan: [{ id: 'leg-1', verb: 'serve', target: { taskId: 'job-1' }, label: 'J-1 Ridge', state: 'active', eta: routed(60), by: { label: 'Operator', isViewer: false } }], lastOrder: { by: { label: 'Operator', isViewer: false }, commandId: 'cmd-9', undo: { applies: true } } })] })
     const card = unitCard(mine, mine.units[0]!, null, 0)
-    expect([card.plan[0]!.by, card.undo.label]).toEqual(['by Operator', `${dispatchWords.undoLast} (by Operator: J-1 Ridge)`])
+    expect([card.plan[0]!.by, card.undo.label]).toEqual(['by Operator', dispatchWords.undoLast])
     expect(overview(mine, none, opened, 0).units.groups[0]!.rows[0]!.actor).toBe('by Operator')
     expect(receiptText(receiptsFromSituation(situationOf({ units: [unit('r1')] }), mine, 1)[0]!)).toBe('Operator: R1 → J-1 Ridge')
   })

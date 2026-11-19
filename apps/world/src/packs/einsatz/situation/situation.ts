@@ -1,17 +1,19 @@
 import { capabilityRejection } from '../../../simulation/capability-rejection.ts'
 import { aiByPrefix, chainStepBy, isStandingOrderBy } from '../ids.ts'
 import { wordFor, surfaceLexiconKeys } from '../lexicon.ts'
-import { refusal } from '../refusal.ts'
+import { refusal, refusalCode } from '../refusal.ts'
 import type { PriorityRef } from '../recommendation-schema.ts'
 import type { StepKind, StepTarget } from '../steps.ts'
 import { assignedTo, freeToHelp } from '../engine/coverage.ts'
 import { priorityOf, priorityRankOf, templateOf, unitTypeOf, type EngineState, type TaskRecord, type UnitRecord } from '../engine/model.ts'
 import { committedPhases, isDestroyed, isFree } from '../engine/rules.ts'
 import { takesArrivals } from '../engine/delivery.ts'
+import type { EngineActor } from '../engine/intents.ts'
+import { planUndo } from '../engine/plan-order.ts'
 import { byId, countOf } from '../engine/values.ts'
 import { loadText, propertyValueText } from '../engine/wording.ts'
 import { targetLabel } from '../engine/chain-steps.ts'
-import { commandsUnit, inPicture, rolesText, type EinsatzViewer } from '../viewer.ts'
+import { actorFor, commandsUnit, inPicture, rolesText, type EinsatzViewer } from '../viewer.ts'
 import type { ScenarioRole } from '../../../core/model/index.ts'
 import { roleCommands } from '../picture.ts'
 import { planEstimate } from './estimates.ts'
@@ -94,7 +96,19 @@ const commandedByOf = (state: EngineState, viewer: EinsatzViewer, roles: Readonl
   return commanders.length === 0 ? 'No role' : commanders.join(', ')
 }
 
-const unitRow = (state: EngineState, viewer: EinsatzViewer, roles: ReadonlyArray<ScenarioRole>, unit: UnitRecord): SituationUnit => {
+/**
+ * Whether `unit.undo` would take back the unit's last command now: the
+ * engine's own `planUndo` on this state, never applied. Null while no
+ * command changed the unit's plan.
+ */
+const undoVerdict = (state: EngineState, unit: UnitRecord, actor: EngineActor): NonNullable<SituationUnit['lastOrder']>['undo'] => {
+  const command = unit.lastCommand
+  if (command === undefined) return null
+  const plan = planUndo(state, { kind: 'undo', unitId: unit.id, commandId: command.id }, actor)
+  return plan.ok ? { applies: true } : { applies: false, refusal: plan.reason.slice(refusalCode(plan.reason).length + 2) }
+}
+
+const unitRow = (state: EngineState, viewer: EinsatzViewer, roles: ReadonlyArray<ScenarioRole>, unit: UnitRecord, actor: EngineActor): SituationUnit => {
   const type = unitTypeOf(state.catalog, unit)
   const group = unit.group === undefined ? undefined : state.catalog.config.groups.find(entry => entry.id === unit.group)
   const estimate = planEstimate(state, unit)
@@ -118,7 +132,7 @@ const unitRow = (state: EngineState, viewer: EinsatzViewer, roles: ReadonlyArray
       by: actorWords(step.by, viewer),
     })),
     predictedDelivery: estimate.delivery === undefined ? null : { siteId: estimate.delivery.site.id, label: estimate.delivery.site.label, eta: estimate.delivery.eta },
-    lastOrder: last === undefined ? null : { by: actorWords(last.by, viewer), commandId: unit.lastCommand?.id ?? null },
+    lastOrder: last === undefined ? null : { by: actorWords(last.by, viewer), commandId: unit.lastCommand?.id ?? null, undo: undoVerdict(state, unit, actor) },
     carry: type.components.carry === undefined ? null : { capacity: type.components.carry.capacity, load: loadCounts(state, unit.load) },
     properties: type.properties.filter(property => property.show).map(property => ({ id: property.id, label: property.label, value: propertyValueText(property, unit.properties[property.id]!) })),
     commandedBy: commandedByOf(state, viewer, roles, unit),
@@ -256,7 +270,9 @@ export const readSituation = (input: {
   const listed = movers
     .filter(unit => input.group === undefined || unit.group === input.group)
     .sort((a, b) => (config.groups.length > 0 ? groupIndex(a) - groupIndex(b) : typeIndex(a) - typeIndex(b)) || typeIndex(a) - typeIndex(b) || naturalOrder(a, b))
-  const rows = new Map(movers.map(unit => [unit.id, unitRow(state, viewer, input.roles, unit)]))
+  // The actor an undo of the viewer's would run as, for the engine's verdict on each unit's last command.
+  const actor = actorFor(state.catalog, viewer, 'situation')
+  const rows = new Map(movers.map(unit => [unit.id, unitRow(state, viewer, input.roles, unit, actor)]))
   const units = listed.map(unit => rows.get(unit.id)!)
   const calls = [...state.tasks.values()]
     .filter(task => task.closedAtMs === undefined && seen(task))

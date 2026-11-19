@@ -35,7 +35,7 @@ const situation = {
       { id: 'step-2', verb: 'go-to', target: { point }, label: 'a map point', state: 'queued', eta: { kind: 'straight-line', seconds: 300, distanceM: 4_000 }, by: { label: 'Assistant', isViewer: false } },
     ],
     predictedDelivery: { siteId: 'unit:s-1', label: 'S-1', eta: { kind: 'unavailable', reason: 'no_road_near_point: 1.4 km from a road', straightDistanceM: 2_000 } },
-    lastOrder: { by: viewer, commandId: 'cmd-1' },
+    lastOrder: { by: viewer, commandId: 'cmd-1', undo: { applies: false, refusal: 'U-2\'s last order has been carried out: it has arrived' } },
     carry: { capacity: 1, load: [] },
     properties: [{ id: 'cap', label: 'Capacity', value: '3,000 l' }],
     commandedBy: null,
@@ -87,6 +87,9 @@ describe('Einsatz wire schemas', () => {
     expect(situationSchema.safeParse({ ...situation, words: { ...situation.words, board: 'Board' } }).success).toBe(false)
     expect(unitOptionsSchema.safeParse({ ...options, refused: [{ ...options.refused[0], code: 'not_a_code' }] }).success).toBe(false)
     expect(situationSchema.safeParse({ ...situation, units: [{ ...situation.units[0], status: { word: 'Free', tone: 'green' } }] }).success).toBe(false)
+    // An undo verdict either applies or carries its refusal, never both.
+    const lastOrder = (undo: unknown) => situationSchema.safeParse({ ...situation, units: [{ ...situation.units[0], lastOrder: { by: viewer, commandId: 'cmd-1', undo } }] }).success
+    expect([lastOrder({ applies: true }), lastOrder(null), lastOrder({ applies: true, refusal: 'words' }), lastOrder({ applies: false })]).toEqual([true, true, false, false])
   })
 
   test('unit.order takes 1–10 distinct units, 1–20 stops, and drops only with when now', () => {

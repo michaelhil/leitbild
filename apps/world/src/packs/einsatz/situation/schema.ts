@@ -98,6 +98,13 @@ const unitRowSchema = z.object({
   lastOrder: z.object({
     by: actorSchema,
     commandId: commandIdSchema.nullable().describe('The latest command that changed the unit\'s plan, the one world.einsatz.unit.undo names; null while no command has.'),
+    undo: z.discriminatedUnion('applies', [
+      z.object({ applies: z.literal(true).describe('world.einsatz.unit.undo of commandId would take it back now.') }).strict(),
+      z.object({
+        applies: z.literal(false).describe('world.einsatz.unit.undo of commandId would be refused now.'),
+        refusal: text.describe('Why, in the engine\'s words.'),
+      }).strict(),
+    ]).nullable().describe('The engine\'s own verdict on undoing commandId, judged on the state this read shows and not applied; null while commandId is null.'),
   }).strict().nullable().describe('The unit\'s last order, by whoever gave it, a standing order and the plan going on included; null before its first.'),
   carry: z.object({
     capacity: count.describe('How much load the unit carries at most.'),

@@ -1,5 +1,6 @@
 import { describe, expect, test } from 'bun:test'
 import { advance, append, at, commanding, config, emptyState, first, low, newTask, newUnit, ports, run, runAll, second, send, start, templates, top, types, unitOf } from '../fixtures/engine-harness.ts'
+import { commandIdSchema } from '../../../core/model/index.ts'
 import { einsatzConfigSchema } from '../config-validation.ts'
 import { executeIntent } from '../engine/engine.ts'
 import { emptyEngineState, type EngineState } from '../engine/model.ts'
@@ -11,7 +12,8 @@ import { readSituation } from './situation.ts'
 
 /**
  * `world.einsatz.situation`: the calls by priority, the units with their
- * plans, predicted deliveries and the actor of their last order, the sites,
+ * plans, predicted deliveries, the actor of their last order and the
+ * engine's verdict on undoing it, the sites,
  * the counts and the configured words, read from the engine state and
  * valid against the wire schema.
  */
@@ -63,6 +65,39 @@ describe('Einsatz situation', () => {
     let later = outcome.state
     while (unitOf(later, 'c1').phase !== 'transporting') later = await advance(later, later.timeMs + 5_000)
     expect(read(later).units.find(entry => entry.id === 'c1')!.lastOrder).toMatchObject({ by: { label: 'Standing order', isViewer: false }, commandId: 'command-1' })
+  })
+
+  test('the last order carries the engine\'s own verdict on undoing its command: it applies while the order is not carried out, after Add to plan too, and is refused in the engine\'s words after an Undo, a Return, a removed stop, an arrival and a standing order\'s delivery', async () => {
+    const command = async (state: EngineState, intent: Parameters<typeof executeIntent>[1], commandId: string): Promise<EngineState> => {
+      const outcome = await executeIntent(state, intent, commanding(commandId), ports)
+      if (!outcome.ok) throw new Error(outcome.reason)
+      return outcome.state
+    }
+    // As the wire carries it: command ids are plain strings there.
+    const lastOrderOf = (state: EngineState): unknown => read(state).units.find(entry => entry.id === 'c1')!.lastOrder
+    const refusedWith = (commandId: string, text: string) => ({ commandId, undo: { applies: false, refusal: text } })
+    const noStop = 'C1\'s last order gave it no stop to take back'
+
+    expect(lastOrderOf(await field())).toBeNull()
+    const ordered = await command(await field(), { kind: 'order', units: ['c1'], stops: [{ taskId: 't-low' }] }, 'cmd-order')
+    expect(lastOrderOf(ordered)).toEqual({ by: { label: 'Controller', isViewer: false }, commandId: 'cmd-order', undo: { applies: true } })
+    // Reading the verdict applies nothing.
+    expect(unitOf(ordered, 'c1').orders).toHaveLength(1)
+
+    expect(lastOrderOf(await command(ordered, { kind: 'undo', unitId: 'c1', commandId: commandIdSchema.parse('cmd-order') }, 'cmd-undo'))).toMatchObject(refusedWith('cmd-undo', noStop))
+    expect(lastOrderOf(await command(ordered, { kind: 'recall', unitId: 'c1' }, 'cmd-return'))).toMatchObject(refusedWith('cmd-return', noStop))
+
+    const added = await command(ordered, append('c1', { taskId: 't-first' }), 'cmd-add')
+    expect(lastOrderOf(added)).toMatchObject({ commandId: 'cmd-add', undo: { applies: true } })
+    const queued = unitOf(added, 'c1').orders[1]!
+    expect(lastOrderOf(await command(added, { kind: 'stop.remove', unitId: 'c1', stopId: queued.id }, 'cmd-remove'))).toMatchObject(refusedWith('cmd-remove', noStop))
+
+    let later = ordered
+    while (unitOf(later, 'c1').phase !== 'on-task') later = await advance(later, later.timeMs + 2_000)
+    expect(lastOrderOf(later)).toMatchObject(refusedWith('cmd-order', 'C1\'s last order has been carried out: it has arrived'))
+    while (unitOf(later, 'c1').phase !== 'transporting') later = await advance(later, later.timeMs + 5_000)
+    // The deliver standing order gave the stop it takes now; the command undo names is still the operator's, past its first stop.
+    expect(lastOrderOf(later)).toMatchObject({ by: { label: 'Standing order' }, ...refusedWith('cmd-order', 'C1 is past the first stop of its last order') })
   })
 
   test('a unit moving in straight lines has an estimate for every stop; a stop it delivers at is a delivery', async () => {
