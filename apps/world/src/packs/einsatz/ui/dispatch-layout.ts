@@ -6,13 +6,13 @@ import { noMapCover } from '../../../ui/surface-panel-interaction.ts'
  * surface to draw on the map.
  *
  * - From 1024 px the panel is docked to the surface's right edge: up to
- *   480 px wide from 1280 px, up to 360 px below that, and never so wide
+ *   360 px wide from 1280 px, up to 320 px below that, and never so wide
  *   that less than `minMapWidthPx` of map stays clear beside it.
  * - Below 1024 px (tablet portrait, phones) it is a bottom sheet. It starts
  *   folded to an edge tab ("Calls 3 · 7 free", with the receipt line); a
  *   click on an Einsatz object, or on the tab, opens the sheet. Open, it
- *   takes a fixed share of the surface's height, so its selection block and
- *   lists scroll inside it and the map it covers stays put as cards change.
+ *   takes a fixed share of the height. Selecting a unit gives the map more
+ *   room, while the unit card can still scroll inside the smaller sheet.
  *
  * The panel reports how far it reaches over the map (`MapCover`) from its
  * observed size, so the map camera centres and fits in the part left clear,
@@ -25,8 +25,8 @@ import { noMapCover } from '../../../ui/surface-panel-interaction.ts'
 export const dockedFromPx = 1024
 /** The surface width from which the docked panel takes its full width. */
 export const wideFromPx = 1280
-export const widePanelPx = 480
-export const narrowPanelPx = 360
+export const widePanelPx = 360
+export const narrowPanelPx = 320
 export const minPanelWidthPx = 300
 export const minMapWidthPx = 400
 /** The gap between the panel and the surface's edges. */
@@ -40,15 +40,22 @@ export const panelTopClearancePx = 52
 export const panelBottomClearancePx = 52
 /** The share of the surface's height the open bottom sheet takes. */
 export const sheetShare = 0.6
+const selectedUnitSheetShare = 0.45
+const selectedUnitSheetMaxHeightPx = 300
 export type PanelLayout =
   | { readonly mode: 'docked'; readonly widthPx: number; readonly mapWidthPx: number }
   | { readonly mode: 'sheet'; readonly heightPx: number }
 
 /** The panel's layout on a surface of this size. */
-export const panelLayoutFor = (surfaceWidthPx: number, surfaceHeightPx: number): PanelLayout => {
+export const panelLayoutFor = (surfaceWidthPx: number, surfaceHeightPx: number, unitSelected = false): PanelLayout => {
   if (!Number.isFinite(surfaceWidthPx) || surfaceWidthPx < 0) throw new Error(`The World surface is no width: ${surfaceWidthPx}`)
   if (!Number.isFinite(surfaceHeightPx) || surfaceHeightPx < 0) throw new Error(`The World surface is no height: ${surfaceHeightPx}`)
-  if (surfaceWidthPx < dockedFromPx) return { mode: 'sheet', heightPx: Math.floor(surfaceHeightPx * sheetShare) }
+  if (surfaceWidthPx < dockedFromPx) {
+    const heightPx = unitSelected
+      ? Math.min(selectedUnitSheetMaxHeightPx, Math.floor(surfaceHeightPx * selectedUnitSheetShare))
+      : Math.floor(surfaceHeightPx * sheetShare)
+    return { mode: 'sheet', heightPx }
+  }
   const preferred = surfaceWidthPx >= wideFromPx ? widePanelPx : narrowPanelPx
   const widthPx = Math.max(minPanelWidthPx, Math.min(preferred, surfaceWidthPx - panelEdgeGapPx - minMapWidthPx))
   return { mode: 'docked', widthPx, mapWidthPx: surfaceWidthPx - panelEdgeGapPx - widthPx }

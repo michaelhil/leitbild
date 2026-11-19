@@ -2,8 +2,8 @@
 // A refused option says its cause in hours, from the Module's refusal (explain, ask refusal), never only
 // "none is validated feasible".
 import { hoursNumber, hoursText, type Mark } from './format.ts'
-import type { OptionView, PlanModel } from './model.ts'
-import { certificateText, goalResult, statusView, type Context } from './status-text.ts'
+import { joinWords, planOptions, type OptionView, type PlanModel } from './model.ts'
+import { certificateText, goalResult, statusView, stopWords, type Context } from './status-text.ts'
 
 export interface Outcome {
   readonly key: string
@@ -49,8 +49,16 @@ export interface RefusalProof { readonly headline: string; readonly parts: reado
 export const refusalProof = (lines: readonly string[] | undefined, context: Context): RefusalProof | null => {
   const line = refusalLine(lines)
   if (line === null) return null
+  return { headline: `Not possible: ${line}`, parts: proofParts(lines ?? [], context, line) }
+}
+
+/**
+ * The Module's refusal lines in order, each list of jobs as rows of a name and its times; `without` is a line
+ * said elsewhere (the headline). "Why not possible" shows a what-if's chain this way, in the Module's order.
+ */
+export const proofParts = (lines: readonly string[], context: Context, without: string | null = null): readonly ProofPart[] => {
   const parts: Array<{ text: string | null; steps: ProofStep[] }> = []
-  for (const entry of (lines ?? []).map(item => item.trim().replace(/^Not possible:\s*/, '')).filter(item => item !== '' && item !== line)) {
+  for (const entry of lines.map(item => item.trim().replace(/^Not possible:\s*/, '')).filter(item => item !== '' && item !== without)) {
     if (!entry.startsWith('- ')) { parts.push({ text: entry, steps: [] }); continue }
     const cut = entry.lastIndexOf(': ')
     const name = cut === -1 ? entry.slice(2) : entry.slice(2, cut)
@@ -58,7 +66,7 @@ export const refusalProof = (lines: readonly string[] | undefined, context: Cont
     const last = parts.at(-1) ?? parts[parts.push({ text: null, steps: [] }) - 1]!
     last.steps.push({ name, detail: cut === -1 ? '' : entry.slice(cut + 2), job: named.length === 1 ? named[0]!.key : null })
   }
-  return { headline: `Not possible: ${line}`, parts }
+  return parts
 }
 
 export const outcomeOf = (option: OptionView, model: PlanModel, context: Context): Outcome => {
@@ -71,15 +79,29 @@ export const outcomeOf = (option: OptionView, model: PlanModel, context: Context
   return { key: option.key, label: option.label, mark: view.mark, word: view.word, cause, recommended }
 }
 
-/** Why a search stopped before it finished, in words, or null when it ran to the end or used its budget. */
-export const stoppedEarly = (option: OptionView): string | null => {
-  if (!('run' in option.status)) return null
-  return ({ memory: 'at the memory limit', cpu: 'when its computing time ran out', cancelled: 'because it was cancelled', ended: 'because the solver process ended' } as Record<string, string>)[option.status.run.stoppedBy] ?? null
+/** How an option's search stopped before it finished, as stopWords says it, or null when it ran to the end. */
+export const stoppedEarly = (option: OptionView): string | null => 'run' in option.status ? stopWords(option.status.run) : null
+
+/**
+ * The current plan options that stopped early, by how they stopped, each named: "The search stopped early for
+ * Swap in refurbished spare and Rebuild in place, when its time was up." Said in the banner, once, in
+ * agreement with each option's own line (walk V8).
+ */
+export const stoppedEarlyLines = (model: PlanModel): readonly string[] => {
+  const byReason = new Map<string, string[]>()
+  for (const option of planOptions(model).filter(item => item.fresh)) {
+    const reason = stoppedEarly(option)
+    if (reason !== null) byReason.set(reason, [...byReason.get(reason) ?? [], option.label])
+  }
+  return [...byReason].map(([reason, labels]) => `The search stopped early for ${joinWords(labels)}${reason}.`)
 }
 
-/** The current options' outcomes; options made before the latest change claim nothing and are left out. */
+/**
+ * The current options' outcomes; options made before the latest change claim nothing and are left out, and
+ * so are what-ifs, which answer on their own cards and never stand for the plan.
+ */
 export const outcomes = (model: PlanModel, context: Context): readonly Outcome[] =>
-  (model.options?.items ?? []).filter(option => option.fresh).map(option => outcomeOf(option, model, context))
+  planOptions(model).filter(option => option.fresh).map(option => outcomeOf(option, model, context))
 
 /**
  * A refused option's cause in one short line, for the options table: the proof's own hours where it has them
@@ -114,7 +136,7 @@ export const outcomeBanner = (model: PlanModel, context: Context, where: 'on the
       : `No option can be recommended: none is validated feasible. See why ${where}.`
   const lines: string[] = []
   // A search that stopped early may have missed a better plan: said where the planner looks first.
-  const early = (model.options?.items ?? []).filter(option => option.fresh).map(stoppedEarly).find(reason => reason !== null)
-  if (early !== undefined) lines.unshift(`The search stopped early, ${early}: ${recommended === undefined ? 'a plan may still exist' : 'this option may not be the best'}. Generate again.`)
+  const early = stoppedEarlyLines(model)
+  if (early.length > 0) lines.unshift(`${early.join(' ')} ${recommended === undefined ? 'A plan may still exist' : 'The recommended option may not be the best'}. Generate again.`)
   return { title, lines, recommended: recommended !== undefined }
 }

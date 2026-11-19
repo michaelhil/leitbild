@@ -17,15 +17,16 @@ import { createScenarioRuntimeResolver } from '../src/core/scenarios/runtime-res
 import { evaluateGuideCondition } from '../src/core/guides/conditions.ts'
 
 test('all bundled guides compile with exact owner targets and perspective-compatible human paths', async () => {
-  expect(builtinScenarioDefinitions).toHaveLength(17)
+  expect(builtinScenarioDefinitions).toHaveLength(19)
   const panelIds = new Set(worldPacks.flatMap(pack => pack.ui?.surfacePanels.map(panel => panel.id) ?? []))
+  const startsRunning = new Set(['halden-delivery-planning', 'norway-situation-monitor'])
   let stateTasks = 0, promptTasks = 0
   for (const source of builtinScenarioDefinitions) {
     const compiled = await compileScenarioDefinition(source, worldPacks, { routing: createDirectRoutingAdapter() })
     const guide = compiled.guide!
     expect(guide, source.id).toBeDefined()
     expect(guide.steps.at(-1)?.id, source.id).toBe('explore')
-    expect(guide.startPaused, source.id).toBe(source.id !== 'norway-situation-monitor')
+    expect(guide.startPaused, source.id).toBe(!startsRunning.has(source.id))
     for (const step of guide.steps) {
       if (step.completion.kind === 'prompt-response') promptTasks++
       if (step.completion.kind === 'condition' && step.completion.condition.kind !== 'clock') stateTasks++

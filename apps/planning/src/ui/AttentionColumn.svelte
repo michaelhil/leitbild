@@ -17,6 +17,7 @@
     'add-work': 'Add equipment and jobs',
     generate: 'Generate',
     'why-finish': 'What sets the finish?',
+    'why-recommended': 'Why recommended?',
     'align-window': 'Align the window to the simulation',
   }
   const tone = (shape: string) => shape === '✕' ? 'refusal' : shape === '?' ? 'unknown' : shape === '!' ? 'warning' : shape === '✓' ? 'good' : shape === '■' ? 'rule' : 'plain'

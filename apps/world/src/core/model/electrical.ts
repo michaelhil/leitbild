@@ -25,6 +25,8 @@ export interface EnergizedElectricalPortState extends ElectricalPortStateBase {
   readonly energized: true
   readonly voltagePu: number | null
   readonly frequencyHz: number
+  /** The frequency's rate of change at the port (Hz/s), where its owner publishes one: a network port does. */
+  readonly frequencyRateHzPerS?: number | undefined
 }
 
 /** A dead port: no voltage and no frequency (frequency is absent, never 0 Hz). */
@@ -76,6 +78,7 @@ export const electricalPortStateSchema = z.discriminatedUnion('energized', [
     // null: energised, network voltage unsolved (see EnergizedElectricalPortState).
     voltagePu: z.number().finite().positive().nullable(),
     frequencyHz: z.number().finite().positive(),
+    frequencyRateHzPerS: z.number().finite().optional(),
   }).strict(),
   z.object({
     ...electricalPortStateBaseShape,

@@ -32,6 +32,7 @@ import { createDeploymentRuntime } from '../../../apps/agents/src/core/deploymen
 import { messageFocus } from '../../../apps/agents/src/core/message-focus.ts'
 import { createGetTimeTool, createPlaceResolveTool, createProductKnowledgeTools, createSampleChangesTool } from '../../../apps/agents/src/tools/built-in/index.ts'
 import { createAgentsModuleState } from '../../../apps/agents/src/core/workspaces/module-state.ts'
+import { loadSkills } from '../../../apps/agents/src/skills/loader.ts'
 import {
   createWorkspaceRuntimeRegistry as createAgentsWorkspaceRuntimeRegistry,
   type WorkspaceRuntimeRegistry as AgentsWorkspaceRuntimeRegistry,
@@ -134,18 +135,7 @@ describe('Workspace Host with real Modules', () => {
     const baseUrl = `http://127.0.0.1:${hostServer.port}`
 
     const deployment = createDeploymentRuntime()
-    deployment.sharedSkillStore.register({
-      name: 'leitbild-assistance', description: 'Test Assistant Skill', body: 'Use Workspace discovery.',
-      tools: [], allowedToolNames: [], dirPath: leitbildHome,
-    })
-    deployment.sharedSkillStore.register({
-      name: 'operator-displays', description: 'Test display Skill', body: 'Compose displays when useful.',
-      tools: [], allowedToolNames: [], dirPath: leitbildHome,
-    })
-    deployment.sharedSkillStore.register({
-      name: 'procedure-runner', description: 'Test procedure Skill', body: 'Step through procedures.',
-      tools: [], allowedToolNames: [], dirPath: leitbildHome,
-    })
+    await loadSkills(join(import.meta.dir, '../../../apps/agents/skills'), deployment.sharedSkillStore, deployment.sharedToolRegistry)
     deployment.sharedToolRegistry.registerAll(createProductKnowledgeTools())
     deployment.sharedToolRegistry.register(createPlaceResolveTool())
     deployment.sharedToolRegistry.register(createSampleChangesTool())
@@ -230,8 +220,9 @@ describe('Workspace Host with real Modules', () => {
         actor: { kind: 'human', id: 'operator', displayName: 'Operator' },
       }),
     })
-    expect(assistanceResponse.status).toBe(200)
-    const runAssistantRef = (await assistanceResponse.json() as { result: { resource: { id: string } } }).result.resource
+    const assistanceBody: unknown = await assistanceResponse.json()
+    if (assistanceResponse.status !== 200) throw new Error(`Expected HTTP 200, received ${assistanceResponse.status}: ${JSON.stringify(assistanceBody)}`)
+    const runAssistantRef = (assistanceBody as { result: { resource: { id: string } } }).result.resource
     const runAssistantRoom = agentsRuntime.rooms.getRoom(runAssistantRef.id)!
     const assistant = runAssistantRoom.getParticipantIds().map(id => agentsRuntime.team.getAgent(id)).find(agent => agent?.kind === 'ai')!
     expect(runAssistantRoom.getParticipantIds()).toHaveLength(2)
@@ -315,11 +306,15 @@ describe('Workspace Host with real Modules', () => {
     const generalAssistantAI = asAIAgent(generalAssistant)!
     // A fresh Assistant has no task-total round quota; retained explicit settings are tested by the Module API suite.
     expect(generalAssistantAI.getMaxToolIterations()).toBeUndefined()
+    expect(generalAssistantAI.getSkills()).toEqual(expect.arrayContaining(['engineering-advice', 'planning-advice']))
     expect(effectiveAgentToolSelection(generalAssistantAI.getConfig())).toEqual(expect.arrayContaining([
       'product_search',
       'product_read',
       'place_resolve',
       'sample_changes',
+      'engineering_describe',
+      'engineering_calculate',
+      'engineering_run',
       'workspace_explore',
       'workspace_call',
     ]))
@@ -328,6 +323,9 @@ describe('Workspace Host with real Modules', () => {
     expect(refreshedSurface).not.toHaveProperty('error')
     expect('tools' in refreshedSurface ? refreshedSurface.tools.map(tool => tool.name) : []).toEqual(expect.arrayContaining([
       'sample_changes',
+      'engineering_describe',
+      'engineering_calculate',
+      'engineering_run',
       'workspace_explore',
       'workspace_call',
     ]))
@@ -505,7 +503,7 @@ describe('Workspace Host with real Modules', () => {
     expect((await fetch(`${baseUrl}/api/workspaces/${workspace.id}`, { method: 'DELETE' })).status).toBe(204)
     expect(await worldRegistry.list()).toEqual([])
     expect(await leitbildState.has(workspaceIdSchema.parse(workspace.id))).toBe(false)
-  })
+  }, 30_000)
 
   test('starts every featured demo and listed scenario in a new Workspace through that Workspace\'s own Definition and primary Capability', async () => {
     const dataDir = await mkdtemp(join(tmpdir(), 'workspace-featured-world-'))

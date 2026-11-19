@@ -1,5 +1,5 @@
-// Starting a plan from a Definition, inside planning.plan.create. No World call (A1): the plan is unlinked
-// and names its World Scenario; the person starts that Scenario through Host and links the Run with an edit.
+// Build a plan from its Definition and edits, inside planning.plan.create. The caller owns persistence
+// and any World read, including the guided delivery demo's initial read.
 import { planningError } from '../errors.ts'
 import { applyEdits, requireAuthority, type ChangeRecord, type StoredActor } from '../plan/edits.ts'
 import type { Edit } from '../plan/edit-schema.ts'

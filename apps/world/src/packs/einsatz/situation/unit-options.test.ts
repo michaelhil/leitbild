@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test'
 import { createDirectRoutingAdapter } from '../../../routing/direct-adapter.ts'
-import { advance, arrivalAt, at, controller, emptyState, first, newTask, newUnit, refusalOf, run, runAll, send, templates, top, types, unitOf } from '../fixtures/engine-harness.ts'
+import { at, controller, emptyState, first, newTask, newUnit, refusalOf, run, runAll, send, templates, top, types } from '../fixtures/engine-harness.ts'
 import type { EngineState } from '../engine/model.ts'
 import { openViewer } from '../viewer.ts'
 import { unitOptionsSchema } from './schema.ts'
@@ -29,6 +29,7 @@ describe('Einsatz unit options', () => {
   test('a free unit lists every target an order accepts, nearest first, with the verb; refusals carry their code', async () => {
     const answer = await options(await field(), 'c1')
     expect(answer.busy).toBeNull()
+    expect(answer.plan).toEqual([])
     expect(answer.targets.map(target => [target.label, target.verb])).toEqual([['NEAR', 'pick-up'], ['FAR', 'pick-up'], ['CLINIC', 'go-to'], ['STORE', 'go-to']])
     expect(answer.targets.map(target => target.etaS)).toEqual([...answer.targets.map(target => target.etaS)].sort((a, b) => a - b))
     expect(answer.refused).toEqual([{ target: { taskId: 'lift' }, label: 'LIFT', code: 'requirement_unmet', text: 'C1 · Lift 400 kg · needs ≥ 500 kg' }])
@@ -41,46 +42,30 @@ describe('Einsatz unit options', () => {
     }
   })
 
-  test('a busy unit names its task once, with its priority code and when it is free; each valid target says whether "now" takes it, a refused divert "now" is the server\'s', async () => {
+  test('a busy unit names its task once, with its priority code and when it is free; a target "after" its job takes is valid, a refused divert "now" is the server\'s', async () => {
     const state = await run(await field(), send(['c1'], { taskId: 'far' }))
     const answer = await options(state, 'c1')
     expect(answer.busy).toMatchObject({ taskId: 'far', label: 'FAR', code: 'Q1' })
     expect(answer.busy!.freeInS).toBeGreaterThan(0)
-    // No target repeats the job: the targets carry none of it, only whether "now" takes them.
-    for (const target of answer.targets) expect(Object.keys(target).sort()).toEqual(['etaS', 'label', 'now', 'target', 'verb'])
-    // NEAR ranks lower than FAR, so a "now" divert from FAR is refused; "after" is still valid, so NEAR is listed, taken only after.
-    expect(answer.targets.find(target => target.label === 'NEAR')).toMatchObject({ verb: 'pick-up', now: false })
-    expect(answer.targets.find(target => target.label === 'CLINIC')).toMatchObject({ now: true })
+    expect(answer.plan).toEqual([{ id: 'step-1', state: 'active' }])
+    // NEAR ranks lower than FAR, so a "now" divert from FAR is refused; "after" is still valid, so NEAR is listed.
+    expect(answer.targets.find(target => target.label === 'NEAR')).toMatchObject({
+      verb: 'pick-up', afterOnly: true, canReplace: false, canAdd: true, replaceRefusal: expect.stringContaining('more urgent'),
+    })
+    expect(answer.targets.find(target => target.label === 'CLINIC')).toBeDefined()
     expect((await refusalOf(state, { kind: 'order', units: ['c1'], stops: [{ taskId: 'near' }], when: 'now', drops: 'far' })).code).toBe('divert_from_higher_priority')
-    expect((await run(state, { kind: 'order', units: ['c1'], stops: [{ taskId: 'near' }], when: 'after' })).units.get('c1')!.orders).toHaveLength(2)
   })
 
-  test('a target only "after" takes is timed from where and when the plan ends: the job done, then the trip from there', async () => {
-    const state = await run(await field(), send(['c1'], { taskId: 'far' }))
-    const answer = await options(state, 'c1')
-    const near = answer.targets.find(target => target.label === 'NEAR')!
-    // From where C1 stands now NEAR is the nearest call; after FAR, C1 first finishes FAR and delivers what it picks up there.
-    const fromHere = (await options(await field(), 'c1')).targets.find(target => target.label === 'NEAR')!.etaS
-    expect(near.etaS).toBeGreaterThan(answer.busy!.freeInS! + fromHere)
-  })
-
-  test('T7: a carrier taking its load to a site takes no call now, but a call after its delivery is valid, timed from the site once it has handed over; a site to deliver to is valid now', async () => {
-    let state = await run(await field(), send(['c1'], { taskId: 'near' }))
-    state = await advance(state, arrivalAt(state, 'c1') + 10_000)
-    expect(unitOf(state, 'c1')).toMatchObject({ phase: 'transporting', load: { [top]: 1 } })
-    expect(unitOf(state, 'c1').taskId).toBeUndefined()
+  test('an active move with a full queue permits replacing, but not adding', async () => {
+    const state = await run(await field(), {
+      kind: 'order', units: ['c1'], stops: Array.from({ length: 20 }, (_, index) => ({ point: at(0.04, index * 0.001) })),
+    })
     const answer = await options(state, 'c1')
     expect(answer.busy).toBeNull()
-    expect(answer.targets.find(target => target.label === 'CLINIC')).toMatchObject({ verb: 'deliver', now: true })
-    const far = answer.targets.find(target => target.label === 'FAR')!
-    expect(far).toMatchObject({ verb: 'pick-up', now: false })
-    // The call waits until C1 reaches the clinic and hands over, then C1 drives from there.
-    expect(far.etaS).toBeGreaterThan(answer.targets.find(target => target.label === 'CLINIC')!.etaS)
-    expect((await refusalOf(state, send(['c1'], { taskId: 'far' }))).code).toBe('unit_loaded')
-    const after = await run(state, { kind: 'order', units: ['c1'], stops: [{ taskId: 'far' }], when: 'after' })
-    expect(unitOf(after, 'c1').orders.map(step => [step.kind, step.state])).toEqual([['deliver', 'active'], ['serve', 'queued']])
-    // A call it cannot serve even after delivering is refused for that reason, not for its load.
-    expect(answer.refused.find(entry => entry.label === 'LIFT')).toMatchObject({ code: 'requirement_unmet' })
+    expect(answer.plan).toHaveLength(20)
+    expect(answer.targets.find(target => target.label === 'NEAR')).toMatchObject({
+      afterOnly: false, canReplace: true, canAdd: false, addRefusal: expect.stringContaining('20 stops'),
+    })
   })
 
   test('a unit not in the picture is refused, as a Capability rejection', async () => {

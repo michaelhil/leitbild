@@ -5,6 +5,7 @@ import type { RoutingAdapter } from '../../../routing/protocol.ts'
 import type { PackCommandContext, PackRuntimeAdapter, PackRuntimeConnection, PackRuntimeConnectionConfig, PackRuntimeEvent, PackRuntimeEventHandler, PackRuntimeHealth, PackRuntimeQuery } from '../../../simulation/protocol.ts'
 import { createRuntimeStateWriter } from '../../../simulation/runtime-state-writer.ts'
 import { einsatzCapabilities, einsatzQueryIds, isEinsatzCommand, recommendInputSchema } from '../capabilities.ts'
+import { queuedPlanRoutesInputSchema } from '../chain-path.ts'
 import { situationInputSchema, unitOptionsInputSchema } from '../situation/schema.ts'
 import { readSituation } from '../situation/situation.ts'
 import { readUnitOptions } from '../situation/unit-options.ts'
@@ -23,6 +24,7 @@ import { judgeObservation, observeTask, reconnaissanceObservationSignalType } fr
 import { withRoadWeather } from '../interactions/road-weather.ts'
 import { actorFor, attributionOf, resolveViewer } from '../viewer.ts'
 import { removeRecords } from './removal.ts'
+import { createQueuedRouteReader } from './queued-routes.ts'
 import { einsatzAdapterId, einsatzPackId, einsatzRuntimeId } from '../ids.ts'
 import { savedStateSchema, type SavedState } from './saved-state.ts'
 
@@ -106,6 +108,7 @@ const connectEinsatz = async (config: PackRuntimeConnectionConfig, routing: Rout
     throw error
   }
   const ports: EnginePorts = { routing }
+  const readQueuedRoutes = createQueuedRouteReader(routing)
 
   /** The object last published for each record, and each unit's motion then. */
   const published = new Map<string, OperationalObject>(objects.map(object => [object.id, object]))
@@ -302,6 +305,8 @@ const connectEinsatz = async (config: PackRuntimeConnectionConfig, routing: Rout
       const state = einsatzQueryState(withoutDeleted(current).state, query.readPolicy)
       return await readUnitOptions({ state, viewer, roles, actor: actorFor(state.catalog, viewer, 'options'), unitId: unitOptionsInputSchema.parse(query.input).unitId, routing })
     },
+    [einsatzQueryIds.queuedRoutes]: async (query, viewer) =>
+      await readQueuedRoutes(einsatzQueryState(withoutDeleted(current).state, query.readPolicy), published, viewer, queuedPlanRoutesInputSchema.parse(query.input)),
     [einsatzQueryIds.configuration]: async () => ({ revision, config: current.catalog.config }),
   }
 

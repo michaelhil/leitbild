@@ -1,4 +1,4 @@
-// Planning's Module API behind Host: the manifest, Workspace lifecycle, the three Definitions, the plan
+// Planning's Module API behind Host: the manifest, Workspace lifecycle, the Definitions, the plan
 // Resources and the eight Planning operations (the ninth, the World facts query, is World's). Inputs are
 // validated with the exact schemas; what is published is stripForPublication(exact).
 import { z } from 'zod'
@@ -19,6 +19,7 @@ import {
 } from './contract.ts'
 import { planReference, type PlanningOperations } from './operations.ts'
 import type { PlanDefinitionsPort } from '../definitions/index.ts'
+import { scheduleDisplayInputSchema, scheduleDisplayResultSchema } from './schedule-display-contract.ts'
 
 export const planningModuleManifest = workspaceModuleManifestSchema.parse({
   module: { id: 'planning', title: 'Planning', description: 'Plans for maintenance and response work: jobs, crews, calendars and hard rules, schedules that keep them, and why each job starts when it does.' },
@@ -54,6 +55,7 @@ interface Operation<T> {
   readonly title: string
   readonly description: string
   readonly searchTerms: readonly string[]
+  readonly publishes?: ReadonlyArray<'embedded-view'>
   readonly input: z.ZodType<T>
   readonly output: z.ZodType
   readonly invoke: (context: PlanningCallContext, invocation: ModuleCapabilityInvocation, input: T) => Promise<{ readonly result: unknown; readonly created?: unknown }>
@@ -70,12 +72,12 @@ export const planningOperations: ReadonlyArray<Operation<any>> = [
   {
     id: 'planning.plan.create', kind: 'command', scope: 'definition', risk: 'write',
     title: 'Create a plan',
-    description: 'Start a new plan from a template: a blank plan, the Train A work week or the Supply run. The new plan is not linked to a simulation yet; its first card says which World simulation to start and then link. Optional edits, in the same words as changing a plan, are applied as it is made: equipment, crews, shift calendars, jobs, links, rules and goals. Creating a plan never changes the World.',
+    description: 'Start a new plan from a template. The standard start leaves the plan unlinked so you can choose its World simulation later. Optional edits use the same words as changing a plan and are applied as it is made. For a guided planning demo, pass its matching World Run as demoRun to create or reopen that run’s plan with World values already read. Starting a plan only reads World.',
     searchTerms: ['new', 'blank', 'empty', 'template', 'example', 'demo', 'start', 'outage', 'maintenance', 'work week'],
     input: createInputSchema, output: writeResultSchema,
-    invoke: async ({ operations }, invocation, input: z.infer<typeof createInputSchema>) => {
+    invoke: async ({ operations, signal }, invocation, input: z.infer<typeof createInputSchema>) => {
       const definition = invocation.definition!
-      const { result, created } = await operations.create(invocation.workspaceId, { id: definition.id, revisionId: definition.revisionId }, input, invocation.access)
+      const { result, created } = await operations.create(invocation.workspaceId, { id: definition.id, revisionId: definition.revisionId }, input, invocation.access, signal)
       return { result, created }
     },
   },
@@ -90,7 +92,7 @@ export const planningOperations: ReadonlyArray<Operation<any>> = [
   {
     id: 'planning.plan.generate', kind: 'command', scope: 'plan', risk: 'write',
     title: 'Generate schedule options',
-    description: 'Work out schedules that keep every hard rule: links, shift calendars, crew and tool limits, outage limits, protected equipment and locks. Ranks them by the plan\'s goals and says for each whether it is validated feasible, proven infeasible with its cause, or unresolved. Try what-ifs without changing the plan: fix a method, allow or forbid purchases, or days only with no extra crew hours. Saves the options; the plan\'s inputs stay as they are. Planning generates one plan at a time: while another is generating, it answers solver_busy; try again in about 20 seconds. Needs the plan\'s current revision.',
+    description: 'Work out schedules that keep every hard rule: links, shift calendars, crew and tool limits, outage limits, protected equipment and locks. Ranks them by the plan\'s goals, each validated feasible, proven infeasible with its cause, or unresolved. What-ifs leave the plan as it is: fix a method, allow or forbid purchases (days only: no extra crew hours), add one extra rule such as at most 48 h out or back by a time, or solve a goal or a group\'s outage first. With keep they join the options there: the same what-if replaces itself; of at most 8 options the new ones stay, then the plan\'s own, then earlier what-ifs; without keep none stay. Busy: solver_busy, retry. Needs the plan\'s current revision.',
     searchTerms: ['optimise', 'alternatives', 'what-if', 'replan', 'reschedule', 'level', 'levelling', 'fit', 'window', 'variants', 'compress', 'overtime'],
     input: generateInputSchema, output: generateResultSchema,
     invoke: async ({ operations, signal }, invocation, input: z.infer<typeof generateInputSchema>) => ({ result: await operations.generate(invocation.workspaceId, planIdOf(invocation), input, invocation.expectedRevision, invocation.access, signal) }),
@@ -98,7 +100,7 @@ export const planningOperations: ReadonlyArray<Operation<any>> = [
   {
     id: 'planning.plan.explain', kind: 'query', scope: 'plan', risk: 'read',
     title: 'Explain start, finish or refusal',
-    description: 'Explain a schedule: why a job starts when it does, what holds up the finish, or why a plan was refused. The answers are the solver\'s own reasons, such as a link, a crew or tool, a shift, an outage limit, a release time or the window, and each job comes with its float: how much it can slip before the window end. Asks about the recommended option unless another is named. Reads only; nothing is saved.',
+    description: 'Explain a schedule: why a job starts when it does, what holds up the finish, or why a plan was refused, with the solver\'s own reasons (a link, a crew or tool, a shift, an outage limit, the window) and each job\'s float. Also why the recommended option ranks first: the goal order, the goal that decided, the trade in hours and money, and the method caveats the ranking leaves out; and what differs from an option of the previous options, kept when the plan changed. Asks about the recommended option unless another is named. Reads only; nothing is saved.',
     searchTerms: ['why', 'late', 'critical path', 'longest path', 'driving', 'completion', 'limits', 'float', 'slack', 'held up', 'refused', 'impossible', 'why not earlier'],
     input: explainInputSchema, output: explainResultSchema,
     invoke: async ({ operations }, invocation, input: z.infer<typeof explainInputSchema>) => ({ result: await operations.explain(invocation.workspaceId, planIdOf(invocation), input) }),
@@ -106,7 +108,7 @@ export const planningOperations: ReadonlyArray<Operation<any>> = [
   {
     id: 'planning.plan.read', kind: 'query', scope: 'plan', risk: 'read',
     title: 'Read a plan',
-    description: 'See where a plan stands: its settings and goals, what needs attention, when World values were last read, and the size of plan Generate is certified for. Ask for one section for the plan\'s own records: jobs with their links and methods, rules, calendars, crews, tools and purchases, equipment and World values with how each is known and when it was read, the options with their status checked again against the plan as it is now and any warning, the schedule of one option, or the change history. Long sections come in pages. Reads only.',
+    description: 'See where a plan stands: settings, goals, what needs attention, when World values were read, and the certified plan size. Or one section: jobs, links and methods, rules, calendars, crews, tools and purchases, equipment and World values, the options or the previous ones, an option\'s schedule, the change history, or what overtime buys. Each option keeps the status Generate gave it: a status with fresh false, and the recommended option when its own is not fresh, describe the plan before a later change, not the plan as it is now; generate again. Long sections come in pages. Reads only.',
     searchTerms: ['status', 'overview', 'attention', 'summary', 'rules', 'crews', 'schedule', 'history'],
     input: readInputSchema, output: inspectionViewSchema,
     invoke: async ({ operations }, invocation, input: z.infer<typeof readInputSchema>) => ({ result: await operations.read(invocation.workspaceId, planIdOf(invocation), input) }),
@@ -126,6 +128,14 @@ export const planningOperations: ReadonlyArray<Operation<any>> = [
     searchTerms: ['refresh', 'update', 'latest', 'World', 'changed', 'reread', 'sync'],
     input: refreshInputSchema, output: writeResultSchema,
     invoke: async ({ operations, signal }, invocation, input: z.infer<typeof refreshInputSchema>) => ({ result: await operations.refresh(invocation.workspaceId, input.plan, invocation.expectedRevision, invocation.access, signal) }),
+  },
+  {
+    id: 'planning.plan.display', kind: 'query', scope: 'plan', risk: 'read',
+    title: 'Retained schedule chart',
+    description: 'Present a retained planning option as a Gantt chart, including a deadline what-if or its proven refusal. The chart identifies the option, requested deadline, cost, input revision and freshness. A refusal may include a checked reference schedule without inventing rows for the refused option. Later input changes or replacement options require a new publication. Read-only; the existing paged plan sections supply its jobs and dated rows.',
+    searchTerms: ['gantt', 'schedule chart', 'deadline schedule'],
+    publishes: ['embedded-view'], input: scheduleDisplayInputSchema, output: scheduleDisplayResultSchema,
+    invoke: async ({ operations }, invocation, input: z.infer<typeof scheduleDisplayInputSchema>) => ({ result: await operations.display(invocation.workspaceId, planIdOf(invocation), input) }),
   },
   {
     id: 'planning.plan.delete', kind: 'command', scope: 'plan', risk: 'destructive',
@@ -164,6 +174,7 @@ const registrationFor = (operation: Operation<unknown>): CapabilityRegistration<
         : { kind: 'resource', resourceType: planType },
     title: operation.title, description: operation.description, searchTerms: [...operation.searchTerms],
     risk: operation.risk, idempotent: operation.kind === 'query',
+    ...(operation.publishes === undefined ? {} : { publishes: [...operation.publishes] }),
     inputSchema: publishedInputSchema(operation.input),
     outputSchema: z.toJSONSchema(operation.output, { unrepresentable: 'any' }) as Record<string, unknown>,
   },

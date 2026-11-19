@@ -158,6 +158,42 @@ describe('operational map icons', () => {
     expect(snapshot.points.map(point => [point.id, point.muted])).toEqual([['a', false], ['b', true]])
   })
 
+  test('history dots are small and still pickable, and a faded asset regains emphasis when selected', () => {
+    const objects = [objectOf('asset', 11.3), objectOf('history', 11.4)]
+    const presentationFor = (object: OperationalObject): PackObjectPresentation => ({
+      ...presentationWith({})(object),
+      mapMarker: object.id === 'history' ? 'dot' : 'muted',
+    })
+    const snapshot = snapshotOf(objects, presentationFor)
+    const history = snapshot.points.find(point => point.id === 'history')!
+    expect(history).toMatchObject({ dot: true, muted: true, color: [51, 65, 85, 132] })
+    expect(snapshot.points.find(point => point.id === 'asset')?.muted).toBe(true)
+    const selected = createMapFeatureStore().update({
+      objects, selectedControllerId: 'asset', highlightedObjectIds: [], hiddenObjectCategoryIds: [],
+      alertPalette: 'day', placementPoints: [], packFeatures: [], hasNewInfo: () => false, presentationFor,
+    })
+    expect(selected.points.find(point => point.id === 'asset')?.muted).toBe(false)
+
+    const picked: string[] = []
+    const hovered: string[] = []
+    const layers = createOperationalDeckLayers({
+      snapshot, visibleFamilies: new Set(['objects']), catalogueAtlas: emptyCatalogueSymbolAtlas,
+      zoom: 10, disksPick: false, diskClicks: null, onObjectSeen: () => undefined,
+      onObjectSelected: point => { picked.push(point.id) },
+      onObjectHover: point => { if (point !== null) hovered.push(point.id) },
+    })
+    const layer = (id: string) => layers.find(entry => entry.id === id)!
+    expect(layer('leitbild-object-dots').props).toMatchObject({ data: [history], getRadius: 4, pickable: false })
+    expect(layer('leitbild-object-symbols').props.data).not.toContain(history)
+    type Pick = (info: { readonly object: unknown }) => void
+    const hit = layer('leitbild-object-dot-clicks')
+    expect(hit.props.pickable).toBe(true)
+    ;(hit.props.onClick as unknown as Pick)({ object: history })
+    ;(hit.props.onHover as unknown as Pick)({ object: history })
+    expect(picked).toEqual(['history'])
+    expect(hovered).toEqual(['history'])
+  })
+
   test('an armed order rings and tags its targets and dims every other object but its own, and nothing changes once it clears', () => {
     const store = createMapFeatureStore()
     const objects = [objectOf('a', 11.3), objectOf('b', 11.4), objectOf('c', 11.5), objectOf('d', 11.6)]
@@ -174,7 +210,7 @@ describe('operational map icons', () => {
     })
     const plain = store.update(input(null))
     expect(plain.points.map(point => [point.id, point.targetTag, point.dimmed])).toEqual([['a', null, false], ['b', null, false], ['c', null, false], ['d', null, false]])
-    const valid = (tag: string) => ({ tag, anchor: 'middle' as const, refused: false })
+    const valid = (tag: string) => ({ tag, anchor: 'middle' as const, tone: 'valid' as const })
     const armed = store.update(input({ fromId: 'a', complete: true, targets: new Map([['b', valid('4 min')], ['c', valid('Move · 9 min')]]) }))
     expect(armed.revisions.points).toBe(plain.revisions.points + 1)
     expect(armed.points.map(point => [point.id, point.targetTag, point.dimmed, point.color[3]])).toEqual([['a', null, false, 255], ['b', '4 min', false, 255], ['c', 'Move · 9 min', false, 255], ['d', null, true, 72]])
@@ -197,9 +233,9 @@ describe('operational map icons', () => {
       hasNewInfo: () => false, presentationFor: presentationWith({}),
     })
     // b is a tagged valid target, c a valid one past the tagged few, d not a target (refused, or no stop at all).
-    const targets = new Map([['b', { tag: '4 min', anchor: 'middle' as const, refused: false }], ['c', { tag: null, anchor: 'middle' as const, refused: false }]])
+    const targets = new Map([['b', { tag: '4 min', anchor: 'middle' as const, tone: 'valid' as const }], ['c', { tag: null, anchor: 'middle' as const, tone: 'valid' as const }]])
     const armed = store.update(input({ fromId: 'a', complete: true, targets }))
-    expect(armed.points.map(point => [point.id, point.targeted, point.targetTag, point.dimmed])).toEqual([['a', false, null, false], ['b', true, '4 min', false], ['c', true, null, false], ['d', false, null, true]])
+    expect(armed.points.map(point => [point.id, point.targetTone, point.targetTag, point.dimmed])).toEqual([['a', null, null, false], ['b', 'valid', '4 min', false], ['c', 'valid', null, false], ['d', null, null, true]])
     const layers = layersOf(armed, emptyCatalogueSymbolAtlas)
     const halos = layers.find(layer => layer.id === 'leitbild-object-halos')?.props as unknown as { readonly getRadius: (point: unknown) => number; readonly getLineColor: (point: unknown) => ReadonlyArray<number> }
     const [b, c] = ['b', 'c'].map(id => armed.points.find(point => point.id === id)!)
@@ -215,7 +251,7 @@ describe('operational map icons', () => {
     const objects = [objectOf('a', 11.3), objectOf('b', 11.4), objectOf('c', 11.5), objectOf('d', 11.6)]
     const armed = store.update({
       objects, selectedControllerId: 'a', highlightedObjectIds: [],
-      targeting: { fromId: 'a', complete: true, targets: new Map([['b', { tag: 'Needs fire suppression', anchor: 'start' as const, refused: true }], ['c', { tag: '4 min', anchor: 'end' as const, refused: false }], ['d', { tag: '6 min', anchor: 'middle' as const, refused: false }]]) },
+      targeting: { fromId: 'a', complete: true, targets: new Map([['b', { tag: 'Needs fire suppression', anchor: 'start' as const, tone: 'refused' as const }], ['c', { tag: '4 min', anchor: 'end' as const, tone: 'valid' as const }], ['d', { tag: '6 min', anchor: 'middle' as const, tone: 'valid' as const }]]) },
       hiddenObjectCategoryIds: [], alertPalette: 'day' as const, placementPoints: [], packFeatures: [],
       hasNewInfo: () => false, presentationFor: presentationWith({}),
     })
@@ -232,14 +268,14 @@ describe('operational map icons', () => {
       objects,
       selectedControllerId: 'a',
       highlightedObjectIds: [],
-      targeting: { fromId: 'a', complete: true, targets: new Map([['b', { tag: 'Needs fire suppression', anchor: 'middle' as const, refused: true }], ['c', { tag: '4 min', anchor: 'middle' as const, refused: false }]]) },
+      targeting: { fromId: 'a', complete: true, targets: new Map([['b', { tag: 'Needs fire suppression', anchor: 'middle' as const, tone: 'refused' as const }], ['c', { tag: '4 min', anchor: 'middle' as const, tone: 'valid' as const }]]) },
       hiddenObjectCategoryIds: [], alertPalette: 'day' as const,
       placementPoints: [],
       packFeatures: [],
       hasNewInfo: () => false,
       presentationFor: presentationWith({}),
     })
-    expect(armed.points.map(point => [point.id, point.targetTag, point.targetRefused, point.dimmed])).toEqual([['a', null, false, false], ['b', 'Needs fire suppression', true, false], ['c', '4 min', false, false], ['d', null, false, true]])
+    expect(armed.points.map(point => [point.id, point.targetTag, point.targetTone, point.dimmed])).toEqual([['a', null, null, false], ['b', 'Needs fire suppression', 'refused', false], ['c', '4 min', 'valid', false], ['d', null, null, true]])
     const layers = layersOf(armed, emptyCatalogueSymbolAtlas)
     const [refused, valid] = ['b', 'c'].map(id => armed.points.find(point => point.id === id)!)
     const halos = layers.find(layer => layer.id === 'leitbild-object-halos')?.props as unknown as { readonly getRadius: (point: unknown) => number; readonly getLineColor: (point: unknown) => ReadonlyArray<number> }
@@ -253,14 +289,14 @@ describe('operational map icons', () => {
     expect(tags.maxWidth).toBeGreaterThan(0)
   })
 
-  test('a tap or hover on a target\'s tag acts on that target, never on the ground or an icon beneath it', () => {
+  test('an assigned target has a red halo and its number picks the correct target', () => {
     const store = createMapFeatureStore()
     const objects = [objectOf('a', 11.3), objectOf('b', 11.4), objectOf('c', 11.5)]
     const armed = store.update({
       objects,
       selectedControllerId: 'a',
       highlightedObjectIds: [],
-      targeting: { fromId: 'a', complete: true, targets: new Map([['b', { tag: '4 min', anchor: 'middle' as const, refused: false }], ['c', { tag: '9 min', anchor: 'middle' as const, refused: false }]]) },
+      targeting: { fromId: 'a', complete: true, targets: new Map([['b', { tag: '4 min', anchor: 'middle' as const, tone: 'valid' as const }], ['c', { tag: '1', anchor: 'middle' as const, tone: 'assigned' as const }]]) },
       hiddenObjectCategoryIds: [], alertPalette: 'day' as const,
       placementPoints: [],
       packFeatures: [],
@@ -282,6 +318,11 @@ describe('operational map icons', () => {
       onObjectHover: point => { hovered.push(point?.id ?? null) },
     }).find(layer => layer.id === 'leitbild-target-tags')
     expect(tags?.props.pickable).toBe(true)
+    const point = armed.points.find(entry => entry.id === 'c')!
+    expect(point).toMatchObject({ targetTone: 'assigned', targetTag: '1', dimmed: false })
+    const halos = layersOf(armed, emptyCatalogueSymbolAtlas).find(layer => layer.id === 'leitbild-object-halos')?.props as unknown as { readonly getLineColor: (point: unknown) => ReadonlyArray<number> }
+    const [red, green, blue] = halos.getLineColor(point)
+    expect(red).toBeGreaterThan(Math.max(green!, blue!))
     // deck.gl hands a click on a tag, its text or its pill, the tag's own data row: the target's point.
     const tagged = (tags?.props.data as ReadonlyArray<{ readonly id: string }>).find(point => point.id === 'c')
     type Pick = (info: { readonly object: unknown }) => void

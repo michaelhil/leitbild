@@ -1,5 +1,5 @@
-// The three bundled plan Definitions. Host launches them only through their primary Capability,
-// planning.plan.create; none is featured. The two case documents are lane A's fixtures, copied unchanged
+// Bundled plan Definitions. Planning creates them through planning.plan.create.
+// The Train A and Supply run case documents are lane A's fixtures, copied unchanged
 // (definitions/fidelity.test.ts keeps them equal), and hold no schedule numbers.
 import { createHash } from 'node:crypto'
 import { z } from 'zod'
@@ -9,6 +9,13 @@ import { keySchema, labelSchema, planInputsSchema, type PlanInputs } from '../pl
 import blank from './blank.plan-definition.json' with { type: 'json' }
 import trainA from './train-a-work-week.plan-definition.json' with { type: 'json' }
 import supplyRun from './supply-run.plan-definition.json' with { type: 'json' }
+import deliveryDemo from './halden-delivery-planning.plan-definition.json' with { type: 'json' }
+import maintenanceDemo from './nuclear-maintenance-planning.plan-definition.json' with { type: 'json' }
+import { deliveryDemoDefinitionId } from './delivery-demo.ts'
+import { maintenanceDemoDefinitionId } from './maintenance-demo.ts'
+
+export { deliveryDemoDefinitionId, maintenanceDemoDefinitionId }
+export const guidedPlanDefinitionIds = new Set([deliveryDemoDefinitionId, maintenanceDemoDefinitionId])
 
 export const planDefinitionType = 'planning.plan-definition'
 
@@ -40,8 +47,8 @@ const load = (raw: unknown): PlanDefinition => {
   return { id: document.id, title: document.title, description: document.description, inputs: document.inputs, revisionId: definitionRevisionId(document) }
 }
 
-/** Listing order: the blank plan first, then the two cases. */
-export const bundledPlanDefinitions: readonly PlanDefinition[] = [blank, trainA, supplyRun].map(load)
+/** Blank first, then the guided demo and the full cases. */
+export const bundledPlanDefinitions: readonly PlanDefinition[] = [blank, maintenanceDemo, deliveryDemo, trainA, supplyRun].map(load)
 
 export const createPlanDefinitions = (definitions: readonly PlanDefinition[] = bundledPlanDefinitions): PlanDefinitionsPort => ({ list: () => definitions })
 
@@ -53,5 +60,5 @@ export const definitionDescriptors = (workspaceId: WorkspaceId, definitions: Pla
     category: 'Plans',
     currentRevisionId: definition.revisionId,
     capabilityIds: [...capabilityIds],
-    primaryCapabilityId: 'planning.plan.create',
+    ...(guidedPlanDefinitionIds.has(definition.id) ? {} : { primaryCapabilityId: 'planning.plan.create' }),
   })) }).definitions

@@ -17,6 +17,7 @@ import { skillRoutes } from './routes/skills.ts'
 import { roomRoutes } from './routes/rooms.ts'
 import { comparisonRoutes } from './routes/comparisons.ts'
 import { displayRequestRoutes } from './routes/display-requests.ts'
+import { diagramRequestRoutes } from './routes/diagram-requests.ts'
 import { agentRoutes } from './routes/agents.ts'
 import { agentMemoryRoutes } from './routes/agents-memory.ts'
 import { messageRoutes } from './routes/messages.ts'
@@ -79,6 +80,7 @@ const allRoutes = [
   ...roomRoutes,
   ...comparisonRoutes,
   ...displayRequestRoutes,
+  ...diagramRequestRoutes,
   // Agent-memory routes BEFORE agentRoutes so /agents/:name/memory
   // matches before /agents/:name (which would shadow it).
   ...agentMemoryRoutes,

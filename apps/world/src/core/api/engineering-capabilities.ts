@@ -11,9 +11,16 @@ const readRunId = (invocation: ModuleCapabilityInvocation) => {
 }
 const receiptWithView = engineeringContinuationReceiptSchema.extend({ view: embeddedViewPublicationSchema }).strict()
 const view = (jobId: string) => ({ viewType: 'engineering.continuation', title: 'Engineering comparison', height: 650, state: JSON.stringify({ jobId }) })
+// Exact admission details belong beside the input they constrain. Keeping
+// equipment names out of the operation index avoids ranking this specialized
+// calculation capture above ordinary equipment discovery or plan authoring.
+const captureInput = engineeringCaptureInputSchema.extend({
+  profile: engineeringCaptureInputSchema.shape.profile.describe('plant-thermal: temperature and core power from engineering-thermal, subject plant:engineering-thermal. plant-maintenance: current Cooling Water Pump A/B flows from nuclear-maintenance-planning, subject plant:maintenance. grid-balance: engineering-grid power balance, subject grid:engineering.'),
+  subjectId: engineeringCaptureInputSchema.shape.subjectId.describe('The exact subject named for the selected admitted profile; other subjects are refused'),
+})
 const operations = [
-  { name: 'inputs.capture', title: 'Capture engineering inputs', input: engineeringCaptureInputSchema, output: engineeringInputBasisSchema, command: false,
-    description: 'Read finite typed quantities and their original model frame from a named open engineering research Run. Restricted, role-based, native and unqualified sources are refused. Preserve this result as the source of calculation inputs.' },
+  { name: 'inputs.capture', title: 'Capture engineering inputs', input: captureInput, output: engineeringInputBasisSchema, command: false,
+    description: 'Capture a dated, typed evidence basis for a retained engineering calculation. Select an admitted profile and its exact subject; the input schema documents the supported pairs. Returns quantity identifiers, units, quality and the original model frame for binding without changing the source. Restricted, role-based, native and unqualified sources are refused.' },
   { name: 'inputs.qualify', title: 'Check engineering input qualification', input: engineeringQualifyInputSchema, output: engineeringQualificationResultSchema, command: false,
     description: 'Recheck the original source epoch, profile and restrictions without acquiring new readings. Qualification does not refresh the original values or timestamp.' },
   { name: 'continuation.submit', title: 'Compare conditional plant continuations', input: engineeringContinuationSubmitSchema, output: receiptWithView, command: true,

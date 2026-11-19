@@ -98,7 +98,8 @@ describe('cancel', () => {
     const ending = createSolverPool({ childEntry: new URL('./fixtures/child-ends.ts', import.meta.url).pathname })
     const result = await ending.solve(compiled.problem, { budget: { evals: 100, cpuMs: 2_000, wallMs: 4_000, memoryMb: 80 }, seed: 1, signal: new AbortController().signal })
     expect([result.stoppedBy, result.candidates.length]).toEqual(['ended', 0])
-    const generated = await generate({ engine: ending, check: laneKCheck, verify: laneKVerify, verifyBound: laneKVerifyBound }, { inputs, revision: 1, previous: null, input: { seconds: 2 }, by, signal: new AbortController().signal })
+    // Leave enough time for both methods to reach the child process after their setup and checks.
+    const generated = await generate({ engine: ending, check: laneKCheck, verify: laneKVerify, verifyBound: laneKVerifyBound }, { inputs, revision: 1, previous: null, input: { seconds: 5 }, by, signal: new AbortController().signal })
     for (const option of generated.optionSet.options) expect(option.status).toMatchObject({ word: 'unresolved', run: { stoppedBy: 'ended' } })
   }, 30_000)
 

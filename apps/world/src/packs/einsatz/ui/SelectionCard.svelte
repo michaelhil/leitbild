@@ -1,39 +1,28 @@
 <script lang="ts">
+  import { ArrowDown, ArrowUp, House, X } from 'lucide-svelte'
   import { einsatzColors } from '../colors.ts'
-  import type { OrderWhen, Stop, UnitOrderInput } from '../order-schema.ts'
+  import type { Stop, UnitOrderInput } from '../order-schema.ts'
   import { svgImageSource } from './einsatz-client.ts'
-  import { dispatchWords, type CardView } from './presenters.ts'
+  import { dispatchWords, type CardView, type PlanStopView } from './presenters.ts'
 
   /**
-   * The selection block's card, docked at the top of the Dispatch panel: a
-   * unit's (armed or not), a call's, a closed call's or a site's. A thin view
-   * over the presenters' card. Nothing the operator is about to hit moves:
-   * every button stands in a fixed place for its kind and is disabled with
-   * its reason, shown beside it, rather than hidden; a refusal shows in the
-   * reserved slot at the top of the card, and the armed card's busy choices
-   * and refusals in its own reserved slot above the target rows; in the call
-   * card the commands come first and the assigned units after them, and the
-   * Close confirm stands beside Close. Every control is at least 44 px. A
-   * Deliver-to choice shows where the load goes now as its selected chip;
-   * before the carrier is on the call its sites are named, never offered as
-   * buttons that cannot act.
+   * The unit card keeps the plan and map selection controls in reach.
+   * The Targets disclosure gives the same actions to keyboard users.
+   * The other cards keep their call and site controls.
    */
   interface Props {
     readonly card: CardView
+    readonly unitPending: boolean
     /** The last refusal or failure the panel reports, shown in the card's reserved slot. */
     readonly feedback: string | null
     readonly icon: (id: string) => string | undefined
     /** Whether this call's Close waits for its confirm. */
     readonly confirming: boolean
     readonly back: () => void
-    readonly arm: (unitId: string, when: 'after' | null) => void
     readonly targetRow: (target: Stop) => void
-    /** A choice of the busy prompt, offered here as well as on the map. */
-    readonly promptChoice: (choice: OrderWhen) => void
     readonly recall: (unitId: string) => void
-    readonly undo: (unitId: string, commandId: string) => void
-    readonly removeStop: (unitId: string, stopId: string) => void
-    readonly deliverTo: (unitId: string, siteId: string) => void
+    readonly chooseStop: (stopId: string) => void
+    readonly moveStop: (stopId: string, direction: -1 | 1) => void
     readonly order: (input: UnitOrderInput) => void
     readonly toggleChip: (unitId: string) => void
     readonly refresh: (callId: string) => void
@@ -60,95 +49,84 @@
   <span class="order-chip selected" aria-current="true">✓ {label}</span>
 {/snippet}
 
+{#snippet planStop(stop: PlanStopView)}
+  <span class="index">{stop.index}</span>
+  <span class="what">
+    {stop.text}{#if stop.eta !== null} · <span class="num">{stop.eta}</span>{/if}
+    {#if stop.by !== null}<span class="by">{stop.by}</span>{/if}
+  </span>
+{/snippet}
+
 <article class="card" data-kind={card.kind} aria-label={card.kind === 'unit' || card.kind === 'site' ? card.title : card.label}>
   {#if card.kind === 'unit'}
-    {#if card.armed !== null}
-      <div class="banner" role="status">
-        <strong>{card.armed.banner}</strong>
-        <button type="button" class="x" aria-label={dispatchWords.cancel} onclick={props.back}>×</button>
-      </div>
-    {/if}
     <header>
       {@render badge(card.icon, einsatzColors.unit)}
-      <h3>{card.title}</h3>
-      {#if card.armed === null}<button type="button" class="x" aria-label={dispatchWords.close} onclick={props.back}>×</button>{/if}
-    </header>
-    {#if card.armed === null}
-      {@render slot()}
-    {:else}
-      {@const armedSlot = card.armed.slot}
-      <div class="slot armed-slot">
-        {#if armedSlot.kind === 'busy'}
-          <div class="row-buttons">
-            <button type="button" onclick={() => props.promptChoice('after')}>{armedSlot.after}</button>
-            <button type="button" class="warning" onclick={() => props.promptChoice('now')}>{armedSlot.now}</button>
-          </div>
-        {:else if armedSlot.kind === 'busy-reading'}
-          <p class="note">{dispatchWords.readingJob}</p>
-        {:else if armedSlot.kind === 'refusal'}
-          <p class="refusal" role="alert">{armedSlot.text}</p>
-        {:else if props.feedback !== null}
-          <p class="refusal" role="alert">{props.feedback}</p>
-        {/if}
+      <div class="unit-name">
+        <h3>{card.title}</h3>
+        <p class="status" data-tone={card.status.tone}><span class="dot" aria-hidden="true">●</span> {card.status.word}{#if card.status.due !== null} · <span class="num">{card.status.due}</span>{/if}</p>
       </div>
-    {/if}
-    <p class="status" data-tone={card.status.tone}><span class="dot" aria-hidden="true">●</span> {card.status.word}{#if card.status.due !== null} · <span class="num">{card.status.due}</span>{/if}</p>
-    {#if card.readOnly !== null}<p class="note">{card.readOnly}</p>{/if}
-    {#if card.armed === null}
-      <button type="button" class="primary" disabled={!card.dispatch.enabled} onclick={() => props.arm(card.id, null)}>{card.dispatch.label}</button>
-      <p class="reason">{card.dispatch.reason ?? ''}</p>
-      <div class="stacked">
-        <button type="button" disabled={!card.recall.enabled} onclick={() => props.recall(card.id)}>{card.recall.label}</button>
-        <p class="reason">{card.recall.reason ?? ''}</p>
-        <button type="button" disabled={!card.undo.enabled} onclick={() => { if (card.undo.commandId !== null) props.undo(card.id, card.undo.commandId) }}>{card.undo.label}</button>
-        <p class="reason">{card.undo.reason ?? ''}</p>
-      </div>
-    {:else}
-      <h4>{dispatchWords.validTargets}</h4>
-      {#if card.armed.rows.length === 0}
-        <p class="note rows-note">{dispatchWords.loadingTargets}</p>
-      {:else}
-        <ol class="targets">
-          {#each card.armed.rows as row (row.key)}
-            <li>
-              <button type="button" class="target" class:dimmed={row.refused !== null} onclick={() => props.targetRow(row.target)}>
-                <span>{row.text}</span>
-                {#if row.eta !== null}<span class="num">{row.eta}</span>{/if}
-                {#if row.drops !== null}<span class="drops">{row.drops}</span>{/if}
-                {#if row.after !== null}<span class="after">{row.after}</span>{/if}
-                {#if row.refused !== null}<span class="why">{row.refused}</span>{/if}
-              </button>
-            </li>
-          {/each}
-        </ol>
+      {#if card.readOnly === null}
+        <button type="button" class="icon-action" title={card.recall.reason ?? card.recall.label} aria-label={card.recall.label} disabled={props.unitPending || !card.recall.enabled} onclick={() => props.recall(card.id)}>
+          <House size={17} aria-hidden="true" />
+        </button>
       {/if}
-    {/if}
+      <button type="button" class="icon-action" title={dispatchWords.close} aria-label={dispatchWords.close} onclick={props.back}>
+        <X size={17} aria-hidden="true" />
+      </button>
+    </header>
+    {#if card.readOnly !== null}<p class="note">{card.readOnly}</p>{/if}
+    {#if props.feedback !== null}<p class="refusal" role="alert">{props.feedback}</p>{/if}
+    {#each card.states as state, index (index)}<p class="state">{state}</p>{/each}
     {#if card.plan.length > 0 || card.predicted !== null}
       <h4>{card.planHeading}</h4>
       <ol class="plan">
         {#each card.plan as stop (stop.id)}
-          <li class:active={stop.active}>
-            <span class="index">{stop.index}</span>
-            <span class="what">{stop.text}{#if stop.eta !== null} · <span class="num">{stop.eta}</span>{/if}{#if stop.by !== null} <span class="by">{stop.by}</span>{/if}</span>
-            {#if card.removable}<button type="button" class="x" aria-label={stop.removeLabel} onclick={() => props.removeStop(card.id, stop.id)}>×</button>{/if}
+          <li class:active={stop.active} aria-current={stop.active ? 'step' : undefined}>
+            {#if card.removable}
+              <button type="button" class="stop-target" title={stop.removeLabel} aria-label={stop.removeLabel} disabled={props.unitPending} onclick={() => props.chooseStop(stop.id)}>
+                {@render planStop(stop)}
+              </button>
+            {:else}
+              <span class="stop-target">{@render planStop(stop)}</span>
+            {/if}
+            {#if stop.canMoveUp || stop.canMoveDown}
+              <div class="move-controls">
+                <button type="button" class="icon-action" title="Move earlier" aria-label={`Move stop ${stop.index} earlier: ${stop.text}`} disabled={props.unitPending || !stop.canMoveUp} onclick={() => props.moveStop(stop.id, -1)}>
+                  <ArrowUp size={16} aria-hidden="true" />
+                </button>
+                <button type="button" class="icon-action" title="Move later" aria-label={`Move stop ${stop.index} later: ${stop.text}`} disabled={props.unitPending || !stop.canMoveDown} onclick={() => props.moveStop(stop.id, 1)}>
+                  <ArrowDown size={16} aria-hidden="true" />
+                </button>
+              </div>
+            {/if}
           </li>
         {/each}
         {#if card.predicted !== null}<li class="predicted"><span class="index">┄</span><span class="what">{card.predicted}</span></li>{/if}
       </ol>
     {/if}
-    {#if card.armed === null && card.deliverTo.length > 0}
-      <div class="chips" role="group" aria-label={dispatchWords.deliverTo}>
-        <span class="chips-label">{dispatchWords.deliverTo}</span>
-        {#each card.deliverTo as site (site.siteId)}
-          {#if site.selected}{@render chosen(site.label)}{:else}<button type="button" class="order-chip" onclick={() => props.deliverTo(card.id, site.siteId)}>{site.label}</button>{/if}
-        {/each}
-      </div>
+    {#if card.readOnly === null}
+      {#if props.unitPending || card.targetNotice !== null}<p class="note" role="status">{props.unitPending ? 'Updating plan…' : card.targetNotice}</p>{/if}
+      {#if card.targets.length > 0 || card.targetsLoading}
+        <details class="unit-disclosure">
+          <summary>Targets</summary>
+          <ol class="targets">
+            {#each card.targets as row (row.key)}
+              <li><button type="button" class="target" disabled={props.unitPending || card.targetsLoading} onclick={() => props.targetRow(row.target)}>
+                <span>{row.text}</span>
+                {#if row.eta !== null}<span class="num">{row.eta}</span>{/if}
+              </button></li>
+            {/each}
+          </ol>
+        </details>
+      {/if}
     {/if}
-    {#if card.armed === null && card.addStop !== null}
-      <button type="button" class="secondary" disabled={!card.addStop.enabled} onclick={() => props.arm(card.id, 'after')}>{card.addStop.label}</button>
-      <p class="reason">{card.addStop.reason ?? ''}</p>
+    {#if card.facts.length > 0 || (card.readOnly === null && card.recall.reason !== null)}
+      <details class="unit-disclosure">
+        <summary>Unit details</summary>
+        {#if card.facts.length > 0}<p class="facts">{card.facts.join(' · ')}</p>{/if}
+        {#if card.readOnly === null && card.recall.reason !== null}<p class="note">{card.recall.reason}</p>{/if}
+      </details>
     {/if}
-    {#if card.facts.length > 0}<p class="facts">{card.facts.join(' · ')}</p>{/if}
   {:else if card.kind === 'call'}
     {@const proposal = card.proposal}
     <header>
@@ -245,21 +223,18 @@
   p { margin: 0; }
   .badge { flex: none; width: 24px; height: 24px; display: inline-grid; place-items: center; border-radius: 50%; }
   .badge img { width: 16px; height: 16px; }
-  .banner { display: flex; align-items: center; gap: 8px; padding: 0 0 0 8px; border-radius: 6px; background: color-mix(in srgb, var(--accent) 16%, var(--panel)); }
-  .banner strong { flex: 1; }
   /* The reserved slots keep their height empty or full, so nothing under them moves when a refusal comes or goes. */
   .slot { min-height: 32px; }
-  .armed-slot { min-height: 44px; display: grid; align-items: center; }
   .reason { min-height: 16px; }
   button { min-height: 44px; min-width: 44px; padding: 4px 10px; border: 1px solid var(--border); border-radius: 8px; background: var(--panel); color: inherit; font: inherit; font-size: 13px; cursor: pointer; touch-action: manipulation; text-align: left; }
   button:disabled { cursor: not-allowed; opacity: .55; }
   button:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
   .x { flex: none; text-align: center; font-size: 18px; line-height: 1; }
+  .unit-name { flex: 1; min-width: 0; }
+  .unit-name p { margin-top: 2px; font-size: 12px; }
+  .icon-action { flex: none; display: inline-grid; place-items: center; padding: 0; }
   .primary { width: 100%; text-align: center; border-color: var(--accent); background: var(--accent); color: var(--panel); font-weight: 700; }
   .secondary { width: 100%; text-align: center; }
-  .row-buttons { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
-  .stacked { display: grid; gap: 2px; }
-  .stacked button { width: 100%; }
   .command { display: grid; gap: 4px; }
   .command.waiting { opacity: .7; }
   .command-row { display: grid; grid-template-columns: 1fr auto; gap: 8px; }
@@ -269,20 +244,22 @@
   .status[data-tone='busy'] .dot { color: var(--accent); }
   .status[data-tone='returning'] .dot { color: var(--muted); }
   .status[data-tone='attention'] .dot, .status[data-tone='out'] .dot { color: var(--critical); }
-  .note, .reason, .facts, .by, .why, .after, .priority { color: var(--muted); font-size: 12px; }
+  .note, .reason, .facts, .by, .priority { color: var(--muted); font-size: 12px; }
   .refusal, .state, .overdue { color: var(--critical); font-size: 12px; }
   .code { font-weight: 750; color: var(--critical); }
   .new { padding: 1px 6px; border-radius: 6px; background: var(--warning); color: var(--panel); font-size: 11px; font-weight: 750; }
   .targets, .plan, .needs { display: grid; gap: 4px; margin: 0; padding: 0; list-style: none; }
-  .rows-note { min-height: 44px; display: flex; align-items: center; }
-  .target { width: 100%; display: flex; flex-wrap: wrap; gap: 6px; align-items: baseline; }
-  .target.dimmed { opacity: .6; }
-  .drops { color: var(--warning); font-size: 12px; }
-  .plan li { display: flex; align-items: center; gap: 6px; }
+  .target { width: 100%; display: flex; flex-wrap: wrap; gap: 6px; align-items: center; justify-content: space-between; }
+  .plan li, .stop-target { display: flex; align-items: center; gap: 6px; }
+  .stop-target { flex: 1; min-width: 44px; padding: 4px; }
+  button.stop-target { border-color: transparent; }
+  button.stop-target:hover { border-color: var(--border); }
+  .move-controls { display: flex; gap: 4px; }
   .plan li.active .what { font-weight: 650; }
   .plan .predicted { color: var(--muted); font-style: italic; }
-  .index { flex: none; width: 18px; text-align: center; color: var(--muted); }
-  .what { flex: 1; min-width: 0; }
+  .index { flex: none; min-width: 18px; text-align: center; color: var(--critical); font-variant-numeric: tabular-nums; }
+  .predicted .index { color: var(--muted); }
+  .what { flex: 1; min-width: 0; overflow-wrap: anywhere; }
   .needs li.met { color: var(--success); }
   /* A chips row keeps one height whether its sites are named or offered, so nothing under it moves when Dispatch makes them live. */
   .chips { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; min-height: 44px; }
@@ -299,8 +276,9 @@
   .apart { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 6px; padding-top: 6px; border-top: 1px solid var(--border); }
   .destructive { border-color: var(--critical); color: var(--critical); }
   .confirm { font-weight: 700; }
-  .warning { border-color: var(--warning); color: var(--warning); }
   summary { min-height: 44px; display: flex; align-items: center; cursor: pointer; color: var(--muted); font-size: 12px; }
+  .unit-disclosure summary { display: list-item; padding-block: 13px; box-sizing: border-box; }
+  .unit-disclosure summary:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
   details ul { margin: 0; padding-left: 16px; color: var(--muted); font-size: 12px; }
   .num { font-variant-numeric: tabular-nums; }
 </style>

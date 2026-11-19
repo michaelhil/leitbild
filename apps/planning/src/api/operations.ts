@@ -1,32 +1,42 @@
 // The nine operations' behaviour (eight here; the World facts query is World's). The UI and the Assistant
 // reach these only through Host and module-api.ts, so both take one path. Planning writes nothing in World:
-// its only World call is the facts read in refresh. Generate, explain and preview run on the solver port
+// it reads World facts and looks up the source Scenario of a guided demonstration.
+// Generate, explain and preview run on the solver port
 // (lane S). Lane K's checker and its re-verifications run inside Generate's solver child, once; the service
-// stores their result, validated against the plan schema, and never runs the checker on a read.
+// stores their result, validated against the plan schema, and never runs the checker on a read: "what overtime
+// buys" reads each rung's stored figures through lane K's rungStanding (check/buys.ts), which runs no checker.
+import { createHash } from 'node:crypto'
 import { z } from 'zod'
 import {
   inspectionViewSchema, planningFactsOutputSchema, workspaceResourceReferenceSchema,
   type AccessContext, type InspectionView, type PlanningFactsInput, type PlanningFactsOutput, type WorkspaceId, type WorkspaceResourceReference,
 } from '@leitbild/contracts'
-import { planningError } from '../errors.ts'
+import { isPlanningError, planningError } from '../errors.ts'
 import { applyEdits, requireAuthority, type ChangeRecord, type EditOutcome, type StoredActor, type Weakening } from '../plan/edits.ts'
 import { definitionRevision, startPlan } from '../definitions/start.ts'
-import type { PlanDefinitionsPort } from '../definitions/index.ts'
-import { outTogether, readiness, worldSubjects, type ReadinessItem } from '../plan/readiness.ts'
-import { withoutProof } from '../solve/status.ts'
+import { guidedPlanDefinitionIds, maintenanceDemoDefinitionId, type PlanDefinition, type PlanDefinitionsPort } from '../definitions/index.ts'
+import { outTogether, readiness, worldRefs, worldSubjects, type ReadinessItem } from '../plan/readiness.ts'
+import { buysItems, methodLadders, type FinishCause } from '../plan/buys.ts'
+import { rungStanding } from '../check/buys.ts'
+import { changesSince, versus } from '../plan/versus.ts'
+import { dominatedWithin, optionName, outageFloor, whyRecommended } from '../plan/why.ts'
+import { refusalLines } from '../solve/explain.ts'
+import { withExtraRules } from '../solve/keys.ts'
 import {
   certificateSchema, certifiedSizeSchema, optionSetSchema, planInputsSchema,
   type CertifiedSize, type Plan, type PlanInputs, type Status, type WorldFactCopy,
 } from '../plan/schema.ts'
 import type { Edit } from '../plan/edit-schema.ts'
-import { assertRevision, type PlanStore, type RevisionGuard } from '../plan/store.ts'
+import { assertRevision, inputsDigest, ownOption, type PlanStore, type RevisionGuard } from '../plan/store.ts'
 import {
   attentionKind, basisWords, buildSection, clip, datedWords, names, jobsPerSolve, sizeBand, sizeCautionWarning, sizeRefusalWords, weakeningWords, byteLength, changeLines, changeSummary, nameOf, optionWarning, readinessText,
-  statusSentence, timeWords, valueWords, type OptionState, type Section, type SectionContext,
+  methodWords, spanAndCost, statusSentence, timeWords, valueWords, type OptionState, type Section, type SectionContext,
 } from '../plan/summary.ts'
 import type { Grid } from '../time/units.ts'
+import { scheduleDisplay } from './schedule-display.ts'
+import type { scheduleDisplayInputSchema } from './schedule-display-contract.ts'
 import {
-  explainResultSchema, generateResultSchema, resultLimitBytes, sectionDataSchemas, writeResultSchema,
+  compactLineLength, explainResultSchema, generateResultSchema, resultLimitBytes, sectionDataSchemas, writeResultSchema, type ItemStatus,
   type baselineInputSchema, type createInputSchema, type editInputSchema, type explainInputSchema, type generateInputSchema, type readInputSchema, type StatusOut,
 } from './contract.ts'
 
@@ -37,6 +47,8 @@ export type WriteResult = z.infer<typeof writeResultSchema>
 export type GenerateResult = z.infer<typeof generateResultSchema>
 export type ExplainResult = z.infer<typeof explainResultSchema>
 export type GenerateVariant = NonNullable<z.infer<typeof generateInputSchema>['variants']>[number]
+/** The explain asks the solver answers; recommended and versus are answered here from stored options. */
+export type SolverAsk = Exclude<z.infer<typeof explainInputSchema>['ask'], 'recommended' | 'versus'>
 
 // ───────────── ports ─────────────
 
@@ -58,19 +70,30 @@ export interface SolverPort {
     readonly variants: readonly GenerateVariant[] | undefined
     readonly seconds: number
     readonly stored: OptionSet | null
+    /**
+     * The what-ifs are added to `stored` (each starting from the best stored option that buys no more): the
+     * set returned is the whole set to store. Without it the set returned replaces the stored one.
+     */
+    readonly keep?: true
     readonly at: string
     readonly by: StoredActor
     readonly signal: AbortSignal
     /** Who stopped it, once the signal fires: the person (their request ended) or Host (Planning stopping). */
     readonly stoppedByWho?: () => 'person' | 'host' | undefined
   }) => Promise<OptionSet>
+  /** The solver's own asks about one option's schedule. Why recommended and the comparison are the service's (plan/why.ts, plan/versus.ts). */
   readonly explain: (request: {
     readonly inputs: PlanInputs
     readonly option: Option
-    readonly ask: z.infer<typeof explainInputSchema>['ask']
+    readonly ask: SolverAsk
     readonly job: string | undefined
     readonly cursor: string | undefined
   }) => Promise<ExplainResult>
+  /**
+   * The first cause of what sets the finish of `option`'s own schedule (explain finish's first cause), or
+   * undefined when its chain names none. On the option's own compile, in this process: no solver child.
+   */
+  readonly finishCause: (request: { readonly inputs: PlanInputs; readonly option: Option }) => Promise<FinishCause | undefined>
   /** Repairs `option`'s own schedule on the edited inputs (only what the edit forces moves), then checks it. */
   /** `signal`: the request's own; a preview it aborts is stopped and its solver child killed. */
   readonly preview: (request: { readonly inputs: PlanInputs; readonly option: Option; readonly signal?: AbortSignal }) => Promise<{
@@ -80,6 +103,13 @@ export interface SolverPort {
     readonly nearestAllowed?: { readonly job: string; readonly at: string }
     /** Lane K's findings for a locked job at its lock time, against the saved option's rows: words that match the plan on screen. */
     readonly lockFindings?: readonly CheckViolation[]
+    /**
+     * Lane S: the first job the edit leaves with no slot for its crews and tools before the horizon (it and the
+     * jobs waiting on it are not in `rows`); with lane K's crew or tool that has no slot long enough left, and from when.
+     */
+    readonly unplaced?: { readonly job: string; readonly resource?: string; readonly after?: string }
+    /** Lane S: the edit leaves this job's row on crews or tools that no longer serve it; `rows` are then the option's own, not re-timed. */
+    readonly crewsChanged?: { readonly job: string }
   }>
 }
 
@@ -87,6 +117,8 @@ export interface SolverPort {
 export interface WorldFactsPort {
   /** `signal` ends the read: the refresh deadline or the caller's abort. */
   readonly read: (access: AccessContext, run: WorkspaceResourceReference, input: PlanningFactsInput, signal: AbortSignal) => Promise<PlanningFactsOutput>
+  /** The Run's source Scenario, read through Host's Workspace resource catalogue. */
+  readonly runSource?: (run: WorkspaceResourceReference, signal: AbortSignal) => Promise<string | undefined>
 }
 
 export interface PlanningOperationsPorts {
@@ -147,6 +179,16 @@ export const planReference = (workspaceId: WorkspaceId, planId: string): Workspa
 const runReference = (workspaceId: WorkspaceId, runId: string): WorkspaceResourceReference =>
   workspaceResourceReferenceSchema.parse({ workspaceId, moduleId: 'world', type: 'world.simulation-run', id: runId })
 
+/** One guided plan per Run, including when the launcher retries an interrupted request. */
+const demoPlanId = (run: WorkspaceResourceReference, definition: string): string => {
+  const bytes = createHash('sha256').update(JSON.stringify([run.workspaceId, run.id, definition])).digest().subarray(0, 16)
+  // UUID version 8, with the RFC variant for application-defined identifiers.
+  bytes[6] = (bytes[6]! & 0x0f) | 0x80
+  bytes[8] = (bytes[8]! & 0x3f) | 0x80
+  const hex = bytes.toString('hex')
+  return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`
+}
+
 const appendChange = (plan: Plan, change: Omit<Plan['changes'][number], 'seq'>): Pick<Plan, 'changes' | 'droppedChanges'> => {
   const seq = (plan.changes.at(-1)?.seq ?? plan.droppedChanges) + 1
   const changes = [...plan.changes, { ...change, seq }]
@@ -186,10 +228,16 @@ const refuseAgentAuthorityField = (authority: unknown, access: AccessContext): v
   throw planningError(409, 'needs_person', 'Only a person gives authority, in the plan screen: send the edit without it, or ask them to make the change.')
 }
 
-/** The structured status the Assistant reads: the stored words, goals in order, and a cause only for a proof. */
+/**
+ * The structured status the Assistant reads: the stored words, goals in order by the plan's ids, a what-if's
+ * lead (the proof rule depends on it, so it is never left out), and a cause only for a proof.
+ */
 export const statusOut = (status: Status): StatusOut => {
   if (status.word === 'validated feasible') {
-    return { word: status.word, goals: status.goals.map(goal => ({ word: goal.word, value: goal.value, unit: goal.unit, ...(goal.bound === undefined ? {} : { bound: goal.bound.value, gap: goal.value - goal.bound.value }) })) }
+    const line = (goal: { readonly word: StatusOut['goals'][number]['word']; readonly value: number; readonly unit: string; readonly bound?: { readonly value: number } | undefined }) =>
+      ({ word: goal.word, value: goal.value, unit: goal.unit, ...(goal.bound === undefined ? {} : { bound: goal.bound.value, gap: goal.value - goal.bound.value }) })
+    const lead = status.lead === undefined ? undefined : 'goal' in status.lead ? { goal: status.lead.goal } : { group: status.lead.group, ...line(status.lead) }
+    return { word: status.word, goals: status.goals.map(goal => ({ goal: goal.goal, ...line(goal) })), ...(lead === undefined ? {} : { lead }) }
   }
   if (status.word !== 'proven infeasible') return { word: status.word, goals: [] }
   const cause = certificateSchema.parse(status.cause)
@@ -222,25 +270,64 @@ export const createPlanningOperations = (ports: PlanningOperationsPorts) => {
   /**
    * A stored status stands only on the plan revision and the solver formulation it was generated on: lane
    * K checked it then, inside Generate's solver child, and nothing it rests on has changed. Otherwise the
-   * option is out of date: shown without proof (lane S's withoutProof), never baselined. No checker runs
-   * on a read (coordinator's memory decision, 11 Nov).
+   * option is out of date (`stale`, with its reason): its stored status is kept unchanged, as a fact about
+   * the plan it was made on, never relabelled ("unresolved", "best found") nor re-derived on the current
+   * inputs (walk V2). It is never baselined, recommended, compared or used as a current proof, and no
+   * checker runs on a read (coordinator's memory decision, 11 Nov).
    */
   const optionState = (plan: Plan, option: Option): OptionState => {
     const stored = option.status
     const reason = option.inputsRevision !== plan.revision ? 'revision' as const
       : 'run' in stored && stored.run.formulation !== solver.formulation(plan.inputs.settings.grid) ? 'formulation' as const : undefined
-    const shown: Status = reason === undefined ? stored : withoutProof(stored)
-    // The function-key rule; lane S's redundancyWarning fires on one train's series chain until it adopts it.
-    const warning = shown.word === 'validated feasible' ? outTogether(plan.inputs, option.rows) : undefined
+    const shown: Status = stored
+    // The function-key rule, judged on the current inputs, so only for a fresh option: nothing is re-derived on a stale one.
+    const warning = reason === undefined && shown.word === 'validated feasible' ? outTogether(plan.inputs, option.rows) : undefined
     // An option solved above the certified size says so beside its status (lane S's sizeCaution).
     const warnings = [...(shown.word === 'validated feasible' && option.sizeCaution === true ? [sizeCautionWarning(certifiedSize)] : []), ...(warning === undefined ? [] : [optionWarning(warning, plan.inputs)])]
-    return { stale: reason !== undefined, ...(reason === undefined ? {} : { reason }), warnings, shown, baselineAllowed: reason === undefined && stored.word === 'validated feasible' }
+    return { stale: reason !== undefined, ...(reason === undefined ? {} : { reason }), warnings, shown, item: itemStatus(plan.inputs, option, shown), baselineAllowed: reason === undefined && stored.word === 'validated feasible' }
+  }
+  /**
+   * A status as the options and previous sections page it (coordinator, shape E): a refusal keeps its own
+   * method's cause and its span as a summary; each method combination is one `line`, built here from its stored
+   * span or cause with no checker: the figures first, then the method's name (its picks among the choices the
+   * combinations differ in), so a clip at 150 characters never cuts the figures. The option's own comes first,
+   * the rest in the plan's combination order. Picks, purchases, path, later start and energy proof stay in
+   * storage, for explain refusal.
+   */
+  const itemStatus = (inputs: PlanInputs, option: Option, status: Status): ItemStatus => {
+    if (status.word !== 'proven infeasible') return status
+    const summary = (span: NonNullable<typeof status.span>) => ({ rule: span.rule, leastHours: span.leastHours, limitHours: span.limitHours })
+    const item = { word: status.word, cause: status.cause, run: status.run, ...(status.span === undefined ? {} : { span: summary(status.span) }) }
+    const combinations = status.byMethod
+    if (combinations === undefined) return item
+    type Entry = (typeof combinations)[number]
+    const ruled = withExtraRules(inputs, option.variant.also)
+    const asked = new Set((option.variant.also ?? []).map(rule => rule.key))
+    const picks = (entry: Entry, pick: { readonly choice: string; readonly option: string }) => entry.methods.some(other => other.choice === pick.choice && other.option === pick.option)
+    // A pick another combination does not make is one the combinations differ in; the rest are shared.
+    const name = (entry: Entry) => methodWords(inputs, entry.methods.filter(pick => combinations.some(other => !picks(other, pick)))) ?? 'another method'
+    const line = (entry: Entry): string => clip(entry.span !== undefined
+      ? `Out at least ${valueWords(entry.span.leastHours, 'h')}, against the ${valueWords(entry.span.limitHours, 'h')} ${asked.has(entry.span.rule) ? 'asked' : 'limit'}: ${name(entry)}.`
+      : `${(refusalLines(entry.cause, ruled, undefined, entry.purchases, entry.methods)[0] ?? 'Not possible with what this method may use.').replace(/\.$/, '')}: ${name(entry)}.`, compactLineLength)
+    // The plan's combination order (methodCombinations): by each choice's option, the plan's first choice first.
+    const place = (entry: Entry) => inputs.methods.map(choice => {
+      const at = choice.options.findIndex(entryOption => entryOption.key === entry.methods.find(pick => pick.choice === choice.key)?.option)
+      return at === -1 ? choice.options.length : at
+    })
+    const inOrder = (a: Entry, b: Entry): number => {
+      const [x, y] = [place(a), place(b)]
+      const k = x.findIndex((at, index) => at !== y[index])
+      return k === -1 ? 0 : x[k]! - y[k]!
+    }
+    const own = (entry: Entry) => entry.methods.length === option.variant.methods.length && option.variant.methods.every(pick => picks(entry, pick))
+    return { ...item, byMethod: [...combinations].sort((a, b) => Number(own(b)) - Number(own(a)) || inOrder(a, b)).map(entry => ({ line: line(entry) })) }
   }
   const optionStates = (plan: Plan): ReadonlyMap<string, OptionState> =>
     new Map((plan.options?.options ?? []).map(option => [option.key, optionState(plan, option)]))
 
   const readinessOf = (plan: Plan, states: ReadonlyMap<string, OptionState>): readonly ReadinessItem[] =>
-    readiness(plan, { staleOptions: [...states].filter(([, state]) => state.stale).map(([key]) => key), now: now() })
+    // "N options no longer match the plan" counts the plan's own options, the table's rows, as the Workspace card does (V11).
+    readiness(plan, { staleOptions: (plan.options?.options ?? []).filter(option => ownOption(option) && states.get(option.key)?.stale === true).map(option => option.key), now: now() })
 
   const writeResult = (plan: Plan, changed: readonly string[], extra: Partial<Pick<WriteResult, 'preview'>> = {}): WriteResult => {
     const items = readinessOf(plan, optionStates(plan))
@@ -304,8 +391,7 @@ export const createPlanningOperations = (ports: PlanningOperationsPorts) => {
    * every page followed, all within `deadline`. Einsatz projects arrival facts only for units and tasks read
    * together, so an Einsatz plan with more than 32 Einsatz items is refused, never truncated.
    */
-  const readWorld = async (workspaceId: WorkspaceId, runId: string, inputs: PlanInputs, access: AccessContext, deadline: AbortSignal, late: () => Error): Promise<{ readonly facts: WorldFactCopy[]; readonly observedAt: string }> => {
-    const subjects = worldSubjects(inputs)
+  const readWorld = async (reference: WorkspaceResourceReference, subjects: readonly string[], access: AccessContext, deadline: AbortSignal, late: () => Error): Promise<{ readonly facts: WorldFactCopy[]; readonly observedAt: string }> => {
     const byPack = new Map<string, string[]>()
     for (const locator of subjects) {
       const pack = locator.slice(0, locator.indexOf('/'))
@@ -316,7 +402,6 @@ export const createPlanningOperations = (ports: PlanningOperationsPorts) => {
     const batches = [...byPack.values()].flatMap(locators => Array.from({ length: Math.ceil(locators.length / 32) }, (_, index) => locators.slice(index * 32, index * 32 + 32)))
     const facts: WorldFactCopy[] = []
     let oldestRead: string | undefined
-    const reference = runReference(workspaceId, runId)
     for (const batch of batches) {
       let cursor: string | undefined
       do {
@@ -328,7 +413,7 @@ export const createPlanningOperations = (ports: PlanningOperationsPorts) => {
         }
         const answer = planningFactsOutputSchema.safeParse(raw)
         if (!answer.success) throw planningError(502, 'invalid_host_response', 'World answered the facts query outside its contract')
-        if (answer.data.run.id !== runId) throw planningError(502, 'invalid_host_response', 'World answered for another simulation')
+        if (answer.data.run.id !== reference.id || answer.data.run.workspaceId !== reference.workspaceId) throw planningError(502, 'invalid_host_response', 'World answered for another simulation')
         // The oldest read time of the batches: every value is at least this fresh.
         if (oldestRead === undefined || Date.parse(answer.data.observedAt) < Date.parse(oldestRead)) oldestRead = answer.data.observedAt
         // An item larger than a page continues on the next one under the same locator: facts merge by locator.
@@ -337,6 +422,65 @@ export const createPlanningOperations = (ports: PlanningOperationsPorts) => {
       } while (cursor !== undefined)
     }
     return { facts, observedAt: oldestRead ?? now() }
+  }
+
+  const openGuidedDemo = async (definition: PlanDefinition, run: WorkspaceResourceReference, access: AccessContext, signal: AbortSignal): Promise<{ plan: Plan; created: boolean }> => {
+    const deadline = AbortSignal.any([signal, AbortSignal.timeout(refreshDeadlineMs)])
+    const late = () => planningError(503, 'world_unavailable', 'World is taking longer than expected. Try opening Planning again.')
+    if (ports.world.runSource === undefined) throw planningError(503, 'world_unavailable', 'Planning could not check the World simulation.')
+    let scenarioId: string | undefined
+    try { scenarioId = await ports.world.runSource(run, deadline) } catch (error) {
+      if (deadline.aborted) throw late()
+      throw error
+    }
+    if (deadline.aborted) throw late()
+    if (scenarioId !== definition.inputs.settings.scenario?.id) {
+      throw planningError(409, 'demo_run_mismatch', 'Start this plan’s matching demo in World before opening Planning.')
+    }
+    const workspaceId = run.workspaceId
+    const id = demoPlanId(run, definition.id)
+    const checkLink = (plan: Plan): Plan => {
+      if (plan.inputs.settings.run?.id !== run.id) throw planningError(409, 'demo_run_mismatch', 'This plan’s World link was changed in the full editor. Start another demo run to make a new plan.')
+      return plan
+    }
+    const readDemoInputs = async (plan: Plan): Promise<PlanInputs> => {
+      // Delivery stop locators are map links only. Maintenance reads both
+      // pump locators as well as every input, so its running precheck is real.
+      const subjects = definition.id === maintenanceDemoDefinitionId ? worldSubjects(plan.inputs)
+        : [...new Set(worldRefs(plan.inputs).map(({ ref }) => ref.locator))]
+      const { facts, observedAt } = await readWorld(run, subjects, access, deadline, late)
+      if (deadline.aborted) throw late()
+      const inputs = planInputsSchema.parse({ ...plan.inputs, world: { refreshedAt: observedAt, facts } })
+      if (readinessOf({ ...plan, inputs }, new Map()).some(item => item.blocks
+        || definition.id === maintenanceDemoDefinitionId && (item.code === 'precondition-unmet' || item.code === 'precondition-unread'))) {
+        throw planningError(409, 'demo_world_values_missing', 'The required World readings or running preconditions are unavailable. Return to the World demo and check its source state.')
+      }
+      return inputs
+    }
+    try {
+      const current = checkLink(await store.read(workspaceId, id))
+      if (definition.id !== maintenanceDemoDefinitionId) return { plan: current, created: false }
+      const inputs = await readDemoInputs(current)
+      const at = now(), by = storedActor(access)
+      const plan = await store.update(workspaceId, id, { expectedRevision: current.revision, required: true }, saved => {
+        if (deadline.aborted) throw late()
+        const revision = inputsDigest(saved.inputs) === inputsDigest(inputs) ? saved.revision : saved.revision + 1
+        return { ...saved, inputs, revision, updatedAt: at,
+          ...appendChange(saved, { at, by, revision, summary: 'Read World values when reopening the maintenance plan', kinds: ['refresh'] }) }
+      })
+      return { plan, created: false }
+    } catch (error) {
+      if (!isPlanningError(error) || error.code !== 'plan_not_found') throw error
+    }
+
+    const { plan } = startPlan({ definition, workspaceId, id, at: now(), by: storedActor(access), edits: [{ edit: 'plan', run: run.id }] })
+    const linked = { ...plan, inputs: await readDemoInputs(plan) }
+    try {
+      return { plan: await store.create(workspaceId, linked), created: true }
+    } catch (error) {
+      if (!isPlanningError(error) || error.code !== 'plan_exists') throw error
+      return { plan: checkLink(await store.read(workspaceId, id)), created: false }
+    }
   }
 
   /**
@@ -381,35 +525,93 @@ export const createPlanningOperations = (ports: PlanningOperationsPorts) => {
     return distinct.length <= shown ? distinct.join(' and ') : `${distinct.slice(0, shown).join(', ')} and ${distinct.length - shown} more`
   }
 
-  /** The option's longest group span (h, from the span-over goal) and its extra cost (from the extra-cost goal). */
-  const spanAndCost = (inputs: PlanInputs, option: Option): { readonly span?: number; readonly cost?: number } => {
-    const k = (metric: string) => inputs.goals.findIndex(goal => goal.metric === metric)
-    const spanGoal = k('span-over'), costGoal = k('extra-cost')
-    const spans = option.metrics.filter(metric => spanGoal >= 0 && (metric.id === `goal:${spanGoal}` || metric.id.startsWith(`goal:${spanGoal}:`)))
-    const cost = costGoal < 0 ? undefined : option.metrics.find(metric => metric.id === `goal:${costGoal}`)?.value
-    return { ...(spans.length === 0 ? {} : { span: Math.max(...spans.map(metric => metric.value)) }), ...(cost === undefined ? {} : { cost }) }
+  /**
+   * "What overtime buys" from stored options only (design §4.1), one ladder per method: each rung's option is
+   * the one lane S keys for that method and buy list, and only when fresh on this revision and formulation (else still to solve); where it
+   * stands is lane K's, from stored figures. A "proven: no gain" row names the higher rung's cause of the finish.
+   */
+  const buysOf = async (plan: Plan, states: ReadonlyMap<string, OptionState>) => {
+    const formulation = solver.formulation(plan.inputs.settings.grid)
+    const ladders = methodLadders(plan.inputs, key => {
+      const option = plan.options?.options.find(entry => variantKey(entry.key) === key && states.get(entry.key)?.stale === false && entry.variant.lead === undefined && entry.variant.also === undefined)
+      return option === undefined ? undefined : { key: option.key, standing: rungStanding(plan, option, formulation) }
+    })
+    const causes = await Promise.all([...new Set(ladders.flatMap(ladder => ladder.rows.flatMap(({ finishFrom }) => finishFrom === undefined ? [] : [finishFrom])))].map(async key => {
+      const cause = await solver.finishCause({ inputs: plan.inputs, option: plan.options!.options.find(entry => entry.key === key)! })
+      return cause === undefined ? [] : [[key, cause] as const]
+    }))
+    const finish = new Map(causes.flat())
+    return ladders.flatMap(ladder => buysItems(ladder, finish))
   }
+
+  /**
+   * An explain answer with its facts within 4 KB: the facts' last moved jobs go first, which `movedMore` then
+   * counts, then the last lines. The facts are never cut in any other way.
+   */
+  const withinResult = (result: ExplainResult): ExplainResult => {
+    let next = result
+    while (byteLength(next) > resultLimitBytes && next.versus !== undefined && next.versus.moved.length > 0) {
+      next = { ...next, versus: { ...next.versus, moved: next.versus.moved.slice(0, -1), movedMore: next.versus.movedMore + 1 } }
+    }
+    while (byteLength(next) > resultLimitBytes && next.lines.length > 1) next = { ...next, lines: next.lines.slice(0, -1) }
+    return next
+  }
+
   /** The purchases the schedule uses; an option's stored purchases are the set it was allowed. */
   const purchasesUsed = (option: Option): readonly string[] => [...new Set(option.rows.flatMap(row => row.uses.flatMap(use => use.purchase === undefined ? [] : [use.purchase])))]
+
+  /**
+   * A what-if's extra rule needs a key no plan rule has (design §6.6): rules are looked up by key when a
+   * refusal or a re-timing names them, so a 48 h what-if keyed as R2 would read "the 72 h limit".
+   */
+  const refuseRuleKeyClash = (inputs: PlanInputs, input: z.infer<typeof generateInputSchema>): void => {
+    const clashes = (input.variants ?? []).flatMap((variant, index) => (variant.also ?? []).flatMap((rule, at) => {
+      const plans = inputs.rules.find(entry => entry.key === rule.key)
+      return plans === undefined ? [] : [{ path: ['variants', String(index), 'also', String(at), 'key'], key: rule.key, message: `The extra rule's key ${rule.key} is the key of the plan's rule "${clip(plans.words, 120)}"; give the extra rule a key no plan rule has` }]
+    }))
+    if (clashes.length === 0) return
+    throw planningError(400, 'invalid_request', clashes[0]!.message, {
+      issues: clashes.slice(0, 4).map(({ path, message }) => ({ path, message })),
+      about: [...new Set(clashes.map(clash => clash.key))].slice(0, 4),
+    })
+  }
+
+  /**
+   * The set before this Generate, for "what differs" (design §6.3): when Generate runs on a newer revision
+   * than the stored set, that set becomes the previous one; on the same revision (another look, or a rung
+   * added with keep) the previous set stays as it is.
+   */
+  const previousAfter = (current: Plan): Pick<Plan, 'previousOptions'> => {
+    const older = current.options !== null && current.options.options.some(option => option.inputsRevision < current.revision)
+    if (older) return { previousOptions: current.options! }
+    return current.previousOptions === undefined ? {} : { previousOptions: current.previousOptions }
+  }
 
   const generateOnce = async (workspaceId: WorkspaceId, planId: string, input: z.infer<typeof generateInputSchema>, expectedRevision: number | undefined, access: AccessContext, signal: AbortSignal): Promise<GenerateResult> => {
     const guard = { expectedRevision, required: true }
     const plan = await readGuarded(workspaceId, planId, guard)
+    refuseRuleKeyClash(plan.inputs, input)
     if (sizeBand(plan.inputs, certifiedSize) === 'refused') {
       throw planningError(413, 'above_certified_size', sizeRefusalWords(certifiedSize, plan.inputs), { maxJobs: certifiedSize.maxJobs, limitJobs: certifiedSize.limitJobs, jobs: jobsPerSolve(plan.inputs) })
     }
     const at = now()
     const by = storedActor(access)
     const answer = optionSetSchema.safeParse(await solver.generate({
-      inputs: plan.inputs, inputsRevision: plan.revision, variants: input.variants, seconds: input.seconds ?? 20, stored: unkeyed(plan.options), at, by, signal,
+      inputs: plan.inputs, inputsRevision: plan.revision, variants: input.variants, seconds: input.seconds ?? 20, stored: unkeyed(plan.options),
+      ...(input.keep === undefined ? {} : { keep: input.keep }), at, by, signal,
       stoppedByWho: () => stopping.signal.aborted ? 'host' : signal.aborted ? 'person' : undefined,
     }))
     if (!answer.success) throw planningError(500, 'invalid_planning_result', 'Generate returned options that do not match the plan schema')
+    // Only the plan's own options are recommended: a what-if (an extra rule or a leading goal) is a card (G2).
+    const named = answer.data.options.find(option => option.key === answer.data.recommended)
+    if (named !== undefined && (named.variant.also !== undefined || named.variant.lead !== undefined)) throw planningError(500, 'invalid_planning_result', 'Generate recommended a what-if; only the plan\'s own options are recommended')
+    // A set on one revision only: a stored option kept from an older revision would read as fresh beside the new ones.
+    if (answer.data.options.some(option => option.inputsRevision !== plan.revision)) throw planningError(500, 'invalid_planning_result', 'Generate returned an option of another plan revision')
     // Lane K's check, its certificate and bound re-verifications ran on these options inside the solver
     // child; the set is validated against the plan schema above and stored as it came.
     const generated = keyed(answer.data, plan.options)
     const saved = await store.update(workspaceId, planId, guard, current => ({
-      ...current, updatedAt: at, options: generated,
+      ...current, updatedAt: at, options: generated, ...previousAfter(current),
       ...appendChange(current, { at, by, revision: current.revision, summary: `Generated ${generated.options.length} option${generated.options.length === 1 ? '' : 's'}`, kinds: [] }),
     }))
     const states = optionStates(saved)
@@ -425,8 +627,8 @@ export const createPlanningOperations = (ports: PlanningOperationsPorts) => {
     const recommended = generated.options.find(option => option.key === generated.recommended)
     const used = recommended === undefined ? [] : purchasesUsed(recommended)
     const sentence = recommended === undefined
-      ? 'No option can be recommended: none is validated feasible.'
-      : `${recommended.label}: ${statusSentence(states.get(recommended.key)?.shown ?? recommended.status, saved.inputs)}${used.length === 0 ? '' : ` Buys: ${used.map(key => nameOf(saved.inputs, key)).join(', ')}.`}`
+      ? 'No option can be recommended: no ranked option is validated feasible.'
+      : `${optionName(saved.inputs, recommended)}: ${statusSentence(states.get(recommended.key)?.shown ?? recommended.status, saved.inputs)}${used.length === 0 ? '' : ` Buys: ${used.map(key => nameOf(saved.inputs, key)).join(', ')}.`}`
     const cautioned = recommended !== undefined && (states.get(recommended.key)?.warnings ?? []).some(warning => warning.kind === 'above-certified-size')
     const sizeNote = cautioned ? ` Above the certified size (${certifiedSize.maxJobs} jobs): it may not be near the best.` : ''
     const result: GenerateResult = {
@@ -444,8 +646,21 @@ export const createPlanningOperations = (ports: PlanningOperationsPorts) => {
 
     list: async (workspaceId: WorkspaceId) => store.list(workspaceId),
 
-    create: async (workspaceId: WorkspaceId, definition: { readonly id: string; readonly revisionId: string }, input: z.infer<typeof createInputSchema>, access: AccessContext): Promise<{ readonly result: WriteResult; readonly created: WorkspaceResourceReference }> => {
+    create: async (workspaceId: WorkspaceId, definition: { readonly id: string; readonly revisionId: string }, input: z.infer<typeof createInputSchema>, access: AccessContext, signal: AbortSignal = new AbortController().signal): Promise<{ readonly result: WriteResult; readonly created?: WorkspaceResourceReference }> => {
       const found = definitionRevision(ports.definitions, definition)
+      if (input.demoRun !== undefined) {
+        if (!guidedPlanDefinitionIds.has(found.id) || input.edits !== undefined || input.grid !== undefined) {
+          throw planningError(400, 'invalid_request', 'demoRun applies only to a guided plan and takes no other inputs.')
+        }
+        const { plan, created } = await openGuidedDemo(found, runReference(workspaceId, input.demoRun), access, signal)
+        return {
+          result: writeResult(plan, ['Opened the linked plan with its World values']),
+          ...(created ? { created: planReference(workspaceId, plan.id) } : {}),
+        }
+      }
+      if (guidedPlanDefinitionIds.has(found.id)) {
+        throw planningError(400, 'demo_run_required', 'Start this plan’s demo from Demos, then open its plan from the World guide.')
+      }
       const { plan, changes } = startPlan({ definition: found, workspaceId, id: crypto.randomUUID(), at: now(), by: storedActor(access), edits: input.edits ?? [], ...(input.grid === undefined ? {} : { grid: input.grid }) })
       const stored = await store.create(workspaceId, plan)
       return { result: writeResult(stored, [`Created '${stored.inputs.settings.title}' from '${found.title}'`, ...changeLines(changes, stored.inputs, 11)]), created: planReference(workspaceId, stored.id) }
@@ -455,6 +670,9 @@ export const createPlanningOperations = (ports: PlanningOperationsPorts) => {
       const at = now()
       const by = storedActor(access)
       refuseAgentAuthorityField(input.authority, access)
+      if (input.option !== undefined && input.preview !== true) {
+        throw planningError(400, 'invalid_request', 'An option is named only with preview: it says which option the preview re-times', { issues: [{ path: ['option'], message: 'Name an option only with preview: true' }] })
+      }
       if (input.preview === true) {
         const plan = await readGuarded(workspaceId, planId, { expectedRevision, required: false })
         // An edit that is invalid in itself is refused in a preview exactly as on save (walk 2, R2-4): the
@@ -462,7 +680,9 @@ export const createPlanningOperations = (ports: PlanningOperationsPorts) => {
         const outcome: EditOutcome = applyEdits(plan.inputs, input.edits, { now: at, by, drafts: draftsOf(plan) })
         const previewed: Plan = withDrafts({ ...plan, inputs: outcome.inputs }, outcome.drafts)
         const weakens = [...new Set(outcome.weakens.flatMap(weakening => weakening.about.slice(0, 1)))].slice(0, 6)
-        const recommended = plan.options?.options.find(option => option.key === plan.options?.recommended)
+        // The option the planner has on the timeline (V4), else the recommended one; its name opens the answer.
+        const recommended = input.option === undefined ? plan.options?.options.find(option => option.key === plan.options?.recommended) : findOption(plan, input.option)
+        const shownName = recommended === undefined ? '' : optionName(plan.inputs, recommended)
         // An Assistant is told what a save would answer it (adversary recheck 5): it never gives the agreement.
         // The summary is never cut (walk 7, screenshot 06): each part is said whole, in its long form when the
         // sentence fits 300 characters, else in a shorter one. What a short form leaves out is in the result's
@@ -489,14 +709,33 @@ export const createPlanningOperations = (ports: PlanningOperationsPorts) => {
         // A valid change is saved even when this option cannot keep a rule: every option made before it goes
         // out of date, and Generate makes new ones (walk 2, R2-4). The breaks are shortened first (the findings
         // list names each), then the nearest start, then the agreement.
-        const moves = `Not saved yet. ${moved.length === 0 ? 'No job moves' : `${moved.length} job${moved.length === 1 ? ' moves' : 's move'}`}; the last finish ${finish(timed.rows) === finish(recommended.rows) ? 'stays' : `moves from ${timeWords(finish(recommended.rows), zone)} to ${timeWords(finish(timed.rows), zone)}`}.`
-        const consequence = wholeWithin(findings.length === 0 ? authorities.map(authority => `${moves}${authority}`)
+        // A job the edits change that this option does not have: said as that, never as "no job moves" (V4).
+        const absent = [...new Set(input.edits.flatMap(entry => entry.edit === 'job' && plan.inputs.jobs.some(job => job.key === entry.key) && !recommended.rows.some(row => row.job === entry.key) ? [entry.key] : []))]
+        const notPart = absent.length === 0 ? undefined : `${absent.map(key => `'${nameOf(plan.inputs, key)}'`).join(' and ')} ${absent.length === 1 ? 'is' : 'are'} not part of '${shownName}'`
+        const moves = moved.length === 0 && notPart !== undefined
+          ? `Not saved yet. ${notPart}, so this preview cannot show what the change does to ${absent.length === 1 ? 'it' : 'them'}: preview it on an option with that job, or generate after saving.`
+          : `Not saved yet. On '${shownName}': ${moved.length === 0 ? 'no job moves' : `${moved.length} job${moved.length === 1 ? ' moves' : 's move'}`}; the last finish ${finish(timed.rows) === finish(recommended.rows) ? 'stays' : `moves from ${timeWords(finish(recommended.rows), zone)} to ${timeWords(finish(timed.rows), zone)}`}.${notPart === undefined ? '' : ` ${notPart}.`}`
+        // A job the edit leaves with no slot is what this option would break, in lane K's words (walk V4, T12).
+        const window = outcome.inputs.settings.window
+        const days = window === null ? undefined : (Date.parse(window.end) - Date.parse(window.start)) / 86_400_000
+        const within = days === undefined ? 'within the window\'s length after the window' : `within ${Number.isInteger(days) ? `${days} ${days === 1 ? 'day' : 'days'}` : valueWords(days * 24, 'h')} after the window`
+        const unplaced = timed.unplaced === undefined ? undefined : timed.unplaced.resource !== undefined && timed.unplaced.after !== undefined
+          ? `'${nameOf(outcome.inputs, timed.unplaced.job)}' could not be done: ${nameOf(outcome.inputs, timed.unplaced.resource)} has no slot long enough left after ${timeWords(timed.unplaced.after, zone)}, ${within}`
+          : `'${nameOf(outcome.inputs, timed.unplaced.job)}' could not be done: no slot is left for it ${within}`
+        // The preview keeps the option's current order; Generate re-plans. So a break is said as the current
+        // order's, with the way to a new one, never as the plan's last word (walk V4, T12).
+        const broken = (what: string, nearest: string, authority: string) => `With its current order, '${shownName}' would break: ${what}.${nearest}${authority} Generate again to look for a new order.`
+        // A change of crews is beyond what a preview re-times: said as that, never as "no job moves" or a fault (L1).
+        const crews = timed.crewsChanged === undefined ? undefined : `Not saved yet. A preview cannot re-time '${nameOf(outcome.inputs, timed.crewsChanged.job)}' on other crews; save the change and Generate to see it.`
+        const consequence = crews !== undefined ? wholeWithin(authorities.map(authority => `${crews}${authority}`))
+          : unplaced !== undefined ? wholeWithin(authorities.map(authority => broken(unplaced, '', authority)))
+          : wholeWithin(findings.length === 0 ? authorities.map(authority => `${moves}${authority}`)
           : authorities.flatMap(authority => nearests.flatMap(nearest => ([2, 1, 0] as const).map(shown =>
-            `Not saved yet. This option would break ${retimingBreaks(findings, outcome.inputs, shown)}; generate new options after saving.${nearest}${authority}`))))
+            broken(retimingBreaks(findings, outcome.inputs, shown), nearest, authority)))))
         return writeResult(previewed, changeLines(outcome.changes, outcome.inputs), { preview: {
           saved: false, consequence,
           // Whole, so a rule's words are never cut (walk 3, R3-6); within the 4 KB result, later findings go first.
-          violations: wholeFindings(findings.map(violation => violation.words ?? `${violation.code.replaceAll('_', ' ').replaceAll('-', ' ')}: ${violation.about.map(key => nameOf(outcome.inputs, key)).join(', ')}`)),
+          violations: wholeFindings([...(unplaced === undefined ? [] : [`${unplaced}.`]), ...findings.map(violation => violation.words ?? `${violation.code.replaceAll('_', ' ').replaceAll('-', ' ')}: ${violation.about.map(key => nameOf(outcome.inputs, key)).join(', ')}`)]),
           weakens,
           ...(timed.nearestAllowed === undefined ? {} : { nearestAllowed: timed.nearestAllowed.at }),
           moved: moved.slice(0, 6).map(row => ({ job: row.job, start: row.start, finish: row.finish, because: input.edits.map((_, edit) => edit) })),
@@ -538,27 +777,81 @@ export const createPlanningOperations = (ports: PlanningOperationsPorts) => {
       try { return await work } finally { generating.delete(running) }
     },
 
-    explain: async (workspaceId: WorkspaceId, planId: string, input: z.infer<typeof explainInputSchema>): Promise<ExplainResult> => {
+    display: async (workspaceId: WorkspaceId, planId: string, input: z.infer<typeof scheduleDisplayInputSchema>) => {
       const plan = await store.read(workspaceId, planId)
       const option = findOption(plan, input.option)
-      requireFresh(plan, option)
+      return scheduleDisplay({ plan, option, fresh: candidate => !optionState(plan, candidate).stale,
+        status: candidate => statusOut(optionState(plan, candidate).shown), ...(input.digest === undefined ? {} : { expectedDigest: input.digest }),
+        ...(input.reference === undefined ? {} : { reference: input.reference }) })
+    },
+
+    explain: async (workspaceId: WorkspaceId, planId: string, input: z.infer<typeof explainInputSchema>): Promise<ExplainResult> => {
+      const plan = await store.read(workspaceId, planId)
+      const ask = input.ask
+      // Why recommended: the recommended option against the next in rank, or the option named. Only options
+      // fresh on this revision and formulation are compared (C5); none runs the solver.
+      if (ask === 'recommended') {
+        if (plan.options !== null && plan.options.recommended === undefined) return resultOf(explainResultSchema, { lines: ['No option is recommended: no ranked option is validated feasible.'], items: [] })
+        const recommended = findOption(plan, undefined)
+        requireFresh(plan, recommended)
+        const named = input.option === undefined ? undefined : findOption(plan, input.option)
+        if (named !== undefined) requireFresh(plan, named)
+        const others = plan.options!.options.filter(option => option.key !== recommended.key && !optionState(plan, option).stale)
+        const why = whyRecommended(plan.inputs, recommended, others, named, outageFloor(plan, recommended, solver.formulation(plan.inputs.settings.grid)))
+        return resultOf(explainResultSchema, withinResult({ lines: why.lines, items: [], recommended: why.facts }))
+      }
+      // What differs from an option of the previous set, kept from before the last Generate on a newer revision.
+      if (ask === 'versus') {
+        const option = findOption(plan, input.option)
+        requireFresh(plan, option)
+        if (plan.previousOptions === undefined) throw planningError(409, 'no_previous_options', 'There is no earlier set of options to compare with: one is kept when Generate runs after the plan changed.')
+        const wanted = input.versus!.previous
+        const previous = plan.previousOptions.options.find(entry => entry.key === wanted)
+        if (previous === undefined) throw planningError(400, 'unknown_reference', `No option ${wanted} in the previous options`, { about: [wanted] })
+        // The moved jobs come in pages (walk V10): `cursor` is the first one to give, `more` the next page's.
+        const from = sliceCursor(input.cursor)
+        const compared = versus({ inputs: plan.inputs, option, previous, plan, movedFrom: from })
+        const result = withinResult({ lines: compared.lines, items: [], versus: compared.facts })
+        const next = result.versus!.movedMore > 0 ? String(from + result.versus!.moved.length) : undefined
+        return resultOf(explainResultSchema, next === undefined ? result : { ...result, more: next })
+      }
+      const option = findOption(plan, input.option)
+      // A refusal is worded from its stored status alone, so it answers for an out-of-date option too, as a fact
+      // about the plan before the latest change (re-walk N4, as B1); every other ask needs a fresh option.
+      const stale = optionState(plan, option).stale
+      if (ask !== 'refusal' || !stale) requireFresh(plan, option)
       if (input.job !== undefined && !plan.inputs.jobs.some(job => job.key === input.job)) throw planningError(400, 'unknown_reference', `No job ${input.job} in this plan`, { about: [input.job] })
-      if (input.ask === 'refusal' && option.status.word === 'validated feasible') throw planningError(409, 'option_not_feasible', `Option ${option.label} was not refused; ask why a job starts then or what sets the finish`, { about: [option.key] })
-      return resultOf(explainResultSchema, await solver.explain({ inputs: plan.inputs, option, ask: input.ask, job: input.job, cursor: input.cursor }))
+      if (ask === 'refusal' && option.status.word === 'validated feasible') throw planningError(409, 'option_not_feasible', `Option ${option.label} was not refused; ask why a job starts then or what sets the finish`, { about: [option.key] })
+      const answer = await solver.explain({ inputs: plan.inputs, option, ask, job: input.job, cursor: input.cursor })
+      if (ask !== 'refusal' || !stale) return resultOf(explainResultSchema, answer)
+      return resultOf(explainResultSchema, withinResult({ ...answer, lines: ['On the plan before your latest change: generate again to know for the plan as it is now.', ...answer.lines].slice(0, 20) }))
     },
 
     read: async (workspaceId: WorkspaceId, planId: string, input: z.infer<typeof readInputSchema>): Promise<InspectionView> => {
       const plan = await store.read(workspaceId, planId)
       const states = optionStates(plan)
-      const context: SectionContext = { plan, readiness: readinessOf(plan, states), options: states, certifiedSize }
       const section = input.section ?? 'summary'
+      const context: SectionContext = {
+        plan, readiness: readinessOf(plan, states), options: states, certifiedSize,
+        ...(section === 'buys' ? { buys: await buysOf(plan, states) } : {}),
+        // Dominance within the set the section pages: the current set's fresh options, or the previous set as stored.
+        ...(section === 'options' ? { dominated: dominatedWithin(plan.inputs, (plan.options?.options ?? []).filter(option => states.get(option.key)?.stale === false)) } : {}),
+        ...(section === 'previous' ? (() => {
+          const previous = plan.previousOptions?.options ?? []
+          // Dominance on the plan's goals only while they are the goals that set was made with (finding 5).
+          const made = Math.max(0, ...previous.map(option => option.inputsRevision))
+          return { previous: new Map(previous.map(option => [option.key, optionState(plan, option)])), dominated: changesSince(plan, made).goalsSame ? dominatedWithin(plan.inputs, previous) : new Map() }
+        })() : {}),
+      }
       const option = section === 'schedule' ? findOption(plan, input.option) : undefined
       const offset = sliceCursor(input.cursor)
       const frame = { target: { kind: 'resource' as const, resource: planReference(workspaceId, plan.id) }, title: plan.inputs.settings.title, observedAt: now() }
       const budget = resultLimitBytes - byteLength({ ...frame, sections: [{ id: section, title: 'Calendars, crews, tools and purchases', data: null }] })
+      // The paging refuses for itself (a cursor past the end, with its hint; a record larger than a page as
+      // record_too_large); what else does not fit is refused as it is, with no cursor hint.
       let sections: Section[]
       try { sections = buildSection(section, context, offset, budget, option) } catch (error) {
-        if (error instanceof RangeError) throw planningError(400, 'invalid_request', error.message, { expected: { cursor: 'the "more" value of the previous page of the same section' } })
+        if (error instanceof RangeError) throw planningError(400, 'invalid_request', error.message)
         throw error
       }
       for (const entry of sections) {
@@ -596,7 +889,7 @@ export const createPlanningOperations = (ports: PlanningOperationsPorts) => {
       const run = plan.inputs.settings.run
       const zone = plan.inputs.settings.timeZone
       if (run === null) return writeResult(plan, ['Nothing read: no simulation is linked to this plan'])
-      const { facts, observedAt } = await readWorld(workspaceId, run.id, plan.inputs, access, deadline, late)
+      const { facts, observedAt } = await readWorld(runReference(workspaceId, run.id), worldSubjects(plan.inputs), access, deadline, late)
       const key = (fact: WorldFactCopy) => `${fact.locator}\u0000${fact.id}`
       const previous = new Map(plan.inputs.world.facts.map(fact => [key(fact), fact]))
       const valueChanged = (fact: WorldFactCopy) => {

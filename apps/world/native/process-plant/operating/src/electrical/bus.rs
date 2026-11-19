@@ -352,11 +352,18 @@ impl Distribution {
         Ok(d)
     }
     fn acceptable(&self, s: Source) -> bool {
-        let x = self.sources[s as usize];
+        self.in_band(&self.sources[s as usize])
+    }
+    /// R4-GRID: whether a source at `state` lies in the qualification band.
+    pub fn in_band(&self, state: &SourceState) -> bool {
         let q = self.parameters.qualification;
-        x.energized
-            && (q.voltage_min_pu..=q.voltage_max_pu).contains(&x.voltage_pu)
-            && (q.frequency_min_hz..=q.frequency_max_hz).contains(&x.frequency_hz)
+        state.energized
+            && (q.voltage_min_pu..=q.voltage_max_pu).contains(&state.voltage_pu)
+            && (q.frequency_min_hz..=q.frequency_max_hz).contains(&state.frequency_hz)
+    }
+    /// R4-GRID: whether source `s` lies in the qualification band now.
+    pub fn source_in_band(&self, s: Source) -> bool {
+        self.acceptable(s)
     }
     fn usable(&self, s: Source) -> bool {
         self.acceptable(s)

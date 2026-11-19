@@ -1,0 +1,60 @@
+name: Verify production nuclear demo
+
+on:
+  workflow_dispatch:
+    inputs:
+      code_revision:
+        description: Full lowercase code commit SHA containing the four qualification tests
+        required: true
+        type: string
+
+permissions:
+  contents: read
+concurrency:
+  group: production-nuclear-demo
+  cancel-in-progress: false
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    env:
+      CODE_REVISION: ${{ inputs.code_revision }}
+      LEITBILD_E2E_ORIGIN: https://leitbild.app
+      LEITBILD_E2E_ENGINEERING_AGENT: '1'
+    steps:
+      - name: Validate pinned test code
+        run: |
+          [[ "$CODE_REVISION" =~ ^[a-f0-9]{40}$ ]] || exit 1
+          printf 'Test code: %s\nWorkflow: %s\nRun: %s\n' "$CODE_REVISION" "$GITHUB_SHA" "$GITHUB_RUN_ID" > "$RUNNER_TEMP/nuclear-demo-context.txt"
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ inputs.code_revision }}
+          persist-credentials: false
+      - run: test "$(git rev-parse HEAD)" = "$CODE_REVISION"
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version-file: .bun-version
+      - run: bun install --frozen-lockfile
+      - name: Install runner Chromium
+        working-directory: apps/world
+        run: bunx --no-install playwright install --with-deps chromium
+      # Dispatch only after activation and after other production Planning probes finish.
+      - name: Run all four tests with the actual configured provider
+        env:
+          LEITBILD_E2E_EVIDENCE_DIR: ${{ runner.temp }}/nuclear-demo-evidence
+        run: |
+          bun run --cwd apps/world test:e2e nuclear-planning-demo.pw.ts --list | tee "$RUNNER_TEMP/nuclear-demo-test-list.txt"
+          grep -Fx 'Total: 4 tests in 1 file' "$RUNNER_TEMP/nuclear-demo-test-list.txt"
+          bun run --cwd apps/world test:e2e nuclear-planning-demo.pw.ts --workers=1 --retries=0 --output="$RUNNER_TEMP/nuclear-demo-results"
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: nuclear-demo-${{ github.run_id }}-${{ github.run_attempt }}-${{ inputs.code_revision }}
+          path: |
+            ${{ runner.temp }}/nuclear-demo-evidence/
+            ${{ runner.temp }}/nuclear-demo-results/
+            ${{ runner.temp }}/nuclear-demo-context.txt
+            ${{ runner.temp }}/nuclear-demo-test-list.txt
+          if-no-files-found: warn
+          retention-days: 7

@@ -21,7 +21,7 @@
   } from './featured-catalogue.ts'
   import { errorDiagnostic, plainErrorText } from './error-text.ts'
   import { workspacePath } from './launch-destination.ts'
-  import { workspaceLabel, type WorkspaceApi } from './launch-workspace.ts'
+  import { isWorkspaceNotReady, moduleTitle, workspaceLabel, type WorkspaceApi } from './launch-workspace.ts'
   import { CREDIT_LINK, CREDIT_TEXT } from './landing-content.ts'
   import { demoKey, demosHref, type ModalCloseReason, type ModalRoute } from './modal-url.ts'
   import { supportsWebgl2 } from './webgl-support.ts'
@@ -256,11 +256,14 @@
   const retryModule = async (featured: Launchable): Promise<void> => {
     const workspace = launch?.failure?.workspace
     if (!launch || !workspace) return
-    launch.note = 'Preparing World again…'
+    const cause = launch.failure?.cause
+    const moduleId = isWorkspaceNotReady(cause) ? cause.moduleId : 'world'
+    const title = moduleTitle(moduleId)
+    launch.note = `Preparing ${title} again…`
     try {
-      await api.retryModule(workspace.id, 'world')
+      await api.retryModule(workspace.id, moduleId)
     } catch (error) {
-      console.error('World retry failed', errorDiagnostic(error))
+      console.error(`${title} retry failed`, errorDiagnostic(error))
       launch.note = plainErrorText(error)
       return
     }

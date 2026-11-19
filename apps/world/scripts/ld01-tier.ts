@@ -129,11 +129,13 @@ function environment(){
 /** The pins' environment: what a span's trajectory depends on, by content.
  * The declaration and decision-log pages are not in it: they gain rows
  * that leave a case untouched, the harness checks the case block's own pin,
- * and a changed block value changes the digest. */
+ * and a changed block value changes the digest. The IC section is in it:
+ * it alone decides the composition (unit/live.rs: governor, DC, AUTO rods). */
 function pinEnvironment(env:ReturnType<typeof environment>){
  const file=(k:string)=>env[k]?.sha256??null
  const path=(k:string)=>{const v=env[k]?.value;return v===undefined?null:pinnedPath(v,process.env.LD01_RECEIPTS??'')}
  return {packet_sha256:file('LD01_OPERATING_HOT_SPINE_PACKET'),state_sha256:file('LD01_S3_STATE'),elec_packet_sha256:file('ELEC_PACKET'),
+  ic_section_sha256:file('LD01_IC_SECTION'),
   wiki_commit:env.LD01_WIKI_COMMIT?.value??null,
   water_lib_dir:path('LD01_OPERATING_WATER_LIB_DIR'),sundials_prefix:path('LD01_OPERATING_SUNDIALS_PREFIX')}
 }

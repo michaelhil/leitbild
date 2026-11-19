@@ -406,7 +406,7 @@ export type DisplayWindowTarget =
   | { readonly kind: 'dashboard' }
   | { readonly kind: 'asset'; readonly objectId: string; readonly select?: string }
   | { readonly kind: 'listing'; readonly listing: EmbeddedViewListing }
-  | { readonly kind: 'subject'; readonly runId: string; readonly subject: string; readonly title: string }
+  | { readonly kind: 'subject'; readonly runId: string; readonly subject: string; readonly title?: string }
 
 export interface DisplayWindowRequest {
   /** Distinguishes repeated requests for the same target. */

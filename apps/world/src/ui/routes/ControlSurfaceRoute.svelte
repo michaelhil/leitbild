@@ -27,7 +27,7 @@
     ScenarioExecutionState,
     SimulationClockState,
   } from '../../core/model/index.ts'
-  import { deleteObjectCommandKind, roleClassForRoleSet, runRolesOf, viewerForRoleSet } from '../../core/model/index.ts'
+  import { deleteObjectCommandKind, idSchema, objectIdSchema, roleClassForRoleSet, runRolesOf, viewerForRoleSet } from '../../core/model/index.ts'
   import { createPackPresentationComposer } from '../../core/packs/presentation-composer.ts'
   import type { PackCreateObjectType, PackMapFeatureQuery, PackObjectPresentation, PackObjectPresentationTier, PackObjectStatusPresentation, PackPresentationContribution, PackProcedureContribution, PackSurfacePanelContribution, PackTargetContext, PackTargetPreview } from '../../core/packs/protocol.ts'
   import type { PackLiveMapLayerBinding } from '../map-runtime/pack-live-layer.ts'
@@ -266,6 +266,22 @@
   let surfacePanelOpen = $state<Record<string, boolean>>({})
   let guidancePreferences = $state<RunViewPreferences['guidance']>(initialRunViewPreferences().guidance)
   let timedCardRequested = $state(false)
+  const routeFocus = objectIdSchema.safeParse(new URLSearchParams(location.search).get('focus')).data ?? null
+  const routeElement = idSchema.safeParse(new URLSearchParams(location.search).get('element')).data ?? null
+  let focusedMapObjectId = $state<ObjectId | null>(null)
+  let mapFocusRequested = false
+  let planningGuideOpened = false
+  const planningDemoHref = $derived.by(() => {
+    const definition = guidanceScreen.guide?.planningDefinitionId
+    if (!definition || !simulationRunId) return null
+    const params = new URLSearchParams({ planning: 'demo', definition, run: simulationRunId })
+    const current = new URLSearchParams(location.search)
+    for (const key of ['agents', 'option']) {
+      const value = idSchema.safeParse(current.get(key)).data
+      if (value !== undefined) params.set(key, value)
+    }
+    return `/workspaces/${encodeURIComponent(activeWorkspaceId())}?${params}`
+  })
   const structuredGuideVisible = $derived(Boolean(guidanceScreen.guide && !guidanceScreen.explored && (!guidanceScreen.guide.attemptId || guidanceScreen.guide.status === 'active')))
   const guidanceOverlayVisible = $derived(Boolean(scenarioState?.guidance && guidancePreferences.mode === 'running' && guidancePreferences.dismissedId !== scenarioState.guidance.id && (!structuredGuideVisible || timedCardRequested)))
   const guidanceUnread = $derived(Boolean(scenarioState?.guidance && guidancePreferences.presentedId !== scenarioState.guidance.id))
@@ -400,7 +416,12 @@
   const debugStartup = new URLSearchParams(location.search).get('debugStartup') === '1'
   const categoryRows = $derived<ReadonlyArray<CategoryRow>>(categoryRowsForStartingView(allCategoryRows, railConfig))
   const objectById = $derived(new Map(objects.map(object => [object.id, object])))
-  const mapHighlightedObjectIds = $derived([...new Set([...(scenarioState?.highlightedObjectIds ?? emptyStringArray), ...presentationObjectIds])])
+  const focusedMapObject = $derived(focusedMapObjectId === null ? undefined : objectById.get(focusedMapObjectId))
+  const focusedMapObjectLabel = $derived(focusedMapObject?.label ?? null)
+  const mapHighlightedObjectIds = $derived([...new Set([
+    ...(scenarioState?.highlightedObjectIds ?? emptyStringArray), ...presentationObjectIds,
+    ...(focusedMapObject ? [focusedMapObject.id] : []),
+  ])])
   $effect(() => {
     const rows = categoryRows
     untrack(() => {
@@ -482,6 +503,42 @@
     mapFocusRevision += 1
     mapFocusRequest = { revision: mapFocusRevision, target }
   }
+
+  const focusOnMapObject = (position: GeoJsonPoint['coordinates'], zoom?: number): void => {
+    focusMapTarget({ kind: 'view', center: [position[0], position[1]], zoom: zoom ?? Math.max(9, panelMapView?.zoom ?? 9), bearing: panelMapView?.bearing ?? 0 })
+  }
+
+  $effect(() => {
+    if (routeFocus === null || mapFocusRequested || !startupDismissed || !mapReady || !mapVisible || !activePack) return
+    const object = objectById.get(routeFocus)
+    mapFocusRequested = true
+    untrack(() => {
+      if (!object?.spatial.position) {
+        commandFeedback = noteAction(commandFeedback, 'The requested object is unavailable on this map.')
+        return
+      }
+      setCategoryMapVisibility(presentationFor(object).categoryId, true)
+      focusedMapObjectId = object.id
+      focusOnMapObject(object.spatial.position.point.coordinates)
+      if (routeElement !== null) {
+        if (!observedAssetObjects.some(asset => asset.id === object.id)) {
+          commandFeedback = noteAction(commandFeedback, 'The requested object has no available equipment display.')
+          return
+        }
+        // An element may be absent from the whole asset's overview. Ask the
+        // owner to resolve its default detail and local topology instead of
+        // trying to select it on a drawing that does not contain it.
+        if (simulationRunId === null) throw new Error('Equipment focus requires a joined Simulation Run')
+        requestDisplayWindow({ kind: 'subject', runId: simulationRunId, subject: `${object.id}#${routeElement}` }, false)
+      }
+    })
+  })
+
+  $effect(() => {
+    if (routeFocus !== null || planningGuideOpened || !planningDemoHref || !viewControls || !startupDismissed || foregroundProcedure) return
+    planningGuideOpened = true
+    void viewControls.reveal('guide', false)
+  })
 
   // Pack-rail layer-group visibility. Active pack contributes mapLayerGroups
   // (e.g. electric grid: lines, cables, substations); the rail renders
@@ -724,7 +781,7 @@
       if (viewResetDisabledReason) throw new Error('Finish or cancel the armed order before a guided camera move')
       if (action.kind === 'reveal') { presentationOwner = request.id; presentationObjectIds = [object.id] }
       const position = object.spatial.position.point.coordinates
-      focusMapTarget({ kind: 'view', center: [position[0], position[1]], zoom: (action.kind === 'focus' ? action.zoom : undefined) ?? Math.max(9, panelMapView?.zoom ?? 9), bearing: panelMapView?.bearing ?? 0 })
+      focusOnMapObject(position, action.kind === 'focus' ? action.zoom : undefined)
       return waitForPresentation(request, signal, presentationMapWaiters, mapFocusRevision)
     }
     throw new Error('This object action is unsupported')
@@ -1623,6 +1680,7 @@
   }
 
   const selectObject = (object: OperationalObject): void => {
+    focusedMapObjectId = null
     markSeen(object)
     requireActivePack()
     followMapClick(routeObjectClick(object, mapClickContext))
@@ -1910,7 +1968,10 @@
   const simulationRunIdFromPath = (): SimulationRunId => {
     const route = activeRoute()
     if (route.mode !== 'simulation-run') throw new Error('simulation run route expected')
-    if (location.pathname !== route.canonicalPath) history.replaceState(null, '', `${route.canonicalPath}${searchWithRoleSet('', roleSetFromSearch(location.search))}`)
+    if (location.pathname !== route.canonicalPath) {
+      const search = routeFocus === null ? '' : new URLSearchParams({ focus: routeFocus }).toString()
+      history.replaceState(null, '', `${route.canonicalPath}${searchWithRoleSet(search, roleSetFromSearch(location.search))}`)
+    }
     return route.simulationRunId
   }
 
@@ -2085,7 +2146,9 @@
       }
     }
     if (window.self === window.top) {
-      window.location.replace(`/workspaces/${encodeURIComponent(route.workspaceId)}?world=${encodeURIComponent(route.simulationRunId)}`)
+      const search = new URLSearchParams({ world: route.simulationRunId })
+      if (routeFocus !== null) search.set('focus', routeFocus)
+      window.location.replace(`/workspaces/${encodeURIComponent(route.workspaceId)}?${search}`)
       return () => {
         cleanupInternalDiagnosticsGlobal()
         longTaskMonitor?.stop()
@@ -2323,7 +2386,7 @@
           onMapReady={handleMapReady}
           onMapView={view => panelMapView = view}
           onFocusResult={(revision, status) => presentationMapWaiters.get(revision)?.({ status, ...(status === 'superseded' ? { reason: 'Your camera interaction took priority' } : {}) })}
-          onCameraGesture={() => guidanceSession?.manualCamera()}
+          onCameraGesture={() => { focusedMapObjectId = null; guidanceSession?.manualCamera() }}
           onMapError={handleMapError}
           onMapDiagnostic={handleMapDiagnostic}
           {simulationRunId}
@@ -2366,7 +2429,7 @@
         clear={mapCameraPadding} ready={mapReady} raised={displayWindowOpen} onReadUpdate={markGuidancePresented}
         hasGuide={Boolean(guidanceScreen.guide)} {guideBadge} {foregroundProcedure}>
         {#snippet guideContent()}
-          <GuidePanel screen={guidanceScreen} session={guidanceSession} explore={() => { guidanceSession?.explore(); viewControls?.dismiss() }} />
+          <GuidePanel screen={guidanceScreen} session={guidanceSession} {planningDemoHref} explore={() => { guidanceSession?.explore(); viewControls?.dismiss() }} />
         {/snippet}
       </RunViewControls>
       {#if timelineOutcome && dismissedTimelineOutcome !== timelineOutcome && !foregroundProcedure && !displayWindowOpen}
@@ -2375,7 +2438,7 @@
           <button type="button" aria-label="Dismiss scenario cue notice" onclick={() => { dismissedTimelineOutcome = timelineOutcome }}>×</button>
         </div>
       {/if}
-      <WorldStatusLine {clock} execution={executionState} feedback={commandFeedback.line} placementHint={placement.placementText()} connectionProblem={liveUpdatesProblem} />
+      <WorldStatusLine {clock} execution={executionState} feedback={commandFeedback.line} placementHint={placement.placementText()} connectionProblem={liveUpdatesProblem} mapFocusLabel={focusedMapObjectLabel} planningDemoHref={routeFocus === null || displayWindowOpen ? null : planningDemoHref} />
       {#if runRoles && heldRoleIds}
         <RoleBar declaration={runRoles} held={heldRoleIds} switchingTo={pendingRoleIds} request={requestRoleChange} openDialog={() => { roleDialogOpen = true }} />
       {/if}
@@ -2452,6 +2515,7 @@
     openAssistant={runAssistantOffered && simulationRunId !== null ? openRunAssistant : null}
     focusMap={focusMapTarget}
     close={closeDisplayWindow}
+    planningDemoHref={routeFocus === null ? null : planningDemoHref}
   />
 {/if}
 

@@ -417,7 +417,9 @@ const resourcesFor = async (registry: SimulationRunRegistry): Promise<ReadonlyAr
   const observedAt = new Date().toISOString()
   const simulationRuns = await registry.listKnown()
   const executionByRun = new Map(await Promise.all(simulationRuns
-    .filter(simulationRun => simulationRun.loadError === undefined)
+    // The manifest is visible before startup writes the first clock. A
+    // concurrent catalogue read must still describe all the other Runs.
+    .filter(simulationRun => simulationRun.loadError === undefined && simulationRun.clock !== null)
     .map(async simulationRun => [simulationRun.id, await registry.executionOverview(simulationRun.id)] as const)))
   const runRef = (id: string) => ({
     workspaceId: registry.workspaceId,
@@ -463,7 +465,7 @@ const resourcesFor = async (registry: SimulationRunRegistry): Promise<ReadonlyAr
       ...simulationRuns.map(simulationRun => {
       const viewers = registry.leaseSummary(simulationRun.id).leasesByKind.realtime
       const execution = executionByRun.get(simulationRun.id)
-      const status = simulationRun.loadError !== undefined
+      const status = simulationRun.loadError !== undefined || simulationRun.clock === null
         ? 'Unavailable'
         : execution?.playback === 'playing' && execution.pace === 'maximum'
           ? `Fast-forward · ${execution.acceleration?.measuredSpeed.toFixed(1) ?? '0.0'}×`

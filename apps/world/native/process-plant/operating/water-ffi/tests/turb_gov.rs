@@ -7,9 +7,9 @@
 //!
 //! Environment: the S3 unit's (`LD01_OPERATING_HOT_SPINE_PACKET`,
 //! `LD01_WIKI_ROOT`, `LD01_IC_SECTION`, `LD01_PZR_CONTROL_SECTION`,
-//! `LD01_PZR_CONTROL_WIKI`, `ELEC_PACKET`, `LD01_S3_STATE`),
-//! `LD01_ROD_CONTROL_WIKI` (`ld01-rod-control`), `LD01_TURB_WIKI` (the
-//! turbine and admission pages' blocks), `LD01_TURB_SPAN_S`,
+//! `LD01_PZR_CONTROL_WIKI`, `ELEC_PACKET`, `LD01_S3_STATE`; the governor,
+//! DC groups and AUTO rods follow the IC section's declarations and the wiki
+//! root, as the live unit's), `LD01_TURB_SPAN_S`,
 //! `LD01_TURB_STEPS` (optional: `<fraction of the start request>@<seconds
 //! after the start>,...`, each on a whole second), `LD01_TURB_RAMP` (optional:
 //! `<to fraction>@<from s>/<fraction per minute>`, a 1 s staircase of Grid
@@ -37,7 +37,8 @@ use leitbild_operating_water::{
     unit::{
         clock::process_cpu_s,
         inputs::Inputs,
-        plant::{self, Plant},
+        live,
+        plant::Plant,
         profile::Solver,
         rod_control, s3,
         turbine::{self, Turbine},
@@ -280,19 +281,16 @@ struct Driven {
 fn drive(
     inputs: &Inputs,
     state: &Value,
-    turbine: &Turbine,
-    section: &leitbild_operating_plant::control::rods::Section,
-    ids: &[String],
     d: &Drive,
     scaling: s3::Scaling,
     gates: Option<&GateSetup>,
 ) -> Driven {
     let started = process_cpu_s();
     let instructions0 = counters::instructions().unwrap();
-    let mut unit =
-        s3::compose_governed_with(inputs, state, scaling, Solver::STOCK, Some(turbine), Ok)
-            .unwrap_or_else(|e| panic!("{e}"));
-    let (t0, y, reference, n) = (unit.t0, unit.y.clone(), unit.reference.clone(), unit.n);
+    let unit = live::compose(inputs, state, scaling, Solver::STOCK, &[], Ok)
+        .unwrap_or_else(|e| panic!("{e}"))
+        .unit;
+    let (t0, y, n) = (unit.t0, unit.y.clone(), unit.n);
     let request0 = unit.ida.system().governor.as_ref().unwrap().held.to_w;
     type Scaled = (usize, f64);
     let (pressures, sg): (Vec<Scaled>, Vec<[Scaled; 2]>) = {
@@ -342,24 +340,14 @@ fn drive(
         frames: Vec::new(),
         scratch: vec![0.; y.len()],
     });
-    let (mut rods, rod_receipt) = rod_control::commission(
-        unit.ida.system_mut(),
-        section,
-        ids,
-        Class::S,
-        t0,
-        &y,
-        &reference,
-    )
-    .unwrap_or_else(|e| panic!("{e}"));
-    let mut plant = Plant::new(
+    let (mut plant, rod_receipt) = live::plant(
         unit,
-        &inputs.ic,
-        plant::Config {
-            field: None,
+        inputs,
+        live::Options {
             diagnostic: Diagnostic::None,
             matrix_rebuild: MatrixRebuild::Stock,
             clock: process_cpu_s,
+            rod_records: true,
         },
     )
     .unwrap_or_else(|e| panic!("{e}"));
@@ -385,7 +373,7 @@ fn drive(
     let mut observe = observe;
     let composed = counters::instructions().unwrap();
     {
-        let mut extra: [&mut dyn Client<_>; 2] = [&mut rods, &mut rec];
+        let mut extra: [&mut dyn Client<_>; 1] = [&mut rec];
         plant.start(&mut extra).unwrap_or_else(|e| panic!("{e}"));
     }
     // The observation grid's origin: the composed consistent start.
@@ -463,7 +451,7 @@ fn drive(
         marks.push(*b);
         for m in marks {
             let r = {
-                let mut extra: [&mut dyn Client<_>; 2] = [&mut rods, &mut rec];
+                let mut extra: [&mut dyn Client<_>; 1] = [&mut rec];
                 let obs = observe.as_mut().map(|o| o as &mut dyn Observer<Unit>);
                 plant.run(t, m, &mut extra, obs)
             };
@@ -481,7 +469,7 @@ fn drive(
             let dd = turbine::grid_request(&mut plant.driver, plant.ida.system(), t, request);
             let r = dd.and_then(|what| {
                 decisions.push(json!({"t_s": t, "request_W": request, "decision": what}));
-                let mut extra: [&mut dyn Client<_>; 2] = [&mut rods, &mut rec];
+                let mut extra: [&mut dyn Client<_>; 1] = [&mut rec];
                 plant.apply_due(&mut extra)
             });
             if let Err(e) = r {
@@ -490,6 +478,7 @@ fn drive(
             }
         }
     }
+    let rods = plant.rods.take().expect("the section declares rod control");
     Driven {
         plant,
         rods,
@@ -516,16 +505,6 @@ fn turb_gov_run() {
     let state: Value = serde_json::from_slice(&std::fs::read(&state_path).unwrap()).unwrap();
     let d = case_drive();
     let (span, steps) = (d.span, d.steps.clone());
-    let turbine = Turbine::from_wiki(&env("LD01_TURB_WIKI")).unwrap_or_else(|e| panic!("{e}"));
-    let section =
-        rod_control::section(&env("LD01_ROD_CONTROL_WIKI")).unwrap_or_else(|e| panic!("{e}"));
-    let packet = inputs.spine.packet_json().unwrap();
-    let ids: Vec<String> = packet["mechanics"]["regions"]
-        .as_array()
-        .unwrap()
-        .iter()
-        .map(|r| r["id"].as_str().unwrap().to_string())
-        .collect();
     // PHYS2's X4 inputs (record only): LD01_TURB_GATES=1 adds the observed
     // run (x4_frames, credited outputs) after the cost drive, and
     // LD01_TURB_SERIES=1 R11-3a's references rtol/10, /30, /100 (every atol
@@ -537,28 +516,10 @@ fn turb_gov_run() {
         "LD01_TURB_SERIES=1 needs LD01_TURB_GATES=1"
     );
     let gates = gates_on.then(GateSetup::load);
-    let cost = drive(
-        &inputs,
-        &state,
-        &turbine,
-        &section,
-        &ids,
-        &d,
-        s3::Scaling::NONE,
-        None,
-    );
-    let observed = gates.as_ref().map(|g| {
-        drive(
-            &inputs,
-            &state,
-            &turbine,
-            &section,
-            &ids,
-            &d,
-            s3::Scaling::NONE,
-            Some(g),
-        )
-    });
+    let cost = drive(&inputs, &state, &d, s3::Scaling::NONE, None);
+    let observed = gates
+        .as_ref()
+        .map(|g| drive(&inputs, &state, &d, s3::Scaling::NONE, Some(g)));
     let mut families = serde_json::Map::new();
     let mut x4_frames = Value::Null;
     if let (Some(g), Some(o)) = (gates.as_ref(), observed.as_ref()) {
@@ -576,10 +537,7 @@ fn turb_gov_run() {
                         relative: 1. / k,
                         absolute: 1. / k,
                     };
-                    (
-                        format!("rtol/{k}"),
-                        drive(&inputs, &state, &turbine, &section, &ids, &d, sc, Some(g)),
-                    )
+                    (format!("rtol/{k}"), drive(&inputs, &state, &d, sc, Some(g)))
                 })
                 .collect();
             let e0 = |a: &Driven, b: &Driven| match (a.observe.as_ref(), b.observe.as_ref()) {

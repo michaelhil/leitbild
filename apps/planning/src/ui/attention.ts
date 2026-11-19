@@ -2,13 +2,17 @@
 // The link card comes first until a Run is linked; the Module's own attention items follow; then the
 // one-sentence answer about the recommended option.
 import { simulationNow } from './edit-forms.ts'
+import { preconditions, usedWorldRefs } from '../plan/readiness.ts'
 import { sizeBand, sizeRefusalWords } from '../plan/summary.ts'
-import { sourceMark, type Mark } from './format.ts'
-import type { AttentionKind, PlanModel } from './model.ts'
-import { outcomes, stoppedEarly } from './outcome.ts'
+import type { Robust } from '../plan/schema.ts'
+import { hoursText, moneyText, quantityText, sourceMark, type Mark } from './format.ts'
+import { extraUseText } from './ladder.ts'
+import { joinWords, planOptions, type AttentionKind, type OptionView, type PlanModel } from './model.ts'
+import { outcomes, stoppedEarlyLines } from './outcome.ts'
+import { crewHourPurchases } from './request.ts'
 import { goalResult, statusView, type Context } from './status-text.ts'
 
-export type CardAction = 'open-workspace' | 'link-run' | 'refresh' | 'add-work' | 'generate' | 'why-finish' | 'align-window'
+export type CardAction = 'open-workspace' | 'link-run' | 'refresh' | 'add-work' | 'generate' | 'why-finish' | 'why-recommended' | 'align-window'
 
 export interface Card {
   readonly mark: Mark
@@ -43,6 +47,133 @@ export const simulationOutsideWindow = (inputs: PlanModel['inputs'], wallNowMs: 
   const now = inputs.settings.dataDate === null ? wallNowMs : Date.parse(inputs.settings.dataDate)
   return at >= Date.parse(window.end) || (at < Date.parse(window.start) && at < now - 86_400_000) ? sim : null
 }
+
+/** The window's length, how far past its end the checker continues the calendars: "5 days", or hours. */
+const windowLength = (context: Context): string => {
+  const window = context.inputs.settings.window
+  if (window === null) return 'the window\'s length'
+  const days = (Date.parse(window.end) - Date.parse(window.start)) / 86_400_000
+  return Number.isInteger(days) ? `${days} ${days === 1 ? 'day' : 'days'}` : hoursText(days * 24)
+}
+
+/**
+ * The pessimistic card (design §4.2, S4): the option's own schedule re-timed with every job with an estimate
+ * range at its high estimate, then each alone, in the same order with the same crews and nothing earlier, and
+ * checked. It says whether every hard rule still holds and, where one breaks, which rule, at which job and by
+ * how much; or which job could not be done, the crew with no slot long enough left and from when: the checker's
+ * own figures. When the checker names no such crew, nothing is stored and the card claims nothing. It claims
+ * nothing about a schedule searched again at those estimates.
+ */
+export const pessimisticCard = (option: OptionView, context: Context): Card | null => {
+  const field = option.robust
+  if (field === undefined || !option.fresh || option.status.word !== 'validated feasible') return null
+  // The re-timings were not made, and why: said so, never a card that is silently missing.
+  if ('notWorkedOut' in field) {
+    // Each cause in planner words: Generate's own time, a job no single crew or tool is short of time for, or
+    // the checker's own reason why it could not judge the re-timing (adversary B2).
+    const why = field.notWorkedOut === 'time' ? 'Generate\'s time ran out before they could be made'
+      : field.notWorkedOut === 'unplaced' ? `re-timing could not place “${context.names.job(field.job)}”, and no single crew or tool is short of time for it`
+        : 'the re-timing could not be judged'
+    // The checker's own reason, as a sentence of its own, never run into the title (adversary B2).
+    const reason = field.notWorkedOut === 'refused' ? `${field.reason.trim().replace(/[.]?$/, '.')} ` : ''
+    return {
+      mark: { shape: '?', word: 'Pessimistic estimates' },
+      title: `For ${option.label}, the pessimistic estimates were not worked out: ${why}.`,
+      text: `${reason}Nothing is said about how this option holds at the high estimates.`, steps: [], actions: [],
+    }
+  }
+  const robust = field
+  const { names, format } = context
+  // M1: what a re-timing uses beyond the planned rows, in the ladder's units, with one cost; nothing when none.
+  const using = (outcome: Robust['allPessimistic']): string => {
+    const extra = outcome.extra
+    if (extra === undefined) return ''
+    const uses = extraUseText(extra.bought, context)
+    // One cost for all of it, net: "+NOK 50,400", or "NOK 1,050 less in all" when other bought time is used less.
+    const amount = Math.abs(extra.cost) < 0.5 ? null : moneyText(Math.abs(extra.cost), context.inputs.settings.currency)
+    const cost = amount === null ? null : extra.cost > 0 ? `+${amount}` : `${amount} less in all`
+    if (uses.length === 0) return amount === null ? '' : `, costing ${amount} ${extra.cost > 0 ? 'more' : 'less'}`
+    return `, using ${joinWords(uses)}${cost === null ? '' : ` (${cost})`}`
+  }
+  // The first thing the re-timed schedule breaks: a hard rule, by how much, or the window, by when.
+  const breaks = (outcome: Robust['allPessimistic']): string | null => {
+    if (outcome.holds) return null
+    if ('window' in outcome) return `${names.job(outcome.job)} would run past the window end, to ${format.when(outcome.window.by)}`
+    // Lane K's words (fix round F3): the job, the crew or tool with no slot long enough left, from when, and
+    // how far past the window the checker looked: the window's own length.
+    if ('unplaced' in outcome) return `${names.job(outcome.unplaced.job)} could not be done: ${names.resource(outcome.unplaced.resource)} has no slot long enough left after ${format.when(outcome.unplaced.after)}, within ${windowLength(context)} after the window`
+    // Lane K's lock form (B2): the locked job, its fixed start from the plan, and the job before it, too late by.
+    if ('lock' in outcome) {
+      const fixed = context.inputs.jobs.find(job => job.key === outcome.lock.job)?.lock
+      return `${names.job(outcome.lock.job)} could not keep its fixed start${fixed === undefined ? '' : `, ${format.when(fixed.start)}`}: ${names.job(outcome.lock.after)} would finish ${quantityText(outcome.by.value, outcome.by.unit)} too late for it`
+    }
+    return `${names.job(outcome.job)} breaks “${names.rule(outcome.rule)}” by ${quantityText(outcome.by.value, outcome.by.unit)}`
+  }
+  const together = breaks(robust.allPessimistic)
+  const alone = robust.single.flatMap(entry => {
+    const text = breaks(entry.outcome)
+    return text === null ? [] : [`${names.job(entry.job)} alone at its high estimate: ${text}${using(entry.outcome)}.`]
+  })
+  // V12: a re-timing that holds with no margin left on a plan span limit is named, by lane K's own figures
+  // (the longest span the checker counts on it, and the limit less that), never worked out here.
+  const exactly = (outcome: Robust['allPessimistic']): string | null => {
+    if (!outcome.holds) return null
+    const span = outcome.spans?.find(entry => entry.margin <= 1e-9 && context.inputs.rules.some(rule => rule.kind === 'span-limit' && rule.key === entry.rule))
+    const rule = span === undefined ? undefined : context.inputs.rules.find(item => item.kind === 'span-limit' && item.key === span.rule)
+    return span === undefined || rule?.kind !== 'span-limit' ? null : `${names.group(rule.group)} is out exactly ${hoursText(span.hours)}`
+  }
+  const noMargin = [
+    ...[exactly(robust.allPessimistic)].flatMap(text => text === null ? [] : [`With every job with an estimate range at its high estimate together, there is no margin left: ${text}${using(robust.allPessimistic)}.`]),
+    ...robust.single.flatMap(entry => {
+      const text = exactly(entry.outcome)
+      return text === null ? [] : [`${names.job(entry.job)} holds alone at its high estimate with no margin left: ${text}${using(entry.outcome)}.`]
+    }),
+  ]
+  // M1: a job that holds alone only by using more of what the option buys is named, with that use and its cost.
+  const costly = robust.single.flatMap(entry => entry.outcome.holds && exactly(entry.outcome) === null && using(entry.outcome) !== ''
+    ? [`${names.job(entry.job)} holds alone at its high estimate${using(entry.outcome)}.`] : [])
+  const tight = robust.single.filter(entry => exactly(entry.outcome) !== null).length
+  const holding = robust.single.length - alone.length - tight - costly.length
+  const named = alone.length + tight + costly.length
+  const others = holding > 0 && named > 0 ? [holding === 1 ? 'The other job with an estimate range holds alone at its high estimate.' : `The other ${holding} jobs with an estimate range each hold alone at their high estimate.`] : []
+  const how = 'Re-timed in the same order with the same crews, nothing earlier, and checked. Re-timed jobs may use any working time the option already buys. A plan made again at those estimates may do better.'
+  const all = exactly(robust.allPessimistic) === null ? using(robust.allPessimistic) : ''
+  if (together === null && alone.length === 0) {
+    return {
+      mark: { shape: '✓', word: 'Pessimistic estimates' },
+      title: `At every high estimate, ${option.label} still keeps every hard rule and fits the window${all}.`,
+      text: how, steps: [...noMargin, ...costly, ...others], actions: [],
+    }
+  }
+  return {
+    mark: { shape: '!', word: 'Pessimistic estimates' },
+    title: together === null
+      ? `With every job with an estimate range at its high estimate together, ${option.label} still holds${all}; some alone do not.`
+      : `With every job with an estimate range at its high estimate, ${option.label} does not hold: ${together}${using(robust.allPessimistic)}.`,
+    text: how,
+    steps: [...alone, ...noMargin, ...costly, ...others],
+    actions: [],
+  }
+}
+
+/**
+ * A refused option asked with less crew time than the plan allows: a lower ladder rung, or "days only". A refused
+ * option stores the purchases it was allowed (lane S), so a crew-time purchase the plan allows and the option
+ * lacks marks it.
+ */
+export const lowerRungRefusal = (option: OptionView, inputs: PlanModel['inputs']): boolean => {
+  if (option.status.word !== 'proven infeasible') return false
+  const dataDate = inputs.settings.dataDate
+  const lapsed = (purchase: PlanModel['inputs']['purchases'][number]) => purchase.ordered === undefined && purchase.orderBy !== undefined && dataDate !== null && Date.parse(dataDate) > Date.parse(purchase.orderBy)
+  return crewHourPurchases(inputs).some(purchase => purchase.allowed && purchase.ordered === undefined && !lapsed(purchase) && !option.variant.purchases.includes(purchase.key))
+}
+
+/** Gate the setup step only while a solver input still needs its first read. */
+export const needsFirstWorldRead = (inputs: PlanModel['inputs']): boolean =>
+  inputs.world.refreshedAt === null && (
+    preconditions(inputs).some(item => item.state === 'unread')
+    || usedWorldRefs(inputs).some(({ ref }) => !inputs.world.facts.some(fact => fact.locator === ref.locator && fact.id === ref.fact))
+  )
 
 export const attentionCards = (model: PlanModel, context: Context, wallNowMs: number = Date.now()): readonly Card[] => {
   const { inputs } = model
@@ -102,13 +233,17 @@ export const attentionCards = (model: PlanModel, context: Context, wallNowMs: nu
   for (const item of items) cards.push({ mark: kindMarks[item.kind], title: item.text, text: '', steps: [], actions: [] })
 
   // Every current option that is not validated feasible says why, here, not only in the Options view.
-  for (const outcome of outcomes(model, context).filter(item => item.word !== 'validated feasible')) {
+  // A lower ladder rung's refusal is an answer inside the ladder and the options table, not a problem of the plan (walk V6).
+  // Only beside another option of the same method: a "days only" Generate's own refusals stay (walk T5).
+  const pickKey = (option: OptionView) => option.variant.methods.map(pick => `${pick.choice}=${pick.option}`).sort().join('|')
+  const rungs = new Set(planOptions(model).filter(option => lowerRungRefusal(option, inputs) && planOptions(model).some(other => other.key !== option.key && other.fresh && pickKey(other) === pickKey(option) && !lowerRungRefusal(other, inputs))).map(option => option.key))
+  for (const outcome of outcomes(model, context).filter(item => item.word !== 'validated feasible' && !rungs.has(item.key))) {
     // A refused option's cause is said in the options table and, in full, in its detail: not a third time here.
     cards.push({ mark: outcome.mark, title: `${outcome.label}: ${outcome.word}.`, text: outcome.word === 'proven infeasible' ? 'Not possible. The options table says why.' : outcome.cause, steps: [], actions: [] })
   }
-  const early = (model.options?.items ?? []).filter(option => option.fresh).map(stoppedEarly).find(reason => reason !== null)
-  if (early !== undefined) {
-    cards.push({ mark: { shape: '!', word: 'Stopped early' }, title: `The search stopped early, ${early}.`, text: 'The options shown may not be the best possible. Generate again.', steps: [], actions: ['generate'] })
+  const early = stoppedEarlyLines(model)
+  if (early.length > 0) {
+    cards.push({ mark: { shape: '!', word: 'Stopped early' }, title: early.join(' '), text: 'The options shown may not be the best possible. Generate again.', steps: [], actions: ['generate'] })
   }
   const recommended = model.options?.items.find(option => option.key === model.options?.recommended)
   // A stale option gets no card here: the Module sends the one stale item (maint's walk 3, R2-4-03).
@@ -125,9 +260,11 @@ export const attentionCards = (model: PlanModel, context: Context, wallNowMs: nu
         ? `${first.name}: ${goalResult(first)}.`
         : recommended.fresh ? `${view.sentence} ${view.details.join(' ')}`.trim() : '',
       steps: warnings,
-      actions: recommended.fresh && recommended.status.word === 'validated feasible' ? ['why-finish'] : ['generate'],
+      actions: recommended.fresh && recommended.status.word === 'validated feasible' ? ['why-finish', 'why-recommended'] : ['generate'],
     })
-  } else if (inputs.jobs.length > 0 && model.options === null) {
+    const pessimistic = pessimisticCard(recommended, context)
+    if (pessimistic !== null) cards.push(pessimistic)
+  } else if (inputs.jobs.length > 0 && model.options === null && !needsFirstWorldRead(inputs)) {
     cards.push({ mark: { shape: '▶', word: 'Generate' }, title: 'No plan has been generated yet.', text: 'Generate makes dated options from the jobs, crews and rules, and says how good each one is.', steps: [], actions: ['generate'] })
   }
   return cards

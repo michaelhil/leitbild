@@ -60,7 +60,7 @@ test('the Supply run from empty: World trucks and requests are usable once the r
   // No job asks for the payload yet, so nothing about it is required (walk 3, R3-2); the refresh still reads it.
   expect(added.problems).toEqual([])
   const read = await refresh()
-  expect(read.changed[0]).toMatch(/^Read \d+ World values describing Thu 3 Sep \d\d:\d\d \(simulation time\): \d+ new or changed/)
+  expect(read.changed[0]).toMatch(/^Read \d+ World values describing Thu 3 Sept? 10:00 \(simulation time\): \d+ new or changed/)
 
   // The requests, each taking its time from World per truck (arrival plus service).
   const requestEdits = tasks.slice(0, 2).map((task: { locator: string; label: string }, index: number) => ({

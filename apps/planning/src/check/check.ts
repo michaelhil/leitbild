@@ -13,21 +13,29 @@ import { computeMetrics, type GoalValue, type Metric } from './metrics.ts'
  * formulation: a stored option checked by older rules is then out of date. Raise it whenever any rule,
  * verifier or bound in check/ changes what it accepts.
  */
-export const CHECKER_VERSION = 'lane-k rules 2'
+export const CHECKER_VERSION = 'lane-k rules 3'
 
 type Inputs = PlanInputs
 type Job = Inputs['jobs'][number]
 type Resource = Inputs['resources'][number]
 type Purchase = Inputs['purchases'][number]
 type Rule = Inputs['rules'][number]
+/** A what-if's extra hard rule (option.variant.also): a span limit or a due time, judged beside the plan's own. */
+export type AlsoRule = Extract<Rule, { readonly kind: 'span-limit' | 'due' }>
 
 export interface CheckUse { readonly resource: string; readonly from: string; readonly to: string; readonly purchase?: string | undefined }
 /** A dated row as the checker reads it; stored rows carry float too, which the checker ignores. */
 export interface CheckRow { readonly job: string; readonly start: string; readonly finish: string; readonly uses: readonly CheckUse[] }
-/** The method options and the purchases this variant may use (a variant's buy overrides `allowed`). */
+/**
+ * The method options and the purchases this variant may use (a variant's buy overrides `allowed`), and a
+ * what-if's extra rules. The extra rules are judged with the plan's own, never instead of them: the checker,
+ * the certificate re-verification and the bounds all read the plan's rules followed by `also`. Callers pass
+ * the plan's own inputs and the option's variant, so a stored what-if is re-checked with its extra rule.
+ */
 export interface CheckVariant {
   readonly methods: ReadonlyArray<{ readonly choice: string; readonly option: string }>
   readonly purchases: readonly string[]
+  readonly also?: readonly AlsoRule[] | undefined
 }
 
 export type ViolationCode =
@@ -82,6 +90,7 @@ const convert = (value: number, from: string, to: string): number | undefined =>
 // ───────────── prepared inputs ─────────────
 
 export interface Context {
+  /** The plan's inputs, with the variant's extra rules (`also`) after the plan's own rules. */
   readonly inputs: Inputs
   readonly variant: CheckVariant
   readonly grid: Grid
@@ -124,7 +133,10 @@ const violation = (code: ViolationCode, about: readonly string[], words: string,
 const isActive = (part: { readonly method?: { readonly choice: string; readonly option: string } | undefined }, variant: CheckVariant): boolean =>
   part.method === undefined || variant.methods.some(chosen => chosen.choice === part.method!.choice && chosen.option === part.method!.option)
 
-export const prepare = (inputs: Inputs, variant: CheckVariant): Prepared => {
+export const prepare = (planInputs: Inputs, variant: CheckVariant): Prepared => {
+  // A what-if's extra rules are judged beside the plan's own: added, never replacing one.
+  const also = variant.also ?? []
+  const inputs: Inputs = also.length === 0 ? planInputs : { ...planInputs, rules: [...planInputs.rules, ...also] }
   const problems: Violation[] = []
   const window = inputs.settings.window
   if (window === null) return { ok: false, problems: [violation('no-window', [], 'The plan has no window, so no schedule can be checked.')] }
@@ -248,7 +260,7 @@ export const jobDuration = (context: Context, job: Job, chosen: ReadonlySet<stri
 
 interface Placed { readonly job: Job; readonly start: number; readonly finish: number }
 
-const mergeIntervals = (intervals: readonly Interval[]): Interval[] => {
+export const mergeIntervals = (intervals: readonly Interval[]): Interval[] => {
   const sorted = [...intervals].sort((left, right) => left.from - right.from)
   const merged: Interval[] = []
   for (const interval of sorted) {
@@ -710,7 +722,7 @@ export const checkPlan = (inputs: Inputs, variant: CheckVariant, rows: readonly 
     return duty
   }
   const ruleLabel = (rule: Rule): string => `'${rule.words}'`
-  for (const rule of inputs.rules) {
+  for (const rule of context.inputs.rules) {
     if (rule.kind === 'protected') {
       const shielded = new Set(rule.equipment)
       for (const job of activeJobs) {

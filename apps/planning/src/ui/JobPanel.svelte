@@ -71,7 +71,7 @@
       <h2 id="job-title" tabindex="-1">{job.title}</h2>
       <button type="button" class="quiet" onclick={onClose}>Close</button>
     </div>
-    <p><MarkTag {mark} />{#if job.equipment.length > 0} on {names.list(job.equipment, names.equipment)}{/if}{#if job.kind === 'work' && job.isolation === 'inside'}, inside its tag-out{/if}</p>
+    <p><MarkTag {mark} />{#if job.equipment.length > 0}{' '}on {names.list(job.equipment, names.equipment)}{/if}{#if job.kind === 'work' && job.isolation === 'inside'}, inside its tag-out{/if}</p>
 
     <dl class="facts">
       <div><dt>Takes</dt><dd><MarkTag mark={value.mark} tone={value.mark.shape === '?' ? 'unknown' : value.mark.shape === '△' ? 'assumption' : value.mark.shape === '◉' ? 'world' : 'estimate'} /> {value.text}{#if value.source}<small>{value.source}</small>{/if}</dd></div>

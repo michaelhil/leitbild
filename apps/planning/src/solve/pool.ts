@@ -45,6 +45,18 @@ export const SOLVER_CPU_CAP_CORES = 0.8 * 0.5
 export const CHILD_RSS_LIMIT_MB = 140
 
 /**
+ * The JavaScriptCore options a solver child runs with. Lane K's checker (check/check.ts checkPlan, bytecode
+ * cost 36 742; the largest function the search optimises costs 6 666) runs a dozen times in a sub-solve since
+ * the pessimistic re-timings (each judged by a full check), so the DFG JIT optimises it: a compile of 170 KB of
+ * code that takes 40-60 ms on a JIT thread and 15-30 MB of the child's RSS after the search, where the memory
+ * guard does not sample (measured 16 Nov: the whole of increment 2's 25-40 MB rise over increment 1, whose
+ * checker never ran often enough to be optimised). The DFG gets the size limit the FTL already has (JSC's
+ * maximumFTLCandidateBytecodeCost, 20 000): the checker stays in the baseline JIT, as in increment 1, and the
+ * search, far below the limit, compiles as before (the same evaluations on the same seed).
+ */
+export const CHILD_JSC_OPTIONS: Readonly<Record<string, string>> = { BUN_JSC_maximumOptimizationCandidateBytecodeCost: '20000' }
+
+/**
  * Every child is killed at a wall deadline, so a hung child never holds the only solver slot (adversary,
  * child boundary): a solve or sub-solve at its budget's wall time plus this margin (compile, bounds and lane
  * K's check run outside the engine budget, and take well under a second at the certified size); a preview
@@ -167,7 +179,7 @@ export const createSolverPool = (options: PoolOptions = {}): SolverPool => {
         'refuse' in answer ? finish(() => reject(answer.refuse)) : finish(() => resolve(answer.value), answer.record)
       const send = (request: ChildRequest): void => { if (!done) child.send(request) }
       const child = Bun.spawn([process.execPath, ...(smol ? ['--smol'] : []), childEntry], {
-        stdin: 'ignore', stdout: 'inherit', stderr: 'inherit', serialization: 'json',
+        stdin: 'ignore', stdout: 'inherit', stderr: 'inherit', serialization: 'json', env: { ...process.env, ...CHILD_JSC_OPTIONS },
         ipc: (message: ChildResponse) => {
           if (message.id !== id) return
           if (message.type === 'error') { finish(() => reject(new Error(`The solver failed: ${message.message}`))); return }
@@ -228,10 +240,13 @@ export const createSolverPool = (options: PoolOptions = {}): SolverPool => {
     const rate = rateFor(task.budget.cpuMs, task.budget.wallMs)
     const budget = { ...task.budget, cpuMs: Math.floor(rate * task.budget.wallMs) }
     const runOf = (outcome: SubSolveOutcome) => ('run' in outcome.option.status ? outcome.option.status.run : undefined)
+    // Killed by its own budget plus the margin, or by the Generate's deadline if that comes first. The child is
+    // told when (`killAt`), so it answers before it, its pessimistic re-timings included.
+    const killMs = Math.max(0, Math.min(budget.wallMs + marginMs, (task.deadlineAt ?? Infinity) - Date.now()))
+    const killAt = Date.now() + killMs
     return job<SubSolveOutcome>({
-      request: id => ({ type: 'subsolve', id, task: encode({ ...task, budget }), rssLimitMb, sampleMs }),
-      // Killed by its own budget plus the margin, or by the Generate's deadline if that comes first.
-      rate, wallMs: budget.wallMs, grantedCpuMs: budget.cpuMs, signal, deadlineMs: Math.max(0, Math.min(budget.wallMs + marginMs, (task.deadlineAt ?? Infinity) - Date.now())), ...(stoppedByWho === undefined ? {} : { stoppedByWho }),
+      request: id => ({ type: 'subsolve', id, task: encode({ ...task, budget, killAt }), rssLimitMb, sampleMs }),
+      rate, wallMs: budget.wallMs, grantedCpuMs: budget.cpuMs, signal, deadlineMs: killMs, ...(stoppedByWho === undefined ? {} : { stoppedByWho }),
       answer: message => {
         const outcome = message.type === 'outcome' ? outcomeFromWire(message.outcome) : { problem: 'a sub-solve answered with a bare search result' }
         if ('problem' in outcome) return outcome
@@ -242,7 +257,9 @@ export const createSolverPool = (options: PoolOptions = {}): SolverPool => {
       unanswered: (stoppedBy, wallMs) => {
         const who = stoppedBy === 'cancelled' ? stoppedByWho?.() : undefined
         const status = unresolvedStatus({ grid: task.inputs.settings.grid, engine: SOLVER_VERSIONS.engine, formulation: formulationOf(task.inputs.settings.grid), seed: task.seed, budget: { ...budget }, stoppedBy, ...(who === undefined ? {} : { stoppedByWho: who }), evals: 0, cpuMs: 0 })
-        const option = { key: task.variant.key, label: task.variant.label.slice(0, 160), inputsRevision: task.revision, variant: { methods: [...task.combo], purchases: [] }, status, rows: [], metrics: [] }
+        // A what-if keeps what it asks (its extra rule, its lead) on this path too, so it is never a plain option.
+        const asked = { ...(task.variant.also === undefined ? {} : { also: [...task.variant.also] }), ...(task.variant.lead === undefined ? {} : { lead: task.variant.lead }) }
+        const option = { key: task.variant.key, label: task.variant.label.slice(0, 160), inputsRevision: task.revision, variant: { methods: [...task.combo], purchases: [], ...asked }, status, rows: [], metrics: [] }
         return { value: { option, rounded: [], dropped: [] }, record: { wallMs, cpuMs: 0, evals: 0, stoppedBy } }
       },
     })

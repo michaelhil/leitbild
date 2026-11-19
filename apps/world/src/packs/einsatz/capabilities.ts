@@ -1,17 +1,19 @@
 import { z } from 'zod'
 import { commandResultSchema, idSchema, objectIdSchema, type ObjectId } from '../../core/model/index.ts'
+import { packMapFeatureSchema } from '../../core/packs/protocol.ts'
 import { defineSimulationCommandCapability, defineSimulationQueryCapability } from '../../simulation/capabilities.ts'
 import type { SimulationCapability } from '../../simulation/protocol.ts'
+import { queuedPlanRoutesId, queuedPlanRoutesInputSchema } from './chain-path.ts'
 import { configurationOutputSchema } from './config-schema.ts'
 import { intentFields } from './engine/intents.ts'
-import { unitOrderInputSchema, unitRecallInputSchema, unitStopRemoveInputSchema, unitUndoInputSchema } from './order-schema.ts'
+import { unitOrderInputSchema, unitPlanReorderInputSchema, unitRecallInputSchema, unitStopRemoveInputSchema, unitUndoInputSchema } from './order-schema.ts'
 import { einsatzPlanningCapability } from './planning-source.ts'
 import { recommendAnswerSchema } from './recommendation-schema.ts'
 import { situationInputSchema, situationSchema, unitOptionsInputSchema, unitOptionsSchema } from './situation/schema.ts'
 import { stepTargetId } from './steps.ts'
 
 /**
- * The Einsatz Capabilities: five queries and eleven commands. Commands are
+ * The Einsatz Capabilities: six queries and twelve commands. Commands are
  * validated against the current state when they commit, never against a
  * token: a refusal reads `<code>: <message>` in the configuration's own
  * words and sets `code`. Every command is schedulable from the Scenario
@@ -28,6 +30,7 @@ import { stepTargetId } from './steps.ts'
 export const einsatzCommandIds = {
   order: 'world.einsatz.unit.order',
   stopRemove: 'world.einsatz.unit.stop.remove',
+  planReorder: 'world.einsatz.unit.plan.reorder',
   undo: 'world.einsatz.unit.undo',
   recall: 'world.einsatz.unit.recall',
   taskClose: 'world.einsatz.task.close',
@@ -42,6 +45,7 @@ export const einsatzQueryIds = {
   situation: 'world.einsatz.situation',
   recommend: 'world.einsatz.recommend',
   unitOptions: 'world.einsatz.unit.options',
+  queuedRoutes: queuedPlanRoutesId,
   configuration: 'world.einsatz.configuration',
   planningBasis: einsatzPlanningCapability.id,
 } as const
@@ -49,6 +53,7 @@ export const einsatzQueryIds = {
 export const commandInputSchemas = {
   [einsatzCommandIds.order]: unitOrderInputSchema,
   [einsatzCommandIds.stopRemove]: unitStopRemoveInputSchema,
+  [einsatzCommandIds.planReorder]: unitPlanReorderInputSchema,
   [einsatzCommandIds.undo]: unitUndoInputSchema,
   [einsatzCommandIds.recall]: unitRecallInputSchema,
   [einsatzCommandIds.taskClose]: z.object(intentFields.taskClose).strict(),
@@ -126,7 +131,7 @@ export const einsatzCapabilities: ReadonlyArray<SimulationCapability> = [
     readScope: 'collection',
     id: einsatzQueryIds.unitOptions,
     title: 'Where a unit may be ordered',
-    description: 'For one unit: every target an order may name, nearest first, with the verb (serve, pick up, deliver, go to, engage), the ETA and `now`: whether an order now takes it, or only one with when "after" its plan (a loaded carrier\'s call once it has delivered); and every target an order would be refused for, with its code and reason. A busy unit names its current task (which an order with when "now" drops), its priority code and when it is free. Example: `{unitId:\'unit:a4\'}`.',
+    description: 'For one unit: its ordered stop ids and states, and valid targets with a verb, travel estimate, and separate permission to replace the active stop or add to the queue. Use when "after" for a target marked afterOnly. Copy plan into expectedPlan to reject an order if another edit or the run has changed the stops. A busy unit names the task an order with when "now" drops. Example: `{unitId:"unit:a4"}`.',
     searchTerms: [...dispatchTerms, 'targets', 'options', 'where can'],
     input: unitOptionsInputSchema,
     output: unitOptionsSchema,
@@ -141,6 +146,16 @@ export const einsatzCapabilities: ReadonlyArray<SimulationCapability> = [
     input: z.object({}).strict(),
     output: configurationOutputSchema,
   }),
+  defineSimulationQueryCapability({
+    readScope: 'object',
+    id: einsatzQueryIds.queuedRoutes,
+    title: 'Read queued map routes',
+    description: 'Routes the selected unit’s queued destinations for map display while its observed plan still holds. Example: `{unitId:"unit:a4",expectedPlan:[{id:"step-1",state:"active"},{id:"step-2",state:"queued"}]}`.',
+    searchTerms: ['queued route', 'map', 'next stop'],
+    input: queuedPlanRoutesInputSchema,
+    output: z.object({ features: z.array(packMapFeatureSchema) }).strict(),
+    inspectObjectIds: raw => objectIds(queuedPlanRoutesInputSchema.parse(raw).unitId),
+  }),
   command({
     id: einsatzCommandIds.order,
     title: 'Order units',
@@ -154,6 +169,14 @@ export const einsatzCapabilities: ReadonlyArray<SimulationCapability> = [
     title: 'Remove a stop',
     description: 'Remove one stop from a unit\'s plan. A queued stop leaves; the active one is released as a recall releases it (load not yet picked up returns to its task), and the unit stops where it is and starts its next stop. A stop that delivers load the unit carries, or will carry, stays (unit_loaded); an unknown stop is refused step_not_found. Example: `{unitId:\'unit:a4\', stopId:\'step-3\'}`.',
     searchTerms: ['remove stop', 'cancel stop', 'plan'],
+    idempotent: false,
+    targets: input => objectIds(input.unitId),
+  }),
+  command({
+    id: einsatzCommandIds.planReorder,
+    title: 'Reorder queued stops',
+    description: 'Supply every queued stop id in the desired order and copy plan from world.einsatz.unit.options into expectedPlan. The active stop continues. A delivery must follow its pickup. Example: `{unitId:"unit:a4",expectedPlan:[{id:"step-1",state:"active"},{id:"step-2",state:"queued"},{id:"step-3",state:"queued"}],stopIds:["step-3","step-2"]}`.',
+    searchTerms: ['reorder', 'move stop', 'queue', 'plan'],
     idempotent: false,
     targets: input => objectIds(input.unitId),
   }),

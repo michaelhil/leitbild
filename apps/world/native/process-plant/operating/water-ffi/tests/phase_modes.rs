@@ -404,6 +404,78 @@ fn phase_modes_block_replay_matches_the_colored_assembly() {
     );
 }
 
+/// R4-ROOT-DRIVES: with HOUSING.NECK flashed and L1 active, every L1 root
+/// value (a release root reads its path's face drive) has the same bits after
+/// an evaluation that stops once the drives are current as after a whole one,
+/// at rest and with every impulse moving, and again after an evaluation of
+/// the other state.
+#[test]
+#[ignore = "S3 kernel check, NOT EVIDENCE: needs a joined packet (LD01_PHASE_PACKET), the wiki, the seam-fixed IF97 build"]
+fn release_roots_read_the_same_drives_when_the_evaluation_stops_there() {
+    let i = inputs();
+    let (mut net, prepared) = prepared(&i);
+    let mut y = prepared.y.clone();
+    let neck = i.regions.iter().position(|r| r == "HOUSING.NECK").unwrap();
+    let [b, m0, e0, m1, e1, _] = slots(&net, neck);
+    let sc = net.scales().to_vec();
+    let p = y[b] * sc[b];
+    let sat = If97.saturation_caloric(s(p)).expect("saturation");
+    let (rf, rg) = (sat.liquid.density.value, sat.vapor.density.value);
+    let (uf, ug) = (
+        sat.liquid.enthalpy.value - p / rf,
+        sat.vapor.enthalpy.value - p / rg,
+    );
+    let v = net.volume(neck);
+    let mg = 2.;
+    let ml = (v - mg / rg) * rf;
+    y[m1] = 0.;
+    y[e1] = 0.;
+    net.birth(neck, &mut y).expect("birth");
+    y[m0] = (ml + mg) / sc[m0];
+    y[e0] = (ml * uf + mg * ug) / sc[e0];
+    y[m1] = mg / sc[m1];
+    y[e1] = mg * ug / sc[e1];
+    let yp = vec![0.; y.len()];
+    net.evaluate(0., &y, &yp, None, 0., None)
+        .expect("evaluation at the flashed state");
+    let presence = net.stock_presence(&y);
+    net.activate_unilateral(&presence).expect("L1");
+    let mut moving = y.clone();
+    for (k, l) in net.face_layout.clone().iter().enumerate() {
+        moving[l.index] = if moving[l.index] != 0. {
+            moving[l.index] * 1.01
+        } else {
+            1e-3 * if k % 2 == 0 { 1. } else { -1. } / sc[l.index]
+        };
+    }
+    let roots = net.unilateral_roots();
+    let releases = roots
+        .iter()
+        .filter(|r| matches!(r, network::phase_events::Root::Release(_)))
+        .count();
+    assert!(releases > 0, "release roots armed");
+    let values = |net: &mut Network<If97>, state: &[f64], until: network::Until| {
+        net.evaluate_joined_until(0., state, &yp, None, 0., None, None, &[], until)
+            .expect("evaluation");
+        let mut v = vec![0.; roots.len()];
+        net.unilateral_root_values(state, &roots, &mut v)
+            .expect("L1 root values");
+        v.iter().map(|x| x.to_bits()).collect::<Vec<u64>>()
+    };
+    for (name, state, other) in [("rest", &y, &moving), ("moving", &moving, &y)] {
+        let whole = values(&mut net, state, network::Until::Rows);
+        let drives = values(&mut net, state, network::Until::Drives);
+        assert_eq!(drives, whole, "{name}");
+        values(&mut net, other, network::Until::Rows);
+        let again = values(&mut net, state, network::Until::Drives);
+        assert_eq!(again, whole, "{name}, after the other state");
+    }
+    println!(
+        "{}",
+        json!({"l1_roots": roots.len(), "release_roots": releases})
+    );
+}
+
 /// R4-MOUTH-INERTIA: with SURGE flashed, bubbles in zone A and L1 active, the
 /// surge mouth's vapor path is free and its inertia reads the port view, so
 /// the PZR columns reach its `Q`. The block replay against the colored

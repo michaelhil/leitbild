@@ -127,6 +127,7 @@
     readonly focusMap: (target: MapFocusTarget) => void
     readonly onPresentation?: (sequence: number, applied: boolean, reason?: string) => void
     readonly close: () => void
+    readonly planningDemoHref?: string | null
   }
 
   let {
@@ -145,6 +146,7 @@
     focusMap,
     onPresentation = () => {},
     close,
+    planningDemoHref = null,
   }: Props = $props()
 
   type DefaultView =
@@ -564,7 +566,7 @@
     if (next.sequence === appliedRequest) return
     appliedRequest = next.sequence
     if (next.target.kind === 'subject') {
-      void openDefaultAfter(next.target.subject, { runId: next.target.runId, title: next.target.title })
+      void openDefaultAfter(next.target.subject, { runId: next.target.runId, ...(next.target.title === undefined ? {} : { title: next.target.title }) })
       if (next.focus) { raised = true; void focusWindow() }
       return
     }
@@ -840,6 +842,7 @@
     onkeydown={windowKeydown}
   >
     <header class="display-window-header">
+      {#if planningDemoHref}<a class="display-window-back" href={planningDemoHref} target="_top" aria-label="Back to planning demo">← Planning</a>{/if}
       <!-- ←/→/Home/End step while focus is on any navigation control. -->
       <!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
       <div class="display-window-nav" role="group" aria-label="Displays" onkeydown={navigationKeydown}>

@@ -7,13 +7,14 @@
   // The plan's decision context in three lines, and the one action as a toolbar: the method choice, "days
   // only" as a what-if, Generate, and Cancel while it runs. The plan's size is one short line; how the
   // certified size was measured opens on request.
-  let { context, title, size, generating = false, busy = false, onGenerate, onCancel }: {
+  let { context, title, size, generating = false, busy = false, needsWorld = false, onGenerate, onCancel }: {
     context: Context
     title: string
     /** "Plan size: 33 jobs · certified up to 33, …" and the measurement behind the certified size. */
     size: { line: string; evidence: string } | null
     generating?: boolean
     busy?: boolean
+    needsWorld?: boolean
     onGenerate: (input: GenerateInput) => void
     onCancel: () => void
   } = $props()
@@ -54,7 +55,10 @@
       {#if generating}
         <button type="button" onclick={onCancel}>Cancel</button><span class="hint" aria-live="polite">Generating… Cancel keeps the best plan found so far.</span>
       {:else}
-        <button type="button" class="primary" disabled={busy} onclick={generate}>Generate</button>
+        <button type="button" class="primary" disabled={busy || needsWorld} aria-describedby={needsWorld ? 'generate-needs-world' : undefined} onclick={generate}>Generate</button>
+        {#if needsWorld}
+          <span class="hint" id="generate-needs-world">{settings.run === null ? 'Link the simulation and read its values first.' : 'Read the World values first.'}</span>
+        {/if}
       {/if}
     </div>
   </div>

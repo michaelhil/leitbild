@@ -19,6 +19,9 @@
 //!   exchanges. Every exchange's reply payload (time, counts, the
 //!   observation frame and its events) and the final snapshots are
 //!   byte-equal.
+//! - **AUTO moving.** With `LD01_UNIT_HOST_AUTO_MOVING=1` the copy point must
+//!   stand inside a rod motion (the snapshot's in-force AUTO rate is not zero).
+//! - **Bank HOLD.** `the_bank_hold_stops_auto_and_its_release_returns_it`.
 //! - **Named end (R4-ENDED).** `a_named_end_holds_its_state_and_refuses_by_name`
 //!   drives the stuck-open relief to the unit's named end: the exchange
 //!   replies with `ended`, ADVANCE and COMMAND then refuse by name, SNAPSHOT
@@ -200,6 +203,13 @@ fn advance(host: &mut Host, walls: &mut AdvanceWalls, t1: f64) -> (Vec<u8>, f64)
     (r.payload, r.cpu_s)
 }
 
+/// A snapshot real (`ic::acquisition::snapshot_real`'s 16 hex digits) or null.
+fn bits_of_real(v: &Value) -> f64 {
+    v.as_str().map_or(0., |s| {
+        f64::from_bits(u64::from_str_radix(s, 16).expect("a real's bits"))
+    })
+}
+
 fn bits_of(v: &Value) -> f64 {
     f64::from_bits(u64::from_str_radix(v.as_str().expect("bits"), 16).expect("hex"))
 }
@@ -245,7 +255,9 @@ fn a_restored_copy_continues_bitwise_and_the_protocol_refuses_explicitly() {
         "state": env("LD01_S3_STATE"),
         "solver": {"weights": "stock", "first_step": "declared", "stepping": stepping, "water": water,
             // R4-NUC-SOURCE-ATOL: LD01_S3_SOURCE_ATOL (unset: derived), a required LOAD key.
-            "source_atol": std::env::var("LD01_S3_SOURCE_ATOL").unwrap_or_else(|_| "derived".into())},
+            "source_atol": std::env::var("LD01_S3_SOURCE_ATOL").unwrap_or_else(|_| "derived".into()),
+            // R4-GRID: a required LOAD key, null with no Grid connected.
+            "grid_exchange_s": null},
     });
     let started = Instant::now();
     let mut refusals = serde_json::Map::new();
@@ -402,6 +414,17 @@ fn a_restored_copy_continues_bitwise_and_the_protocol_refuses_explicitly() {
     let copy_cpu = copy.cpu_s;
     let copy = copy.payload;
     std::fs::write(receipts.join("snapshot-tc.json"), &copy).unwrap();
+    // The required restore with AUTO moving: the copy point lies inside a
+    // rod motion, so the client's rate in force is part of what is copied.
+    let auto_rate =
+        serde_json::from_slice::<Value>(&copy).unwrap()["clients"]["rod_control"]["in_force_m_s"]
+            .clone();
+    if std::env::var("LD01_UNIT_HOST_AUTO_MOVING").as_deref() == Ok("1") {
+        assert!(
+            bits_of_real(&auto_rate) != 0.,
+            "the copy point is not inside a rod motion: {auto_rate}"
+        );
+    }
     // A refusal after the copy point (the source's own failure) ends both
     // runs at that exchange: the copy must refuse there identically.
     let mut a_frames = Vec::new();
@@ -500,6 +523,7 @@ fn a_restored_copy_continues_bitwise_and_the_protocol_refuses_explicitly() {
         "stepping": if free { "free" } else { "frame-stops" },
         "water": water,
         "copy_integrator_s": copy_integrator, "copy_mid_step": copy_integrator > copy_t,
+        "auto_rate_at_copy": auto_rate,
         "exchanges_compared": a_frames.len(), "frames_equal": first_difference.is_none(),
         "first_difference": first_difference,
         "final_snapshots_equal": snapshots_equal,
@@ -519,7 +543,9 @@ fn a_restored_copy_continues_bitwise_and_the_protocol_refuses_explicitly() {
     .unwrap();
     std::fs::write(receipts.join("snapshot-a-final.json"), &a_final).unwrap();
     std::fs::write(receipts.join("snapshot-b-final.json"), &b_final).unwrap();
-    if free {
+    // AUTO moving: every frame is an exact stop (the rate decided one frame
+    // earlier changes there), so the copy point is the integrator's own stop.
+    if free && std::env::var("LD01_UNIT_HOST_AUTO_MOVING").as_deref() != Ok("1") {
         assert!(
             copy_integrator > copy_t,
             "the copy point {copy_t} s is not inside a free step (integrator at {copy_integrator} s)"
@@ -557,7 +583,9 @@ fn default_load() -> Value {
         },
         "state": env("LD01_S3_STATE"),
         "solver": {"weights": "stock", "first_step": "declared", "stepping": "free", "water": water,
-            "source_atol": std::env::var("LD01_S3_SOURCE_ATOL").unwrap_or_else(|_| "derived".into())},
+            "source_atol": std::env::var("LD01_S3_SOURCE_ATOL").unwrap_or_else(|_| "derived".into()),
+            // R4-GRID: a required LOAD key, null with no Grid connected.
+            "grid_exchange_s": null},
     })
 }
 
@@ -631,6 +659,196 @@ fn a_named_end_holds_its_state_and_refuses_by_name() {
     b.close();
 }
 
+/// X4.4 on the unit: the operator's bank HOLD stops AUTO's motion at the
+/// next frame and its release returns the rods to AUTO; with the drive
+/// disengaged a HOLD is a result, not a refusal. A unit whose IC section
+/// declares no rod control refuses both by name. The drive is the stuck-open
+/// relief, whose falling pressure moves the rods before the trip.
+#[test]
+#[ignore = "NOT-EVIDENCE gate: ld01-unit, the bank HOLD on a moving AUTO (seconds)"]
+fn the_bank_hold_stops_auto_and_its_release_returns_it() {
+    let receipts = std::path::PathBuf::from(env("LD01_UNIT_HOST_RECEIPTS"));
+    std::fs::create_dir_all(&receipts).expect("receipt directory");
+    let load = serde_json::to_vec(&default_load()).unwrap();
+    let mut a = Host::spawn(&receipts.join("hold.stderr.log"));
+    let mut walls = AdvanceWalls::default();
+    let loaded = a.json(LOAD, &load);
+    let t0 = bits_of(&loaded["t_bits"]);
+    let period = loaded["frame_s"].as_f64().expect("frame_s");
+    let k0 = (t0 / period).round() as u64;
+    let instant = |k: u64| (k0 + k) as f64 * period;
+    let channels = a.json(CHANNELS, &[]);
+    let slot = |id: &str| {
+        channels
+            .as_array()
+            .unwrap()
+            .iter()
+            .position(|c| c["id"] == id)
+    };
+    let hold_kind =
+        |kind: &str, t: f64| serde_json::to_vec(&json!({"kind": kind, "t_apply": t})).unwrap();
+    let Some(held) = slot("LD01.CORE.BANK.HOLD") else {
+        let cause = a.refused(COMMAND, &hold_kind("BankHold", t0));
+        assert!(cause.contains("declares no rod control"), "{cause}");
+        a.close();
+        return;
+    };
+    let travel = slot("LD01.ROD.TRAVEL.MEAN").expect("the mean travel channel");
+    let relief = json!({"kind": "ReliefStuckOpen", "t_apply": instant(1)});
+    a.json(COMMAND, &serde_json::to_vec(&relief).unwrap());
+    let mut frames = Vec::new();
+    let mut at = |a: &mut Host, k: u64| {
+        let (p, _) = advance(a, &mut walls, instant(k));
+        let f = frame(&p);
+        frames.push((k, f.values[travel], f.values[held]));
+        f
+    };
+    for k in 1..=176 {
+        at(&mut a, k);
+    }
+    let last = at(&mut a, 177);
+    // AUTO is moving the bank, and a HOLD is accepted.
+    assert_eq!(last.values[held], 0.);
+    let reply = a.json(COMMAND, &hold_kind("BankHold", last.t));
+    assert_eq!(reply["accepted"], json!(true), "{reply}");
+    // In force again: a result, not a refusal.
+    let again = a.json(COMMAND, &hold_kind("BankHold", last.t));
+    assert_eq!(again["accepted"], json!(false), "{again}");
+    // Acting at the next frame: from there the bank stands.
+    let acting = at(&mut a, 178);
+    assert_eq!(acting.values[held], 1.);
+    let stood = at(&mut a, 179).values[travel];
+    // The bank stands: the drive's rate is zero from the frame the HOLD acts
+    // at, and the only motion left is the integrator's BDF memory of the
+    // rate it was moving at (a class-S change has no restart), about 2e-5 m
+    // over these five frames against the 1.3 mm a second AUTO was moving.
+    for k in 180..=184 {
+        let f = at(&mut a, k);
+        assert!(
+            (f.values[travel] - stood).abs() < 1e-4,
+            "the bank moved under HOLD at exchange {k}: {} against {stood}",
+            f.values[travel]
+        );
+    }
+    let last = at(&mut a, 185);
+    let reply = a.json(COMMAND, &hold_kind("BankAuto", last.t));
+    assert_eq!(reply["accepted"], json!(true), "{reply}");
+    assert_eq!(at(&mut a, 186).values[held], 0.);
+    // AUTO acts one frame after it decides, then moves the bank again.
+    let moved = (187..=190).any(|k| (at(&mut a, k).values[travel] - stood).abs() >= 3e-4);
+    assert!(moved, "the bank did not move after the release to AUTO");
+    // After the trip the drive is gone: HOLD is refused as a result.
+    let tripped = (191..=300).find_map(|k| {
+        let f = at(&mut a, k);
+        (f.values[travel] < stood - 0.05).then_some(f.t)
+    });
+    let t_trip = tripped.expect("the rods fell");
+    // Stand on the next exchange so the command is at the unit's time.
+    let k = (t_trip / period).round() as u64 - k0 + 20;
+    let last = at(&mut a, k);
+    let after = a.json(COMMAND, &hold_kind("BankHold", last.t));
+    assert_eq!(after["accepted"], json!(false), "{after}");
+    std::fs::write(
+        receipts.join("bank-hold.json"),
+        serde_json::to_vec_pretty(&json!({"frames": frames})).unwrap(),
+    )
+    .unwrap();
+    a.close();
+}
+
+/// Step 4 of the live composition (lead, 8 November): the unit's half of the
+/// unit-against-harness gate. `LD01_UNIT_HOST_SCRIPT` names a JSON script,
+/// `{"span_s", "grid_exchange_s", "channels": [ids], "commands":
+/// [{"after_s", "apply": "prospective"|"at_frame", "command": {..}}]}`; the
+/// unit runs it in 0.1 s exchanges and writes `unit-series.json`: per frame
+/// the time and each named channel, the named end if one comes.
+#[test]
+#[ignore = "NOT-EVIDENCE gate: ld01-unit, one scripted case for the harness comparison (minutes)"]
+fn the_unit_records_a_command_script() {
+    let receipts = std::path::PathBuf::from(env("LD01_UNIT_HOST_RECEIPTS"));
+    std::fs::create_dir_all(&receipts).expect("receipt directory");
+    let script: Value =
+        serde_json::from_slice(&std::fs::read(env("LD01_UNIT_HOST_SCRIPT")).expect("the script"))
+            .expect("script json");
+    let mut load = default_load();
+    load["solver"]["grid_exchange_s"] = script["grid_exchange_s"].clone();
+    let mut a = Host::spawn(&receipts.join("script.stderr.log"));
+    let loaded = a.json(LOAD, &serde_json::to_vec(&load).unwrap());
+    let t0 = bits_of(&loaded["t_bits"]);
+    let period = loaded["frame_s"].as_f64().expect("frame_s");
+    let k0 = (t0 / period).round() as u64;
+    let instant = |k: u64| (k0 + k) as f64 * period;
+    let channels = a.json(CHANNELS, &[]);
+    let names: Vec<String> = script["channels"]
+        .as_array()
+        .expect("channels")
+        .iter()
+        .map(|c| c.as_str().expect("a channel id").to_string())
+        .collect();
+    let slots: Vec<usize> = names
+        .iter()
+        .map(|id| {
+            channels
+                .as_array()
+                .unwrap()
+                .iter()
+                .position(|c| c["id"] == *id)
+                .unwrap_or_else(|| panic!("no channel {id}"))
+        })
+        .collect();
+    let commands = script["commands"].as_array().expect("commands").clone();
+    let on = |c: &Value| c["after_s"].as_f64().expect("after_s");
+    // Prospective commands go in now, at their own instants.
+    for c in commands.iter().filter(|c| c["apply"] == "prospective") {
+        let mut cmd = c["command"].clone();
+        cmd["t_apply"] = json!(t0 + on(c));
+        a.json(COMMAND, &serde_json::to_vec(&cmd).unwrap());
+    }
+    let at_frame: Vec<(u64, Value)> = commands
+        .iter()
+        .filter(|c| c["apply"] == "at_frame")
+        .map(|c| ((on(c) / period).round() as u64, c["command"].clone()))
+        .collect();
+    let span = script["span_s"].as_f64().expect("span_s");
+    let last = (span / period).round() as u64;
+    let mut walls = AdvanceWalls::default();
+    let mut frames = Vec::new();
+    let mut ended = Value::Null;
+    let mut replies = Vec::new();
+    for (_, command) in at_frame.iter().filter(|(k, _)| *k == 0) {
+        let mut cmd = command.clone();
+        cmd["t_apply"] = json!(t0);
+        replies.push(a.json(COMMAND, &serde_json::to_vec(&cmd).unwrap()));
+    }
+    for k in 1..=last {
+        let (p, _) = advance(&mut a, &mut walls, instant(k));
+        let f = frame(&p);
+        let mut row = vec![f.t];
+        row.extend(slots.iter().map(|s| f.values[*s]));
+        frames.push(row);
+        if !f.events["ended"].is_null() {
+            ended = f.events["ended"].clone();
+            break;
+        }
+        for (_, command) in at_frame.iter().filter(|(at, _)| *at == k) {
+            let mut cmd = command.clone();
+            cmd["t_apply"] = json!(f.t);
+            replies.push(a.json(COMMAND, &serde_json::to_vec(&cmd).unwrap()));
+        }
+    }
+    let status = a.json(STATUS, &[]);
+    std::fs::write(
+        receipts.join("unit-series.json"),
+        serde_json::to_vec(&json!({"t0": t0, "frame_s": period, "channels": names,
+            "frames": frames, "ended": ended, "replies": replies, "failed": status["failed"],
+            "advance_wall_s": walls.receipt((1. / period).round() as usize)}))
+        .unwrap(),
+    )
+    .unwrap();
+    assert_eq!(status["failed"], Value::Null, "{status}");
+    a.close();
+}
+
 /// R4-TIME-STOPPED on the real unit: the relief fails open from the saved
 /// state, the level reaches the spray port and the model refuses that state.
 /// The unit stops by name, at once, and a host gets the refusal with it.
@@ -653,7 +871,9 @@ fn a_refused_state_stops_the_unit_by_name() {
         "state": env("LD01_S3_STATE"),
         "solver": {"weights": "stock", "first_step": "declared", "stepping": "free",
             "water": std::env::var("LD01_UNIT_HOST_WATER").unwrap_or_else(|_| "sbtl".into()),
-            "source_atol": std::env::var("LD01_S3_SOURCE_ATOL").unwrap_or_else(|_| "derived".into())},
+            "source_atol": std::env::var("LD01_S3_SOURCE_ATOL").unwrap_or_else(|_| "derived".into()),
+            // R4-GRID: a required LOAD key, null with no Grid connected.
+            "grid_exchange_s": null},
     });
     std::fs::create_dir_all(&receipts).expect("receipt directory");
     let mut host = Host::spawn(&receipts.join("time-stopped.stderr.log"));
@@ -827,4 +1047,312 @@ fn the_relief_isolation_valve_answers_to_its_supply_on_the_real_unit() {
     let (back, _) = advance(&mut a, &mut walls, instant(60));
     assert_eq!(frame(&back).values[position], 100., "open again");
     a.close();
+}
+
+/// R4-GRID: one exchange's boundary from the scripted trace (the Grid Pack's
+/// own port values, sampled per second; `LD01_UNIT_HOST_GRID_TRACE`).
+fn boundary_at(trace: &Value, i: usize, t: f64, until: f64) -> Value {
+    let points = trace["points"].as_array().expect("trace points");
+    let p = &points[i.min(points.len() - 1)];
+    json!({"kind": "GridBoundary", "t_apply": t, "until": until, "energized": true,
+        "voltage_pu": p["voltage_pu"], "frequency_hz": p["frequency_hz"],
+        "phase_error_rad": 0., "frequency_rate_hz_s": p["frequency_rate_hz_s"]})
+}
+
+fn counts_of(host: &mut Host) -> (u64, u64) {
+    let status = host.json(STATUS, &[]);
+    (
+        status["counts"]["r_instants"].as_u64().expect("r_instants"),
+        status["counts"]["s_instants"].as_u64().expect("s_instants"),
+    )
+}
+
+/// R4-GRID (owner 8 Nov): a unit a Grid connects, its exchange grid, its
+/// class-S boundary (voltage included) and load request, its copy made
+/// mid-window between exchanges, and the refusals the Grid can reach.
+#[test]
+#[ignore = "NOT-EVIDENCE gate: ld01-unit processes, a connected unit tripped and copied (minutes)"]
+fn a_connected_unit_exchanges_at_exact_stops_and_its_copy_continues_bitwise() {
+    let receipts = std::path::PathBuf::from(env("LD01_UNIT_HOST_RECEIPTS"));
+    std::fs::create_dir_all(&receipts).expect("receipt directory");
+    let trace: Value =
+        serde_json::from_slice(&std::fs::read(env("LD01_UNIT_HOST_GRID_TRACE")).expect("trace"))
+            .expect("trace JSON");
+    let water = std::env::var("LD01_UNIT_HOST_WATER").unwrap_or_else(|_| "sbtl".into());
+    let load = |exchange: Value| {
+        json!({
+            "inputs": {
+                "packet": env("LD01_OPERATING_HOT_SPINE_PACKET"),
+                "wiki_root": env("LD01_WIKI_ROOT"),
+                "wiki_commit": env("LD01_WIKI_COMMIT"),
+                "wiki_repository": env("LD01_WIKI_REPOSITORY"),
+                "ic": env("LD01_IC_SECTION"),
+                "pzr_control": env("LD01_PZR_CONTROL_SECTION"),
+                "pzr_control_wiki": env("LD01_PZR_CONTROL_WIKI"),
+                "elec": env("ELEC_PACKET"),
+            },
+            "state": env("LD01_S3_STATE"),
+            "solver": {"weights": "stock", "first_step": "declared", "stepping": "free", "water": water,
+                "source_atol": std::env::var("LD01_S3_SOURCE_ATOL").unwrap_or_else(|_| "derived".into()),
+                "grid_exchange_s": exchange},
+        })
+    };
+    let mut refusals = serde_json::Map::new();
+
+    // A unit no Grid connects takes no boundary, and a bad interval no LOAD.
+    let mut plain = Host::spawn(&receipts.join("plain.stderr.log"));
+    let plain_loaded = plain.json(LOAD, &serde_json::to_vec(&load(Value::Null)).unwrap());
+    let cause = plain.refused(
+        COMMAND,
+        &serde_json::to_vec(
+            &json!({"kind": "GridBoundary", "t_apply": plain_loaded["t"],
+            "until": plain_loaded["t"], "energized": false, "voltage_pu": 0., "frequency_hz": 0.,
+            "phase_error_rad": 0., "frequency_rate_hz_s": 0.}),
+        )
+        .unwrap(),
+    );
+    assert!(cause.contains("no Grid exchange"), "{cause}");
+    refusals.insert("no exchange".into(), json!(cause));
+    plain.close();
+    let mut bad = Host::spawn(&receipts.join("bad.stderr.log"));
+    let cause = bad.refused(LOAD, &serde_json::to_vec(&load(json!(0.25))).unwrap());
+    assert!(cause.contains("whole number"), "{cause}");
+    refusals.insert("a fractional interval".into(), json!(cause));
+    bad.close();
+
+    let mut a = Host::spawn(&receipts.join("grid-a.stderr.log"));
+    let loaded = a.json(LOAD, &serde_json::to_vec(&load(json!(1.0))).unwrap());
+    let t0 = bits_of(&loaded["t_bits"]);
+    let period = loaded["frame_s"].as_f64().expect("frame_s");
+    let k0 = (t0 / period).round() as u64;
+    let instant = |k: u64| k as f64 * period;
+    let channels = a.json(CHANNELS, &[]);
+    let index = |id: &str| {
+        channels
+            .as_array()
+            .unwrap()
+            .iter()
+            .position(|c| c["id"] == id)
+            .unwrap_or_else(|| panic!("no channel {id}"))
+    };
+    let (request, active, frequency, voltage) = (
+        index("LD01.TG.LOAD.REQUEST"),
+        index("LD01.TG.LOAD.ACTIVE"),
+        index("LD01.GRID.FREQUENCY"),
+        index("LD01.GRID.VOLTAGE"),
+    );
+    let net = index("LD01.GRID.NET_EXPORT");
+    // Exchange frames: the unit's first whole second after its start, then each second.
+    let first = (k0 / 10 + 1) * 10;
+    let exchange = |e: u64| first + 10 * e;
+    let mut walls = AdvanceWalls::default();
+
+    // The first exchange, off the grid and past it.
+    let off = serde_json::to_vec(&boundary_at(&trace, 0, t0 + period, instant(first))).unwrap();
+    assert!(
+        a.refused(COMMAND, &off)
+            .contains("decided at the unit's time")
+    );
+    let cross = a.refused(ADVANCE, &instant(exchange(0) + 1).to_le_bytes());
+    assert!(cross.contains("crosses the Grid exchange"), "{cross}");
+    refusals.insert("ADVANCE across an exchange".into(), json!(cross));
+    let mut k = k0;
+    while k < exchange(0) {
+        k += 1;
+        advance(&mut a, &mut walls, instant(k));
+    }
+    let status = a.json(STATUS, &[]);
+    assert_eq!(
+        bits_of(&status["integrator_t_bits"]),
+        instant(exchange(0)),
+        "the integrator stands at the exchange"
+    );
+
+    // A wrong `until` is refused and changes nothing.
+    let wrong = boundary_at(&trace, 0, instant(exchange(0)), instant(exchange(0) + 5));
+    let cause = a.refused(COMMAND, &serde_json::to_vec(&wrong).unwrap());
+    assert!(cause.contains("not the next exchange"), "{cause}");
+    refusals.insert("until not the next exchange".into(), json!(cause));
+
+    // The drive from a copy point on: (exchange i, load request?, then the frames).
+    let drive = |host: &mut Host,
+                 from_frame: u64,
+                 walls: &mut AdvanceWalls,
+                 log: &mut Vec<Vec<u8>>| {
+        let mut f = from_frame;
+        let mut saw_voltage_step = false;
+        let mut last_v = f64::NAN;
+        let mut last_request = None;
+        for e in 0u64..=12 {
+            let at = exchange(e);
+            if f < at {
+                while f < at {
+                    f += 1;
+                    let (p, _) = advance(host, walls, instant(f));
+                    log.push(p);
+                }
+            } else if f > at {
+                continue;
+            }
+            let t = instant(at);
+            let v = trace["points"][e as usize]["voltage_pu"].as_f64().unwrap();
+            let (r0, s0) = counts_of(host);
+            match e {
+                // The bus dead, after the trip: class R, once.
+                10 => {
+                    let dead = json!({"kind": "GridBoundary", "t_apply": t, "until": instant(at + 10),
+                        "energized": false, "voltage_pu": 0., "frequency_hz": 0.,
+                        "phase_error_rad": 0., "frequency_rate_hz_s": 0.});
+                    let r = host.ok(COMMAND, &serde_json::to_vec(&dead).unwrap());
+                    let reply: Value = serde_json::from_slice(&r.payload).unwrap();
+                    assert_eq!(reply["decided"], json!("R: offsite loss"), "{reply}");
+                    log.push(r.payload);
+                }
+                // Energized after dead: refused by name, the unit goes on.
+                11 | 12 => {
+                    let back = boundary_at(&trace, e as usize, t, instant(at + 10));
+                    let cause = host.refused(COMMAND, &serde_json::to_vec(&back).unwrap());
+                    assert!(cause.contains("restoration"), "{cause}");
+                    log.push(cause.into_bytes());
+                    let status = host.json(STATUS, &[]);
+                    assert!(status["failed"].is_null(), "{status}");
+                }
+                _ => {
+                    let body = boundary_at(&trace, e as usize, t, instant(at + 10));
+                    let r = host.ok(COMMAND, &serde_json::to_vec(&body).unwrap());
+                    let reply: Value = serde_json::from_slice(&r.payload).unwrap();
+                    log.push(r.payload);
+                    let (r1, s1) = counts_of(host);
+                    if e == 6 || e == 8 {
+                        // The Grid's frequency leaves and re-enters the
+                        // qualification band: class R at the driver's instant.
+                        assert_eq!(
+                            reply["decided"],
+                            json!("R: the auxiliary sources' band"),
+                            "{reply}"
+                        );
+                        assert_eq!(r1, r0 + 1, "exchange {e}: one restart");
+                    } else if e == 7 || e == 9 {
+                        // The breaker is open and the band's verdict stands.
+                        assert_eq!(
+                            reply["decided"],
+                            json!("none (the breaker is open)"),
+                            "{reply}"
+                        );
+                        assert_eq!((r1, s1), (r0, s0), "no event with the breaker open");
+                    } else if e < 6 {
+                        // Exact stop, class S, no restart.
+                        assert_eq!(r1, r0, "exchange {e}: no restart: {reply}");
+                        if reply["decided"] == json!("S: held boundary") {
+                            assert_eq!(s1, s0 + 1, "exchange {e}: one class S instant");
+                            if last_v.is_finite() && v != last_v {
+                                saw_voltage_step = true;
+                            }
+                        }
+                    }
+                }
+            }
+            last_v = v;
+            // The load request: one accepted before the trip, one refused as
+            // a result after it.
+            if e == 3 || e == 9 {
+                let in_force = last_request.unwrap_or(0.);
+                let body = json!({"kind": "LoadRequest", "t_apply": t,
+                    "request_w": if e == 3 { 1.0e9 } else { in_force }});
+                let r = host.ok(COMMAND, &serde_json::to_vec(&body).unwrap());
+                let reply: Value = serde_json::from_slice(&r.payload).unwrap();
+                log.push(r.payload);
+                if e == 3 {
+                    assert_eq!(reply["accepted"], json!(true), "{reply}");
+                    assert_eq!(reply["decided"], json!("S: power request"), "{reply}");
+                    last_request = Some(1.0e9);
+                } else {
+                    assert_eq!(reply["accepted"], json!(false), "{reply}");
+                }
+            }
+            // The turbine trip half a second after exchange 5.
+            if e == 5 {
+                while f < at + 5 {
+                    f += 1;
+                    let (p, _) = advance(host, walls, instant(f));
+                    log.push(p);
+                }
+                let trip = json!({"kind": "TurbineTripAcquired", "t_apply": instant(f)});
+                let r = host.ok(COMMAND, &serde_json::to_vec(&trip).unwrap());
+                log.push(r.payload);
+            }
+        }
+        // Two seconds on after the last exchange.
+        for _ in 0..20 {
+            f += 1;
+            let (p, _) = advance(host, walls, instant(f));
+            log.push(p);
+        }
+        (f, saw_voltage_step)
+    };
+
+    // Mid-window: the copy point three frames after an exchange, breaker closed.
+    let copy_frame = exchange(0) + 3;
+    let mut f = exchange(0);
+    let first_body = boundary_at(&trace, 0, instant(f), instant(f + 10));
+    let first_reply = a.json(COMMAND, &serde_json::to_vec(&first_body).unwrap());
+    assert_eq!(first_reply["kind"], json!("GridBoundary"));
+    while f < copy_frame {
+        f += 1;
+        advance(&mut a, &mut walls, instant(f));
+    }
+    let snapshot = a.ok(SNAPSHOT, &[]).payload;
+    let mut log_a = Vec::new();
+    let (end_a, stepped) = drive(&mut a, copy_frame, &mut walls, &mut log_a);
+    assert!(
+        stepped,
+        "the trace changes the voltage across a class S exchange"
+    );
+    let snap_a = a.ok(SNAPSHOT, &[]).payload;
+
+    let mut b = Host::spawn(&receipts.join("grid-b.stderr.log"));
+    b.ok(RESTORE, &snapshot);
+    let mut log_b = Vec::new();
+    let mut walls_b = AdvanceWalls::default();
+    let (end_b, _) = drive(&mut b, copy_frame, &mut walls_b, &mut log_b);
+    assert_eq!(end_a, end_b);
+    let snap_b = b.ok(SNAPSHOT, &[]).payload;
+    assert_eq!(log_a.len(), log_b.len(), "the two runs' request counts");
+    let differing: Vec<usize> = log_a
+        .iter()
+        .zip(&log_b)
+        .enumerate()
+        .filter(|(_, (x, y))| x != y)
+        .map(|(i, _)| i)
+        .collect();
+    assert!(differing.is_empty(), "replies differ at {differing:?}");
+    assert_eq!(snap_a, snap_b, "the final snapshots");
+
+    // Reading the channels on the source's last exchange reply.
+    let last = frame(log_a.iter().rev().find(|p| p.len() > 64).expect("a frame"));
+    let in_force = last.values[request];
+    assert_eq!(
+        in_force.to_bits(),
+        1.0e9_f64.to_bits(),
+        "the request in force"
+    );
+    assert_eq!(
+        last.values[active], 0.,
+        "the trip took the governor out of LOAD"
+    );
+    assert!(last.values[frequency] > 0., "a held frequency");
+    assert!(last.values[voltage] > 0., "a held voltage");
+    assert!(last.values[net].is_finite(), "a net export reading");
+    std::fs::write(
+        receipts.join("grid-receipt.json"),
+        serde_json::to_vec_pretty(&json!({
+            "copy_frame": copy_frame, "end_frame": end_a, "requests": log_a.len(),
+            "advance_walls": walls.receipt(10), "refusals": refusals,
+            "snapshot_bytes": snap_a.len(),
+        }))
+        .unwrap(),
+    )
+    .expect("receipt");
+    a.close();
+    b.close();
 }

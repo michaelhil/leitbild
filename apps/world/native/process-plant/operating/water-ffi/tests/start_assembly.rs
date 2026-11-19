@@ -67,7 +67,10 @@ fn a_start_assembly_fills_what_the_full_assembly_fills() {
     )
     .expect("full assembly");
     assert!(full.iter().any(|v| *v != 0.));
-    for columns in [Some(algebraic.as_slice()), None] {
+    // R4-CLIMB-SEAT's limited assembly: the rods' columns.
+    let o = joined.offsets();
+    let rods: Vec<bool> = (0..y.len()).map(|j| (o.rods..o.pzr).contains(&j)).collect();
+    for columns in [Some(algebraic.as_slice()), Some(rods.as_slice()), None] {
         joined
             .evaluate(t0, &y, &zero, None, 0., None)
             .expect("the start's evaluation");
@@ -102,6 +105,74 @@ fn a_start_assembly_fills_what_the_full_assembly_fills() {
             }
         }
     }
+}
+
+/// R4-START-RATE-ONCE's premise: the operator's evaluation keeps no state
+/// between calls. At a saved state the directional evaluation at `(t, y, 0)`
+/// along the state's own `y'` gives the same bits (every row's value and
+/// direction) after a value evaluation at `(y, y')`, after itself and after
+/// an evaluation at another state; so does the value evaluation at `(y, y')`.
+#[test]
+#[ignore = "R4-START-RATE-ONCE zero-time check: requires the joined CVCS packet, a saved state (LD01_S3_STATE), the wiki, the water tables and stock IDA/KLU"]
+fn an_evaluation_keeps_no_state_between_calls() {
+    let water = leitbild_operating_water::WaterMethod::parse(
+        &std::env::var("LD01_S3_WATER").unwrap_or_else(|_| "sbtl".into()),
+    )
+    .unwrap_or_else(|e| panic!("{e}"));
+    leitbild_operating_water::select_water_method(water).unwrap_or_else(|e| panic!("{e}"));
+    let state: Value = serde_json::from_slice(
+        &std::fs::read(std::env::var("LD01_S3_STATE").expect("LD01_S3_STATE")).expect("state"),
+    )
+    .expect("state json");
+    let mut s = leitbild_operating_water::unit::spine::started_full_composition_with_singles(
+        &common::spine(),
+        &[],
+    )
+    .expect("the S2 composition");
+    let joined = &mut s.joined;
+    joined.declare_feed_gate().expect("feed gate");
+    if !state["discrete_state"].is_null() {
+        joined
+            .restore_discrete_state(&state["discrete_state"]["operator"])
+            .expect("discrete state");
+    }
+    let y = from_bits(&state["y_bits"]);
+    let yp = from_bits(&state["yp_bits"]);
+    let t0 = state["t_s"].as_f64().expect("t_s");
+    let zero = vec![0.; y.len()];
+    assert!(yp.iter().any(|v| *v != 0.), "the state's own rates");
+    let bits = |rows: &[leitbild_operating_plant::thermal::Scalar]| -> Vec<(u64, u64)> {
+        rows.iter()
+            .map(|r| (r.value.to_bits(), r.direction.to_bits()))
+            .collect()
+    };
+    let value = joined
+        .evaluate(t0, &y, &yp, None, 0., None)
+        .map(|()| bits(joined.rows()))
+        .expect("value evaluation");
+    let directional = joined
+        .evaluate(t0, &y, &zero, Some(&yp), 0., None)
+        .map(|()| bits(joined.rows()))
+        .expect("directional evaluation");
+    let again = joined
+        .evaluate(t0, &y, &zero, Some(&yp), 0., None)
+        .map(|()| bits(joined.rows()))
+        .expect("the same directional evaluation");
+    assert_eq!(directional, again, "after itself");
+    let other: Vec<f64> = y.iter().map(|v| v * (1. + 1e-9)).collect();
+    joined
+        .evaluate(t0, &other, &zero, None, 0., None)
+        .expect("another state");
+    let after_other = joined
+        .evaluate(t0, &y, &zero, Some(&yp), 0., None)
+        .map(|()| bits(joined.rows()))
+        .expect("directional after another state");
+    assert_eq!(directional, after_other, "after another state");
+    let value_again = joined
+        .evaluate(t0, &y, &yp, None, 0., None)
+        .map(|()| bits(joined.rows()))
+        .expect("value evaluation again");
+    assert_eq!(value, value_again, "the value evaluation");
 }
 
 /// The block patterns (presence as prepared and every read cell with vapor)

@@ -133,14 +133,14 @@ export const moduleReadiness = (workspace: Pick<Workspace, 'modules'>, moduleId:
 export type WorkspaceNotReadyError = Error & {
   readonly code: 'workspace_module_not_ready'
   readonly workspace: Workspace
-  readonly moduleId: RequiredModule
+  readonly moduleId: string
   readonly created: boolean
 }
 
-export const workspaceNotReady = (workspace: Workspace, moduleId: RequiredModule, created: boolean): WorkspaceNotReadyError =>
+export const workspaceNotReady = (workspace: Workspace, moduleId: string, created: boolean): WorkspaceNotReadyError =>
   Object.assign(new Error(created
-    ? `${MODULE_TITLES[moduleId]} could not be prepared in the new Workspace.`
-    : `${MODULE_TITLES[moduleId]} is not ready in ${workspaceLabel(workspace)}.`), {
+    ? `${moduleTitle(moduleId)} could not be prepared in the new Workspace.`
+    : `${moduleTitle(moduleId)} is not ready in ${workspaceLabel(workspace)}.`), {
     code: 'workspace_module_not_ready' as const, workspace, moduleId, created,
   })
 

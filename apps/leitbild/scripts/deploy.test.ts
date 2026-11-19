@@ -10,10 +10,16 @@ import {
   moduleRoutingPreflight,
   caddySnippetPreflight,
   referencedInspectionEntries,
+  artifactTarCommand,
 } from './deploy.ts'
 
 const workspaceRoot = resolve(import.meta.dir, '../../..')
 const productionAppPaths = ['apps/leitbild', 'apps/world', 'apps/agents', 'apps/planning'] as const
+
+test('artifact tar preserves the existing macOS metadata exclusions and uses portable Linux arguments', () => {
+  expect(artifactTarCommand('/tmp/release.tgz', '/tmp/stage', 'darwin')).toEqual(['tar', '--no-mac-metadata', '--no-xattrs', '-czf', '/tmp/release.tgz', '-C', '/tmp/stage', '.'])
+  expect(artifactTarCommand('/tmp/release.tgz', '/tmp/stage', 'linux')).toEqual(['tar', '-czf', '/tmp/release.tgz', '-C', '/tmp/stage', '.'])
+})
 
 test('wiki inspection supplements only tracked referenced files and never overwrites another artifact source', async () => {
   const root = await mkdtemp(resolve(tmpdir(), 'leitbild-inspection-artifact-'))

@@ -129,12 +129,13 @@ const operationalPointFor = (
   const selected = object.id === context.selectedControllerId
   const highlighted = context.highlightedObjectIds.has(object.id)
   const hasNewInfo = presentation.noteworthyUpdates === true && context.hasNewInfo(object)
-  const muted = presentation.muted === true || context.mutedObjectIds.has(object.id)
   const target = context.targeting?.targets.get(object.id) ?? null
-  const targeted = target !== null
+  const targetTone = target?.tone ?? null
+  const dot = presentation.mapMarker === 'dot'
+  const mapMuted = presentation.mapMarker === 'muted' && !selected && targetTone === null
+  const muted = dot || mapMuted || presentation.muted === true || context.mutedObjectIds.has(object.id)
   const targetTag = target?.tag ?? null
   const targetTagAnchor = target?.anchor ?? 'middle'
-  const targetRefused = target?.refused === true
   const dimmed = context.targeting !== null && context.targeting.complete && target === null && object.id !== context.targeting.fromId
   const color = dimmed ? colorWithAlpha(hexToRgba(presentation.color), dimmedAlpha) : muted ? colorWithAlpha(hexToRgba(presentation.color), 132) : hexToRgba(presentation.color)
   const sizePx = presentation.mapIconSizePx ?? symbolSizePx(symbolId)
@@ -150,8 +151,9 @@ const operationalPointFor = (
     highlighted ? 'h' : '',
     hasNewInfo ? 'n' : '',
     muted ? 'm' : '',
+    dot ? 'dot' : '',
     dimmed ? 'd' : '',
-    targeted ? `t=${targetRefused ? 'r' : 'v'}=${targetTagAnchor}=${targetTag ?? ''}` : '',
+    targetTone === null ? '' : `t=${targetTone}=${targetTagAnchor}=${targetTag ?? ''}`,
     label ?? '',
     alert === null ? '' : alert.color.join(','),
   ].join(':')
@@ -169,14 +171,14 @@ const operationalPointFor = (
     highlighted,
     hasNewInfo,
     muted,
-    targeted,
+    ...(dot ? { dot } : {}),
+    targetTone,
     targetTag,
     targetTagAnchor,
-    targetRefused,
     dimmed,
     sizePx,
     rotationDeg: 0,
-    priority: pointPriority(object, presentation),
+    priority: dot ? 0 : pointPriority(object, presentation),
     signature,
   }
 }

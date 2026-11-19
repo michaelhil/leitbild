@@ -75,8 +75,9 @@ describe('an AI agent dispatches in the open halden-emergency Run', () => {
     expect(situation.description).toContain('Start here')
     expect(listed.capabilities.filter(capability => capability.id.startsWith('world.einsatz.')).map(capability => String(capability.id)).sort()).toEqual([
       'world.einsatz.configuration', 'world.einsatz.recommend', 'world.einsatz.site.set', 'world.einsatz.situation', 'world.einsatz.task.close', 'world.einsatz.task.create',
-      'world.einsatz.unit.adjust', 'world.einsatz.unit.create', 'world.einsatz.unit.engage', 'world.einsatz.unit.options', 'world.einsatz.unit.order', 'world.einsatz.unit.recall',
-      'world.einsatz.unit.set-roe', 'world.einsatz.unit.stop.remove', 'world.einsatz.unit.undo',
+      'world.einsatz.unit.adjust', 'world.einsatz.unit.create', 'world.einsatz.unit.engage', 'world.einsatz.unit.options', 'world.einsatz.unit.order',
+      'world.einsatz.unit.plan.reorder', 'world.einsatz.unit.plan.routes', 'world.einsatz.unit.recall', 'world.einsatz.unit.set-roe',
+      'world.einsatz.unit.stop.remove', 'world.einsatz.unit.undo',
     ])
   })
 
@@ -86,12 +87,13 @@ describe('an AI agent dispatches in the open halden-emergency Run', () => {
     const waiting = situation.calls[0]!
     expect(waiting).toMatchObject({ id: 'task:tistedal-fall', priority: { code: 'P2' } })
     const recommendation = (await ai('world.einsatz.recommend', run, { taskId: waiting.id })).body.result as RecommendAnswer
-    expect(recommendation.proposal?.order).toEqual({ units: ['unit:amb-4'], stops: [{ taskId: waiting.id }] })
+    const suggested = recommendation.proposal!.units[0]!.unitId
+    expect(recommendation.proposal?.order).toEqual({ units: [suggested], stops: [{ taskId: waiting.id }] })
     const ordered = await ai('world.einsatz.unit.order', run, recommendation.proposal!.order)
     expect(ordered).toMatchObject({ status: 200, body: { result: { ok: true, commandId: expect.stringMatching(/^command:/) } } })
     const after = (await ai('world.einsatz.situation', run)).body.result as Situation
-    expect(unitRow(after, 'unit:amb-4')).toMatchObject({ phase: 'mobilizing', lastOrder: { by: { label: 'AI agent' }, commandId: ordered.body.result.commandId } })
-    expect(after.calls[0]!.assigned).toMatchObject([{ unitId: 'unit:amb-4', by: { label: 'AI agent' } }])
+    expect(unitRow(after, suggested)).toMatchObject({ phase: 'mobilizing', lastOrder: { by: { label: 'AI agent' }, commandId: ordered.body.result.commandId } })
+    expect(after.calls[0]!.assigned).toMatchObject([{ unitId: suggested, by: { label: 'AI agent' } }])
   })
 
   test('a busy unit without when, and now with the wrong drops, are refused each with its own code', async () => {

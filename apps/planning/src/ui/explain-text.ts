@@ -143,7 +143,9 @@ export const floatText = (float: DatedRow['float'] | { readonly workingHours: nu
   const limit = float.limitedBy === undefined || float.limitedBy.kind === 'window-end'
     ? 'the window end'
     : float.limitedBy.kind === 'due' ? dueText(float.limitedBy.rule, context) : `“${context.names.rule(float.limitedBy.rule)}”`
-  return `Float ${hoursText(float.workingHours)}, limited by: ${limit} (crew availability is not counted)`
+  // Walk V11: margin in planner words, never "Float 0 s".
+  if (float.workingHours <= 0) return 'No margin: any delay here moves the finish.'
+  return `${hoursText(float.workingHours)} of margin before the finish moves (limited by ${limit}; crew availability is not counted).`
 }
 
 export interface WhyStart {

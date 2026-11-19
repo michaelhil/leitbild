@@ -1,11 +1,11 @@
 // What the screen holds about one plan, assembled from planning.plan.read sections (read-plan.ts).
 // Presenters read only this; they never fetch.
 import type { z } from 'zod'
-import type { OptionWarning, writeResultSchema } from '../api/contract.ts'
+import type { ItemStatus, OptionWarning, writeResultSchema } from '../api/contract.ts'
 import type { Edit } from '../plan/edit-schema.ts'
-import type { CertifiedSize, Plan, PlanInputs, Status, optionSchema } from '../plan/schema.ts'
+import type { CertifiedSize, Plan, PlanInputs, RobustField, Status, optionSchema } from '../plan/schema.ts'
 
-export type { Status }
+export type { ItemStatus, Status }
 export type StoredOption = z.infer<typeof optionSchema>
 export type DatedRow = StoredOption['rows'][number]
 export type Rule = PlanInputs['rules'][number]
@@ -23,12 +23,29 @@ export interface OptionView {
   readonly key: string
   readonly label: string
   readonly variant: StoredOption['variant']
-  readonly status: Status
+  readonly status: ItemStatus
   readonly metrics: StoredOption['metrics']
   readonly inputsRevision: number
   readonly fresh: boolean
   readonly warnings: readonly OptionWarning[]
+  /**
+   * The schedule re-timed at pessimistic estimates and checked; `{notWorkedOut: 'time'}` when the time ran out
+   * before the re-timings could be made; absent when it was not re-timed.
+   */
+  readonly robust?: RobustField | undefined
+  /** Another option of the same set is no worse on every goal and better on one; folded under the table. */
+  readonly dominated?: { readonly by: string } | undefined
 }
+
+/**
+ * A what-if: an option asked with an extra hard rule or with something solved first. It answers a question
+ * beside the plan; it is never a row of the options table, never recommended, never a rung of the ladder.
+ */
+export const isWhatIf = (option: Pick<OptionView, 'variant'>): boolean => option.variant.also !== undefined || option.variant.lead !== undefined
+/** The plan's own options, in the Module's order: every option that is not a what-if. */
+export const planOptions = (model: Pick<PlanModel, 'options'>): readonly OptionView[] => (model.options?.items ?? []).filter(option => !isWhatIf(option))
+/** The what-ifs, in the Module's order. */
+export const whatIfOptions = (model: Pick<PlanModel, 'options'>): readonly OptionView[] => (model.options?.items ?? []).filter(isWhatIf)
 
 /** The caution an option carries when it was solved above the certified size, in the Module's words; null when it has none. */
 export const sizeCautionOf = (option: Pick<OptionView, 'warnings'>): string | null =>

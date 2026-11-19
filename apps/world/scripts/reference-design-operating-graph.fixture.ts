@@ -36,6 +36,7 @@ export const ic = {
     { id: 'LD01.RCP.A1.SPEED', quantity: { pump_speed: { rotor: 0, rotor_id: 'PUMP.A1' } }, channels: [{ id: 'LD01.RCP.A1.SPEED', supply: 'I1' }], channel: { ...channelSpec, min: 0, max: 1.5 } },
     { id: 'LD01.RCP.B1.SPEED', quantity: { pump_speed: { rotor: 1, rotor_id: 'PUMP.B1' } }, channels: [{ id: 'LD01.RCP.B1.SPEED', supply: 'I2' }], channel: { ...channelSpec, min: 0, max: 1.5 } },
   ],
+  rod_control: { declared: false, basis: 'test: no rod control' },
   reports: [{ id: 'LD01.TG.TRIP.REPORT', source: 'turbine_retained_trip', supply: 'ACT.B' }],
   functions: [
     { id: 'LD01.PROT.PZR.HIGH_PRESSURE', rule: { voted: { family: 'LD01.PZR.PT', side: { at_or_above: 15_898_400 }, qualification_s: 0.2 } }, effects: { reactor_trip: true, cmt_injection: false, heater_isolation: true, prhr: false } },
@@ -52,6 +53,9 @@ export const elec = {
 
 /** A channel's unit as ld01-unit.rs `channels()` gives it, by its id's form. */
 export const unitOf = (channel: string): string => {
+  if (channel === 'LD01.GRID.NET_EXPORT' || channel === 'LD01.TG.LOAD.REQUEST') return 'W'
+  if (channel === 'LD01.GRID.FREQUENCY') return 'Hz'
+  if (channel === 'LD01.GRID.VOLTAGE') return '1'
   if (channel.endsWith('RELEASED_POWER') || channel.endsWith('.WT') || channel.endsWith('HEATER.REQUEST') || /\.LOAD\.(REQUESTED|DELIVERED)$/u.test(channel)) return 'W'
   if (channel.endsWith('.DEPLETION')) return 's'
   if (channel.endsWith('.ENERGY')) return 'J'

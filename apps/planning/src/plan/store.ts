@@ -86,11 +86,13 @@ export const planSummarySchema = z.object({
   optionsOutOfDate: z.boolean(),
 }).strict()
 export type PlanSummary = z.infer<typeof planSummarySchema>
+/** One of the plan's own options, a row of its table: a what-if (an extra rule or a goal solved first) is never one (walk W2, V11). */
+export const ownOption = (option: NonNullable<Plan['options']>['options'][number]): boolean => option.variant.also === undefined && option.variant.lead === undefined
 export const summarize = (plan: Plan): PlanSummary => ({
   id: plan.id, title: plan.inputs.settings.title,
   ...(plan.inputs.settings.purpose === undefined ? {} : { purpose: plan.inputs.settings.purpose }),
   revision: plan.revision, updatedAt: plan.updatedAt, linked: plan.inputs.settings.run !== null,
-  optionCount: plan.options?.options.length ?? 0,
+  optionCount: (plan.options?.options ?? []).filter(ownOption).length,
   optionsOutOfDate: (plan.options?.options ?? []).some(option => option.inputsRevision !== plan.revision),
 })
 

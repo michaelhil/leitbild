@@ -2,7 +2,7 @@ import { z } from 'zod'
 import { commandIdSchema, idSchema } from '../../../core/model/index.ts'
 import { configIdSchema } from '../config-schema.ts'
 import { unitPhases } from '../lexicon.ts'
-import { stopSchema } from '../order-schema.ts'
+import { planExpectationSchema, stopSchema } from '../order-schema.ts'
 import { etaSchema, priorityRefSchema } from '../recommendation-schema.ts'
 import { einsatzRefusalCodeSchema } from '../refusal.ts'
 import { stepStates } from '../steps.ts'
@@ -218,19 +218,25 @@ export const unitOptionsInputSchema = z.object({
 /** The `world.einsatz.unit.options` answer: where the unit may be ordered now, and where not and why. */
 export const unitOptionsSchema = z.object({
   unitId: idSchema.describe('The unit the answer is for.'),
+  plan: planExpectationSchema,
   busy: z.object({
     taskId: idSchema.describe('The task the unit works for now; an order with when "now" drops it.'),
     label: text.describe('That task\'s label.'),
     code: text.describe('That task\'s priority code.'),
     freeInS: seconds.nullable().describe('Estimated seconds until its current job is done; null when it cannot be estimated.'),
   }).strict().nullable().describe('Set when the unit is busy: an order then needs when ("after" or "now" with drops = taskId).'),
+  moveRefusal: text.optional().describe('When no target is available, why an order to move on open ground is also refused.'),
   targets: z.array(z.object({
     target: stopSchema.describe('The stop, in world.einsatz.unit.order form.'),
     verb: z.enum(stopVerbs).describe('What the unit would do there.'),
     label: text.describe('The target\'s label.'),
-    etaS: seconds.describe('Seconds to arrive, turnout included; routed for road units, straight-line for direct ones. For a target only "after" takes, from where and when the unit\'s plan ends, the delivery its deliver standing order makes included.'),
-    now: z.boolean().describe('Whether an order now takes it: for a busy unit one with when "now", dropping its job; for any other one without when. False: only an order with when "after" takes it, after the unit\'s plan (a loaded carrier\'s call once it has delivered).'),
-  }).strict()).describe('Valid targets, nearest first: those an order now or "after" the unit\'s plan would take.'),
+    afterOnly: z.boolean().describe('True when this stop requires when: after. It cannot replace the current job or delivery.'),
+    canReplace: z.boolean().describe('Whether this target can start now or replace the active stop.'),
+    canAdd: z.boolean().describe('Whether this target can join the end of the plan.'),
+    replaceRefusal: text.optional().describe('Why this target cannot replace the active stop.'),
+    addRefusal: text.optional().describe('Why this target cannot join the end of the plan.'),
+    etaS: seconds.describe('Travel estimate from the current position, including turnout; excludes time on earlier stops.'),
+  }).strict()).describe('Valid targets, nearest first; for a busy unit, those an order "after" its current job or "now" would take.'),
   refused: z.array(z.object({
     target: stopSchema.describe('The stop, in world.einsatz.unit.order form.'),
     label: text.describe('The target\'s label.'),

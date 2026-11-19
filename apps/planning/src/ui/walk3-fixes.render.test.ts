@@ -10,7 +10,7 @@ import { createPlanningClient } from './api.ts'
 import { attentionCards } from './attention.ts'
 import { alignWindowEdit, resourceFromWorld, simulationNow, wholeWindowCalendars, worldAttributes } from './edit-forms.ts'
 import { finishChain, mostLimiting, partsText, whyStart, type ExplainResult } from './explain-text.ts'
-import { modelOf, runBasis, status, supplyRunInputs, trainAPlanned } from './fixtures/plans.ts'
+import { itemOf, modelOf, runBasis, status, supplyRunInputs, trainAPlanned } from './fixtures/plans.ts'
 import { readableText, registerSvelte, renderHtml, routineBreaches } from './fixtures/svelte-ssr.ts'
 import { createTimeFormat } from './format.ts'
 import { createNames, type PlanModel } from './model.ts'
@@ -76,12 +76,13 @@ describe("maint's third walk, screen defects", () => {
 
   test('N-A-01…03 (R3-3): a search that stopped early says so in the banner and in attention', () => {
     const planned = trainAPlanned()
-    const early = status({ ...planned.options!.items[0]!.status, run: { ...runBasis(planned.inputs.settings.grid), stoppedBy: 'memory' } })
+    const early = itemOf(status({ ...planned.options!.items[0]!.status, run: { ...runBasis(planned.inputs.settings.grid), stoppedBy: 'memory' } }))
     const model: PlanModel = { ...planned, options: { ...planned.options!, items: [{ ...planned.options!.items[0]!, status: early }] } }
     const context = contextOf(model)
-    expect(outcomeBanner(model, context)!.lines[0]).toBe('The search stopped early, at the memory limit: this option may not be the best. Generate again.')
+    // Walk V7 and V8 (increment 2): the option is named, and the memory stop in its own words.
+    expect(outcomeBanner(model, context)!.lines[0]).toBe('The search stopped early for Option 1: it reached the memory it may use. The recommended option may not be the best. Generate again.')
     const card = attentionCards(model, context).find(item => item.mark.word === 'Stopped early')!
-    expect([card.title, card.actions]).toEqual(['The search stopped early, at the memory limit.', ['generate']])
+    expect([card.title, card.actions]).toEqual(['The search stopped early for Option 1: it reached the memory it may use.', ['generate']])
     expect(outcomeBanner(planned, contextOf(planned))!.lines).toEqual([])
   })
 

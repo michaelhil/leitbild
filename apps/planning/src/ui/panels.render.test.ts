@@ -43,7 +43,7 @@ describe('panels', () => {
     // The joint-cause sentence is said once (maint's walk 5).
     expect(text.match(/easing only one/g)?.length).toBe(1)
     expect(text).toContain('it follows Pull SW A pump assembly; Test team (one return-to-service test at a time) is busy until Tue 12:00.')
-    expect(text).toContain('limited by: the window end (crew availability is not counted)')
+    expect(text).toContain('limited by the window end; crew availability is not counted')
     expect(text).toContain('Fix its start')
     // The heading takes focus when the panel opens, so the panel is never out of sight.
     expect(renderHtml(JobPanel, { jobKey: 'SWA-RTS', context, row: test, why, onWhy: none, onPreview: none, onClose: none })).toContain('<h2 id="job-title" tabindex="-1">')
@@ -135,7 +135,7 @@ describe('panels', () => {
     expect(text).toContain('✕ proven infeasible')
     expect(text).toContain('need 38 h of work one after another, but Day shift gives only 32 h of working time between Mon 07:00 and Fri 15:00.')
     expect(text).toContain('! Warning 2 items are taken out and no rule keeps any of them in service.')
-    expect(text).toContain('Made before the latest change: its status is not claimed for the current plan.')
+    expect(text).toContain('Out of date: on the plan before your latest change this was validated feasible. Generate again to know for the plan as it is now.')
     expect(text.match(/Set as baseline/g)?.length).toBe(1)
   })
 })

@@ -152,11 +152,16 @@ describe('MapFeatureLoader', () => {
     ])
   })
 
-  test('hands the object the map selects only to the map features of a Pack that follows the selection, never to another Pack or a query', async () => {
+  test('hands the selected object only to map feature hooks of a Pack that follows the selection', async () => {
     const asked: Array<readonly [string, string | undefined]> = []
     const following: WorldPack = {
       ...createPack([]),
-      presentation: { ...createPack([]).presentation, mapFeaturesFollowSelection: true, mapFeatures: context => { asked.push(['following', context.selectedObjectId]); return [] } },
+      presentation: {
+        ...createPack([]).presentation,
+        mapFeaturesFollowSelection: true,
+        mapFeatures: context => { asked.push(['following', context.selectedObjectId]); return [] },
+        mapFeatureQueries: context => { asked.push(['following-queries', context.selectedObjectId]); return [] },
+      },
     }
     const notFollowing: WorldPack = {
       ...createPack([]),
@@ -184,8 +189,8 @@ describe('MapFeatureLoader', () => {
     selected = 'unit-1'
     await loader({ viewport, zoom: 8 })
     expect(asked).toEqual([
-      ['following', undefined], ['other', undefined], ['queries', undefined],
-      ['following', 'unit-1'], ['other', undefined], ['queries', undefined],
+      ['following', undefined], ['other', undefined], ['following-queries', undefined], ['queries', undefined],
+      ['following', 'unit-1'], ['other', undefined], ['following-queries', 'unit-1'], ['queries', undefined],
     ])
   })
 
@@ -220,6 +225,45 @@ describe('MapFeatureLoader', () => {
     revision = 'r2'
     await loader({ viewport, zoom: 8 })
     expect(queries).toBe(4)
+  })
+
+  test('changing the selected route reuses the other Pack’s results', async () => {
+    const weather = createPack([{ capabilityId: 'world.weather-test.area', input: { layers: ['wind'] } }])
+    const routing: WorldPack = {
+      ...createPack([]),
+      descriptor: createWorldPackDescriptor({ id: 'routing-test', version: '1.0.0', name: 'Routing Test', description: 'Test Pack.', contributions: ['presentation'] }),
+      presentation: {
+        ...createPack([]).presentation,
+        mapFeaturesFollowSelection: true,
+        mapFeatureQueries: ({ selectedObjectId }) => selectedObjectId === undefined ? [] : [
+          { capabilityId: 'world.routing-test.plan', input: { unitId: selectedObjectId } },
+        ],
+      },
+    }
+    const views = createActivePackViews([weather, routing])
+    const objects: ReadonlyArray<OperationalObject> = []
+    const requests: string[] = []
+    let selected: string | null = null
+    const loader = createMapFeatureLoader({
+      pack: () => views,
+      objects: () => objects,
+      simulationRunId: () => 'run-test' as SimulationRunId,
+      currentTime: () => generatedAt,
+      seenRoleIds: () => null,
+      selectedObjectId: () => selected,
+      dataRevision: () => 'r1',
+      queryCapability: async (_run, request) => {
+        requests.push(request.capabilityId)
+        return { features: [featureFor(request.capabilityId)] }
+      },
+    })
+    const load = async () => (await loader({ viewport, zoom: 8 })).map(feature => feature.id)
+    expect(await load()).toContain('world.weather-test.area')
+    selected = 'unit-1'
+    expect(await load()).toContain('world.routing-test.plan')
+    selected = null
+    expect(await load()).not.toContain('world.routing-test.plan')
+    expect(requests).toEqual(['world.weather-test.area', 'world.routing-test.plan'])
   })
 
   test('the World view passes the roles it sees, the object it selects and its data revision to the loader, and reloads Pack map features on a selection change only while a Pack follows it', () => {

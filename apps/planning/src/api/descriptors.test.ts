@@ -17,6 +17,7 @@ const table = {
   'planning.plan.read': ['resource', 'query', 'read', ['status', 'overview', 'attention', 'summary', 'rules', 'crews', 'schedule', 'history']],
   'planning.plan.baseline': ['resource', 'command', 'write', ['baseline', 'commit', 'freeze', 'approve', 'choose', 'target']],
   'planning.sources.refresh': ['workspace', 'command', 'write', ['refresh', 'update', 'latest', 'World', 'changed', 'reread', 'sync']],
+  'planning.plan.display': ['resource', 'query', 'read', ['gantt', 'schedule chart', 'deadline schedule']],
   'planning.plan.delete': ['resource', 'command', 'destructive', ['delete', 'remove', 'get rid of', 'discard', 'scrap', 'throw away']],
 } as const
 
@@ -32,7 +33,7 @@ const undescribed = (schema: unknown, path = ''): string[] => {
 }
 
 describe('the Planning operations as published (design §5.1)', () => {
-  test('exactly the eight Planning operations, with their scopes, kinds, risks and search terms', () => {
+  test('exactly the published Planning operations, with their scopes, kinds, risks and search terms', () => {
     expect([...byId.keys()].sort()).toEqual(Object.keys(table).sort())
     for (const [id, [scope, kind, risk, terms]] of Object.entries(table)) {
       const descriptor = byId.get(id)!
@@ -70,11 +71,12 @@ describe('the Planning operations as published (design §5.1)', () => {
     }
   })
 
-  test('the three Definitions name create as their primary and are not featured', async () => {
+  test('only the plans that can start independently expose a primary action', async () => {
     const definitions = (await harness.request(`/internal/workspaces/${harness.workspaceId}/definitions`)).body.definitions
-    expect(definitions.map((entry: { ref: { id: string } }) => entry.ref.id)).toEqual(['blank', 'train-a-work-week', 'supply-run'])
+    expect(definitions.map((entry: { ref: { id: string } }) => entry.ref.id)).toEqual(['blank', 'nuclear-maintenance-planning', 'halden-delivery-planning', 'train-a-work-week', 'supply-run'])
     for (const definition of definitions) {
-      expect(definition).toMatchObject({ ref: { moduleId: 'planning', type: 'planning.plan-definition' }, primaryCapabilityId: 'planning.plan.create', capabilityIds: ['planning.plan.create'] })
+      expect(definition).toMatchObject({ ref: { moduleId: 'planning', type: 'planning.plan-definition' }, capabilityIds: ['planning.plan.create'] })
+      expect(definition.primaryCapabilityId).toBe(['halden-delivery-planning', 'nuclear-maintenance-planning'].includes(definition.ref.id) ? undefined : 'planning.plan.create')
       expect(definition.currentRevisionId).toMatch(/^[0-9a-f]{16}$/)
     }
     expect((await harness.request('/internal/featured-definitions')).body).toEqual({ definitions: [], listed: [] })

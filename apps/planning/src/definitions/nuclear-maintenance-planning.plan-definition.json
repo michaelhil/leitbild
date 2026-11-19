@@ -1,0 +1,1117 @@
+{
+  "id": "nuclear-maintenance-planning",
+  "title": "Plan: A cooling-train maintenance campaign",
+  "description": "Coordinate three A-train assets, specialized crews, independent hold points and a booked inspection window. Compare existing crews with one qualified HX contractor. World supplies equipment basis and current backup-pump observations. Work estimates, gates, calendars and deadlines are authored exercise assumptions. Scheduled gates forecast reviews and handoffs by their responsible roles.",
+  "inputs": {
+    "settings": {
+      "title": "A cooling-train maintenance campaign",
+      "purpose": "Return Service Water A, Component Cooling Water A and Heat Exchanger A through declared release, inspection and test gates while protecting both B pumps. Compare specialist coordination, finish time and extra crew cost.",
+      "timeZone": "Europe/Oslo",
+      "window": {
+        "start": "2026-11-18T06:00:00Z",
+        "end": "2026-11-19T18:00:00Z"
+      },
+      "dataDate": "2026-11-18T06:00:00Z",
+      "grid": "30min",
+      "currency": "NOK",
+      "run": null,
+      "scenario": {
+        "id": "nuclear-maintenance-planning",
+        "title": "Nuclear maintenance and outage planning"
+      }
+    },
+    "equipment": [
+      {
+        "key": "SWA",
+        "label": "Service Water Pump A",
+        "supportedBy": [],
+        "source": {
+          "by": "planner",
+          "note": "Equipment identity comes from the reference model. Work scope and support relationships are planner-declared."
+        },
+        "locator": "process-plant/plant%3Amaintenance/serviceWaterPumpA",
+        "function": "service-water"
+      },
+      {
+        "key": "CCWA",
+        "label": "Component Cooling Water Pump A",
+        "supportedBy": [
+          "SWA"
+        ],
+        "source": {
+          "by": "planner",
+          "note": "Equipment identity comes from the reference model. Work scope and support relationships are planner-declared."
+        },
+        "locator": "process-plant/plant%3Amaintenance/componentCoolingWaterPumpA",
+        "function": "component-cooling"
+      },
+      {
+        "key": "CCWHXA",
+        "label": "Component Cooling Heat Exchanger A",
+        "supportedBy": [
+          "SWA"
+        ],
+        "source": {
+          "by": "planner",
+          "note": "Equipment identity comes from the reference model. Work scope and support relationships are planner-declared."
+        },
+        "locator": "process-plant/plant%3Amaintenance/componentCoolingHeatExchangerA"
+      },
+      {
+        "key": "SWB",
+        "label": "Service Water Pump B",
+        "supportedBy": [],
+        "source": {
+          "by": "planner",
+          "note": "Equipment identity comes from the reference model. Work scope and support relationships are planner-declared."
+        },
+        "locator": "process-plant/plant%3Amaintenance/serviceWaterPumpB",
+        "function": "service-water"
+      },
+      {
+        "key": "CCWB",
+        "label": "Component Cooling Water Pump B",
+        "supportedBy": [],
+        "source": {
+          "by": "planner",
+          "note": "Equipment identity comes from the reference model. Work scope and support relationships are planner-declared."
+        },
+        "locator": "process-plant/plant%3Amaintenance/componentCoolingWaterPumpB",
+        "function": "component-cooling"
+      }
+    ],
+    "groups": [],
+    "calendars": [
+      {
+        "key": "day",
+        "label": "Station crews: 07:00–19:00 each day",
+        "weekly": [],
+        "periods": [
+          {
+            "start": "2026-11-18T06:00:00Z",
+            "end": "2026-11-18T18:00:00Z"
+          },
+          {
+            "start": "2026-11-19T06:00:00Z",
+            "end": "2026-11-19T18:00:00Z"
+          }
+        ],
+        "except": [],
+        "source": {
+          "by": "assumption",
+          "note": "Authored exercise assumptions for work estimates, staffing, calendars and planned handoffs."
+        }
+      },
+      {
+        "key": "duty",
+        "label": "Operations and test duty coverage",
+        "weekly": [],
+        "periods": [
+          {
+            "start": "2026-11-18T06:00:00Z",
+            "end": "2026-11-19T18:00:00Z"
+          }
+        ],
+        "except": [],
+        "source": {
+          "by": "assumption",
+          "note": "Authored exercise assumptions for work estimates, staffing, calendars and planned handoffs."
+        }
+      },
+      {
+        "key": "qa-duty",
+        "label": "Independent QA: 07:00–21:00 each day",
+        "weekly": [],
+        "periods": [
+          {
+            "start": "2026-11-18T06:00:00Z",
+            "end": "2026-11-18T20:00:00Z"
+          },
+          {
+            "start": "2026-11-19T06:00:00Z",
+            "end": "2026-11-19T20:00:00Z"
+          }
+        ],
+        "except": [],
+        "source": {
+          "by": "assumption",
+          "note": "Authored exercise assumptions for work estimates, staffing, calendars and planned handoffs."
+        }
+      },
+      {
+        "key": "nde-booking",
+        "label": "NDE team · Wed 13:00–15:00 and Thu 09:00–11:00",
+        "weekly": [],
+        "periods": [
+          {
+            "start": "2026-11-18T12:00:00Z",
+            "end": "2026-11-18T14:00:00Z"
+          },
+          {
+            "start": "2026-11-19T08:00:00Z",
+            "end": "2026-11-19T10:00:00Z"
+          }
+        ],
+        "except": [],
+        "source": {
+          "by": "assumption",
+          "note": "Authored exercise assumptions for work estimates, staffing, calendars and planned handoffs."
+        }
+      },
+      {
+        "key": "unbooked",
+        "label": "Unbooked contractor capacity",
+        "weekly": [],
+        "periods": [],
+        "except": [],
+        "source": {
+          "by": "assumption",
+          "note": "Authored exercise assumptions for work estimates, staffing, calendars and planned handoffs."
+        }
+      }
+    ],
+    "resources": [
+      {
+        "key": "station-crew",
+        "label": "Station mechanical crew",
+        "kind": "crew",
+        "count": 1,
+        "crewSize": 3,
+        "calendar": "day",
+        "attributes": [],
+        "words": "One qualified station mechanical crew for pump seal work, HX opening and closure, tube cleaning and the SW strainer. One job at a time.",
+        "source": {
+          "by": "assumption",
+          "note": "Authored exercise assumptions for work estimates, staffing, calendars and planned handoffs."
+        }
+      },
+      {
+        "key": "electrical-crew",
+        "label": "Station electrical crew",
+        "kind": "crew",
+        "count": 1,
+        "crewSize": 2,
+        "calendar": "day",
+        "attributes": [],
+        "words": "One qualified electrical crew for the isolated motor tasks.",
+        "source": {
+          "by": "assumption",
+          "note": "Authored exercise assumptions for work estimates, staffing, calendars and planned handoffs."
+        }
+      },
+      {
+        "key": "extra-crew",
+        "label": "Qualified HX contractor",
+        "kind": "crew",
+        "count": 1,
+        "crewSize": 3,
+        "calendar": "unbooked",
+        "attributes": [],
+        "words": "Qualified in this exercise for HX tube cleaning and SW strainer service.",
+        "source": {
+          "by": "assumption",
+          "note": "Authored exercise assumptions for work estimates, staffing, calendars and planned handoffs."
+        }
+      },
+      {
+        "key": "work-control",
+        "label": "Operations work-control duty team",
+        "kind": "crew",
+        "count": 1,
+        "crewSize": 1,
+        "calendar": "duty",
+        "attributes": [],
+        "words": "Qualified operations shift teams provide one work-control activity at a time. Scheduled release and restoration tasks forecast their planned handoffs.",
+        "source": {
+          "by": "assumption",
+          "note": "Authored exercise assumptions for work estimates, staffing, calendars and planned handoffs."
+        }
+      },
+      {
+        "key": "isolation-verifier",
+        "label": "Independent isolation verifier",
+        "kind": "crew",
+        "count": 1,
+        "crewSize": 1,
+        "calendar": "duty",
+        "attributes": [],
+        "words": "A qualified operations verifier who is independent of the operator establishing the isolation.",
+        "source": {
+          "by": "assumption",
+          "note": "Authored exercise assumptions for work estimates, staffing, calendars and planned handoffs."
+        }
+      },
+      {
+        "key": "inspector",
+        "label": "Independent QA duty inspector",
+        "kind": "crew",
+        "count": 1,
+        "crewSize": 1,
+        "calendar": "qa-duty",
+        "attributes": [],
+        "words": "An inspector independent of the maintenance crews witnesses the seal hold point, accepts NDE results and reviews test readiness.",
+        "source": {
+          "by": "assumption",
+          "note": "Authored exercise assumptions for work estimates, staffing, calendars and planned handoffs."
+        }
+      },
+      {
+        "key": "nde-team",
+        "label": "Qualified NDE contractor",
+        "kind": "crew",
+        "count": 1,
+        "crewSize": 2,
+        "calendar": "nde-booking",
+        "attributes": [],
+        "words": "One specialist team performs the continuous two-hour inspection within an available appointment.",
+        "source": {
+          "by": "assumption",
+          "note": "Authored exercise assumptions for work estimates, staffing, calendars and planned handoffs."
+        }
+      },
+      {
+        "key": "test-team",
+        "label": "Post-maintenance test team",
+        "kind": "crew",
+        "count": 1,
+        "crewSize": 2,
+        "calendar": "duty",
+        "attributes": [],
+        "words": "Qualified test-team duty coverage works with the operations shift team. One continuous test is performed at a time under the authored scope and acceptance allowance.",
+        "source": {
+          "by": "assumption",
+          "note": "Authored exercise assumptions for work estimates, staffing, calendars and planned handoffs."
+        }
+      }
+    ],
+    "purchases": [
+      {
+        "key": "extra-maintenance-crew",
+        "label": "Qualified HX contractor for Wednesday",
+        "resource": "extra-crew",
+        "adds": {
+          "periods": [
+            {
+              "start": "2026-11-18T08:00:00Z",
+              "end": "2026-11-18T16:00:00Z"
+            }
+          ]
+        },
+        "replaces": [],
+        "price": {
+          "once": 24000
+        },
+        "allowed": true
+      }
+    ],
+    "methods": [],
+    "jobs": [
+      {
+        "key": "package-review",
+        "title": "Work-package and protected-train readiness review",
+        "kind": "work",
+        "equipment": [],
+        "isolation": "none",
+        "duration": {
+          "value": 0.5,
+          "unit": "h",
+          "calendar": "working",
+          "origin": {
+            "by": "assumption",
+            "note": "Planned review of work scope, protected-train assumptions and prerequisites by operations and QA."
+          }
+        },
+        "durationWith": [],
+        "needs": [
+          {
+            "anyOf": [
+              "work-control"
+            ],
+            "amount": 1,
+            "handover": false
+          },
+          {
+            "anyOf": [
+              "inspector"
+            ],
+            "amount": 1,
+            "handover": false
+          }
+        ],
+        "continuous": true,
+        "checks": [],
+        "tags": []
+      },
+      {
+        "key": "isolate",
+        "title": "Release and isolate the three A-train work sites",
+        "kind": "tag-out",
+        "equipment": [
+          "SWA",
+          "CCWA",
+          "CCWHXA"
+        ],
+        "isolation": "none",
+        "duration": {
+          "value": 1,
+          "unit": "h",
+          "calendar": "working",
+          "origin": {
+            "by": "assumption",
+            "note": "Authored exercise assumptions for work estimates, staffing, calendars and planned handoffs."
+          }
+        },
+        "durationWith": [],
+        "needs": [
+          {
+            "anyOf": [
+              "work-control"
+            ],
+            "amount": 1,
+            "handover": false
+          }
+        ],
+        "continuous": true,
+        "checks": [
+          {
+            "equipment": "CCWB",
+            "fact": "plant:maintenance/componentCoolingWaterPumpB/runningState",
+            "expect": true,
+            "words": "CCW B is observed running at the World source read time."
+          },
+          {
+            "equipment": "SWB",
+            "fact": "plant:maintenance/serviceWaterPumpB/runningState",
+            "expect": true,
+            "words": "SW B is observed running at the World source read time."
+          }
+        ],
+        "tags": []
+      },
+      {
+        "key": "verify-isolation",
+        "title": "Independent isolation verification and work release",
+        "kind": "work",
+        "equipment": [],
+        "isolation": "none",
+        "duration": {
+          "value": 0.5,
+          "unit": "h",
+          "calendar": "working",
+          "origin": {
+            "by": "assumption",
+            "note": "Forecast independent verification and work-release handoff by the designated verifier."
+          }
+        },
+        "durationWith": [],
+        "needs": [
+          {
+            "anyOf": [
+              "isolation-verifier"
+            ],
+            "amount": 1,
+            "handover": false
+          }
+        ],
+        "continuous": true,
+        "checks": [],
+        "tags": [
+          "hold-point"
+        ]
+      },
+      {
+        "key": "motor-disconnect",
+        "title": "CCW A motor disconnection and electrical checks",
+        "kind": "work",
+        "equipment": [
+          "CCWA"
+        ],
+        "isolation": "inside",
+        "duration": {
+          "value": 1,
+          "unit": "h",
+          "calendar": "working",
+          "origin": {
+            "by": "assumption",
+            "note": "Authored exercise assumptions for work estimates, staffing, calendars and planned handoffs."
+          }
+        },
+        "durationWith": [],
+        "needs": [
+          {
+            "anyOf": [
+              "electrical-crew"
+            ],
+            "amount": 1,
+            "handover": false
+          }
+        ],
+        "continuous": true,
+        "checks": [],
+        "tags": []
+      },
+      {
+        "key": "pump-work",
+        "title": "Service the CCW A pump seal",
+        "kind": "work",
+        "equipment": [
+          "CCWA"
+        ],
+        "isolation": "inside",
+        "duration": {
+          "value": 4,
+          "unit": "h",
+          "calendar": "working",
+          "origin": {
+            "by": "assumption",
+            "note": "Authored exercise assumptions for work estimates, staffing, calendars and planned handoffs."
+          },
+          "range": {
+            "low": 4,
+            "high": 6
+          }
+        },
+        "durationWith": [],
+        "needs": [
+          {
+            "anyOf": [
+              "station-crew"
+            ],
+            "amount": 1,
+            "handover": false
+          }
+        ],
+        "continuous": true,
+        "checks": [],
+        "tags": []
+      },
+      {
+        "key": "inspect",
+        "title": "Independent seal-assembly inspection hold point",
+        "kind": "work",
+        "equipment": [
+          "CCWA"
+        ],
+        "isolation": "inside",
+        "duration": {
+          "value": 0.5,
+          "unit": "h",
+          "calendar": "working",
+          "origin": {
+            "by": "assumption",
+            "note": "Authored exercise assumptions for work estimates, staffing, calendars and planned handoffs."
+          }
+        },
+        "durationWith": [],
+        "needs": [
+          {
+            "anyOf": [
+              "inspector"
+            ],
+            "amount": 1,
+            "handover": false
+          }
+        ],
+        "continuous": true,
+        "checks": [],
+        "tags": [
+          "hold-point"
+        ]
+      },
+      {
+        "key": "motor-reconnect",
+        "title": "Reconnect CCW A motor and complete electrical checks",
+        "kind": "work",
+        "equipment": [
+          "CCWA"
+        ],
+        "isolation": "inside",
+        "duration": {
+          "value": 1,
+          "unit": "h",
+          "calendar": "working",
+          "origin": {
+            "by": "assumption",
+            "note": "Authored exercise assumptions for work estimates, staffing, calendars and planned handoffs."
+          }
+        },
+        "durationWith": [],
+        "needs": [
+          {
+            "anyOf": [
+              "electrical-crew"
+            ],
+            "amount": 1,
+            "handover": false
+          }
+        ],
+        "continuous": true,
+        "checks": [],
+        "tags": []
+      },
+      {
+        "key": "hx-open",
+        "title": "Open HX A channel heads",
+        "kind": "work",
+        "equipment": [
+          "CCWHXA"
+        ],
+        "isolation": "inside",
+        "duration": {
+          "value": 2,
+          "unit": "h",
+          "calendar": "working",
+          "origin": {
+            "by": "assumption",
+            "note": "Authored exercise assumptions for work estimates, staffing, calendars and planned handoffs."
+          }
+        },
+        "durationWith": [],
+        "needs": [
+          {
+            "anyOf": [
+              "station-crew"
+            ],
+            "amount": 1,
+            "handover": false
+          }
+        ],
+        "continuous": true,
+        "checks": [],
+        "tags": []
+      },
+      {
+        "key": "hx-work",
+        "title": "Clean HX A tubes",
+        "kind": "work",
+        "equipment": [
+          "CCWHXA"
+        ],
+        "isolation": "inside",
+        "duration": {
+          "value": 2,
+          "unit": "h",
+          "calendar": "working",
+          "origin": {
+            "by": "assumption",
+            "note": "Authored exercise assumptions for work estimates, staffing, calendars and planned handoffs."
+          },
+          "range": {
+            "low": 2,
+            "high": 4
+          }
+        },
+        "durationWith": [],
+        "needs": [
+          {
+            "anyOf": [
+              "station-crew",
+              "extra-crew"
+            ],
+            "amount": 1,
+            "handover": false
+          }
+        ],
+        "continuous": true,
+        "checks": [],
+        "tags": []
+      },
+      {
+        "key": "hx-nde",
+        "title": "HX A specialist inspection and QA acceptance",
+        "kind": "work",
+        "equipment": [
+          "CCWHXA"
+        ],
+        "isolation": "inside",
+        "duration": {
+          "value": 2,
+          "unit": "h",
+          "calendar": "working",
+          "origin": {
+            "by": "assumption",
+            "note": "Authored exercise assumptions for work estimates, staffing, calendars and planned handoffs."
+          }
+        },
+        "durationWith": [],
+        "needs": [
+          {
+            "anyOf": [
+              "nde-team"
+            ],
+            "amount": 1,
+            "handover": false
+          },
+          {
+            "anyOf": [
+              "inspector"
+            ],
+            "amount": 1,
+            "handover": false
+          }
+        ],
+        "continuous": true,
+        "checks": [],
+        "tags": [
+          "hold-point"
+        ]
+      },
+      {
+        "key": "hx-close",
+        "title": "Close HX A after inspection release",
+        "kind": "work",
+        "equipment": [
+          "CCWHXA"
+        ],
+        "isolation": "inside",
+        "duration": {
+          "value": 2,
+          "unit": "h",
+          "calendar": "working",
+          "origin": {
+            "by": "assumption",
+            "note": "Authored exercise assumptions for work estimates, staffing, calendars and planned handoffs."
+          }
+        },
+        "durationWith": [],
+        "needs": [
+          {
+            "anyOf": [
+              "station-crew"
+            ],
+            "amount": 1,
+            "handover": false
+          }
+        ],
+        "continuous": true,
+        "checks": [],
+        "tags": []
+      },
+      {
+        "key": "sw-strainer",
+        "title": "Service the SW A discharge strainer",
+        "kind": "work",
+        "equipment": [
+          "SWA"
+        ],
+        "isolation": "inside",
+        "duration": {
+          "value": 2,
+          "unit": "h",
+          "calendar": "working",
+          "origin": {
+            "by": "assumption",
+            "note": "Authored exercise assumptions for work estimates, staffing, calendars and planned handoffs."
+          }
+        },
+        "durationWith": [],
+        "needs": [
+          {
+            "anyOf": [
+              "station-crew",
+              "extra-crew"
+            ],
+            "amount": 1,
+            "handover": false
+          }
+        ],
+        "continuous": true,
+        "checks": [],
+        "tags": []
+      },
+      {
+        "key": "sw-electrical",
+        "title": "Complete SW A motor electrical checks",
+        "kind": "work",
+        "equipment": [
+          "SWA"
+        ],
+        "isolation": "inside",
+        "duration": {
+          "value": 1,
+          "unit": "h",
+          "calendar": "working",
+          "origin": {
+            "by": "assumption",
+            "note": "Authored exercise assumptions for work estimates, staffing, calendars and planned handoffs."
+          }
+        },
+        "durationWith": [],
+        "needs": [
+          {
+            "anyOf": [
+              "electrical-crew"
+            ],
+            "amount": 1,
+            "handover": false
+          }
+        ],
+        "continuous": true,
+        "checks": [],
+        "tags": []
+      },
+      {
+        "key": "sw-restore",
+        "title": "Restore and test Service Water A",
+        "kind": "test",
+        "equipment": [
+          "SWA"
+        ],
+        "isolation": "none",
+        "duration": {
+          "value": 1,
+          "unit": "h",
+          "calendar": "working",
+          "origin": {
+            "by": "assumption",
+            "note": "Authored exercise assumptions for work estimates, staffing, calendars and planned handoffs."
+          }
+        },
+        "durationWith": [],
+        "needs": [
+          {
+            "anyOf": [
+              "work-control"
+            ],
+            "amount": 1,
+            "handover": false
+          },
+          {
+            "anyOf": [
+              "test-team"
+            ],
+            "amount": 1,
+            "handover": false
+          }
+        ],
+        "continuous": true,
+        "checks": [],
+        "tags": [],
+        "minimum": {
+          "value": 1,
+          "unit": "h",
+          "words": "Planner-declared test allowance for this exercise. Reducing it requires a person's review."
+        }
+      },
+      {
+        "key": "ready-to-test",
+        "title": "Review records and release the controlled test",
+        "kind": "work",
+        "equipment": [],
+        "isolation": "none",
+        "duration": {
+          "value": 0.5,
+          "unit": "h",
+          "calendar": "working",
+          "origin": {
+            "by": "assumption",
+            "note": "Forecast review of mechanical, electrical and inspection completion records before controlled testing."
+          }
+        },
+        "durationWith": [],
+        "needs": [
+          {
+            "anyOf": [
+              "inspector"
+            ],
+            "amount": 1,
+            "handover": false
+          },
+          {
+            "anyOf": [
+              "work-control"
+            ],
+            "amount": 1,
+            "handover": false
+          }
+        ],
+        "continuous": true,
+        "checks": [],
+        "tags": [
+          "hold-point"
+        ]
+      },
+      {
+        "key": "restore",
+        "title": "Restore, test and accept the A cooling train",
+        "kind": "test",
+        "equipment": [
+          "CCWA",
+          "CCWHXA"
+        ],
+        "isolation": "none",
+        "duration": {
+          "value": 1.5,
+          "unit": "h",
+          "calendar": "working",
+          "origin": {
+            "by": "assumption",
+            "note": "Authored exercise assumptions for work estimates, staffing, calendars and planned handoffs."
+          }
+        },
+        "durationWith": [],
+        "needs": [
+          {
+            "anyOf": [
+              "work-control"
+            ],
+            "amount": 1,
+            "handover": false
+          },
+          {
+            "anyOf": [
+              "test-team"
+            ],
+            "amount": 1,
+            "handover": false
+          }
+        ],
+        "continuous": true,
+        "checks": [],
+        "tags": [
+          "return-to-service"
+        ],
+        "minimum": {
+          "value": 1.5,
+          "unit": "h",
+          "words": "Planner-declared test allowance for this exercise. Reducing it requires a person's review."
+        },
+        "target": {
+          "finishBy": "2026-11-18T20:00:00Z",
+          "words": "The planner targets Wednesday 21:00. The hard coordination deadline is Thursday 15:00."
+        }
+      }
+    ],
+    "links": [
+      {
+        "from": "package-review",
+        "to": "isolate",
+        "type": "FS",
+        "lag": {
+          "value": 0,
+          "unit": "h"
+        }
+      },
+      {
+        "from": "isolate",
+        "to": "verify-isolation",
+        "type": "FS",
+        "lag": {
+          "value": 0,
+          "unit": "h"
+        }
+      },
+      {
+        "from": "verify-isolation",
+        "to": "motor-disconnect",
+        "type": "FS",
+        "lag": {
+          "value": 0,
+          "unit": "h"
+        }
+      },
+      {
+        "from": "motor-disconnect",
+        "to": "pump-work",
+        "type": "FS",
+        "lag": {
+          "value": 0,
+          "unit": "h"
+        }
+      },
+      {
+        "from": "pump-work",
+        "to": "inspect",
+        "type": "FS",
+        "lag": {
+          "value": 0,
+          "unit": "h"
+        }
+      },
+      {
+        "from": "inspect",
+        "to": "motor-reconnect",
+        "type": "FS",
+        "lag": {
+          "value": 0,
+          "unit": "h"
+        }
+      },
+      {
+        "from": "verify-isolation",
+        "to": "hx-open",
+        "type": "FS",
+        "lag": {
+          "value": 0,
+          "unit": "h"
+        }
+      },
+      {
+        "from": "hx-open",
+        "to": "hx-work",
+        "type": "FS",
+        "lag": {
+          "value": 0,
+          "unit": "h"
+        }
+      },
+      {
+        "from": "hx-work",
+        "to": "hx-nde",
+        "type": "FS",
+        "lag": {
+          "value": 0,
+          "unit": "h"
+        }
+      },
+      {
+        "from": "hx-nde",
+        "to": "hx-close",
+        "type": "FS",
+        "lag": {
+          "value": 0,
+          "unit": "h"
+        }
+      },
+      {
+        "from": "verify-isolation",
+        "to": "sw-strainer",
+        "type": "FS",
+        "lag": {
+          "value": 0,
+          "unit": "h"
+        }
+      },
+      {
+        "from": "verify-isolation",
+        "to": "sw-electrical",
+        "type": "FS",
+        "lag": {
+          "value": 0,
+          "unit": "h"
+        }
+      },
+      {
+        "from": "sw-strainer",
+        "to": "sw-restore",
+        "type": "FS",
+        "lag": {
+          "value": 0,
+          "unit": "h"
+        }
+      },
+      {
+        "from": "sw-electrical",
+        "to": "sw-restore",
+        "type": "FS",
+        "lag": {
+          "value": 0,
+          "unit": "h"
+        }
+      },
+      {
+        "from": "hx-close",
+        "to": "sw-restore",
+        "type": "FS",
+        "lag": {
+          "value": 0,
+          "unit": "h"
+        }
+      },
+      {
+        "from": "motor-reconnect",
+        "to": "ready-to-test",
+        "type": "FS",
+        "lag": {
+          "value": 0,
+          "unit": "h"
+        }
+      },
+      {
+        "from": "hx-close",
+        "to": "ready-to-test",
+        "type": "FS",
+        "lag": {
+          "value": 0,
+          "unit": "h"
+        }
+      },
+      {
+        "from": "sw-restore",
+        "to": "ready-to-test",
+        "type": "FS",
+        "lag": {
+          "value": 0,
+          "unit": "h"
+        }
+      },
+      {
+        "from": "ready-to-test",
+        "to": "restore",
+        "type": "FS",
+        "lag": {
+          "value": 0,
+          "unit": "h"
+        }
+      }
+    ],
+    "rules": [
+      {
+        "kind": "protected",
+        "key": "protect-B",
+        "equipment": [
+          "SWB",
+          "CCWB"
+        ],
+        "words": "Both B pumps are protected: no isolation, maintenance or test may touch them in this plan.",
+        "source": {
+          "by": "planner",
+          "note": "Planner-declared protection for both B pumps during the A-train maintenance exercise."
+        }
+      },
+      {
+        "kind": "due",
+        "key": "coordination-deadline",
+        "job": "restore",
+        "finishBy": "2026-11-19T14:00:00Z",
+        "words": "Finish return-to-service work by Thursday 15:00, the authored coordination deadline.",
+        "source": {
+          "by": "assumption",
+          "note": "Planner-declared station coordination commitment for this exercise."
+        }
+      }
+    ],
+    "goals": [
+      {
+        "metric": "lateness",
+        "scope": {
+          "tags": [
+            "return-to-service"
+          ]
+        },
+        "tolerance": {
+          "value": 0,
+          "unit": "h"
+        }
+      },
+      {
+        "metric": "extra-cost",
+        "tolerance": {
+          "value": 0,
+          "unit": "NOK"
+        }
+      },
+      {
+        "metric": "finish",
+        "tolerance": {
+          "value": 0,
+          "unit": "h"
+        }
+      }
+    ],
+    "world": {
+      "refreshedAt": null,
+      "facts": []
+    }
+  }
+}

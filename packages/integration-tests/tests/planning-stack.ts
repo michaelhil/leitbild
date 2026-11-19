@@ -51,6 +51,9 @@ const startWorld = async (cleanup: Array<() => Promise<void> | void>) => {
   const assembly = createWorldApplicationAssembly({ routing })
   const workspaces = createWorldWorkspaceRuntimeRegistry({
     dataDir, moduleState: createWorldModuleState({ dataDir }),
+    // Runs stay loaded for the whole test, so runEvents reads the journal a long journey started with: an idle
+    // Run is otherwise closed after its delay, and a journey of several Generates outlasts it.
+    idleRuntimeCloseDelayMs: -1,
     scenarioRuntimeResolver: createScenarioRuntimeResolver({ packs: assembly.packs }),
     scenarioDefinitions: builtinScenarioDefinitions,
     compileScenarioDefinition: source => compileScenarioDefinition(source, assembly.packs, { routing }),
@@ -121,7 +124,10 @@ export const createPlanningStack = async (options: { readonly realAgents?: boole
   cleanup.push(() => pool.shutdown())
   const operations = createPlanningOperations({
     store, definitions, solver: createRealSolver(pool),
-    world: { read: async (access, run, input, signal) => planningFactsOutputSchema.parse(await createPlanningHostClient({ hostUrl }).call(access, 'world.simulation-run.planning-facts', { resource: run, input }, signal)) },
+    world: {
+      read: async (access, run, input, signal) => planningFactsOutputSchema.parse(await createPlanningHostClient({ hostUrl }).call(access, 'world.simulation-run.planning-facts', { resource: run, input }, signal)),
+      runSource: (run, signal) => createPlanningHostClient({ hostUrl }).runSource(run, signal),
+    },
   })
   const planning = createPlanningServer({ operations, definitions, store, port: 0, uiDistPath: planningHome })
   cleanup.push(() => planning.stop(true))
@@ -163,7 +169,7 @@ export const createPlanningStack = async (options: { readonly realAgents?: boole
     }
   }
   return {
-    hostUrl, workspaceId, store, room, start,
+    hostUrl, worldUrl: `http://127.0.0.1:${world.port}`, workspaceId, store, room, start,
     /** How many events World's own journal holds for a Run of this Workspace. */
     runEvents: (runId: string): number => world.workspaces.getLoaded(workspaceId)!.simulationRuns.get(simulationRunIdSchema.parse(runId))!.events().length,
     close: async () => { for (const step of cleanup.reverse()) await step() },

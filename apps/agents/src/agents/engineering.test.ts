@@ -1,5 +1,5 @@
 import { afterEach, expect, test } from 'bun:test'
-import { workspaceIdSchema } from '@leitbild/contracts'
+import { engineeringInputBasisSchema, workspaceIdSchema } from '@leitbild/contracts'
 import { createRoom } from '../core/rooms/room.ts'
 import type { RoomDirectory } from '../core/rooms/directory.ts'
 import { createExecutionStore } from '../core/executions/store.ts'
@@ -13,18 +13,69 @@ import { evaluate } from './evaluation.ts'
 
 const cleanup:Array<()=>void>=[]
 afterEach(()=>{for(const fn of cleanup.splice(0))fn()})
-const fixture=()=>{
+const fixture=(owner?:Tool)=>{
   const room=createRoom({id:'room',name:'Research',createdBy:'human',createdAt:1,scope:{kind:'workspace'},scopeRevision:0})
   room.addMember('agent')
   const rooms={getRoom:(id:string)=>id==='room'?room:undefined} as RoomDirectory
   const store=createExecutionStore(':memory:');cleanup.push(()=>store.close())
-  const workspaceCall:Tool={name:'workspace_call',description:'No owner evidence in this independent numerical fixture',parameters:{},execute:async()=>({success:false,error:'No source in numerical fixture'})}
+  const workspaceCall:Tool=owner??{name:'workspace_call',description:'No owner evidence in this independent numerical fixture',parameters:{},execute:async()=>({success:false,error:'No source in numerical fixture'})}
   const service=createEngineering({workspaceId:workspaceIdSchema.parse('6f1c4b8e-3a2d-4c1b-9f0e-1a2b3c4d5e6f'),hostBaseUrl:'http://127.0.0.1:1',rooms,store,workspaceCall,growth:async(_bytes,work)=>work()})
   const registry=createToolRegistry();registry.registerAll(service.tools)
   return{room,store,service,registry}
 }
 const assumption=(name:string,value:number,quantity='dimensionless',unit='1')=>({kind:'assumption',name,value,quantity,unit,note:'Independent synthetic oracle; not a plant reading'})
 const receiptFrom=(result:unknown):EngineeringReceipt=>(result as {data:{results:Array<{data:EngineeringReceipt}>}}).data.results[0]!.data
+
+test('recorded flow evidence drives heat-transport arithmetic and changed assumptions through actual tools',async()=>{
+  // The owner fixture tests the Agents boundary; World tests admit and acquire
+  // the actual maintenance profile. No model provider or plant is simulated here.
+  const source={workspaceId:'6f1c4b8e-3a2d-4c1b-9f0e-1a2b3c4d5e6f',moduleId:'world',type:'world.simulation-run',id:'flow-fixture'}
+  const basis=engineeringInputBasisSchema.parse({source,profile:'plant-thermal',subjectId:'plant:flow-fixture',profileRevision:'engineering-research-1',
+    frame:{epoch:crypto.randomUUID(),scenarioDigest:'a'.repeat(64),restrictionRevision:0,sequence:12,simulationAt:'2026-11-18T09:00:00.000Z',observedAt:'2026-11-18T10:00:00.000Z'},
+    quantities:[{id:'pump.flowKgPerS',label:'Pump mass flow',quantity:'mass-flow',unit:'kg/s',value:350,quality:'good'}],digest:'b'.repeat(64)})
+  let allowed=true
+  const qualifications:unknown[]=[]
+  const owner:Tool={name:'workspace_call',description:'Test-only owner qualification',parameters:{},execute:async(input)=>{
+    qualifications.push(input)
+    return{success:true,data:{results:[{success:true,data:{allowed,...(allowed?{}:{code:'epoch_changed',reason:'Run reset'})}}]}}
+  }}
+  const {service,registry,store}=fixture(owner)
+  store.beginTurn({id:'capture',roomId:'room',agentId:'agent',startedAt:1})
+  const capture={key:'flow',operationId:'world.engineering.inputs.capture',target:{kind:'resource',ref:source},input:{profile:basis.profile,subjectId:basis.subjectId}}
+  store.recordAttempt('capture',{id:'call_1_0',tool:'workspace_call',arguments:{calls:[capture]},startedAt:1})
+  store.recordOutcome('capture','call_1_0',{success:true,data:{results:[{...capture,resource:source,success:true,data:basis}]}})
+  const input={title:'Heat transported at an assumed temperature rise',bindings:[
+    {kind:'retained',name:'flow',turnId:'capture',toolCallId:'call_1_0',key:'flow',quantityId:'pump.flowKgPerS'},
+    {...assumption('cp',4.18,'specific-heat-capacity','kJ/(kg K)'),note:'Illustrative water specific heat, independent of the simulated pump reading'},
+    {...assumption('rise',10,'temperature-difference','K'),note:'Assumed rise; no heat-exchanger inlet or outlet temperature was observed'},
+  ],program:{source:'({heatTransportMw:input.flow.value * input.cp.value * input.rise.value / 1000})'}}
+  const executor=createToolExecutor(registry,service.tools.map(tool=>tool.name),{callerId:'agent',callerName:'Assistant'},undefined,undefined,store)
+  const run=async(turnId:string,args:typeof input)=>{
+    store.beginTurn({id:turnId,roomId:'room',agentId:'agent',startedAt:Date.now()})
+    return(await executor([{tool:'engineering_run',callId:'call_1_0',arguments:args}],'room',undefined,turnId))[0]!
+  }
+  const first=await run('heat',input)
+  expect(first.success).toBe(true)
+  const receipt=receiptFrom(first)
+  expect(receipt.outcome).toMatchObject({status:'completed',output:{heatTransportMw:14.63}})
+  expect(receipt.inputs).toMatchObject([{name:'flow',value:350,origin:'observation',simulationAt:basis.frame.simulationAt},{name:'cp',origin:'assumption'},{name:'rise',origin:'assumption'}])
+  expect(receipt.sources).toEqual([basis])
+  expect(receipt.programSource).toBe(input.program.source)
+  const changed=await run('changed-rise',{...input,bindings:input.bindings.map(binding=>binding.name==='rise'?{...binding,value:8}:binding)})
+  expect(receiptFrom(changed).outcome).toMatchObject({status:'completed',output:{heatTransportMw:11.704}})
+  expect(receiptFrom(changed).inputDigest).not.toBe(receipt.inputDigest)
+  expect(store.getCall('room','heat','call_1_0')?.result).toEqual(first)
+  allowed=false
+  expect(await run('refused',input)).toMatchObject({success:false,data:{code:'epoch_changed'},error:'Run reset'})
+  expect(qualifications).toHaveLength(5)
+},15_000)
+
+test('engineering discovery publishes the current capture schema and directs quantity selection to owner evidence',async()=>{
+  const {service}=fixture()
+  const describe=service.tools.find(tool=>tool.name==='engineering_describe')!
+  const result=await describe.execute({}, {callerId:'agent',callerName:'Assistant'})
+  expect(result).toMatchObject({success:true,data:{capture:{operationId:'world.engineering.inputs.capture',inputSchema:{type:'object',properties:{profile:{enum:expect.arrayContaining(['plant-thermal','grid-balance'])}}},discovery:expect.stringContaining('quantity ids returned by a successful capture')}}})
+})
 
 test('HTTP-owner execution retains source for reuse with changed inputs and unique immutable results',async()=>{
   const {service,store}=fixture()

@@ -42,7 +42,7 @@
   import type { MapCover } from './surface-panel-contract.ts'
   import { createMapPromptController } from './map/map-prompt.ts'
   import { createMapStackChooser } from './map/map-stack-chooser.ts'
-  import { objectsUnder, stackTap } from './map/map-stack.ts'
+  import { needsSingleTargetChoice, objectsUnder, stackPick } from './map/map-stack.ts'
   import { disksPickFor, hoverCardsFor, pickingRadiusFor } from './map/map-pointer.ts'
   import { operationalIconPx } from './map-runtime/symbol-kit.ts'
   import { createReferenceLayerController } from './map-runtime/reference-layer-controller.ts'
@@ -257,7 +257,7 @@
   const targetingRender = $derived<MapTargetingRender | null>(targeting === null ? null : {
     fromId: targeting.from,
     complete: targeting.complete,
-    targets: new Map(targeting.targets.map(target => [target.id as string, { tag: target.tag ?? null, anchor: tagAnchors.get(target.id) ?? 'middle', refused: target.tone === 'refused' }])),
+    targets: new Map(targeting.targets.map(target => [target.id as string, { tag: target.tag ?? null, anchor: tagAnchors.get(target.id) ?? 'middle', tone: target.tone ?? 'valid' }])),
   })
   /** About how wide a tag is drawn: 13 px text wrapped at 22 em, with its padding. */
   const tagWidthPx = (tag: string): number => Math.min(tag.length * 7.5, 22 * 13) + 12
@@ -275,7 +275,7 @@
     const anchors = new Map<string, TargetTagAnchor>()
     for (const target of targeting.targets) {
       if (target.tag === undefined) continue
-      const at = drawn.get(target.id) ?? objects.find(object => object.id === target.id)?.spatial.position?.point.coordinates
+      const at = drawn.get(target.id)
       if (at === undefined) continue
       const x = current.map.project([at[0]!, at[1]!]).x
       const half = tagWidthPx(target.tag) / 2
@@ -287,10 +287,12 @@
     const next = tagAnchorsNow()
     if (next.size !== tagAnchors.size || [...next].some(([id, anchor]) => tagAnchors.get(id) !== anchor)) tagAnchors = next
   }
-  /** The armed order's valid targets, once they are known; null while nothing is armed or its targets are still read. */
-  const armedValidIds = (): ReadonlySet<string> | null => targeting === null || !targeting.complete
-    ? null
-    : new Set(targeting.targets.filter(target => target.tone !== 'refused').map(target => target.id as string))
+  /** The stack chooser offers the valid and assigned targets when targeting is complete. */
+  const stackChoices = (stack: ReadonlyArray<OperationalObject>): ReadonlyArray<OperationalObject> => {
+    if (targeting === null || !targeting.complete) return stack
+    const pickable = new Set(targeting.targets.filter(target => target.tone !== 'refused').map(target => target.id as string))
+    return stack.filter(object => pickable.has(object.id))
+  }
   /** Whether a line follows the pointer: a panel's armed order while the pointer is a mouse. */
   const pointerLineWanted = (pointerType: string | null): boolean => targeting !== null && hoverCardsFor(pointerType)
 
@@ -418,11 +420,17 @@
     onObjectSelected: object => {
       clickHandled = true
       objectTookClick = true
-      const tap = stackTap(stackUnderPointer(), armedValidIds(), controllerHighlighted, isController)
-      if (tap.kind === 'chooser') return showStackChooser(tap.objects)
-      if (tap.kind === 'tapped') return onObjectSelected(object)
-      onObjectSeen(tap.object)
-      onObjectSelected(tap.object)
+      const under = stackUnderPointer()
+      // While an order is armed a stack offers its valid targets only; with none, the tap is on the object it landed on, and the panel's server decides.
+      const stack = under.length > 1 ? stackChoices(under) : under
+      if (needsSingleTargetChoice(object, under, stack)) return showStackChooser(stack)
+      if (stack.length > 1) {
+        const picked = stackPick(stack, controllerHighlighted, isController)
+        if (picked === null) return showStackChooser(stack)
+        onObjectSeen(picked)
+        return onObjectSelected(picked)
+      }
+      onObjectSelected(object)
     },
     onObjectSeen: object => onObjectSeen(object),
     onObjectHover: object => {

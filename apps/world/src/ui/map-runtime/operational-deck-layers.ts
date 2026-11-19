@@ -58,6 +58,8 @@ export interface OperationalDeckLayerData {
   readonly visibleAreaSymbols: ReadonlyArray<OperationalSymbolFeature>
   /** Every point where the map draws its icon, fanned out where icons would overlap (`point-declutter.ts`). */
   readonly points: ReadonlyArray<OperationalPointFeature>
+  readonly iconPoints: ReadonlyArray<OperationalPointFeature>
+  readonly dotPoints: ReadonlyArray<OperationalPointFeature>
   /** A leader from each fanned icon to its true position. */
   readonly leaders: ReadonlyArray<PointLeader>
   readonly newInfoPoints: ReadonlyArray<OperationalPointFeature>
@@ -110,16 +112,16 @@ const pointFill = (point: OperationalPointFeature): ColorRgba => {
   return point.color
 }
 
-/** An armed order's target: a green ring, apart from the selection's blue and a highlight's amber. */
-const targetHaloFill = rgba(22, 133, 92, 44)
-const targetHaloStroke = rgba(22, 133, 92, 245)
-/** The target a click was just refused for: a neutral slate ring and tag, apart from the valid targets' green and an alert's colour. */
-const refusedHaloFill = rgba(71, 85, 105, 40)
-const refusedHaloStroke = rgba(71, 85, 105, 245)
+const targetColors = {
+  valid: { fill: rgba(22, 133, 92, 44), stroke: rgba(22, 133, 92, 245) },
+  // The plan's red is distinct from the reserved alarm reds.
+  assigned: { fill: rgba(168, 63, 77, 48), stroke: rgba(168, 63, 77, 245) },
+  refused: { fill: rgba(71, 85, 105, 40), stroke: rgba(71, 85, 105, 245) },
+}
 
 const haloFill = (point: OperationalPointFeature): ColorRgba => {
   if (point.selected) return rgba(29, 102, 210, 62)
-  if (point.targeted) return point.targetRefused ? refusedHaloFill : targetHaloFill
+  if (point.targetTone !== null) return targetColors[point.targetTone].fill
   if (point.highlighted) return rgba(193, 122, 19, 58)
   if (point.alert !== null) return colorWithAlpha(point.alert.color, 52)
   return rgba(255, 255, 255, 0)
@@ -127,13 +129,13 @@ const haloFill = (point: OperationalPointFeature): ColorRgba => {
 
 const haloStroke = (point: OperationalPointFeature): ColorRgba => {
   if (point.selected) return rgba(29, 102, 210, 245)
-  if (point.targeted) return point.targetRefused ? refusedHaloStroke : targetHaloStroke
+  if (point.targetTone !== null) return targetColors[point.targetTone].stroke
   if (point.highlighted) return rgba(193, 122, 19, 230)
   if (point.alert !== null) return colorWithAlpha(point.alert.color, 230)
   return rgba(255, 255, 255, 0)
 }
 
-const haloRingged = (point: OperationalPointFeature): boolean => point.selected || point.targeted || point.highlighted
+const haloRingged = (point: OperationalPointFeature): boolean => point.selected || point.targetTone !== null || point.highlighted
 
 /** A glyph's colour: faint while dimmed by an armed order, softened while muted. */
 const glyphColor = (point: OperationalPointFeature): ColorRgba => point.dimmed ? white(95) : point.muted ? white(150) : white(245)
@@ -184,6 +186,8 @@ export const createOperationalDeckLayerDataCache = (): OperationalDeckLayerDataC
   let pointsRevision = -1
   let layoutZoom = Number.NaN
   let drawnPoints: ReadonlyArray<OperationalPointFeature> = emptyPoints
+  let iconPoints = emptyPoints
+  let dotPoints = emptyPoints
   let leaders: ReadonlyArray<PointLeader> = emptyLeaders
   let newInfoPoints: ReadonlyArray<OperationalPointFeature> = emptyPoints
   let placementRevision = -1
@@ -204,6 +208,8 @@ export const createOperationalDeckLayerDataCache = (): OperationalDeckLayerDataC
     pointsRevision = -1
     layoutZoom = Number.NaN
     drawnPoints = emptyPoints
+    iconPoints = emptyPoints
+    dotPoints = emptyPoints
     leaders = emptyLeaders
     newInfoPoints = emptyPoints
     placementRevision = -1
@@ -241,7 +247,9 @@ export const createOperationalDeckLayerDataCache = (): OperationalDeckLayerDataC
         drawnPoints = decluttered.points
         leaders = decluttered.leaders
         newInfoPoints = drawnPoints.filter(point => point.hasNewInfo)
-        pointsByAtlas = byAtlas(drawnPoints, catalogueAtlas, emptyPoints)
+        dotPoints = drawnPoints.filter(point => point.dot === true)
+        iconPoints = dotPoints.length === 0 ? drawnPoints : drawnPoints.filter(point => point.dot !== true)
+        pointsByAtlas = byAtlas(iconPoints, catalogueAtlas, emptyPoints)
         labelPoints = drawnPoints.some(point => point.label !== null) ? drawnPoints.filter(point => point.label !== null) : emptyPoints
         targetTagPoints = drawnPoints.some(point => point.targetTag !== null) ? drawnPoints.filter(point => point.targetTag !== null) : emptyPoints
       }
@@ -255,6 +263,8 @@ export const createOperationalDeckLayerDataCache = (): OperationalDeckLayerDataC
         visiblePaths,
         visibleAreaSymbols,
         points: drawnPoints,
+        iconPoints,
+        dotPoints,
         leaders,
         newInfoPoints,
         placementPoints,
@@ -296,7 +306,7 @@ export const createOperationalDeckLayers = (config: OperationalDeckLayerConfig):
   const visiblePaths = layerData.visiblePaths
   const points = layerData.points
   const diskClicks = config.diskClicks
-  const diskClickPoints = config.disksPick || diskClicks === null ? emptyPoints : points.filter(point => diskClicks(point.object))
+  const diskClickPoints = config.disksPick || diskClicks === null ? emptyPoints : layerData.iconPoints.filter(point => diskClicks(point.object))
   const catalogueAtlas = config.catalogueAtlas
   const onSymbolClick = (info: PickingInfo<OperationalPointFeature>): void => {
     const point = asPointPicking(info)
@@ -430,9 +440,44 @@ export const createOperationalDeckLayers = (config: OperationalDeckLayerConfig):
         getLineWidth: snapshot.revisions.points,
       },
     }),
+    // History dots keep their original picking area below the live objects.
+    ...(layerData.dotPoints.length > 0 ? [
+      new ScatterplotLayer<OperationalPointFeature>({
+        id: 'leitbild-object-dot-clicks',
+        data: layerData.dotPoints,
+        pickable: true,
+        visible: visible(visibleFamilies, 'objects'),
+        radiusUnits: 'pixels',
+        filled: true,
+        getPosition: point => point.position,
+        getRadius: point => statusDiskRadiusPx(point.sizePx),
+        getFillColor: rgba(0, 0, 0, 0),
+        onClick: onSymbolClick,
+        onHover: onSymbolHover,
+        updateTriggers: {
+          getPosition: snapshot.revisions.points,
+          getRadius: snapshot.revisions.points,
+        },
+      }),
+      new ScatterplotLayer<OperationalPointFeature>({
+        id: 'leitbild-object-dots',
+        data: layerData.dotPoints,
+        pickable: false,
+        visible: visible(visibleFamilies, 'objects'),
+        radiusUnits: 'pixels',
+        filled: true,
+        getPosition: point => point.position,
+        getRadius: 4,
+        getFillColor: pointFill,
+        updateTriggers: {
+          getPosition: snapshot.revisions.points,
+          getFillColor: snapshot.revisions.points,
+        },
+      }),
+    ] : []),
     new ScatterplotLayer<OperationalPointFeature>({
       id: 'leitbild-object-status-disks',
-      data: points,
+      data: layerData.iconPoints,
       // While the surface picks targets, a mouse click between the glyph's strokes lands on the disk: it is the object's, never the ground's.
       pickable: config.disksPick,
       visible: visible(visibleFamilies, 'objects'),
@@ -566,7 +611,7 @@ export const createOperationalDeckLayers = (config: OperationalDeckLayerConfig):
           background: true,
           maxWidth: 22,
           wordBreak: 'break-word',
-          getBackgroundColor: point => point.targetRefused ? refusedHaloStroke : targetHaloStroke,
+          getBackgroundColor: point => targetColors[point.targetTone ?? 'valid'].stroke,
           backgroundPadding: [6, 3],
           onClick: onSymbolClick,
           onHover: onSymbolHover,

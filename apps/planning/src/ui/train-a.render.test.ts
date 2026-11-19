@@ -45,12 +45,30 @@ describe('Train A on the plan screen', () => {
     expect(text).toContain('Link the running simulation')
   })
 
+  test('Generate waits for the first required World read without blocking plans that only display World items', () => {
+    const inputs = trainAInputs()
+    const unlinked = html(modelOf(inputs))
+    const generate = /<button[^>]*disabled[^>]*aria-describedby="generate-needs-world"[^>]*>Generate<\/button>/
+    expect(unlinked).toMatch(generate)
+    expect(readableText(unlinked)).toContain('Link the simulation and read its values first.')
+
+    const at = '2026-11-12T09:00:00Z'
+    const linked = { ...inputs, settings: { ...inputs.settings, run: { id: 'run-1', linkedAt: at } } }
+    expect(html(modelOf(linked))).toMatch(generate)
+    expect(screen(modelOf(linked))).toContain('Read the World values first.')
+
+    const read = { ...linked, world: { refreshedAt: at, facts: [] } }
+    expect(html(modelOf(read))).not.toMatch(generate)
+    const withoutChecks = { ...inputs, jobs: inputs.jobs.map(job => ({ ...job, checks: [] })) }
+    expect(html(modelOf(withoutChecks))).not.toMatch(generate)
+  })
+
   test('orientation comes from the plan: window, limits and guideline from its rules and goals, protected items, crews and their notes', () => {
     const model = modelOf(trainAInputs())
     const rules = screen(model, 'rules')
     const { limit, guideline, cost } = limitsOf(model)
     expect(rules).toContain(`out at most ${limit} h, from the first tag-out to the last passed test, as one continuous outage`)
-    expect(rules).toContain(`Least time over the ${guideline} h guideline for ${model.inputs.groups.find(group => group.key === 'COOL-A')!.label}`)
+    expect(rules).toContain(`Keep the time over the ${guideline} h guideline for ${model.inputs.groups.find(group => group.key === 'COOL-A')!.label} as small as possible`)
     const protectedKeys = model.inputs.rules.flatMap(rule => rule.kind === 'protected' ? rule.equipment : [])
     expect(protectedKeys.length).toBeGreaterThan(0)
     for (const key of protectedKeys) expect(rules).toContain(model.inputs.equipment.find(item => item.key === key)!.label)
@@ -59,7 +77,7 @@ describe('Train A on the plan screen', () => {
     expect(rules).toContain('§ Reference')
     expect(rules).toContain('Window: Mon 16 Nov 07:00 to Sat 21 Nov 07:00 (Europe/Oslo).')
     expect(rules).toContain('Work-control operator (one tag-out or restoration at a time): One at a time.')
-    expect(rules).toContain(`(compared in steps of NOK ${cost.toLocaleString('en-GB')})`)
+    expect(rules).toContain(`costs within NOK ${cost.toLocaleString('en-GB')} of each other count as equal`)
 
     const crews = screen(model, 'crews')
     // Shift and crane hours in words, in the plan zone (T1).
@@ -119,8 +137,9 @@ describe('Train A on the plan screen', () => {
     expect(text).toContain('The search ran to the end.')
     expect(text).toContain('Station mechanical crew')
     expect(text).toContain('one at a time')
-    expect(text).toContain('Float')
-    expect(text).toContain('limited by: the window end (crew availability is not counted)')
+    // Walk V11 (increment 2): the margin in planner words, never "Float 0 s".
+    expect(text).toMatch(/of margin before the finish moves|No margin: any delay here moves the finish/)
+    expect(text).toContain('limited by the window end; crew availability is not counted')
     expect(text).toContain('Mon 07:00–10:00')
   })
 

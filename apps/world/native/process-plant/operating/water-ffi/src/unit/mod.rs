@@ -26,6 +26,7 @@
 pub mod clock;
 pub mod dc;
 pub mod inputs;
+pub mod live;
 pub mod plant;
 pub mod profile;
 pub mod provenance;

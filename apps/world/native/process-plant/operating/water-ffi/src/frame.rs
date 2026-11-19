@@ -678,6 +678,13 @@ impl<S: JoinedSystem> Driver<S> {
         }
         Ok(())
     }
+    /// R4-GRID: forget the declared stops. The unit host re-arms its next
+    /// Grid exchange from `t`, its LOAD and the breaker's state at every
+    /// request boundary: the armed stop is then a function of the unit's
+    /// state, so a restored copy holds the one its source holds.
+    pub fn clear_declared_stops(&mut self) {
+        self.hard_stops.clear();
+    }
     /// R4-FREE-STEPS: the integrator's time (equal to the observed time
     /// except while a free step's end is ahead of it).
     pub fn integrator_s(&self) -> f64 {

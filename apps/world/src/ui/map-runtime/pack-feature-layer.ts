@@ -6,7 +6,7 @@ const sourceId = 'leitbild-pack-features'
 const layerIds = ['leitbild-pack-fills', 'leitbild-pack-lines', 'leitbild-pack-points', 'leitbild-pack-symbols', 'leitbild-pack-dashed-lines']
 
 /** The dash of a Pack line that asks for one (`lineDashed`), in line widths. */
-export const packLineDash: ReadonlyArray<number> = [2, 2]
+export const packLineDash: ReadonlyArray<number> = [1, 3]
 
 /** The source data for the visible Pack features, in draw order; a line that asks for a dash carries `dashed`. */
 export const packFeatureCollection = (visible: ReadonlyArray<PackMapFeature>): GeoJSON.FeatureCollection => ({
@@ -25,7 +25,7 @@ export const packFeatureCollection = (visible: ReadonlyArray<PackMapFeature>): G
  */
 export const packLineLayers: ReadonlyArray<LineLayerSpecification> = [
   { id: layerIds[1]!, type: 'line', source: sourceId, filter: ['all', ['!=', ['geometry-type'], 'Point'], ['!=', ['get', 'dashed'], true]], paint: { 'line-color': ['get','lineColor'], 'line-width': ['get','lineWidth'], 'line-opacity': ['get','lineOpacity'] } },
-  { id: layerIds[4]!, type: 'line', source: sourceId, filter: ['all', ['!=', ['geometry-type'], 'Point'], ['==', ['get', 'dashed'], true]], paint: { 'line-color': ['get','lineColor'], 'line-width': ['get','lineWidth'], 'line-opacity': ['get','lineOpacity'], 'line-dasharray': [...packLineDash] } },
+  { id: layerIds[4]!, type: 'line', source: sourceId, filter: ['all', ['!=', ['geometry-type'], 'Point'], ['==', ['get', 'dashed'], true]], layout: { 'line-cap': 'round' }, paint: { 'line-color': ['get','lineColor'], 'line-width': ['get','lineWidth'], 'line-opacity': ['get','lineOpacity'], 'line-dasharray': [...packLineDash] } },
 ]
 
 type LineWidth = NonNullable<NonNullable<LineLayerSpecification['paint']>['line-width']>

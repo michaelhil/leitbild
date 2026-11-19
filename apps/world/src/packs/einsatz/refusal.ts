@@ -89,6 +89,8 @@ export const engineRefusalCodes = [
   'newer_order_exists',
   'nothing_to_undo',
   'step_not_found',
+  'plan_changed',
+  'invalid_stop_order',
   'group_required',
   'unknown_group',
   'group_not_declared',

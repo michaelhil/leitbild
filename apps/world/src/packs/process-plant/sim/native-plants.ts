@@ -1,6 +1,6 @@
 import type { ProcessPlantDefinition } from '../config.ts'
 import { resolveLd01UnitArtifact } from '../engine/artifact.ts'
-import { connectNativeProcessPlantEngine, type NativeEngineFailure, type NativeProcessPlantEngine } from '../engine/native-engine.ts'
+import { connectNativeProcessPlantEngine, ld01GridExchangeS, type NativeEngineFailure, type NativeProcessPlantEngine } from '../engine/native-engine.ts'
 import { runsOnNativeEngine } from '../engine/port.ts'
 import { compileProcessPlants, type CompiledProcessPlant } from '../plant-compiler.ts'
 import { restoredNativeCheckpointFor, restoredRuntimeStateEntryFor, type ProcessPlantRuntimeState, type ProcessPlantRuntimeStateEntry } from './runtime-state.ts'
@@ -26,6 +26,8 @@ export const connectProcessPlants = async (config: {
   readonly definitions: ReadonlyArray<ProcessPlantDefinition>
   readonly runtimeState: ProcessPlantRuntimeState | null
   readonly onEngineFailure: (plantId: string, failure: NativeEngineFailure) => void
+  /** The Plants a Scenario's Electrical Connection joins to a Grid: only they exchange with one (R4-GRID). */
+  readonly gridConnectedPlantIds: ReadonlySet<string>
 }): Promise<ConnectedProcessPlants> => {
   const restoring = config.runtimeState !== null
   const unavailable = new Map<string, UnavailableProcessPlant>()
@@ -49,6 +51,7 @@ export const connectProcessPlants = async (config: {
       plant,
       tagMap: artifact.artifact.tagMap,
       load: artifact.artifact.load,
+      gridExchangeS: config.gridConnectedPlantIds.has(plant.id) ? ld01GridExchangeS : null,
       artifactSha256: artifact.artifact.manifestSha256,
       command: [artifact.artifact.binary],
       ...(restored === undefined ? {} : { restored }),

@@ -1,7 +1,7 @@
 <script lang="ts">
   import type { GuidanceScreen, GuidanceSession } from './guidance-session.ts'
 
-  let { screen, session, explore }: { screen: GuidanceScreen; session: GuidanceSession | null; explore: () => void } = $props()
+  let { screen, session, explore, planningDemoHref = null }: { screen: GuidanceScreen; session: GuidanceSession | null; explore: () => void; planningDemoHref?: string | null } = $props()
   const guide = $derived(screen.guide)
   const step = $derived(guide?.step)
   const finished = $derived(guide?.status === 'completed' || guide?.status === 'stopped')
@@ -83,13 +83,16 @@
       : 'Review the suggestion in the Assistant. Choose whether to add it to your draft.'}</p>
   {/if}
 
-  {#if primary}
+  {#if primary || planningDemoHref}
     <div class="actions">
-      <button class:primary={!(isPrompt && primary.action === 'read')} class:quiet={isPrompt && primary.action === 'read'} type="button" bind:this={primaryButton} aria-disabled={screen.busy || !session} onclick={runPrimary}>{primary.label}</button>
+      {#if planningDemoHref}<a class="primary" href={planningDemoHref} target="_top">{guide?.planningLabel ?? 'Open planning demo'}</a>{/if}
+      {#if primary && (!planningDemoHref || primary.action !== 'start')}
+        <button class:primary={!planningDemoHref && !(isPrompt && primary.action === 'read')} class:quiet={isPrompt && primary.action === 'read'} type="button" bind:this={primaryButton} aria-disabled={screen.busy || !session} onclick={runPrimary}>{primary.label}</button>
+      {/if}
       {#if guide && (!guide.attemptId || finished)}
         <button class="quiet" type="button" onclick={explore}>{finished ? 'Back to the Run' : 'Explore on my own'}</button>
       {:else if screen.recipient && workingStep && step}
-        {#if mayShow && primary.action !== 'show'}
+        {#if mayShow && primary?.action !== 'show'}
           <button class="quiet" type="button" disabled={screen.busy} onclick={() => void session?.action('show')}>{showLabel}</button>
         {/if}
         {#if isPrompt}<button class="quiet" type="button" disabled={screen.busy} onclick={event => changeStep('skip', event)}>Skip this step</button>{/if}
@@ -157,15 +160,16 @@
   .instruction { margin-bottom: 10px; }
   .notice { border-inline-start: 2px solid var(--accent); padding-inline-start: 8px; font-size: 13px; }
   .actions { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin: 8px 0; }
-  button { min-height: 38px; padding: 7px 10px; font: inherit; border: 1px solid var(--border); border-radius: 6px; background: var(--panel); color: var(--text); cursor: pointer; }
+  a, button { min-height: 38px; padding: 7px 10px; font: inherit; border: 1px solid var(--border); border-radius: 6px; background: var(--panel); color: var(--text); cursor: pointer; }
+  a { display: inline-flex; align-items: center; text-decoration: none; box-sizing: border-box; }
   .primary { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 12%, var(--panel)); font-weight: 650; }
   .quiet { border-color: transparent; background: transparent; }
   .quiet:hover:not(:disabled) { background: var(--panel-strong); }
   button:disabled, button[aria-disabled='true'] { opacity: .65; cursor: default; }
-  button:focus-visible, summary:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  a:focus-visible, button:focus-visible, summary:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
   ul { padding-inline-start: 18px; line-height: 1.45; }
   summary { cursor: pointer; min-height: 28px; display: list-item; align-content: center; }
   .reference { font-family: monospace; }
   .separate { margin-top: 8px; padding-top: 8px; border-top: 1px solid var(--border); }
-  @media (pointer: coarse) { button, summary { min-height: 44px; } }
+  @media (pointer: coarse) { a, button, summary { min-height: 44px; } }
 </style>

@@ -6,11 +6,11 @@ import { variablePathSchema, type CompiledPlantGraph, type CompiledVariable, typ
 // engine binds it against the child's CHANNELS at LOAD and refuses any missing channel, any graph variable
 // the map does not cover, and any unit pair the closed conversion table below does not hold.
 
-export const ld01CommandKinds = ['TurbineTrip', 'TurbineTripAcquired', 'ManualReactorTrip', 'HoldingLoss', 'ReliefStuckOpen', 'ReliefIsolationClose', 'ReliefIsolationOpen', 'SupplyLoss', 'IncomingDevice', 'StartConsumer', 'DcDistribution', 'DcChargerInput'] as const
+export const ld01CommandKinds = ['TurbineTrip', 'TurbineTripAcquired', 'ManualReactorTrip', 'HoldingLoss', 'ReliefStuckOpen', 'ReliefIsolationClose', 'ReliefIsolationOpen', 'BankHold', 'BankAuto', 'SupplyLoss', 'IncomingDevice', 'StartConsumer', 'DcDistribution', 'DcChargerInput'] as const
 export type Ld01CommandKind = typeof ld01CommandKinds[number]
 
 export const ld01CommandSchema = z.discriminatedUnion('kind', [
-  z.object({ kind: z.enum(['TurbineTrip', 'TurbineTripAcquired', 'ManualReactorTrip', 'HoldingLoss', 'ReliefStuckOpen', 'ReliefIsolationClose', 'ReliefIsolationOpen']) }).strict(),
+  z.object({ kind: z.enum(['TurbineTrip', 'TurbineTripAcquired', 'ManualReactorTrip', 'HoldingLoss', 'ReliefStuckOpen', 'ReliefIsolationClose', 'ReliefIsolationOpen', 'BankHold', 'BankAuto']) }).strict(),
   z.object({ kind: z.literal('SupplyLoss'), rotor: z.number().int().nonnegative() }).strict(),
   // The operator's local electrical commands (PROC T4, T5, T11): the unit applies each at its time, class R.
   z.object({ kind: z.literal('IncomingDevice'), bus: z.string().min(1), source: z.enum(['unit', 'reserve']), target: z.enum(['Open', 'Closed']) }).strict(),
@@ -19,6 +19,16 @@ export const ld01CommandSchema = z.discriminatedUnion('kind', [
   z.object({ kind: z.literal('DcChargerInput'), group: z.string().min(1), bus: z.string().min(1) }).strict(),
 ])
 export type Ld01Command = z.infer<typeof ld01CommandSchema>
+
+/** A writable setpoint of the unit's (R4-GRID): written in its graph unit, sent at the next Grid exchange, read back on its channel. */
+const ld01SetpointSchema = z.object({
+  kind: z.literal('LoadRequest'),
+  /** The channel the setpoint in force reads on. */
+  channel: z.string().min(1),
+  /** The channel saying the unit takes this setpoint now (1) or not (0). */
+  activeChannel: z.string().min(1),
+}).strict()
+export type Ld01Setpoint = z.infer<typeof ld01SetpointSchema>
 
 /** A channel read in percent of a span the packet or IC section declares (a level over its instrument's range). */
 const spanChannelSchema = z.object({
@@ -34,6 +44,8 @@ export const ld01TagMapSchema = z.object({
   channels: z.record(variablePathSchema, z.union([z.string().min(1), spanChannelSchema])),
   /** Writable momentary graph variable path → the kernel command writing true sends. */
   commands: z.record(variablePathSchema, ld01CommandSchema),
+  /** Writable numeric graph variable path → the kernel setpoint a write sends at the next Grid exchange. */
+  setpoints: z.record(variablePathSchema, ld01SetpointSchema),
 }).strict()
 export type Ld01TagMap = z.infer<typeof ld01TagMapSchema>
 
@@ -61,6 +73,7 @@ const conversions: Readonly<Record<string, Conversion>> = {
   'rad/s->rpm': scale(60, 2 * Math.PI),
   'm->m': scale(1),
   'kg/s->kg/s': scale(1),
+  'Hz->Hz': scale(1),
   'K->degC': scale(1, 1, -273.15),
   'degC->degC': scale(1),
   's->s': scale(1),
@@ -78,6 +91,13 @@ export const convertLd01Value = (channelUnit: string, variableUnit: ProcessUnit,
   return value * conversion.factor / conversion.divisor + conversion.offset
 }
 
+/** A number in a graph variable's unit as its channel's unit reads it: `convertLd01Value` inverted, for a setpoint written. */
+export const ld01ChannelValueOf = (channelUnit: string, variableUnit: ProcessUnit, value: number): number => {
+  const conversion = conversions[`${channelUnit}->${variableUnit}`]
+  if (conversion?.kind !== 'scale') throw new Error(`no LD-01 conversion from ${channelUnit} to ${variableUnit}`)
+  return (value - conversion.offset) * conversion.divisor / conversion.factor
+}
+
 /** The channel id a tag map entry reads. */
 export const ld01ChannelIdOf = (entry: string | Ld01SpanChannel): string => typeof entry === 'string' ? entry : entry.channel
 
@@ -89,6 +109,7 @@ export type Ld01BoundVariable =
   | { readonly kind: 'channel'; readonly variable: CompiledVariable; readonly channel: number; readonly conversion: Conversion }
   | { readonly kind: 'span'; readonly variable: CompiledVariable; readonly channel: number; readonly span: { readonly min: number; readonly max: number } }
   | { readonly kind: 'command'; readonly variable: CompiledVariable; readonly command: Ld01Command }
+  | { readonly kind: 'setpoint'; readonly variable: CompiledVariable; readonly channel: number; readonly activeChannel: number; readonly channelUnit: string; readonly conversion: Conversion; readonly setpoint: Ld01Setpoint }
 
 export interface Ld01Binding {
   readonly byPath: ReadonlyMap<VariablePath, Ld01BoundVariable>
@@ -101,6 +122,20 @@ export const bindLd01TagMap = (graph: CompiledPlantGraph, tagMap: Ld01TagMap, ch
   const problems: string[] = []
   const byPath = new Map<VariablePath, Ld01BoundVariable>()
   for (const variable of graph.variables) {
+    const setpoint = tagMap.setpoints[variable.path]
+    if (setpoint !== undefined) {
+      const index = channelIndex.get(setpoint.channel)
+      const active = channelIndex.get(setpoint.activeChannel)
+      if (index === undefined || active === undefined) {
+        problems.push(`${variable.path} sets ${setpoint.kind} but the unit does not deliver ${index === undefined ? setpoint.channel : setpoint.activeChannel}`)
+        continue
+      }
+      const channel = channels[index]!
+      const conversion = conversions[`${channel.unit}->${variable.descriptor.unit}`]
+      if (!variable.descriptor.writable || conversion?.kind !== 'scale') problems.push(`${variable.path} sets ${setpoint.kind} but is not a writable number in a unit its channel converts to`)
+      else byPath.set(variable.path, { kind: 'setpoint', variable, channel: index, activeChannel: active, channelUnit: channel.unit, conversion, setpoint })
+      continue
+    }
     const entry = tagMap.channels[variable.path]
     const channelId = entry === undefined ? undefined : ld01ChannelIdOf(entry)
     const command = tagMap.commands[variable.path]
@@ -138,7 +173,7 @@ export const bindLd01TagMap = (graph: CompiledPlantGraph, tagMap: Ld01TagMap, ch
     byPath.set(variable.path, { kind: 'channel', variable, channel: index, conversion })
   }
   const variablePaths = new Set<string>(graph.variables.map(variable => variable.path))
-  for (const path of [...Object.keys(tagMap.channels), ...Object.keys(tagMap.commands)]) {
+  for (const path of [...Object.keys(tagMap.channels), ...Object.keys(tagMap.commands), ...Object.keys(tagMap.setpoints)]) {
     if (!variablePaths.has(path)) problems.push(`the tag map names ${path}, which the graph does not declare`)
   }
   if (problems.length > 0) throw new Error(`LD-01 tag map does not bind to the unit's channels: ${problems.join('; ')}`)

@@ -32,10 +32,11 @@ describe("maint's fourth walk, screen items", () => {
       { word: 'best found under budget', goal: 0, value: 2, unit: 'min', bound: { value: 1.5, source: 'logic+calendars' } },
       { word: 'best found under budget', goal: 1, value: 0, unit: 'min', bound: { value: 0, source: 'logic+calendars', certificate: { kind: 'zero' } } },
     ] }), contextOf(model))
-    expect(view.goals.map(goal => [goal.mark.word, goal.distance])).toEqual([['best found', 'could be up to 30 s better'], ['best found', '']])
+    // Walk V11 (increment 2): the bound itself, never "could be up to X better".
+    expect(view.goals.map(goal => [goal.mark.word, goal.distance])).toEqual([['best found', 'no plan has less than 1 min 30 s of lateness'], ['best found', '']])
     expect(view.run).toBe('The search ran to the end.')
     const early = statusView(status({ word: 'validated feasible', run: { ...run, stoppedBy: 'memory' }, goals: [] }), contextOf(model))
-    expect(early.run).toBe('The search stopped early, at the memory limit.')
+    expect(early.run).toBe('The search stopped early: it reached the memory it may use.')
     const text = readableText(renderHtml(PlanScreen, { client: createPlanningClient('0b4b9a52-2f7e-4c1a-9d3e-00000000000a', async () => { throw new Error('offline') }), planId: model.id, initial: model, onChanged: none, onOpenWorkspace: none, onOpenLibrary: none }))
     expect(text).not.toContain('best possible')
     expect(text).not.toContain('under budget')

@@ -63,7 +63,7 @@ for (const caseId of ['baseline', 'variant'] as const) {
     releaseCase = registry.acquireLease(runtime.id, 'background')
     const model = async () => {
       const started = performance.now()
-      try { return engineeringOwnerBasisSchema.parse(await runtime.readAtBoundary({ capabilityId: 'world.process-plant.engineering-basis', input: { subjectId: request.subjectId, purpose: 'capture' }, readPolicy: unrestrictedQueryReadPolicy })) }
+      try { return engineeringOwnerBasisSchema.parse(await runtime.readAtBoundary({ capabilityId: 'world.process-plant.engineering-basis', input: { profile: request.profile, subjectId: request.subjectId, purpose: 'capture' }, readPolicy: unrestrictedQueryReadPolicy })) }
       finally { receipt.timings.observationMs += performance.now() - started }
     }
     const initial = await model()

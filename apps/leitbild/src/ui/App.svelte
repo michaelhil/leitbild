@@ -35,15 +35,15 @@
   import { request, jsonRequest } from './api.ts'
   import { cardCapability } from './card-actions.ts'
   import { roomScopeIncludingRun, roomSelectsRun, roomServesRun, roomUsesFamily, runDeclaresRoles, runFamilyFor, sameResource } from './run-room-scope.ts'
-  import { keptSelection } from './open-selection.ts'
+  import { keptSelection, planningDemoQuery } from './open-selection.ts'
   import { withUnreadCount, workspacePageTitle } from './page-title.ts'
-  import { ageText, moduleTitle, workspaceLabel } from './launch-workspace.ts'
+  import { ageText, moduleReadiness, moduleTitle, workspaceLabel } from './launch-workspace.ts'
   import { workspacePath, workspaceUrl } from './launch-destination.ts'
   import { createPeopleSession, type PeopleSession, type PeopleState } from './people-session.ts'
   import { browserPeoplePorts } from './people-browser.ts'
   import { PEOPLE_SYNC_CAPABILITY_ID, type PersonWire } from './people-wire.ts'
   import { browserWorkspaceMemory } from './workspace-memory.ts'
-  import { demosHref, guideHref } from './modal-url.ts'
+  import { demoKey, demosHref, guideHref } from './modal-url.ts'
   import { createWorkspaceAdmin } from './workspace-admin.ts'
   import { errorDiagnostic, plainError, plainErrorText } from './error-text.ts'
   import { bannerAfterRetract } from './recoverable-error.ts'
@@ -73,7 +73,11 @@
   const initialSelection = new URLSearchParams(location.search)
   const initialAgentsVisible = initialSelection.get('agents') !== null
   let selectedPlanningId = $state(initialSelection.get('planning'))
+  let selectedDemoQuery = $state(planningDemoQuery(initialSelection))
   let selectedWorldRunId = $state(initialSelection.has('planning') ? null : initialSelection.get('world'))
+  let selectedWorldFocus = $state(initialSelection.get('focus'))
+  let selectedWorldElement = $state(initialSelection.get('element'))
+  let selectedWorldOption = $state(initialSelection.get('option'))
   let selectedAgentsRoomId = $state(initialSelection.get('agents'))
   let agentsVisible = $state(initialAgentsVisible)
   // A conversation the Getting started guide opened links back to it (plan v2 §2).
@@ -128,9 +132,17 @@
   const selectedPlanningResource = $derived(resources.find(resource =>
     resource.ref.type === 'planning.plan' && resource.ref.id === selectedPlanningId,
   ))
-  const planningPath = $derived(workspace && selectedPlanningId !== null
-    ? `/workspaces/${encodeURIComponent(workspace.id)}/planning${selectedPlanningId === 'library' ? '' : `?plan=${encodeURIComponent(selectedPlanningId)}`}`
-    : null)
+  const planningQuery = $derived(selectedPlanningId === 'demo' ? selectedDemoQuery
+    : selectedPlanningId === 'library' ? ''
+    : selectedPlanningId === null ? null : new URLSearchParams({ plan: selectedPlanningId }).toString())
+  const planningFrameQuery = $derived.by(() => {
+    if (planningQuery === null) return null
+    const selection = new URLSearchParams(planningQuery)
+    if (selectedAgentsRoomId !== null && agentsVisible) selection.set('agents', selectedAgentsRoomId)
+    return selection.toString()
+  })
+  const planningPath = $derived(workspace && planningFrameQuery !== null
+    ? `/workspaces/${encodeURIComponent(workspace.id)}/planning${planningFrameQuery === '' ? '' : `?${planningFrameQuery}`}` : null)
   const selectedRunFamily = $derived(selectedWorldResource?.links.find(link =>
     link.rel === 'member-of' && link.ref.type === 'world.run-family',
   )?.ref)
@@ -147,7 +159,7 @@
   ].slice(0, 4))
   const pageTitle = $derived(workspacePageTitle({
     workspace: workspace ? workspaceTitle : null,
-    run: selectedPlanningResource?.title ?? (selectedPlanningId === 'library' ? 'Planning' : selectedWorldResource?.title ?? null),
+    run: selectedPlanningResource?.title ?? (planningPath !== null ? 'Planning' : selectedWorldResource?.title ?? null),
     room: selectedAgentsResource?.title ?? null,
   }))
 
@@ -155,16 +167,34 @@
   let resourceOutcomes: ReadonlyArray<ModuleQueryOutcome> = []
   const normalizeOpenSelection = (catalog: ReadonlyArray<ModuleResourceDescriptor>, modules: ReadonlyArray<ModuleQueryOutcome>): void => {
     resourceOutcomes = modules
+    const requestedDemo = selectedPlanningId === 'demo'
     const kept = keptSelection({ world: selectedWorldRunId, planning: selectedPlanningId, agents: selectedAgentsRoomId, agentsVisible }, catalog, modules)
     selectedWorldRunId = kept.world
     selectedAgentsRoomId = kept.agents
     agentsVisible = kept.agentsVisible
     selectedPlanningId = kept.planning ?? null
     const url = new URL(location.href)
+    if (selectedPlanningId === 'demo' && selectedDemoQuery === null) {
+      selectedPlanningId = null
+      error = 'This Planning demo link is incomplete. Open it from the simulation guide.'
+    } else if (requestedDemo && selectedPlanningId === null) {
+      error = 'Planning is unavailable in this Workspace. Start the simulation from Demos.'
+    }
     if (selectedWorldRunId) url.searchParams.set('world', selectedWorldRunId)
-    else url.searchParams.delete('world')
+    else {
+      url.searchParams.delete('world')
+      url.searchParams.delete('focus')
+      url.searchParams.delete('element')
+      selectedWorldFocus = null
+      selectedWorldElement = null
+    }
     if (selectedPlanningId) url.searchParams.set('planning', selectedPlanningId)
     else url.searchParams.delete('planning')
+    if (selectedPlanningId !== 'demo') {
+      url.searchParams.delete('definition')
+      url.searchParams.delete('run')
+      if (selectedWorldRunId === null) url.searchParams.delete('option')
+    }
     if (selectedAgentsRoomId && agentsVisible) url.searchParams.set('agents', selectedAgentsRoomId)
     else url.searchParams.delete('agents')
     history.replaceState(null, '', url)
@@ -443,8 +473,13 @@
     await run(() => loadWorkspaceCatalog(workspace!.id))
   }
   const startFeatured = (card: FeaturedCard): void => {
-    if (!workspace) return
-    void startFrom({ key: featuredKey(card), workspaceId: workspace.id, definition: card.definition.ref, revisionId: featuredStartRevision(card), featured: true })
+    const targetWorkspace = workspace
+    if (!targetWorkspace) return
+    if (card.featured.requiresModules?.some(id => moduleReadiness(targetWorkspace, id) !== 'ready')) {
+      location.assign(demosHref(demoKey(card.featured.definition)))
+      return
+    }
+    void startFrom({ key: featuredKey(card), workspaceId: targetWorkspace.id, definition: card.definition.ref, revisionId: featuredStartRevision(card), featured: true })
   }
   const startDefinition = (definition: ModuleDefinitionDescriptor): void => {
     if (!workspace) return
@@ -554,6 +589,9 @@
   const switchWorldRun = (runId: string, replace = false): void => {
     selectedPlanningId = null
     selectedWorldRunId = runId
+    selectedWorldFocus = null
+    selectedWorldElement = null
+    selectedWorldOption = null
     const nextRun = resources.find(candidate => candidate.ref.type === 'world.simulation-run' && candidate.ref.id === runId)
     if (selectedAgentsResource && nextRun && !roomServesRun(selectedAgentsResource, nextRun)) {
       selectedAgentsRoomId = null
@@ -562,6 +600,11 @@
     const url = new URL(location.href)
     url.searchParams.set('world', runId)
     url.searchParams.delete('planning')
+    url.searchParams.delete('definition')
+    url.searchParams.delete('run')
+    url.searchParams.delete('focus')
+    url.searchParams.delete('element')
+    url.searchParams.delete('option')
     if (selectedAgentsRoomId) url.searchParams.set('agents', selectedAgentsRoomId)
     else url.searchParams.delete('agents')
     if (replace) history.replaceState(null, '', url)
@@ -595,7 +638,11 @@
   const restoreUrlSelection = (): void => {
     const selection = new URLSearchParams(location.search)
     selectedPlanningId = selection.get('planning')
+    selectedDemoQuery = planningDemoQuery(selection)
     selectedWorldRunId = selection.has('planning') ? null : selection.get('world')
+    selectedWorldFocus = selection.get('focus')
+    selectedWorldElement = selection.get('element')
+    selectedWorldOption = selection.get('option')
     selectedAgentsRoomId = selection.get('agents')
     agentsVisible = selectedAgentsRoomId !== null
     // Back to a Run or conversation deleted since is the Workspace page, not a dead view.
@@ -849,7 +896,7 @@
     {#each catalogFailures as outcome (outcome.moduleId)}{#if outcome.status === 'failed'}<p class="notice error" role="alert">{moduleTitle(outcome.moduleId)}: {outcome.failure.message}</p>{/if}{/each}
     {#if refreshError}<p class="notice error" role="alert">Catalog refresh failed: {refreshError}</p>{/if}
     {#if showingComposer}
-    <WorkspaceComposer workspaceId={workspace.id} worldRunId={selectedWorldRunId} {planningPath} planningResource={selectedPlanningResource?.ref ?? null}
+    <WorkspaceComposer workspaceId={workspace.id} worldRunId={selectedWorldRunId} worldFocus={selectedWorldFocus} worldElement={selectedWorldElement} worldOption={selectedWorldOption} {planningPath} planningResource={selectedPlanningResource?.ref ?? null}
       onResourceCatalogChange={() => { void refreshResources(workspace!.id).catch(cause => { refreshError = String(cause) }) }}
       {focusedSubjects} agentsRoomId={selectedAgentsRoomId} {agentsVisible} onShowAgents={showRunAssistant}
       {runRefusal} onOpenRun={runId => switchWorldRun(runId)} {runAssistantAvailable} onOpenRunAssistant={openRunAssistant}

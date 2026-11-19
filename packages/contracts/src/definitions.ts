@@ -139,8 +139,14 @@ export const moduleFeaturedDefinitionSchema = z.object({
   summary: z.string().trim().min(1).max(200),
   about: z.string().trim().min(1).max(1024),
   tags: z.array(z.string().trim().min(1).max(32)).min(1).max(4),
+  requiresModules: z.array(moduleIdSchema).min(1).max(8).optional(),
   previews: z.array(definitionPreviewSchema).min(1).max(4),
 }).strict().superRefine((featured, ctx) => {
+  const seen = new Set<string>([featured.definition.moduleId])
+  featured.requiresModules?.forEach((id, index) => {
+    if (seen.has(id)) ctx.addIssue({ code: 'custom', path: ['requiresModules', index], message: `Module is already required: ${id}` })
+    seen.add(id)
+  })
   featured.previews.forEach((preview, previewIndex) => {
     preview.sources.forEach((source, sourceIndex) => {
       if (modulePreviewPathPattern.exec(source.path)?.[1] !== featured.definition.moduleId) {
@@ -166,7 +172,14 @@ export const moduleListedDefinitionSchema = z.object({
   title: z.string().trim().min(1).max(256),
   summary: z.string().trim().min(1).max(200),
   tags: z.array(z.string().trim().min(1).max(32)).min(1).max(2),
-}).strict()
+  requiresModules: z.array(moduleIdSchema).min(1).max(8).optional(),
+}).strict().superRefine((listed, ctx) => {
+  const seen = new Set<string>([listed.definition.moduleId])
+  listed.requiresModules?.forEach((id, index) => {
+    if (seen.has(id)) ctx.addIssue({ code: 'custom', path: ['requiresModules', index], message: `Module is already required: ${id}` })
+    seen.add(id)
+  })
+})
 export type ModuleListedDefinition = z.infer<typeof moduleListedDefinitionSchema>
 
 // A Definition is featured or listed, once.

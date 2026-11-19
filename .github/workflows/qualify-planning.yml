@@ -1,0 +1,39 @@
+name: Qualify Planning
+run-name: Qualify Planning at ${{ inputs.code_revision }}
+
+on:
+  workflow_dispatch:
+    inputs:
+      code_revision:
+        description: Full lowercase public code commit SHA to qualify
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: planning-qualification-${{ inputs.code_revision }}
+  cancel-in-progress: false
+
+jobs:
+  planning:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      CODE_REVISION: ${{ inputs.code_revision }}
+    steps:
+      - name: Validate pinned code
+        run: '[[ "$CODE_REVISION" =~ ^[a-f0-9]{40}$ ]] || exit 1'
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ inputs.code_revision }}
+          persist-credentials: false
+      - run: test "$(git rev-parse HEAD)" = "$CODE_REVISION"
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version-file: .bun-version
+      - run: bun install --frozen-lockfile
+      - run: bun run check:planning
+      - run: bun run test:planning
+      - run: bun run build:planning

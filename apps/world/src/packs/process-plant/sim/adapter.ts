@@ -182,7 +182,7 @@ const emitOffsiteIsolationChange = (config: {
  * AC load flow did not converge there (null); a dead one has neither.
  */
 type NetworkPortState =
-  | { readonly connected: boolean; readonly energized: true; readonly voltagePu: number | null; readonly frequencyHz: number }
+  | { readonly connected: boolean; readonly energized: true; readonly voltagePu: number | null; readonly frequencyHz: number; readonly frequencyRateHzPerS?: number | undefined }
   | { readonly connected: boolean; readonly energized: false; readonly voltagePu: 0; readonly frequencyHz: null }
 
 export const createLocalProcessPlantPackRuntimeAdapter = (): PackRuntimeAdapter => ({
@@ -205,6 +205,7 @@ export const createLocalProcessPlantPackRuntimeAdapter = (): PackRuntimeAdapter 
       definitions: processPlantDefinitionsFor(initialObjects),
       runtimeState,
       onEngineFailure: (plantId, failure) => { onEngineFailure(plantId, failure) },
+      gridConnectedPlantIds: new Set(config.scenario.connections.map(connection => String(connection.system.objectId))),
     })
     const nativeEngines = connected.nativeEngines
     const unavailable = connected.unavailable
@@ -253,6 +254,14 @@ export const createLocalProcessPlantPackRuntimeAdapter = (): PackRuntimeAdapter 
       // A plant-side isolation holds against the port: no offsite voltage or frequency reaches the Plant.
       lastNetworkStateByConnection.set(connectionKey(connection), state)
       const live = isolationOf(connection) === undefined && state.connected && state.energized && state.voltagePu !== null ? { voltagePu: state.voltagePu, frequencyHz: state.frequencyHz } : null
+      const engine = nativeEngines.get(String(connection.system.objectId))
+      if (engine !== undefined) {
+        // R4-GRID: an LD-01 unit holds the boundary at its next exchange; its port state reads its own channels.
+        if (live !== null && (!state.energized || state.frequencyRateHzPerS === undefined)) throw new Error(`Grid port ${connection.network.objectId}:${connection.network.portId} publishes no frequency rate`)
+        engine.setGridBoundary(live === null ? { energized: false } : { energized: true, ...live, frequencyRateHzPerS: (state as { readonly frequencyRateHzPerS: number }).frequencyRateHzPerS })
+        networkAvailableByPlant.set(String(connection.system.objectId), live !== null)
+        return
+      }
       plant.runtime.writeCommand({ type: 'setVariable', path: componentVariablePath(boundary.component, 'available'), value: live !== null })
       plant.runtime.writeCommand({ type: 'setVariable', path: componentVariablePath(boundary.component, 'voltageFraction'), value: live === null ? 0 : live.voltagePu })
       if (live !== null) plant.runtime.writeCommand({ type: 'setVariable', path: componentVariablePath(boundary.component, 'frequencyHz'), value: live.frequencyHz })

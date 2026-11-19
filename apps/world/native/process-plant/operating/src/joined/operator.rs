@@ -36,7 +36,7 @@ use super::{
 use crate::{
     network::{
         CellMode, Coupling, CreditedOutput, Failure, Fluid, Network, PZR_PRESSURE, Properties,
-        Receipts, Reuse,
+        Receipts, Reuse, Until,
         packet::Packet as NetworkPacket,
         phase_events::{located, release_roots},
         stratified,
@@ -251,7 +251,8 @@ pub struct Joined<P: Properties> {
     /// reuse), so a reader of an accepted state (rule I) takes it instead of
     /// evaluating that state again ([`Joined::holds_value_evaluation`]).
     /// Cleared by every evaluation and root call; set only at the end of a
-    /// root call whose value evaluation completed. It is valid for a reader
+    /// root call whose value evaluation completed, whole or as far as the
+    /// face drives (R4-ROOT-DRIVES, held as such). It is valid for a reader
     /// between that root call and the next change of the operator, which
     /// the frame driver's accepted-state observer is: no transaction runs
     /// between a step and its observer.
@@ -268,6 +269,11 @@ struct ValueState {
     held: bool,
     /// The current root call evaluated its state.
     evaluated: bool,
+    /// R4-ROOT-DRIVES: the current root call evaluated its state as far as
+    /// the face drives.
+    drives_evaluated: bool,
+    /// R4-ROOT-DRIVES: the held evaluation stopped at the face drives.
+    drives: bool,
     t: u64,
     y: Vec<f64>,
     yp: Vec<f64>,
@@ -704,6 +710,16 @@ impl<P: Properties + WaterProperties> Joined<P> {
     /// (rule I) may then read [`Self::nuclear`], [`Self::travel`] and
     /// [`Self::region_phases`] without evaluating it again.
     pub fn holds_value_evaluation(&self, t: f64, y: &[f64], yp: &[f64]) -> bool {
+        self.value_state.holds(t, y, yp) && !self.value_state.drives
+    }
+    /// R4-ROOT-DRIVES (lane LAND7): whether the operator holds an evaluation
+    /// of exactly `(t, y, y')` (bitwise) at least as far as the coupled
+    /// owners' pass: a whole value evaluation, or a release-root call's that
+    /// stopped at the face drives, with nothing evaluated since. A reader of
+    /// that accepted state may then read [`Self::nuclear`], [`Self::travel`]
+    /// and [`Self::region_phases`] without evaluating it again; a reader of
+    /// [`Self::rows`] needs [`Self::holds_value_evaluation`].
+    pub fn holds_nuclear_evaluation(&self, t: f64, y: &[f64], yp: &[f64]) -> bool {
         self.value_state.holds(t, y, yp)
     }
     pub fn region_phases(&self) -> Result<Vec<crate::source_feedback::RegionPhase>, Failure> {
@@ -1126,6 +1142,23 @@ impl<P: Properties + WaterProperties> Joined<P> {
         cj: f64,
         reuse: Option<&mut Reuse<P::Caloric>>,
     ) -> Result<(), Failure> {
+        self.evaluate_until(t, y, yp, seed, cj, reuse, Until::Rows)
+    }
+
+    /// [`Self::evaluate`] as far as `until` ([`Network::evaluate_joined_until`]).
+    /// [`Until::Drives`] leaves the joined rows as they were and counts as an
+    /// evaluation, so no base standing before it is taken for this state.
+    #[allow(clippy::too_many_arguments)] // The stage inputs and the stop.
+    fn evaluate_until(
+        &mut self,
+        t: f64,
+        y: &[f64],
+        yp: &[f64],
+        seed: Option<&[f64]>,
+        cj: f64,
+        reuse: Option<&mut Reuse<P::Caloric>>,
+        until: Until,
+    ) -> Result<(), Failure> {
         let started = Instant::now();
         let o = self.blocks.offsets;
         self.value_state.held = false; // HOOK (COST2)
@@ -1161,7 +1194,7 @@ impl<P: Properties + WaterProperties> Joined<P> {
             cj,
             rows: block_rows,
         };
-        let result = self.network.evaluate_joined(
+        let result = self.network.evaluate_joined_until(
             t,
             &y[..o.nuclear],
             &yp[..o.nuclear],
@@ -1170,12 +1203,15 @@ impl<P: Properties + WaterProperties> Joined<P> {
             reuse,
             Some(&mut coupler),
             &volumes,
+            until,
         );
         if matches!(self.blocks.rods, RodPort::Owner(_)) {
             self.blocks.cell_volumes = volumes;
         }
         result?;
-        network_rows.copy_from_slice(self.network.rows());
+        if until == Until::Rows {
+            network_rows.copy_from_slice(self.network.rows());
+        }
         self.counters.residuals += 1;
         self.counters.residual_wall_s += started.elapsed().as_secs_f64();
         self.counters.coupled_wall_s = self.blocks.coupled_wall_s;
@@ -1400,11 +1436,15 @@ impl<P: Properties + WaterProperties> Joined<P> {
         // HOOK (COST2): a root call whose value evaluation completed leaves
         // that state's evaluation in the operator; everything the call does
         // after it reads the same `(y, y')` (the rods' moving volumes and
-        // read cells are recomputed from them bit for bit).
-        if result.is_ok() && self.value_state.evaluated {
+        // read cells are recomputed from them bit for bit). R4-ROOT-DRIVES:
+        // one that stopped at the face drives leaves its coupled owners'
+        // pass, held as such ([`Self::holds_nuclear_evaluation`]).
+        if result.is_ok() && (self.value_state.evaluated || self.value_state.drives_evaluated) {
             self.value_state.set(t, y, yp);
+            self.value_state.drives = !self.value_state.evaluated;
         }
         self.value_state.evaluated = false;
+        self.value_state.drives_evaluated = false;
         self.counters.roots += 1;
         self.counters.root_wall_s += started.elapsed().as_secs_f64();
         result
@@ -1476,10 +1516,15 @@ impl<P: Properties + WaterProperties> Joined<P> {
             // state, earlier in this call (nothing since mutates the
             // operator: the spray and phase-mode roots only read), is the
             // one L1's release roots read; it is not repeated.
+            // R4-ROOT-DRIVES: they read only the face drives, current once
+            // the momentum rows are, so the evaluation stops there. The call
+            // then holds no whole value evaluation, only its state as far as
+            // the drives: the coupled owners' pass, made before the momentum
+            // rows, is of this state; the joined rows are not.
             if release_roots(&roots) && !self.value_state.evaluated {
-                self.evaluate(t, y, yp, None, 0., None)
+                self.evaluate_until(t, y, yp, None, 0., None, Until::Drives)
                     .map_err(|e| fatal(format!("L1 root evaluation: {e:?}")))?;
-                self.value_state.evaluated = true; // HOOK (COST2)
+                self.value_state.drives_evaluated = true; // HOOK (COST2)
             }
             let mut values = vec![0.; roots.len()];
             self.network

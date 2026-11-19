@@ -30,7 +30,13 @@ const effectSnippets = (source: string): ReadonlyArray<string> => {
 
 describe('Einsatz Svelte files', () => {
   test('the Dispatch panel and its parts are all here', () => {
-    expect(files).toEqual(['ContactsSection.svelte', 'DispatchPanel.svelte', 'OverviewLists.svelte', 'SelectionCard.svelte'])
+    expect(files).toEqual([
+      'ContactsSection.svelte',
+      'DispatchDecision.svelte',
+      'DispatchPanel.svelte',
+      'OverviewLists.svelte',
+      'SelectionCard.svelte',
+    ])
   })
 
   for (const file of files) {
