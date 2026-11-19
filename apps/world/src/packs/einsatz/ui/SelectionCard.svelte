@@ -96,6 +96,7 @@
     {#if card.readOnly !== null}<p class="note">{card.readOnly}</p>{/if}
     {#if card.armed === null}
       <button type="button" class="primary" disabled={!card.dispatch.enabled} onclick={() => props.arm(card.id, null)}>{card.dispatch.label}</button>
+      <p class="reason">{card.dispatch.reason ?? ''}</p>
       <div class="stacked">
         <button type="button" disabled={!card.recall.enabled} onclick={() => props.recall(card.id)}>{card.recall.label}</button>
         <p class="reason">{card.recall.reason ?? ''}</p>
