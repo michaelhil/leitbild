@@ -208,11 +208,18 @@ export const newStamp = (): string => `${Date.now().toString(36)}-${(stampCount+
 export const nextScreenId = (setup: ScreenSetup): string | null =>
   [...SCREEN_LETTERS].find(letter => !setup.screens.some(screen => screen.id === letter)) ?? null
 
+/** The name a new screen starts with. */
+const defaultScreenName = (screenId: string): string => `Screen ${screenId}`
+
 export const addScreen = (setup: ScreenSetup): { readonly setup: ScreenSetup; readonly id: string } | null => {
   const id = nextScreenId(setup)
   if (id === null) return null
-  return { id, setup: { ...setup, screens: [...setup.screens, { id, name: `Screen ${id}` }] } }
+  return { id, setup: { ...setup, screens: [...setup.screens, { id, name: defaultScreenName(id) }] } }
 }
+
+/** A screen in one line: "Screen B · Left wall", or "Screen B" alone while it has no name of its own. */
+export const screenLabel = (screenId: string, name: string | null): string =>
+  name === null || name === defaultScreenName(screenId) ? defaultScreenName(screenId) : `${defaultScreenName(screenId)} · ${name}`
 
 /** The name as it would be stored, or why it cannot be one. */
 export const screenName = (text: string): { readonly name: string } | { readonly refused: string } => {
@@ -336,13 +343,55 @@ export const screenWindowName = (screenId: string): string => `leitbild-screen-$
 export const screenWindowFeatures = (bounds: ScreenBounds | null): string =>
   bounds === null ? 'popup' : `popup,left=${bounds.x},top=${bounds.y},width=${bounds.width},height=${bounds.height}`
 
+/**
+ * Opens a screen's window: one `window.open` per call, at the remembered
+ * rectangle. The `width`/`height` features size the page area, not the window,
+ * so the opened window is then sized to the remembered outer size; otherwise
+ * it would grow by the browser's own frame on every reopen. A browser that
+ * will not resize the window leaves it as it opened, which is not a failure.
+ * A `null` window is a pop-up the browser blocked.
+ */
+export const openScreenWindow = (
+  open: (url: string, name: string, features: string) => Pick<Window, 'resizeTo'> | null,
+  screen: { readonly id: string; readonly url: string; readonly bounds: ScreenBounds | null },
+): 'opened' | 'blocked' => {
+  const opened = open(screen.url, screenWindowName(screen.id), screenWindowFeatures(screen.bounds))
+  if (opened === null) return 'blocked'
+  if (screen.bounds !== null) {
+    try { opened.resizeTo(screen.bounds.width, screen.bounds.height) } catch { /* left as it opened */ }
+  }
+  return 'opened'
+}
+
+type WindowRectangle = Pick<Window, 'screenX' | 'screenY' | 'outerWidth' | 'outerHeight'>
+
 /** Where a window is and how big, as it reports about itself. */
-export const windowBounds = (source: Pick<Window, 'screenX' | 'screenY' | 'outerWidth' | 'outerHeight'>): ScreenBounds => ({
+export const windowBounds = (source: WindowRectangle): ScreenBounds => ({
   x: Math.round(source.screenX),
   y: Math.round(source.screenY),
   width: Math.round(source.outerWidth),
   height: Math.round(source.outerHeight),
 })
+
+/**
+ * A screen window's own report of where it is. `report` runs on load, resize
+ * and when the page is left. A window that is not shown yet (opened behind
+ * another, still being placed) has no size, so there is nothing true to
+ * write; the report is then owed, and `shown` (the page became visible or
+ * took focus) makes it once. No timer.
+ */
+export const createBoundsReporter = (store: Pick<ScreenStore, 'writeBounds'>, screenId: string, source: WindowRectangle) => {
+  let owed = false
+  const report = (): void => {
+    const bounds = windowBounds(source)
+    owed = bounds.width <= 0 || bounds.height <= 0
+    if (!owed) store.writeBounds(screenId, bounds)
+  }
+  return {
+    report,
+    shown: (): void => { if (owed) report() },
+  }
+}
 
 export interface MiniatureRect {
   readonly id: string

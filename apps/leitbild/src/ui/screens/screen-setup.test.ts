@@ -1,8 +1,8 @@
 import { describe, expect, test } from 'bun:test'
 import {
-  addScreen, assign, assignmentFor, contentFor, createScreenStore, definitionKeyOf, EMPTY_SCREEN_SETUP, hasStoredAssignment, isTarget, miniature,
-  newStamp, nextScreenId, offersShowOnScreens, removeScreen, renameScreen, scenarioTitle, SCREEN_ANSWER_KEY_PREFIX, SCREEN_BOUNDS_KEY_PREFIX,
-  SCREEN_IDENTIFY_KEY, SCREEN_ROLL_CALL_KEY, SCREEN_SETUP_KEY, SCREEN_TARGET_KEY, screenName, screenOfAddress, screenStorageChange, screenUrl,
+  addScreen, assign, assignmentFor, contentFor, createBoundsReporter, createScreenStore, definitionKeyOf, EMPTY_SCREEN_SETUP, hasStoredAssignment, isTarget, miniature,
+  newStamp, nextScreenId, offersShowOnScreens, openScreenWindow, removeScreen, renameScreen, scenarioTitle, SCREEN_ANSWER_KEY_PREFIX, SCREEN_BOUNDS_KEY_PREFIX,
+  SCREEN_IDENTIFY_KEY, SCREEN_ROLL_CALL_KEY, SCREEN_SETUP_KEY, SCREEN_TARGET_KEY, screenLabel, screenName, screenOfAddress, screenStorageChange, screenUrl,
   screenWindowFeatures, screenWindowName, showOnScreens, windowBounds, type ScreenContent, type ScreenSetup, type ScreenStorage, type ScreensRun,
 } from './screen-setup.ts'
 
@@ -177,6 +177,14 @@ describe('screens of a setup', () => {
     expect(renameScreen(fourScreens, 'B', 'Wall').contentByDefinition).toEqual(fourScreens.contentByDefinition)
   })
 
+  test('a screen is named in one line that never says "Screen B" twice', () => {
+    expect(screenLabel('B', 'Left wall')).toBe('Screen B · Left wall')
+    expect(screenLabel('B', addScreen(removeScreen(fourScreens, 'B'))!.setup.screens.at(-1)!.name)).toBe('Screen B')
+    expect(screenLabel('B', null)).toBe('Screen B')
+    // Another screen's default name is a name like any other.
+    expect(screenLabel('B', 'Screen A')).toBe('Screen B · Screen A')
+  })
+
   test('removing a screen removes what it shows in every scenario', () => {
     const both = assign(fourScreens, grid, 'B', map)
     const removed = removeScreen(both, 'B')
@@ -293,6 +301,71 @@ describe('screen windows', () => {
 
   test('a window reports where it is and how big, in whole pixels', () => {
     expect(windowBounds({ screenX: -1919.6, screenY: 25, outerWidth: 1280.4, outerHeight: 800 })).toEqual({ x: -1920, y: 25, width: 1280, height: 800 })
+  })
+
+  test('a window that has no size yet at load reports once it is shown', () => {
+    const storage = fakeStorage()
+    const store = createScreenStore(storage)
+    const writes: Array<unknown> = []
+    const counted = { writeBounds: (id: string, bounds: Parameters<typeof store.writeBounds>[1]) => { writes.push(bounds); return store.writeBounds(id, bounds) } }
+    const source = { screenX: 0, screenY: 0, outerWidth: 0, outerHeight: 0 }
+    const reporter = createBoundsReporter(counted, 'A', source)
+
+    reporter.report() // load, behind another window
+    expect(writes).toEqual([])
+    expect(store.readBounds('A')).toEqual({ status: 'absent' })
+    reporter.shown() // took focus, still without a size
+    expect(writes).toEqual([])
+
+    Object.assign(source, { screenX: 0, screenY: 33, outerWidth: 1470, outerHeight: 923 })
+    reporter.shown() // became visible
+    expect(store.readBounds('A')).toEqual({ status: 'ok', value: { x: 0, y: 33, width: 1470, height: 923 } })
+    reporter.shown() // later focus and visibility changes write nothing: only load, resize and leaving do
+    reporter.shown()
+    expect(writes).toHaveLength(1)
+
+    Object.assign(source, { outerWidth: 1200 })
+    reporter.report() // resize
+    expect(store.readBounds('A')).toEqual({ status: 'ok', value: { x: 0, y: 33, width: 1200, height: 923 } })
+    expect(writes).toHaveLength(2)
+  })
+
+  test('a window with a size at load reports at once, and a sizeless report never replaces a stored position', () => {
+    const store = createScreenStore(fakeStorage())
+    const source = { screenX: -1920, screenY: 0, outerWidth: 1920, outerHeight: 1080 }
+    const reporter = createBoundsReporter(store, 'B', source)
+    reporter.report()
+    expect(store.readBounds('B')).toEqual({ status: 'ok', value: { x: -1920, y: 0, width: 1920, height: 1080 } })
+    Object.assign(source, { outerWidth: 0, outerHeight: 0 })
+    reporter.report() // left while hidden
+    expect(store.readBounds('B')).toEqual({ status: 'ok', value: { x: -1920, y: 0, width: 1920, height: 1080 } })
+    Object.assign(source, { screenX: 0, outerWidth: 800, outerHeight: 600 })
+    reporter.shown()
+    expect(store.readBounds('B')).toEqual({ status: 'ok', value: { x: 0, y: 0, width: 800, height: 600 } })
+  })
+
+  test('an opened window is sized to its remembered outer size, since the features size only the page area', () => {
+    const calls: Array<ReadonlyArray<unknown>> = []
+    const resized: Array<ReadonlyArray<number>> = []
+    const open = (url: string, name: string, features: string) => {
+      calls.push([url, name, features])
+      return { resizeTo: (width: number, height: number) => { resized.push([width, height]) } }
+    }
+    const bounds = { x: -1920, y: 40, width: 1920, height: 1040 }
+    expect(openScreenWindow(open, { id: 'B', url: '/workspaces/ws?screen=B', bounds })).toBe('opened')
+    expect(calls).toEqual([['/workspaces/ws?screen=B', 'leitbild-screen-B', 'popup,left=-1920,top=40,width=1920,height=1040']])
+    expect(resized).toEqual([[1920, 1040]])
+
+    expect(openScreenWindow(open, { id: 'C', url: '/workspaces/ws?screen=C', bounds: null })).toBe('opened')
+    expect(calls[1]).toEqual(['/workspaces/ws?screen=C', 'leitbild-screen-C', 'popup'])
+    expect(resized).toHaveLength(1)
+  })
+
+  test('a browser that refuses to resize leaves the window open, and a blocked pop-up is told apart', () => {
+    const refusing = () => ({ resizeTo: () => { throw new DOMException('Not allowed', 'SecurityError') } })
+    expect(openScreenWindow(refusing, { id: 'B', url: '/workspaces/ws?screen=B', bounds: { x: 0, y: 0, width: 800, height: 600 } })).toBe('opened')
+    expect(openScreenWindow(() => null, { id: 'B', url: '/workspaces/ws?screen=B', bounds: { x: 0, y: 0, width: 800, height: 600 } })).toBe('blocked')
+    expect(openScreenWindow(() => null, { id: 'B', url: '/workspaces/ws?screen=B', bounds: null })).toBe('blocked')
   })
 
   test('the miniature keeps the windows where they are relative to each other', () => {

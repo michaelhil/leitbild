@@ -1,7 +1,8 @@
 <script lang="ts">
   // What a screen window (`screen=<id>`) shows of itself, in three states:
-  // - badge: its letter, its name and a Fullscreen button, small in a corner
-  //   over the page it shows;
+  // - badge: a slim strip in a row of its own above the page it shows, with
+  //   "Screen B · its name" and a Fullscreen button. It covers nothing, and it
+  //   is not there at all in fullscreen (Esc leaves fullscreen);
   // - Identify: the letter large over everything for a few seconds, when the
   //   Screens panel asks every screen to say which one it is;
   // - Standby: the letter large and why the screen shows nothing, with at
@@ -9,6 +10,7 @@
   // Fullscreen needs a press inside the window itself; a refusal is said here.
   import { onDestroy, untrack } from 'svelte'
   import type { StandbyText } from './screen-follow.ts'
+  import { screenLabel } from './screen-setup.ts'
 
   let { id, name, identify, standby, notice }: {
     id: string
@@ -60,25 +62,24 @@
 {#if standby}
   <section class="screen-standby" aria-label={`Screen ${id}, standby`}>
     <span class="screen-letter" aria-hidden="true">{id}</span>
-    <p class="screen-name">Screen {id}{name === null ? '' : ` · ${name}`}</p>
+    <p class="screen-name">{screenLabel(id, name)}</p>
     <p class="screen-why" role="status">{standby.why}</p>
     {#if standby.link}<a class="lb-btn" href={standby.link.href}>{standby.link.label}</a>{/if}
     {#if notice}<p class="screen-notice">{notice}</p>{/if}
     {#if refusal}<p class="screen-notice" role="alert">{refusal}</p>{/if}
     {@render fullscreenButton()}
   </section>
-{:else}
-  <aside class="screen-badge" aria-label={`Screen ${id}`}>
-    <span class="screen-badge-letter" aria-hidden="true">{id}</span>
-    {#if name !== null}<span class="screen-badge-name" title={name}>{name}</span>{/if}
-    {#if notice}<span class="screen-badge-notice" title={notice}>Not following</span>{/if}
-    {#if refusal}<span class="screen-badge-notice" role="alert">{refusal}</span>{/if}
+{:else if !fullscreen}
+  <header class="screen-strip" aria-label={`Screen ${id}`}>
+    <span class="screen-strip-name">{screenLabel(id, name)}</span>
+    {#if notice}<span class="screen-strip-note" title={notice}>Not following</span>{/if}
+    {#if refusal}<span class="screen-strip-note" role="alert">{refusal}</span>{/if}
     {@render fullscreenButton()}
-  </aside>
+  </header>
 {/if}
 {#if identifying}
   <div class="screen-identify" role="status">
     <span class="screen-letter">{id}</span>
-    {#if name !== null}<span class="screen-name">{name}</span>{/if}
+    <span class="screen-name">{screenLabel(id, name)}</span>
   </div>
 {/if}
