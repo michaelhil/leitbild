@@ -21,9 +21,9 @@
     slide: Snippet<[item: T, index: number]>
     /** Thumbnail content for a picker (`nav: 'thumbs'`); the title is added below it. */
     thumb?: Snippet<[item: T, index: number]>
-    /** 'dots' everywhere, or titled pickers: a thumbnail above the title at ≥ 1081 px, the title alone below that. */
+    /** 'dots' everywhere, or titled pickers: a thumbnail above the title at ≥ 1081 px, the title alone above the slide below that. */
     nav?: 'dots' | 'thumbs'
-    /** hero: framed card, controls inside the caption band at ≥ 1181 px. panel: unframed, controls in a row below. */
+    /** hero: framed card, controls inside the caption band at ≥ 1181 px. panel: unframed, controls in a row below (above with titled pickers below 1081 px). */
     variant?: 'hero' | 'panel'
     /** Word in the picker labels: "Show slide 2 of 6: …" / "Show demo 2 of 3: …". */
     noun?: string
@@ -217,6 +217,10 @@
   .thumb-title { display: -webkit-box; -webkit-line-clamp: 2; line-clamp: 2; -webkit-box-orient: vertical; height: 2.5em; box-sizing: content-box;
     margin-bottom: 6px; padding: 4px 7px 0; overflow: hidden; color: var(--lb-ink-2); font-size: .6875rem; font-weight: 600; line-height: 1.25; }
   .thumb .bar { inset: 0 0 auto; height: 3px; border-radius: 0; }
+  /* Below 1081 px the titles sit above the slide, so they show on open however tall the slide is (iPad portrait). */
+  @media (max-width: 1080px) {
+    .thumbs .controls { order: 0; border-top: 0; border-bottom: 1px solid var(--lb-line); }
+  }
   @media (min-width: 1081px) {
     .thumbs .pickers { flex: none; gap: 8px; }
     .thumbs .picker, .thumbs .picker[aria-selected="true"] { flex: none; width: 128px; }
@@ -232,7 +236,7 @@
     .count { display: none; }
     .picker { width: 24px; }
     .picker[aria-selected="true"] { width: 40px; }
-    /* Phones: the titles take their own rows, two to a row, before Play, Previous and Next. */
+    /* Phones: the titles take their own rows, two to a row, above Play, Previous and Next. */
     .thumbs .controls { flex-wrap: wrap; }
     .thumbs .pickers { order: -1; display: grid; flex-basis: 100%; grid-template-columns: repeat(2, minmax(0, 1fr)); }
   }
