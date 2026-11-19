@@ -77,6 +77,14 @@ const todaysLayerIds = [
 
 const flush = async (): Promise<void> => { for (let index = 0; index < 5; index += 1) await Promise.resolve() }
 
+/** A deck.gl pick at a canvas point: one px per 0.00001° from (11.3, 59.12), east right and north up. */
+const pickAt = (object: unknown, x: number, y: number) => ({
+  object,
+  x,
+  y,
+  viewport: { x: 0, y: 0, project: ([lon, lat]: ReadonlyArray<number>) => [(lon! - 11.3) / 1e-5, -(lat! - 59.12) / 1e-5, 0] },
+})
+
 describe('operational map icons', () => {
   test('compiled atlas ids draw from the compiled atlas, any other catalogue id from loaded artwork', () => {
     for (const id of leitbildSymbolIds) expect(symbolAtlasFor(id)).toBe('compiled')
@@ -323,12 +331,13 @@ describe('operational map icons', () => {
     const halos = layersOf(armed, emptyCatalogueSymbolAtlas).find(layer => layer.id === 'leitbild-object-halos')?.props as unknown as { readonly getLineColor: (point: unknown) => ReadonlyArray<number> }
     const [red, green, blue] = halos.getLineColor(point)
     expect(red).toBeGreaterThan(Math.max(green!, blue!))
-    // deck.gl hands a click on a tag, its text or its pill, the tag's own data row: the target's point.
+    // deck.gl hands a click on a tag, its text or its pill, the tag's own data row: the target's point. The tag
+    // stands 30 px above c, over no icon.
     const tagged = (tags?.props.data as ReadonlyArray<{ readonly id: string }>).find(point => point.id === 'c')
     type Pick = (info: { readonly object: unknown }) => void
-    ;(tags?.props.onClick as unknown as Pick)({ object: tagged })
-    ;(tags?.props.onHover as unknown as Pick)({ object: tagged })
-    ;(tags?.props.onHover as unknown as Pick)({ object: undefined })
+    ;(tags?.props.onClick as unknown as Pick)(pickAt(tagged, 20_000, -30))
+    ;(tags?.props.onHover as unknown as Pick)(pickAt(tagged, 20_000, -30))
+    ;(tags?.props.onHover as unknown as Pick)(pickAt(undefined, 20_000, -30))
     expect(selected).toEqual(['c'])
     expect(seen).toEqual(['c'])
     expect(hovered).toEqual(['c', null])
@@ -358,11 +367,12 @@ describe('operational map icons', () => {
       onObjectHover: point => { hovered.push(point?.id ?? null) },
     }).find(layer => layer.id === 'leitbild-object-labels')
     expect(labels?.props.pickable).toBe(true)
+    // b's label runs right from its icon, over no other icon.
     const labelled = snapshot.points.find(point => point.id === 'b')
     type Pick = (info: { readonly object: unknown }) => void
-    ;(labels?.props.onClick as unknown as Pick)({ object: labelled })
-    ;(labels?.props.onHover as unknown as Pick)({ object: labelled })
-    ;(labels?.props.onHover as unknown as Pick)({ object: undefined })
+    ;(labels?.props.onClick as unknown as Pick)(pickAt(labelled, 10_030, 0))
+    ;(labels?.props.onHover as unknown as Pick)(pickAt(labelled, 10_030, 0))
+    ;(labels?.props.onHover as unknown as Pick)(pickAt(undefined, 10_030, 0))
     expect(selected).toEqual(['b'])
     expect(seen).toEqual(['b'])
     expect(hovered).toEqual(['b', null])
