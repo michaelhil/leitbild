@@ -1,6 +1,6 @@
 <script lang="ts">
   import { onDestroy, untrack, tick } from 'svelte'
-  import { WORKSPACE_SURFACE_PARAMETER, type EmbeddedViewListing, type WorkspaceResourceReference, type WorkspaceSubjectReference, type WorkspaceSurface } from '@leitbild/contracts'
+  import { WORKSPACE_SURFACE_PARAMETER, type EmbeddedViewListing, type ModuleResourceDescriptor, type WorkspaceResourceReference, type WorkspaceSubjectReference, type WorkspaceSurface } from '@leitbild/contracts'
   import { embeddedViewFragment, embeddedViewPath } from '@leitbild/contracts/embedded-view-route'
   import Modal from './Modal.svelte'
   import { closeEmbeddedViewOnEscape } from './embedded-view-keyboard.ts'
@@ -22,6 +22,8 @@
     readonly worldSurface?: string | null
     readonly planningPath?: string | null
     readonly planningResource?: WorkspaceResourceReference | null
+    /** The Workspace's resource catalogue as last read: the display relay reads which Resources are about the shown Run. */
+    readonly resources: ReadonlyArray<ModuleResourceDescriptor>
     readonly onResourceCatalogChange: () => void
     readonly focusedSubjects: ReadonlyArray<WorkspaceSubjectReference>
     readonly agentsRoomId: string | null
@@ -49,7 +51,7 @@
   const minimumOpenShare = 20
 
   let {
-    workspaceId, worldRunId, worldFocus = null, worldElement = null, worldOption = null, worldSurface = null, planningPath = null, planningResource = null, onResourceCatalogChange, focusedSubjects, agentsRoomId, agentsVisible, onShowAgents, runRefusal, onOpenRun,
+    workspaceId, worldRunId, worldFocus = null, worldElement = null, worldOption = null, worldSurface = null, planningPath = null, planningResource = null, resources, onResourceCatalogChange, focusedSubjects, agentsRoomId, agentsVisible, onShowAgents, runRefusal, onOpenRun,
     runAssistantAvailable, onOpenRunAssistant, onPlaceSurface, onError, worldPane = $bindable(null),
   }: Props = $props()
   let splitPercent = $state(initialSplit)
@@ -161,6 +163,8 @@
   const relay = createViewRelay({
     workspaceId: () => workspaceId,
     worldPane: (): WorldPane => planningPath !== null || worldRunId === null ? 'absent' : collapsedPane === 'world' ? 'collapsed' : 'shown',
+    shownRun: () => worldRunId === null ? null : { workspaceId, moduleId: 'world', type: 'world.simulation-run', id: worldRunId } as WorkspaceResourceReference,
+    resources: () => resources,
     runRefusal: run => runRefusal(run),
     postToWorld: message => worldFrame?.contentWindow?.postMessage(message, location.origin),
     postToAgents: message => agentsFrame?.contentWindow?.postMessage(message, location.origin),

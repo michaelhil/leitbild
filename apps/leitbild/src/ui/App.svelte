@@ -1024,7 +1024,7 @@
     {#if shownStandby !== null}
       <!-- A screen with nothing to show: the badge's Standby fills the window, and no Run is joined. -->
     {:else if showingComposer}
-    <WorkspaceComposer workspaceId={workspace.id} worldRunId={selectedWorldRunId} worldFocus={selectedWorldFocus} worldElement={selectedWorldElement} worldOption={selectedWorldOption} worldSurface={selectedWorldSurface} {planningPath} planningResource={selectedPlanningResource?.ref ?? null}
+    <WorkspaceComposer workspaceId={workspace.id} worldRunId={selectedWorldRunId} worldFocus={selectedWorldFocus} worldElement={selectedWorldElement} worldOption={selectedWorldOption} worldSurface={selectedWorldSurface} {planningPath} planningResource={selectedPlanningResource?.ref ?? null} {resources}
       onResourceCatalogChange={() => { void refreshResources(workspace!.id).catch(cause => { refreshError = String(cause) }) }}
       {focusedSubjects} agentsRoomId={selectedAgentsRoomId} {agentsVisible} onShowAgents={showRunAssistant}
       {runRefusal} onOpenRun={runId => switchWorldRun(runId)} {runAssistantAvailable} onOpenRunAssistant={openRunAssistant}

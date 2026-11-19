@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test'
-import { embeddedViewListingSchema, newWorkspaceId, type EmbeddedViewListing, type WorkspaceResourceReference } from '@leitbild/contracts'
+import { ABOUT_RELATION, embeddedViewListingSchema, moduleResourceDescriptorSchema, newWorkspaceId, workspaceResourceReferenceSchema, type EmbeddedViewListing, type ModuleResourceDescriptor, type WorkspaceResourceReference } from '@leitbild/contracts'
 import { createViewRelay, PENDING_VIEW_OPEN_MS, type WorldPane } from '../src/ui/view-relay.ts'
 
 const workspaceId = newWorkspaceId()
@@ -30,12 +30,30 @@ const calculation = (inWorkspace: string = workspaceId) => embeddedViewListingSc
   },
   caption: 'Answer 14:02:31',
 })
+// A view of another Module whose subject, a plan, the catalogue may link as about a Run.
+const planRef = (id = 'plan-1') => ({ workspaceId, moduleId: 'planning', type: 'planning.plan', id })
+const schedule = (planId = 'plan-1') => embeddedViewListingSchema.parse({
+  key: 'schedule',
+  envelope: {
+    moduleId: 'planning',
+    viewType: 'planning.schedule',
+    subject: planRef(planId),
+    title: 'Finish by 20:00',
+    height: 650,
+    state: JSON.stringify({ plan: planId, option: 'deadline-20' }),
+  },
+  caption: 'Answer 14:02:31',
+})
+const listed = (ref: ReturnType<typeof runRef>, links: ReadonlyArray<{ readonly rel: string; readonly ref: ReturnType<typeof runRef> }> = []) =>
+  moduleResourceDescriptorSchema.parse({ ref, title: `Resource ${ref.id}`, links, capabilityIds: [], observedAt: '2026-11-18T07:00:00.000Z' })
+const about = (runId: string) => ({ rel: ABOUT_RELATION, ref: runRef(runId) })
+const roomRef = { workspaceId, moduleId: 'agents', type: 'agents.room', id: 'research-room' }
 const ready = { type: 'leitbild:view-window-ready' }
 
 // Lets the relay's asynchronous Run check settle.
 const settle = async (): Promise<void> => { for (let turn = 0; turn < 3; turn += 1) await Promise.resolve() }
 
-const harness = (options: { pane?: WorldPane; runs?: ReadonlyArray<string>; refusal?: string } = {}) => {
+const harness = (options: { pane?: WorldPane; runs?: ReadonlyArray<string>; refusal?: string; shownRun?: string | null; resources?: ReadonlyArray<ModuleResourceDescriptor> } = {}) => {
   const state = {
     pane: options.pane ?? 'shown' as WorldPane,
     world: [] as Array<{ readonly type: string; readonly views?: ReadonlyArray<{ readonly key: string }>; readonly view?: { readonly key: string } }>,
@@ -52,6 +70,9 @@ const harness = (options: { pane?: WorldPane; runs?: ReadonlyArray<string>; refu
   const relay = createViewRelay({
     workspaceId: () => workspaceId,
     worldPane: () => state.pane,
+    // The composer names its Run whatever the pane's state; the relay judges the pane itself.
+    shownRun: () => options.shownRun === null ? null : workspaceResourceReferenceSchema.parse(runRef(options.shownRun ?? 'run-1')),
+    resources: () => options.resources ?? [],
     runRefusal: async (run: WorkspaceResourceReference) => {
       state.runChecks += 1
       if (options.refusal !== undefined) return options.refusal
@@ -143,6 +164,88 @@ describe('process display relay', () => {
     expect(state.runChecks).toBe(1)
     relay.fromWorld(ready)
     expect(state.world.at(-1)).toEqual(open(listing('world', 'run-2')))
+  })
+
+  test.each(['shown', 'collapsed'] as const)('a view whose subject is about the Run in the %s World pane opens in that Run\'s window, not in a Host frame', pane => {
+    const { relay, state, liveTimers } = harness({ pane, resources: [listed(runRef('run-1')), listed(planRef(), [about('run-1')])] })
+    relay.fromWorld(ready)
+    const received = schedule()
+    relay.fromAgents(open(received))
+    expect(state.world.at(-1)).toEqual(open(received))
+    expect(state.world.at(-1)?.view).not.toBe(received)
+    expect(state.owned).toBeNull()
+    expect(state.shownWorld).toBe(pane === 'collapsed' ? 1 : 0)
+    expect(state.pane).toBe('shown')
+    expect(state.runChecks).toBe(0)
+    expect(state.openedRuns).toEqual([])
+    expect(liveTimers()).toEqual([])
+    expect(state.errors).toEqual([])
+  })
+
+  test('a view about the shown Run closes an open Host frame, waits for a World page that does not listen yet, and reports one that never answers', () => {
+    const { relay, state, liveTimers } = harness({ resources: [listed(planRef(), [about('run-1')])] })
+    relay.fromAgents(open(calculation()))
+    expect(state.owned).toEqual(calculation())
+    relay.fromAgents(open(schedule()))
+    expect(state.owned).toBeNull()
+    expect(state.world).toEqual([])
+    expect(liveTimers()).toHaveLength(1)
+    relay.fromWorld(ready)
+    expect(state.world).toEqual([views(), open(schedule())])
+    expect(liveTimers()).toEqual([])
+
+    relay.worldFrameUnloaded()
+    relay.fromAgents(open(schedule()))
+    liveTimers()[0]?.expire()
+    expect(state.errors).toEqual(['Display could not be opened: the World page did not answer within 30 s'])
+    expect(state.owned).toBeNull()
+  })
+
+  test('a view about a Run opens its owner view in a Host frame when the World pane is absent', () => {
+    const { relay, state, liveTimers } = harness({ pane: 'absent', runs: ['run-1'], resources: [listed(runRef('run-1')), listed(planRef(), [about('run-1')])] })
+    relay.fromWorld(ready)
+    const received = schedule()
+    relay.fromAgents(open(received))
+    expect(state.owned).toEqual(received)
+    expect(state.world).toEqual([views()])
+    expect(state.runChecks).toBe(0)
+    expect(state.openedRuns).toEqual([])
+    expect(state.pane).toBe('absent')
+    expect(liveTimers()).toEqual([])
+    expect(state.errors).toEqual([])
+  })
+
+  test.each([
+    ['is about another Run', [listed(planRef(), [about('run-2')])], 'run-1'],
+    ['is about a Run while the pane names none', [listed(planRef(), [about('run-1')])], null],
+    ['is not in the catalogue the Host holds', [listed(planRef('plan-2'), [about('run-1')])], 'run-1'],
+    ['is linked to the shown Run by another relation', [listed(planRef(), [{ rel: 'copy-of', ref: runRef('run-1') }])], 'run-1'],
+    ['has no links', [listed(planRef())], 'run-1'],
+  ] as const)('a view whose subject %s opens its owner view in a Host frame beside the shown World pane', (_case, resources, shownRun) => {
+    const { relay, state, liveTimers } = harness({ resources, shownRun })
+    relay.fromWorld(ready)
+    const received = schedule()
+    relay.fromAgents(open(received))
+    expect(state.owned).toEqual(received)
+    expect(state.world).toEqual([views()])
+    expect(state.shownWorld).toBe(0)
+    expect(liveTimers()).toEqual([])
+    expect(state.errors).toEqual([])
+  })
+
+  test.each(['collapsed', 'shown'] as const)('an engineering result of a Room still opens in a Host frame with the World pane %s, whatever else is about its Run', pane => {
+    const { relay, state } = harness({ pane, resources: [
+      listed(planRef(), [about('run-1')]),
+      listed(roomRef, [{ rel: 'scope-resource', ref: runRef('run-1') }]),
+    ] })
+    relay.fromWorld(ready)
+    relay.fromAgents(open(schedule()))
+    expect(state.world.at(-1)).toEqual(open(schedule()))
+    relay.fromAgents(open(calculation()))
+    expect(state.owned).toEqual(calculation())
+    expect(state.world).toHaveLength(2)
+    expect(state.shownWorld).toBe(pane === 'collapsed' ? 1 : 0)
+    expect(state.errors).toEqual([])
   })
 
   test.each(['agentsFrameUnloaded', 'agentsFrameLoaded', 'dispose'] as const)('%s closes an owner view and prevents an older Run check from reopening its old context', async lifecycle => {

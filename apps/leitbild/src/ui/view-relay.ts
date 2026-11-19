@@ -1,4 +1,5 @@
 import {
+  ABOUT_RELATION,
   embeddedViewHostMessageSchema,
   embeddedViewOpenMessageSchema,
   embeddedViewSubjectOpenMessageSchema,
@@ -10,6 +11,7 @@ import {
   type EmbeddedViewOpenMessage,
   type EmbeddedViewSubjectOpenMessage,
   type EmbeddedViewsMessage,
+  type ModuleResourceDescriptor,
   type WorkspaceResourceReference,
 } from '@leitbild/contracts'
 import type { ZodError } from 'zod'
@@ -19,7 +21,9 @@ import type { ZodError } from 'zod'
 // to be opened (or a subject's default display, as a proposal card does), and
 // the World frame, whose page shows the Run's window. Views about other
 // Resources open in a Host frame at their owning Module's embed route; they
-// do not require or select a World Run. The relay is
+// do not require or select a World Run. One such view opens in the window
+// instead: a view whose subject the Workspace's catalogue links as about the
+// Run the World pane shows, so it appears over what it is about. The relay is
 // the only validator on that path: every message is parsed with its contract
 // schema and must name this page's Workspace, and every refusal is reported
 // where the operator sees it. It keeps only the latest list, whether the World
@@ -35,6 +39,9 @@ export type WorldPane = 'absent' | 'collapsed' | 'shown'
 // The contract's window messages share this prefix. Other messages from the
 // two frames are not part of the window's protocol and are not judged here.
 const VIEW_MESSAGE_PREFIX = 'leitbild:view'
+
+const sameResource = (a: WorkspaceResourceReference, b: WorkspaceResourceReference): boolean =>
+  a.workspaceId === b.workspaceId && a.moduleId === b.moduleId && a.type === b.type && a.id === b.id
 
 const viewMessageType = (data: unknown): string | null => {
   if (typeof data !== 'object' || data === null) return null
@@ -56,6 +63,14 @@ export const createViewRelay = (config: {
   /** The Workspace this page shows; a view of any other Workspace is refused. */
   readonly workspaceId: () => string
   readonly worldPane: () => WorldPane
+  /** The Run the World pane shows, collapsed or not; null without that pane. */
+  readonly shownRun: () => WorkspaceResourceReference | null
+  /**
+   * The Workspace's Resources as the Host last read them. The relay reads only
+   * each one's links, and never reads the catalogue again: a Resource it does
+   * not list yet is about nothing.
+   */
+  readonly resources: () => ReadonlyArray<Pick<ModuleResourceDescriptor, 'ref' | 'links'>>
   /**
    * Why the Run may not be opened beside the chat, or null when it may: the
    * Workspace must list it (after reading the catalog again on a miss, since
@@ -90,6 +105,15 @@ export const createViewRelay = (config: {
     embeddedViewOpenMessageSchema.parse({ type: 'leitbild:view-open', view })
 
   const foreign = (view: EmbeddedViewListing): boolean => view.envelope.subject.workspaceId !== config.workspaceId()
+
+  // The Run the World pane shows, where the catalogue links the subject as about it; otherwise null.
+  const shownRunAbout = (subject: WorkspaceResourceReference): WorkspaceResourceReference | null => {
+    if (config.worldPane() === 'absent') return null
+    const run = config.shownRun()
+    if (run === null) return null
+    const listed = config.resources().find(resource => sameResource(resource.ref, subject))
+    return listed?.links.some(link => link.rel === ABOUT_RELATION && sameResource(link.ref, run)) ? run : null
+  }
 
   const dropPending = (): void => {
     pending?.cancel()
@@ -134,6 +158,8 @@ export const createViewRelay = (config: {
     const view = parsed.data.view
     if (foreign(view)) return config.reportError('Display could not be opened: it belongs to another Workspace')
     if (view.envelope.subject.moduleId !== 'world' || view.envelope.subject.type !== 'world.simulation-run') {
+      const run = shownRunAbout(view.envelope.subject)
+      if (run !== null) return open(openMessage(view), run)
       closeOpens()
       config.openOwnedView(view)
       return
