@@ -32,7 +32,6 @@ describe('Einsatz client', () => {
     // An input the Capability would refuse never leaves the browser.
     await expect(client.order({ units: [], stops: [{ taskId: 'j1' }] })).rejects.toThrow()
     await expect(client.undo('r1', '')).rejects.toThrow()
-    await expect(client.reorder('r1', [{ id: 'step-1', state: 'queued' }], ['step-1', 'step-1'])).rejects.toThrow()
   })
 
   test('a refusal\'s code is the one the result sets, never read out of its text', () => {

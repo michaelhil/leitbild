@@ -2,7 +2,7 @@ import { describe, expect, test } from 'bun:test'
 import type { z } from 'zod'
 import { commandIdSchema } from '../../../core/model/index.ts'
 import { capabilityJsonSchema } from '../../../simulation/capabilities.ts'
-import { unitOrderInputSchema, unitPlanReorderInputSchema, unitRecallInputSchema, unitStopRemoveInputSchema, unitUndoInputSchema } from '../order-schema.ts'
+import { unitOrderInputSchema, unitRecallInputSchema, unitStopRemoveInputSchema, unitUndoInputSchema } from '../order-schema.ts'
 import { recommendAnswerSchema } from '../recommendation-schema.ts'
 import { refusal, refusalCode } from '../refusal.ts'
 import { situationInputSchema, situationSchema, unitOptionsInputSchema, unitOptionsSchema } from './schema.ts'
@@ -113,7 +113,6 @@ describe('Einsatz wire schemas', () => {
     expect(unitUndoInputSchema.parse({ unitId: 'unit:u-1', commandId: 'cmd-1' })).toEqual({ unitId: 'unit:u-1', commandId: commandIdSchema.parse('cmd-1') })
     expect(unitUndoInputSchema.safeParse({ unitId: 'unit:u-1' }).success).toBe(false)
     expect(unitStopRemoveInputSchema.parse({ unitId: 'unit:u-1', stopId: 'step-2' }).stopId).toBe('step-2')
-    expect(unitPlanReorderInputSchema.safeParse({ unitId: 'unit:u-1', expectedPlan: options.plan, stopIds: ['step-2', 'step-2'] }).success).toBe(false)
     expect(unitRecallInputSchema.safeParse({ unitId: 'unit:u-1', fromTaskId: 'task:t-1' }).success).toBe(false)
     expect(situationInputSchema.parse({})).toEqual({})
     expect(situationInputSchema.parse({ group: 'g1' }).group).toBe('g1')
@@ -142,7 +141,7 @@ describe('Einsatz wire schemas', () => {
         }
       }
     }
-    const schemas = { situationInputSchema, situationSchema, unitOptionsInputSchema, unitOptionsSchema, recommendAnswerSchema, unitOrderInputSchema, unitUndoInputSchema, unitStopRemoveInputSchema, unitPlanReorderInputSchema, unitRecallInputSchema }
+    const schemas = { situationInputSchema, situationSchema, unitOptionsInputSchema, unitOptionsSchema, recommendAnswerSchema, unitOrderInputSchema, unitUndoInputSchema, unitStopRemoveInputSchema, unitRecallInputSchema }
     for (const [name, schema] of Object.entries(schemas)) walk(capabilityJsonSchema(schema), name)
     expect(undescribed).toEqual([])
   })

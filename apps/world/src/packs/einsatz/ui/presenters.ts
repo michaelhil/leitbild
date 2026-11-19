@@ -208,8 +208,6 @@ export interface PlanStopView {
   readonly active: boolean
   readonly by: string | null
   readonly removeLabel: string
-  readonly canMoveUp: boolean
-  readonly canMoveDown: boolean
 }
 
 export interface UnitCardView {
@@ -311,8 +309,6 @@ export const unitCard = (situation: Situation, unit: SituationUnit, options: Uni
         : stop.eta === null ? (index === 0 ? dueText(unit, elapsedS) : null) : etaText(stop.eta, elapsedS),
       active: stop.state === 'active',
       by: stop.by.isViewer ? null : `by ${stop.by.label}`,
-      canMoveUp: commandable && stop.state === 'queued' && unit.plan[index - 1]?.state === 'queued',
-      canMoveDown: commandable && stop.state === 'queued' && unit.plan[index + 1]?.state === 'queued',
     })),
     removable: commandable,
     predicted: unit.predictedDelivery === null ? null : [`then ${unit.predictedDelivery.label} (nearest accepting)`,

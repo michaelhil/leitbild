@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test'
-import { initialSelection, moveQueuedStop, planExpectation, reduceSelection, type ClickedObject, type SelectionState } from './selection.ts'
+import { initialSelection, planExpectation, reduceSelection, type ClickedObject, type SelectionState } from './selection.ts'
 import type { UnitOptions } from '../situation/schema.ts'
 
 const free = { id: 'unit:a', status: { word: 'Free', tone: 'free' as const }, commandedBy: null, carry: null, plan: [] }
@@ -85,12 +85,5 @@ describe('map-first dispatch', () => {
     expect(reduceSelection(selected(), click(call), options, undone).effects).toEqual([{
       kind: 'submit', job: null, input: { units: [unit.id], stops: [{ taskId: call.id }], expectedPlan: [] },
     }])
-  })
-
-  test('queue controls move queued neighbours and keep the active route pinned', () => {
-    const plan = planExpectation([old, next, { ...next, id: 'step-3' }])
-    expect(moveQueuedStop(plan, old.id, 1)).toBeNull()
-    expect(moveQueuedStop(plan, next.id, -1)).toBeNull()
-    expect(moveQueuedStop(plan, next.id, 1)).toEqual(['step-3', next.id])
   })
 })

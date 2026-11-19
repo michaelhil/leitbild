@@ -184,16 +184,6 @@ export const reduceSelection = (state: SelectionState, event: SelectionEvent, op
   }
 }
 
-/** Swap neighbouring queued stops only; the engine also validates the resulting order. */
-export const moveQueuedStop = (plan: PlanExpectation, stopId: string, direction: -1 | 1): string[] | null => {
-  const queued = plan.filter(step => step.state === 'queued').map(step => step.id)
-  const from = queued.indexOf(stopId)
-  const to = from + direction
-  if (from < 0 || to < 0 || to >= queued.length) return null
-  ;[queued[from], queued[to]] = [queued[to]!, queued[from]!]
-  return queued
-}
-
 export const activationActs = (quietFromMs: number | null, atMs: number): boolean => quietFromMs === null || atMs - quietFromMs >= doubleClickMs
 
 export const selectionChangeEvent = (state: SelectionState, objectId: string | null, kindOf: (objectId: string) => DispatchObjectKind | null, atMs: number): SelectionEvent | null => {

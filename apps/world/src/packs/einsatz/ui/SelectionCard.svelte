@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { ArrowDown, ArrowUp, House, X } from 'lucide-svelte'
+  import { House, X } from 'lucide-svelte'
   import { einsatzColors } from '../colors.ts'
   import type { Stop, UnitOrderInput } from '../order-schema.ts'
   import { svgImageSource } from './einsatz-client.ts'
@@ -23,7 +23,6 @@
     readonly recall: (unitId: string) => void
     readonly undo: (unitId: string, commandId: string) => void
     readonly chooseStop: (stopId: string) => void
-    readonly moveStop: (stopId: string, direction: -1 | 1) => void
     readonly order: (input: UnitOrderInput) => void
     readonly toggleChip: (unitId: string) => void
     readonly refresh: (callId: string) => void
@@ -89,16 +88,6 @@
               </button>
             {:else}
               <span class="stop-target">{@render planStop(stop)}</span>
-            {/if}
-            {#if stop.canMoveUp || stop.canMoveDown}
-              <div class="move-controls">
-                <button type="button" class="icon-action" title="Move earlier" aria-label={`Move stop ${stop.index} earlier: ${stop.text}`} disabled={props.unitPending || !stop.canMoveUp} onclick={() => props.moveStop(stop.id, -1)}>
-                  <ArrowUp size={16} aria-hidden="true" />
-                </button>
-                <button type="button" class="icon-action" title="Move later" aria-label={`Move stop ${stop.index} later: ${stop.text}`} disabled={props.unitPending || !stop.canMoveDown} onclick={() => props.moveStop(stop.id, 1)}>
-                  <ArrowDown size={16} aria-hidden="true" />
-                </button>
-              </div>
             {/if}
           </li>
         {/each}
@@ -260,7 +249,6 @@
   .stop-target { flex: 1; min-width: 44px; padding: 4px; }
   button.stop-target { border-color: transparent; }
   button.stop-target:hover { border-color: var(--border); }
-  .move-controls { display: flex; gap: 4px; }
   .undo-row { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; }
   .plan li.active .what { font-weight: 650; }
   .plan .predicted { color: var(--muted); font-style: italic; }

@@ -69,14 +69,6 @@ export const unitStopRemoveInputSchema = z.object({
   expectedPlan: planExpectationSchema.optional(),
 }).strict().describe('Remove one stop from a unit\'s plan.')
 
-export const unitPlanReorderInputSchema = z.object({
-  unitId: idSchema.describe('The unit whose queued stops are reordered.'),
-  expectedPlan: planExpectationSchema,
-  stopIds: z.array(idSchema.describe('A queued stop id.')).min(1).max(maxSteps)
-    .refine(distinct, 'Each queued stop is named once.')
-    .describe('Every queued stop id, in the desired order. The active stop stays first.'),
-}).strict().describe('Reorder the queued stops of one unit’s plan.')
-
 /** Empty a unit's plan, releasing it from its task, and send it back to base; a unit carrying load is refused `unit_loaded`. */
 export const unitRecallInputSchema = z.object({
   unitId: idSchema.describe('The unit to bring back to base.'),

@@ -29,8 +29,6 @@ import {
 import {
   activationActs,
   initialSelection,
-  moveQueuedStop,
-  planExpectation,
   reduceSelection,
   selectionChangeEvent,
   stopObjectId,
@@ -86,7 +84,6 @@ export type CardControl =
   /** The footer's Undo on the latest receipt, this screen's own order. */
   | { readonly kind: 'receipt-undo' }
   | { readonly kind: 'remove-stop'; readonly stopId: string }
-  | { readonly kind: 'move-stop'; readonly stopId: string; readonly direction: -1 | 1 }
   | { readonly kind: 'target-row'; readonly objectId: string }
   /** The call card's Dispatch. */
   | { readonly kind: 'dispatch' }
@@ -380,14 +377,6 @@ export const openCardScreen = async (run: OpenRun, options: { readonly actor?: A
         case 'remove-stop': {
           required(card.removable ? card.plan.find(stop => stop.id === control.stopId) : null, `removable stop ${control.stopId}`)
           return await send({ kind: 'stop', stopId: control.stopId })
-        }
-        case 'move-stop': {
-          const stop = required(card.plan.find(entry => entry.id === control.stopId), `stop ${control.stopId}`)
-          const available = control.direction < 0 ? stop.canMoveUp : stop.canMoveDown
-          if (!available) throw new Error(`Stop ${control.stopId} cannot move in that direction`)
-          const expectedPlan = planExpectation(required(selectedUnit(), 'selected unit').plan)
-          const stopIds = required(moveQueuedStop(expectedPlan, control.stopId, control.direction), 'new stop order')
-          return await command(async () => await client.reorder(card.id, expectedPlan, stopIds), null)
         }
         case 'target-row': {
           const row = required(card.targets.find(entry => stopObjectId(entry.target) === control.objectId), `target row for ${control.objectId}`)

@@ -162,14 +162,15 @@ describe('Compact unit card', () => {
     expect(unitCard(standing, standing.units[0]!, null, 0).undo).toMatchObject({ enabled: false, reason: dispatchWords.nothingToUndo, commandId: null })
   })
 
-  test('keeps the active stop pinned and only enables moves among queued stops', () => {
+  test('lists the plan in order, the active stop first, each stop with the words of its ×; no stop can be moved', () => {
     const lead = situation.units[1]!.plan[0]!
     const assigned = situationOf({ units: [unit('r2', { plan: [lead, { ...lead, id: 'leg-2', label: 'Depot A', state: 'queued', target: { siteId: 'depot-a' } }, { ...lead, id: 'leg-3', state: 'queued' }] })] })
     const card = unitCard(assigned, assigned.units[0]!, null, 60)
-    expect(card.plan.map(stop => [stop.active, stop.canMoveUp, stop.canMoveDown])).toEqual([
-      [true, false, false], [false, false, true], [false, true, false],
+    expect(card.plan.map(stop => [stop.id, stop.active, stop.removeLabel])).toEqual([
+      ['leg-1', true, 'Remove leg 1: Pick up at J-2 Bay'], ['leg-2', false, 'Remove leg 2: Pick up at Depot A'], ['leg-3', false, 'Remove leg 3: Pick up at J-2 Bay'],
     ])
     expect(card.plan[0]).toMatchObject({ text: 'Pick up at J-2 Bay', by: 'by Assistant' })
+    expect(Object.keys(card.plan[0]!).sort()).toEqual(['active', 'by', 'eta', 'id', 'index', 'removeLabel', 'text'])
   })
 
   test('a carrier with a load cannot return to base, and a read-only unit has no targets or plan actions', () => {

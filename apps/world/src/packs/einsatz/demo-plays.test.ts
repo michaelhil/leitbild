@@ -716,7 +716,7 @@ describe('Dispatch panel click counts', () => {
     })
   })
 
-  test('add two targets, move the last queued stop up, then click a selected target to remove it', async () => {
+  test('add two targets, then click a selected target to remove it', async () => {
     await scene(async ({ run, screen, callId, answer }) => {
       const unitId = answer.proposal!.units[0]!.unitId
       expect((await run.invoke(ids.order, answer.proposal!.order)).ok).toBe(true)
@@ -730,22 +730,15 @@ describe('Dispatch panel click counts', () => {
 
       const before = displayedPlan(screen, unitId)
       expect(before.map(stop => stop.state)).toEqual(['active', 'queued', 'queued'])
-      const [active, firstQueued, lastQueued] = before
-      await screen.press({ kind: 'move-stop', stopId: lastQueued!.id, direction: -1 })
-      expect(sent(screen).at(-1)).toEqual([
-        ids.planReorder, { unitId, expectedPlan: before, stopIds: [lastQueued!.id, firstQueued!.id] }, 'ok',
-      ])
-      expect(run.unit(unitId).orders.map(stop => stop.target)).toEqual([{ taskId: callId }, { taskId: third }, { taskId: second }])
-
-      const reordered = [active!, lastQueued!, firstQueued!]
+      const [, firstQueued] = before
       screen.resetActions()
       await screen.mapTap(second)
-      expect(screen.decision()).toMatchObject({ kind: 'remove', stops: [{ id: firstQueued!.id, index: 3 }] })
-      expect(screen.calls).toHaveLength(3)
+      expect(screen.decision()).toMatchObject({ kind: 'remove', stops: [{ id: firstQueued!.id, index: 2 }] })
+      expect(screen.calls).toHaveLength(2)
       await screen.decide({ remove: firstQueued!.id })
       expect(screen.actions()).toBe(2)
       expect(sent(screen).at(-1)).toEqual([
-        ids.stopRemove, { unitId, stopId: firstQueued!.id, expectedPlan: reordered }, 'ok',
+        ids.stopRemove, { unitId, stopId: firstQueued!.id, expectedPlan: before }, 'ok',
       ])
       expect(run.unit(unitId).orders.map(stop => stop.target)).toEqual([{ taskId: callId }, { taskId: third }])
     })

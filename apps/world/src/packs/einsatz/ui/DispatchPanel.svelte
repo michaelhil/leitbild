@@ -36,10 +36,7 @@
   } from './presenters.ts'
   import {
     activationActs,
-    canTarget,
     initialSelection,
-    moveQueuedStop,
-    planExpectation,
     reduceSelection,
     selectedObjectOf,
     selectionChangeEvent,
@@ -283,15 +280,6 @@
     } finally { unitPending = false }
   }
 
-  const moveStop = (stopId: string, direction: -1 | 1): void => {
-    const unit = selectedUnit
-    if (!unit || !canTarget(unit)) return
-    const expectedPlan = planExpectation(unit.plan)
-    const stopIds = moveQueuedStop(expectedPlan, stopId, direction)
-    if (stopIds === null) return
-    void editUnit(unit.id, async () => await client.reorder(unit.id, expectedPlan, stopIds))
-  }
-
   const decisionTitle = $derived(decision === undefined ? '' : decision.kind === 'remove'
     ? decision.stops.length === 1 ? 'Remove stop?' : 'Which stop should be removed?'
     : decision.assigned ? 'Change the plan?' : 'Move here?')
@@ -493,7 +481,6 @@
             back={act(() => send({ kind: 'back' }))}
             targetRow={(target: Stop) => send({ kind: 'target-row', target })}
             chooseStop={(stopId: string) => send({ kind: 'stop', stopId })}
-            {moveStop}
             recall={(unitId: string) => { void editUnit(unitId, async () => await client.recall(unitId), { unitIds: [unitId], target: situation === null ? dispatchWords.panel : situation.words.return, undoable: false }) }}
             undo={act((unitId: string, commandId: string) => undo([unitId], commandId))}
             order={act(order)}

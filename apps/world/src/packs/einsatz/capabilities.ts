@@ -6,14 +6,14 @@ import type { SimulationCapability } from '../../simulation/protocol.ts'
 import { queuedPlanRoutesId, queuedPlanRoutesInputSchema } from './chain-path.ts'
 import { configurationOutputSchema } from './config-schema.ts'
 import { intentFields } from './engine/intents.ts'
-import { unitOrderInputSchema, unitPlanReorderInputSchema, unitRecallInputSchema, unitStopRemoveInputSchema, unitUndoInputSchema } from './order-schema.ts'
+import { unitOrderInputSchema, unitRecallInputSchema, unitStopRemoveInputSchema, unitUndoInputSchema } from './order-schema.ts'
 import { einsatzPlanningCapability } from './planning-source.ts'
 import { recommendAnswerSchema } from './recommendation-schema.ts'
 import { situationInputSchema, situationSchema, unitOptionsInputSchema, unitOptionsSchema } from './situation/schema.ts'
 import { stepTargetId } from './steps.ts'
 
 /**
- * The Einsatz Capabilities: six queries and twelve commands. Commands are
+ * The Einsatz Capabilities: six queries and eleven commands. Commands are
  * validated against the current state when they commit, never against a
  * token: a refusal reads `<code>: <message>` in the configuration's own
  * words and sets `code`. Every command is schedulable from the Scenario
@@ -30,7 +30,6 @@ import { stepTargetId } from './steps.ts'
 export const einsatzCommandIds = {
   order: 'world.einsatz.unit.order',
   stopRemove: 'world.einsatz.unit.stop.remove',
-  planReorder: 'world.einsatz.unit.plan.reorder',
   undo: 'world.einsatz.unit.undo',
   recall: 'world.einsatz.unit.recall',
   taskClose: 'world.einsatz.task.close',
@@ -53,7 +52,6 @@ export const einsatzQueryIds = {
 export const commandInputSchemas = {
   [einsatzCommandIds.order]: unitOrderInputSchema,
   [einsatzCommandIds.stopRemove]: unitStopRemoveInputSchema,
-  [einsatzCommandIds.planReorder]: unitPlanReorderInputSchema,
   [einsatzCommandIds.undo]: unitUndoInputSchema,
   [einsatzCommandIds.recall]: unitRecallInputSchema,
   [einsatzCommandIds.taskClose]: z.object(intentFields.taskClose).strict(),
@@ -169,14 +167,6 @@ export const einsatzCapabilities: ReadonlyArray<SimulationCapability> = [
     title: 'Remove a stop',
     description: 'Remove one stop from a unit\'s plan. A queued stop leaves; the active one is released as a recall releases it (load not yet picked up returns to its task), and the unit stops where it is and starts its next stop. A stop that delivers load the unit carries, or will carry, stays (unit_loaded); an unknown stop is refused step_not_found. Example: `{unitId:\'unit:a4\', stopId:\'step-3\'}`.',
     searchTerms: ['remove stop', 'cancel stop', 'plan'],
-    idempotent: false,
-    targets: input => objectIds(input.unitId),
-  }),
-  command({
-    id: einsatzCommandIds.planReorder,
-    title: 'Reorder queued stops',
-    description: 'Supply every queued stop id in the desired order and copy plan from world.einsatz.unit.options into expectedPlan. The active stop continues. A delivery must follow its pickup. Example: `{unitId:"unit:a4",expectedPlan:[{id:"step-1",state:"active"},{id:"step-2",state:"queued"},{id:"step-3",state:"queued"}],stopIds:["step-3","step-2"]}`.',
-    searchTerms: ['reorder', 'move stop', 'queue', 'plan'],
     idempotent: false,
     targets: input => objectIds(input.unitId),
   }),
