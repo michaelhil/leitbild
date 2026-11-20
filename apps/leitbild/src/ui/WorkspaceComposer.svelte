@@ -329,14 +329,17 @@
   class:window-maximised={windowMaximised}
   style={`grid-template-columns: ${gridColumns}`}
 >
-  <!-- Beside a Run, Planning shows its plans while the World frame stays loaded but hidden behind them, so switching
-       back neither reloads the simulation nor ends the Run's realtime lease, viewers, map, 3D or display windows. -->
+  <!-- Beside a Run, Planning shows its plans while the World frame stays loaded behind them, laid out at the pane's
+       size but not shown and inert, so switching back neither reloads the simulation nor ends the Run's realtime lease,
+       viewers, map, 3D or display windows, and a Run opened straight onto its plans starts them at their real size. -->
   {#if primaryOpen}<section bind:this={worldPane} class="module-pane world-pane" class:collapsed={collapsedPane === 'world'} aria-label={planningPath !== null ? 'Planning' : 'World simulations'}>
     {#if worldRunId !== null}
     <iframe
       bind:this={worldFrame}
       class="module-frame"
       class:active={planningPath === null}
+      class:behind-plans={planningPath !== null}
+      inert={planningPath !== null}
       src={`/workspaces/${encodeURIComponent(workspaceId)}/world/runs/${encodeURIComponent(worldRunId)}${worldQuery === '' ? '' : `?${worldQuery}`}`}
       title="World simulations"
       onload={worldFrameLoaded}
