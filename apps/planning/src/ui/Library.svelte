@@ -32,7 +32,7 @@
   let error = $state<string | null>(null)
   let creating = $state(false)
 
-  const actions = createLibraryActions(client, text => { progress = text })
+  const actions = $derived(createLibraryActions(client, text => { progress = text }))
   const plans = $derived(resources.filter(resource => resource.ref.type === PLAN))
   const besideRun = $derived(run === null ? null : runResourceOf(resources, run))
   const grouped = $derived(run === null ? null : plansBesideRun(resources, run))
