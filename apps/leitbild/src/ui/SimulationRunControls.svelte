@@ -441,6 +441,9 @@
   .clock { min-width: 112px; padding: 0 .25rem; color: #cbd6cc; font: 600 .74rem/1 ui-monospace, SFMono-Regular, Menlo, monospace; text-align: center; white-space: nowrap; } .clock small { margin-left: .28rem; color: #8ec6ff; font-size: .64rem; } .clock.fast { color: #d8ecff; }
   .family-control { position: relative; min-width: 0; display: flex; } .family-trigger { max-width: min(250px, 24vw); display: flex; align-items: center; gap: .35rem; font-size: .7rem; } .family-label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .run-title { max-width: min(250px, 24vw); overflow: hidden; color: #dfe8dc; font-size: .7rem; text-overflow: ellipsis; white-space: nowrap; }
+  /* Beside the Simulation | Plans switch a long Run title would push the bar onto two rows on a 1,024 px screen;
+     it shortens instead, with the whole title on hover. */
+  @media (max-width: 1100px) { .run-title, .family-trigger { max-width: 140px; } }
   .family-menu { position: absolute; z-index: 80; top: calc(100% + .4rem); right: 0; width: min(360px, calc(100vw - 2rem)); padding: .35rem; border: 1px solid #647168; border-radius: 9px; background: #18231c; box-shadow: 0 14px 38px #0008; }
   .family-menu > div { display: grid; grid-template-columns: minmax(0, 1fr) auto auto; align-items: center; border-radius: 6px; } .family-menu > div.current { background: #2a3d30; }
   .family-member { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; border: 0; background: transparent; text-align: left; }
