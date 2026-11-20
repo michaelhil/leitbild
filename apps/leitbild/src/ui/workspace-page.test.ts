@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'bun:test'
 import { featuredDefinitionCatalogSchema, moduleResourceDescriptorSchema } from '@leitbild/contracts'
 import {
-  CONTINUE_LIMIT, continueItems, continueKindLabel, featuredStartRevision,
+  CONTINUE_LIMIT, continueHref, continueItems, continueKindLabel, featuredStartRevision,
   openedFromGuide, previewSrc, previewSrcset, PUBLIC_NOTE, sameDefinition, scenarioRowSummary, summaryHasMore, summaryLead, workspaceDemos,
 } from './workspace-page.ts'
 import { featured, listed, revision, room, run, scenario, WS } from './workspace-page.test-support.ts'
@@ -101,6 +101,21 @@ describe('Continue', () => {
     const [runItem, roomItem] = continueItems([run('a', 'Running', '2026-10-12T20:00:00.000Z'), room('b', '2026-10-12T20:00:00.000Z')])
     expect(runItem?.facts.map(fact => fact.key)).toEqual(['started-at', 'viewer-count'])
     expect(roomItem?.facts.map(fact => fact.key)).toEqual(['message-count', 'last-activity-at'])
+  })
+
+  test('a card opens its Run, conversation or plan; a plan about a Run opens beside that Run', () => {
+    const plan = (links: ReadonlyArray<unknown>) => moduleResourceDescriptorSchema.parse({
+      ref: { workspaceId: WS, moduleId: 'planning', type: 'planning.plan', id: 'plan-1' }, title: 'Train A outage',
+      uiPath: `/workspaces/${WS}/planning?plan=plan-1`, links, capabilityIds: [], observedAt: '2026-11-20T10:00:00.000Z',
+    })
+    const runRef = (id: string) => ({ workspaceId: WS, moduleId: 'world', type: 'world.simulation-run', id })
+    expect(continueHref(WS, run('run-1', 'Running', '2026-11-20T09:00:00.000Z'))).toBe(`/workspaces/${WS}?world=run-1`)
+    expect(continueHref(WS, room('room-1', '2026-11-20T09:00:00.000Z'))).toBe(`/workspaces/${WS}?agents=room-1`)
+    expect(continueHref(WS, plan([]))).toBe(`/workspaces/${WS}?planning=plan-1`)
+    expect(continueHref(WS, plan([{ rel: 'about', ref: runRef('run-1') }]))).toBe(`/workspaces/${WS}?world=run-1&planning=plan-1`)
+    // Only an `about` link to a simulation Run places the plan beside it.
+    expect(continueHref(WS, plan([{ rel: 'copy-of', ref: runRef('run-1') }]))).toBe(`/workspaces/${WS}?planning=plan-1`)
+    expect(continueHref(WS, plan([{ rel: 'about', ref: { ...runRef('family-1'), type: 'world.run-family' } }]))).toBe(`/workspaces/${WS}?planning=plan-1`)
   })
 
   test('Run families, Agents and other Resources are not continued', () => {

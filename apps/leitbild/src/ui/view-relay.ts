@@ -23,7 +23,10 @@ import type { ZodError } from 'zod'
 // Resources open in a Host frame at their owning Module's embed route; they
 // do not require or select a World Run. One such view opens in the window
 // instead: a view whose subject the Workspace's catalogue links as about the
-// Run the World pane shows, so it appears over what it is about. The relay is
+// Run the World pane shows, so it appears over what it is about. While the
+// Run's plans show in place of its simulation, the World pane is not shown:
+// a view about another Resource opens in a Host frame, and a view of a Run
+// brings the simulation back and opens in its window. The relay is
 // the only validator on that path: every message is parsed with its contract
 // schema and must name this page's Workspace, and every refusal is reported
 // where the operator sees it. It keeps only the latest list, whether the World
@@ -34,8 +37,12 @@ import type { ZodError } from 'zod'
 /** How long an open waits for the World page to listen before it is reported as failed. */
 export const PENDING_VIEW_OPEN_MS = 30_000
 
-/** The World pane beside the chat: none (chat only), collapsed by the split, or shown. */
-export type WorldPane = 'absent' | 'collapsed' | 'shown'
+/**
+ * The World pane beside the chat: none (chat only), behind the Run's plans
+ * (its document loaded, the plans shown in its place), collapsed by the split,
+ * or shown.
+ */
+export type WorldPane = 'absent' | 'behind-plans' | 'collapsed' | 'shown'
 
 // The contract's window messages share this prefix. Other messages from the
 // two frames are not part of the window's protocol and are not judged here.
@@ -83,7 +90,7 @@ export const createViewRelay = (config: {
   readonly runRefusal: (run: WorkspaceResourceReference) => Promise<string | null>
   readonly postToWorld: (message: EmbeddedViewsMessage | WindowOpen) => void
   readonly postToAgents: (message: EmbeddedViewHostMessage) => void
-  /** Brings a collapsed World pane back beside the chat. */
+  /** Brings a collapsed World pane back beside the chat, or the Run's simulation back in place of its plans. */
   readonly showWorld: () => void
   /** The window asks for the whole Workspace area (true) or for the split back (false). */
   readonly maximiseWorld: (maximised: boolean) => void
@@ -162,9 +169,11 @@ export const createViewRelay = (config: {
   // again, once, before the rule is applied. A subject still unlisted after
   // that read, or after a failed one, opens in the Host frame: that is where
   // every view that is not about the shown Run opens, with the view shown, not
-  // a fallback that hides a failure.
+  // a fallback that hides a failure. Behind the Run's plans the World pane
+  // shows no Run, so such a view opens in a Host frame over the plans.
   const openOwned = (view: EmbeddedViewListing, readAgain: boolean): void => {
-    const run = config.worldPane() === 'absent' ? null : config.shownRun()
+    const pane = config.worldPane()
+    const run = pane === 'shown' || pane === 'collapsed' ? config.shownRun() : null
     const listed = run === null ? undefined : config.resources().find(resource => sameResource(resource.ref, view.envelope.subject))
     if (run !== null && listed === undefined && readAgain) return readCatalogueAgainThen(() => openOwned(view, false))
     if (run !== null && listed?.links.some(link => link.rel === ABOUT_RELATION && sameResource(link.ref, run))) return open(openMessage(view), run)
@@ -232,7 +241,9 @@ export const createViewRelay = (config: {
 
   const deliver = (message: WindowOpen): void => {
     // A shown World pane keeps its Run: the window shows a display of another Run as it is.
-    if (config.worldPane() === 'collapsed') config.showWorld()
+    // Behind the Run's plans its document is loaded: the simulation comes back, with no reload.
+    const pane = config.worldPane()
+    if (pane === 'collapsed' || pane === 'behind-plans') config.showWorld()
     if (!worldListening) return keepPending(message)
     dropPending()
     config.postToWorld(message)

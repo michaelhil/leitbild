@@ -10,6 +10,7 @@
   import type { RunAssistantResolution } from './run-assistant-opening.ts'
   import { workspaceSubjectFocusMessage } from './workspace-focus.ts'
   import { isCurrentResourceCatalogChange } from './resource-catalog-message.ts'
+  import { acceptedWorkspaceOpen } from './workspace-open-message.ts'
   import { readSurfacePlace } from './screens/surface-place.ts'
 
   interface Props {
@@ -20,6 +21,7 @@
     readonly worldOption?: string | null
     /** One surface of the Run's page, a string World owns: forwarded into its frame as it is. */
     readonly worldSurface?: string | null
+    /** Planning's frame; beside a Run it shows the Run's plans in place of the simulation, whose frame stays loaded behind them. */
     readonly planningPath?: string | null
     readonly planningResource?: WorkspaceResourceReference | null
     /** The Workspace's resource catalogue as last read: the display relay reads which Resources are about the shown Run. */
@@ -35,6 +37,10 @@
     readonly runRefusal: (run: WorkspaceResourceReference) => Promise<string | null>
     /** Opens a Run in a World pane beside the chat, as switching Runs does. */
     readonly onOpenRun: (runId: string) => void
+    /** Shows the Run's simulation in place of its plans, as the Run bar's switch does. */
+    readonly onShowSimulation: () => void
+    /** Shows another address of this Workspace in place, as one history entry; the shown Planning page asked for it. */
+    readonly onOpenAddress: (address: string) => void
     /** Whether the shown Run offers its Assistant, as the Host's own launcher does; its World page may then offer it too. */
     readonly runAssistantAvailable: boolean
     /** Shows the shown Run's Assistant room, creating it where none serves the Run; it never hides the room. */
@@ -54,7 +60,7 @@
 
   let {
     workspaceId, worldRunId, worldFocus = null, worldElement = null, worldOption = null, worldSurface = null, planningPath = null, planningResource = null, resources, rereadResources, onResourceCatalogChange, focusedSubjects, agentsRoomId, agentsVisible, onShowAgents, runRefusal, onOpenRun,
-    runAssistantAvailable, onOpenRunAssistant, onPlaceSurface, onError, worldPane = $bindable(null),
+    onShowSimulation, onOpenAddress, runAssistantAvailable, onOpenRunAssistant, onPlaceSurface, onError, worldPane = $bindable(null),
   }: Props = $props()
   let splitPercent = $state(initialSplit)
   let lastOpenSplit = $state(initialSplit)
@@ -164,14 +170,17 @@
   // proxy cannot be posted to a frame (see workspace-focus.ts).
   const relay = createViewRelay({
     workspaceId: () => workspaceId,
-    worldPane: (): WorldPane => planningPath !== null || worldRunId === null ? 'absent' : collapsedPane === 'world' ? 'collapsed' : 'shown',
+    worldPane: (): WorldPane => worldRunId === null ? 'absent' : planningPath !== null ? 'behind-plans' : collapsedPane === 'world' ? 'collapsed' : 'shown',
     shownRun: () => worldRunId === null ? null : { workspaceId, moduleId: 'world', type: 'world.simulation-run', id: worldRunId } as WorkspaceResourceReference,
     resources: () => resources,
     refreshResources: () => rereadResources(),
     runRefusal: run => runRefusal(run),
     postToWorld: message => worldFrame?.contentWindow?.postMessage(message, location.origin),
     postToAgents: message => agentsFrame?.contentWindow?.postMessage(message, location.origin),
-    showWorld: () => restoreSplit(),
+    showWorld: () => {
+      if (planningPath !== null) onShowSimulation()
+      if (collapsedPane === 'world') restoreSplit()
+    },
     maximiseWorld,
     openRun: runId => onOpenRun(runId),
     openOwnedView: view => { ownedView = view; ownedViewOpen = view !== null },
@@ -231,7 +240,12 @@
     if (planningPath !== null && isCurrentResourceCatalogChange(event, {
       origin: location.origin, source: planningFrame?.contentWindow ?? null, resource: planningResource,
     })) onResourceCatalogChange()
-    const place = readSurfacePlace(event.data, { fromWorld: event.source === worldFrame?.contentWindow, workspaceId, runId: planningPath === null ? worldRunId : null })
+    // The shown Planning page moves in place, so the Run's simulation behind it is not loaded again.
+    const address = acceptedWorkspaceOpen(event, {
+      origin: location.origin, source: planningPath === null ? null : planningFrame?.contentWindow ?? null, workspaceId,
+    })
+    if (address !== null) onOpenAddress(address)
+    const place = readSurfacePlace(event.data, { fromWorld: event.source === worldFrame?.contentWindow, workspaceId, runId: worldRunId })
     if (place.kind === 'refused') onError(place.message)
     else if (place.kind === 'place') onPlaceSurface(place.surface)
     if (event.source === agentsFrame?.contentWindow) { relay.fromAgents(event.data); presentation.fromAgents(event.data) }
@@ -255,7 +269,8 @@
 
   // A new Run gives the World frame a new document (or none), which listens only
   // once it says so. World says so as its route mounts, which can be before the
-  // frame's load event, so readiness is reset here rather than on load.
+  // frame's load event, so readiness is reset here rather than on load. Showing
+  // the Run's plans or its simulation keeps the Run, its frame and its document.
   $effect(() => {
     worldRunId
     untrack(() => {
@@ -314,17 +329,24 @@
   class:window-maximised={windowMaximised}
   style={`grid-template-columns: ${gridColumns}`}
 >
+  <!-- Beside a Run, Planning shows its plans while the World frame stays loaded behind them, laid out at the pane's
+       size but not shown and inert, so switching back neither reloads the simulation nor ends the Run's realtime lease,
+       viewers, map, 3D or display windows, and a Run opened straight onto its plans starts them at their real size. -->
   {#if primaryOpen}<section bind:this={worldPane} class="module-pane world-pane" class:collapsed={collapsedPane === 'world'} aria-label={planningPath !== null ? 'Planning' : 'World simulations'}>
-    {#if planningPath !== null}
-    <iframe bind:this={planningFrame} class="module-frame active" src={planningPath} title="Planning"></iframe>
-    {:else if worldRunId !== null}
+    {#if worldRunId !== null}
     <iframe
       bind:this={worldFrame}
-      class="module-frame active"
+      class="module-frame"
+      class:active={planningPath === null}
+      class:behind-plans={planningPath !== null}
+      inert={planningPath !== null}
       src={`/workspaces/${encodeURIComponent(workspaceId)}/world/runs/${encodeURIComponent(worldRunId)}${worldQuery === '' ? '' : `?${worldQuery}`}`}
       title="World simulations"
       onload={worldFrameLoaded}
     ></iframe>
+    {/if}
+    {#if planningPath !== null}
+    <iframe bind:this={planningFrame} class="module-frame active" src={planningPath} title="Planning"></iframe>
     {/if}
   </section>{/if}
 

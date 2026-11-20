@@ -1,7 +1,7 @@
 {
   "id": "supply-run",
   "title": "Plan: Supply run",
-  "description": "An Einsatz supply run: five trucks with their payloads serve an urgent bulk request and a routine request on target, while at least one heavy truck stays free. Arrival and unloading times come from World. The plan starts unlinked: start the \"Supply run\" simulation in World, then link it here and refresh.",
+  "description": "An Einsatz supply run: five trucks with their payloads serve an urgent bulk request and a routine request on target, while at least one heavy truck stays free. Arrival and unloading times come from World. Start it from the Plans of a \"Supply run\" Run to link that simulation and read its values at once.",
   "inputs": {
     "settings": {
       "title": "Supply run",

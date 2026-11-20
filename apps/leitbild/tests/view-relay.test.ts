@@ -101,7 +101,7 @@ const harness = (options: { pane?: WorldPane; runs?: ReadonlyArray<string>; refu
 }
 
 describe('process display relay', () => {
-  test.each(['absent', 'collapsed', 'shown'] as const)('a Room-owned calculation opens its owner view with the World pane %s, without selecting a Run', pane => {
+  test.each(['absent', 'behind-plans', 'collapsed', 'shown'] as const)('a Room-owned calculation opens its owner view with the World pane %s, without selecting a Run', pane => {
     const { relay, state, liveTimers } = harness({ pane })
     const received = calculation()
     relay.fromAgents(open(received))
@@ -222,8 +222,63 @@ describe('process display relay', () => {
     expect(state.rereads).toEqual([])
   })
 
+  test('while the Run\'s plans show, a view about its plan opens in a Host frame over them and the simulation stays behind', () => {
+    const { relay, state, liveTimers } = harness({ pane: 'behind-plans', runs: ['run-1'], resources: [listed(runRef('run-1')), listed(planRef(), [about('run-1')])] })
+    relay.fromWorld(ready)
+    const received = schedule()
+    relay.fromAgents(open(received))
+    expect(state.owned).toEqual(received)
+    expect(state.world).toEqual([views()])
+    expect(state.pane).toBe('behind-plans')
+    expect(state.shownWorld).toBe(0)
+    expect(state.runChecks).toBe(0)
+    expect(state.openedRuns).toEqual([])
+    expect(state.rereads).toEqual([])
+    expect(liveTimers()).toEqual([])
+    expect(state.errors).toEqual([])
+  })
+
+  test('while the Run\'s plans show, a view of the Run brings its simulation back and opens in the window already loaded', () => {
+    const { relay, state, liveTimers } = harness({ pane: 'behind-plans', runs: ['run-1'] })
+    relay.fromWorld(ready)
+    relay.fromAgents(open(calculation()))
+    expect(state.owned).toEqual(calculation())
+    relay.fromAgents(open(listing('a')))
+    expect(state.shownWorld).toBe(1)
+    expect(state.pane).toBe('shown')
+    expect(state.owned).toBeNull()
+    expect(state.world).toEqual([views(), open(listing('a'))])
+    expect(state.runChecks).toBe(0)
+    expect(state.openedRuns).toEqual([])
+    expect(liveTimers()).toEqual([])
+    expect(state.errors).toEqual([])
+  })
+
+  test('while the Run\'s plans show, a subject\'s default display brings the simulation back too', () => {
+    const { relay, state } = harness({ pane: 'behind-plans', runs: ['run-1'] })
+    relay.fromWorld(ready)
+    const received = { type: 'leitbild:view-subject-open', resource: runRef('run-1'), subject: 'plant:halden-2#auxFeedwaterValveA', title: 'Review: THROTTLE to 40 % AFW-A-CV' }
+    relay.fromAgents(received)
+    expect(state.shownWorld).toBe(1)
+    expect(state.world.at(-1)).toEqual(received)
+    expect(state.openedRuns).toEqual([])
+    expect(state.errors).toEqual([])
+  })
+
+  test('a World page loaded behind the plans that does not listen yet gets the Run\'s view once it says so', () => {
+    const { relay, state, liveTimers } = harness({ pane: 'behind-plans', runs: ['run-1'] })
+    relay.fromAgents(open(listing('a')))
+    expect(state.shownWorld).toBe(1)
+    expect(state.world).toEqual([])
+    expect(liveTimers()).toHaveLength(1)
+    relay.fromWorld(ready)
+    expect(state.world).toEqual([views(), open(listing('a'))])
+    expect(liveTimers()).toEqual([])
+    expect(state.openedRuns).toEqual([])
+  })
+
   test('a view whose subject the catalogue does not list never has it read again without a World pane and its Run', () => {
-    for (const options of [{ pane: 'absent' as const, runs: ['run-1'] }, { shownRun: null }]) {
+    for (const options of [{ pane: 'absent' as const, runs: ['run-1'] }, { pane: 'behind-plans' as const }, { shownRun: null }]) {
       const { relay, state, liveTimers } = harness({ ...options, resources: [] })
       const received = schedule()
       relay.fromAgents(open(received))

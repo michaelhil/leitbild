@@ -12,9 +12,8 @@
   import InlineName from './InlineName.svelte'
   import MoreMenu, { type MoreMenuItem } from './MoreMenu.svelte'
   import { deletedText, deleteLabel, keepExisting, selectAllState, toggleAll, toggleOne } from './bulk-delete.ts'
-  import { workspaceUrl } from './launch-destination.ts'
   import { catalogDeleteBody, catalogDeleteItem, catalogNoun, createCatalogRemover, type CatalogDeleteItem } from './catalog-delete.ts'
-  import { CONTINUE_LIMIT, continueKindLabel, type ContinueItem } from './workspace-page.ts'
+  import { CONTINUE_LIMIT, continueHref, continueKindLabel, type ContinueItem } from './workspace-page.ts'
 
   let { items, workspaceId, capabilities, summaryValue, inspecting, oninspect, onrename, onremoved }: {
     items: ReadonlyArray<ContinueItem>
@@ -54,11 +53,6 @@
   const chosen = $derived(deletableList.filter(entry => selected.has(entry.key)))
   const allState = $derived(selectAllState(deletableList, selected))
   const remove = $derived(createCatalogRemover(workspaceId))
-  const hrefOf = (resource: ModuleResourceDescriptor): string => resource.ref.type === 'agents.room'
-    ? workspaceUrl(workspaceId, { agents: resource.ref.id })
-    : resource.ref.type === 'planning.plan'
-      ? workspaceUrl(workspaceId, { planning: resource.ref.id })
-      : workspaceUrl(workspaceId, { world: resource.ref.id })
 
   $effect(() => { if (selectAllBox) selectAllBox.indeterminate = allState === 'some' })
 
@@ -153,7 +147,7 @@
               pencil={false} onsave={(name, original) => onrename(item.resource, name, original)}
               onclose={reason => { renaming = null; if (reason !== 'blurred') menus[key]?.focus() }} /></span>
           {:else}
-            <a class="title" href={hrefOf(item.resource)}>{item.resource.title}</a>
+            <a class="title" href={continueHref(workspaceId, item.resource)}>{item.resource.title}</a>
           {/if}
           {#if item.facts.length > 0}
             <span class="facts">

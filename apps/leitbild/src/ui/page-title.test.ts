@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test'
-import { BRAND_TITLE, pageTitle, withUnreadCount, workspacePageTitle } from './page-title.ts'
+import { BRAND_TITLE, openSubjectTitle, pageTitle, withUnreadCount, workspacePageTitle } from './page-title.ts'
 
 describe('tab titles', () => {
   test('end in " · Leitbild.ai"', () => {
@@ -19,6 +19,19 @@ describe('tab titles', () => {
     expect(workspacePageTitle({ workspace: 'Grid study', run: null, room: 'Getting started question' })).toBe('Getting started question · Leitbild.ai')
     expect(workspacePageTitle({ workspace: 'Untitled Workspace · b56b1d' })).toBe('Untitled Workspace · b56b1d · Leitbild.ai')
     expect(workspacePageTitle({ workspace: null })).toBe('Leitbild.ai')
+  })
+
+  test('beside a Run its plans come first, then the Run; Planning alone is named as before', () => {
+    const open = { runSelected: true, run: 'Halden normal operation', planning: true, plan: null }
+    expect(openSubjectTitle(open)).toBe('Plans · Halden normal operation')
+    expect(openSubjectTitle({ ...open, plan: 'Train A outage' })).toBe('Train A outage · Halden normal operation')
+    expect(workspacePageTitle({ workspace: 'Grid study', run: openSubjectTitle({ ...open, plan: 'Train A outage' }) })).toBe('Train A outage · Halden normal operation · Leitbild.ai')
+    // The Run not listed yet: its plans alone.
+    expect(openSubjectTitle({ ...open, run: null })).toBe('Plans')
+    expect(openSubjectTitle({ ...open, planning: false })).toBe('Halden normal operation')
+    expect(openSubjectTitle({ runSelected: false, run: null, planning: true, plan: null })).toBe('Planning')
+    expect(openSubjectTitle({ runSelected: false, run: null, planning: true, plan: 'Week 47' })).toBe('Week 47')
+    expect(openSubjectTitle({ runSelected: false, run: null, planning: false, plan: null })).toBeNull()
   })
 
   test('never use the old " · Leitbild" suffix', () => {

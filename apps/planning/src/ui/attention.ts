@@ -12,7 +12,7 @@ import { outcomes, stoppedEarlyLines } from './outcome.ts'
 import { crewHourPurchases } from './request.ts'
 import { goalResult, statusView, type Context } from './status-text.ts'
 
-export type CardAction = 'open-workspace' | 'link-run' | 'refresh' | 'add-work' | 'generate' | 'why-finish' | 'why-recommended' | 'align-window'
+export type CardAction = 'open-workspace' | 'link-run' | 'link-this-run' | 'refresh' | 'add-work' | 'generate' | 'why-finish' | 'why-recommended' | 'align-window'
 
 export interface Card {
   readonly mark: Mark
@@ -175,11 +175,19 @@ export const needsFirstWorldRead = (inputs: PlanModel['inputs']): boolean =>
     || usedWorldRefs(inputs).some(({ ref }) => !inputs.world.facts.some(fact => fact.locator === ref.locator && fact.id === ref.fact))
   )
 
-export const attentionCards = (model: PlanModel, context: Context, wallNowMs: number = Date.now()): readonly Card[] => {
+/** `besideRun`: the plan is shown beside a Run, so an unlinked plan links that Run in one step. */
+export const attentionCards = (model: PlanModel, context: Context, wallNowMs: number = Date.now(), besideRun = false): readonly Card[] => {
   const { inputs } = model
   const cards: Card[] = []
   const scenario = inputs.settings.scenario
-  if (inputs.settings.run === null) {
+  if (inputs.settings.run === null && besideRun) {
+    cards.push({
+      mark: { shape: '◉', word: 'Link World' },
+      title: 'This plan is not linked to a Run yet.',
+      text: 'Link this Run to read its values. Planning only reads World; it never starts, pauses or changes a simulation.',
+      steps: [], actions: ['link-this-run'],
+    })
+  } else if (inputs.settings.run === null) {
     cards.push({
       mark: { shape: '◉', word: 'Link World' },
       title: scenario === undefined

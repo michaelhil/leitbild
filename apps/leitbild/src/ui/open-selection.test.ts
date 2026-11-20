@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test'
 import { moduleQueryOutcomeSchema, moduleResourceDescriptorSchema, type ModuleQueryOutcome } from '@leitbild/contracts'
-import { keptSelection, planningDemoQuery } from './open-selection.ts'
+import { addressedRunAndPlanning, keptSelection, planningDemoQuery, planningFrameQuery } from './open-selection.ts'
 import { room, run, WS } from './workspace-page.test-support.ts'
 
 const outcomes = (...values: unknown[]): ModuleQueryOutcome[] => values.map(value => moduleQueryOutcomeSchema.parse(value))
@@ -51,6 +51,60 @@ describe('what stays open after the Resources are read again', () => {
     expect(keptSelection({ ...planning, planning: 'library' }, [], ready).planning).toBeNull()
     expect(keptSelection({ ...planning, planning: 'demo' }, [], available).planning).toBe('demo')
     expect(keptSelection({ ...planning, planning: 'demo' }, [], ready).planning).toBeNull()
+  })
+
+  test('a Run and its plans stay open together; each closes on its own Module\'s answer', () => {
+    const available = outcomes(...ready, { moduleId: 'planning', status: 'ready' })
+    const plan = moduleResourceDescriptorSchema.parse({
+      ref: { workspaceId: WS, moduleId: 'planning', type: 'planning.plan', id: 'plan-1' }, title: 'Week 47', capabilityIds: [], observedAt: '2026-11-11T10:00:00.000Z',
+    })
+    const listedRun = run('a', 'Running', '2026-10-12T21:00:00.000Z')
+    const beside = { world: 'a', agents: null, agentsVisible: false, planning: 'library' }
+    expect(keptSelection(beside, [listedRun], available)).toEqual(beside)
+    expect(keptSelection({ ...beside, planning: 'plan-1' }, [listedRun, plan], available)).toEqual({ ...beside, planning: 'plan-1' })
+    // A deleted plan closes and leaves the Run open; a deleted Run closes and leaves Planning open.
+    expect(keptSelection({ ...beside, planning: 'plan-1' }, [listedRun], available)).toEqual({ ...beside, planning: null })
+    expect(keptSelection(beside, [], available)).toEqual({ ...beside, world: null })
+  })
+})
+
+describe('what an address opens', () => {
+  const opened = (search: string) => addressedRunAndPlanning(new URLSearchParams(search))
+
+  test('a Run and Planning open together: the Run with its plans', () => {
+    expect(opened('world=run-1&planning=library')).toEqual({ world: 'run-1', planning: 'library' })
+    expect(opened('world=run-1&planning=plan-1&agents=room-1')).toEqual({ world: 'run-1', planning: 'plan-1' })
+    expect(opened('world=run-1')).toEqual({ world: 'run-1', planning: null })
+    expect(opened('planning=library')).toEqual({ world: null, planning: 'library' })
+    expect(opened('')).toEqual({ world: null, planning: null })
+  })
+
+  test('the guided demo opens no Run in the page, as before', () => {
+    expect(opened('planning=demo&definition=two-deliveries&run=run-1')).toEqual({ world: null, planning: 'demo' })
+    expect(opened('world=run-1&planning=demo&definition=two-deliveries&run=run-1')).toEqual({ world: null, planning: 'demo' })
+  })
+})
+
+describe('the Planning frame\'s address', () => {
+  const query = (open: Partial<Parameters<typeof planningFrameQuery>[0]>) =>
+    planningFrameQuery({ planning: null, demoQuery: null, world: null, agents: null, ...open })
+
+  test('beside a Run it names the Run, then the plan and the Assistant\'s room', () => {
+    expect(query({ world: 'run-1', planning: 'library' })).toBe('run=run-1')
+    expect(query({ world: 'run-1', planning: 'plan-1' })).toBe('run=run-1&plan=plan-1')
+    expect(query({ world: 'run-1', planning: 'plan-1', agents: 'room-1' })).toBe('run=run-1&plan=plan-1&agents=room-1')
+    expect(query({ world: 'run-1', planning: 'library', agents: 'room-1' })).toBe('run=run-1&agents=room-1')
+  })
+
+  test('without a Run, and for the guided demo, it is as before; without Planning there is none', () => {
+    expect(query({ planning: 'library' })).toBe('')
+    expect(query({ planning: 'plan-1' })).toBe('plan=plan-1')
+    expect(query({ planning: 'plan-1', agents: 'room-1' })).toBe('plan=plan-1&agents=room-1')
+    expect(query({ planning: 'demo', demoQuery: 'demo=two-deliveries&run=run-1' })).toBe('demo=two-deliveries&run=run-1')
+    expect(query({ planning: 'demo', demoQuery: 'demo=two-deliveries&run=run-1', agents: 'room-1' })).toBe('demo=two-deliveries&run=run-1&agents=room-1')
+    expect(query({ planning: 'demo' })).toBeNull()
+    expect(query({ world: 'run-1' })).toBeNull()
+    expect(query({})).toBeNull()
   })
 })
 

@@ -1,6 +1,7 @@
 <script lang="ts">
-  import { resourceCatalogChangedMessageSchema, resourceIdSchema } from '@leitbild/contracts'
+  import { resourceCatalogChangedMessageSchema } from '@leitbild/contracts'
   import { deliveryDemoDefinitionId } from '../definitions/delivery-demo.ts'
+  import { createGo, createHostAddresses, readPlanningQuery } from './address.ts'
   import { createPlanningClient } from './api.ts'
   import DeliveryDemo from './DeliveryDemo.svelte'
   import MaintenanceDemo from './MaintenanceDemo.svelte'
@@ -10,26 +11,20 @@
   import ScheduleView from './ScheduleView.svelte'
 
   // Planning inside the Workspace page: /workspaces/<id>/planning shows the plans; ?plan=<id> one plan.
-  // Moving between them goes through the Workspace URL, so the Host keeps the selection in its own path.
+  // ?run=<id> without ?demo shows them beside that Run. Moving between them goes through the Workspace URL,
+  // so the Host keeps the selection in its own path.
   const match = location.pathname.match(/^\/workspaces\/([^/]+)\/planning(?:\/embed\/planning\.schedule)?$/)
   if (!match?.[1]) throw new Error('Planning opens inside a Workspace')
   const workspaceId = decodeURIComponent(match[1])
   const embeddedSchedule = location.pathname.endsWith('/embed/planning.schedule')
-  const query = new URLSearchParams(location.search)
-  const planId = query.get('plan')
-  const demo = query.get('demo')
-  const demoRun = resourceIdSchema.safeParse(query.get('run'))
+  const query = readPlanningQuery(location.search)
+  const { plan: planId, demo, demoRun, besideRun } = query
   const client = createPlanningClient(workspaceId)
   const host = window.parent === window ? window : window.parent
-  const agentsRoom = resourceIdSchema.safeParse(query.get('agents'))
-  const selectedOption = resourceIdSchema.safeParse(query.get('option'))
   const workspacePath = `/workspaces/${encodeURIComponent(workspaceId)}`
-  const roomSelection = agentsRoom.success ? { agents: agentsRoom.data } : {}
-  const workspaceHref = (planning?: string) => {
-    const selection = new URLSearchParams({ ...roomSelection, ...(planning === undefined ? {} : { planning }) })
-    return `${workspacePath}${selection.size === 0 ? '' : `?${selection}`}`
-  }
-  const worldHref = (run: string, objectId?: string, elementId?: string, option?: string) => `${workspacePath}?${new URLSearchParams({ ...roomSelection, world: run, ...(objectId === undefined ? {} : { focus: objectId }), ...(elementId === undefined ? {} : { element: elementId }), ...(option === undefined ? {} : { option }) })}`
+  const addresses = createHostAddresses(workspaceId, query)
+  const workspaceHref = addresses.workspace
+  const worldHref = addresses.world
 
   const changed = (id: string | null = planId): void => {
     if (id === null || window.parent === window) return
@@ -38,25 +33,32 @@
       resource: client.planRef(id),
     }), location.origin)
   }
-  const go = (href: string): void => { host.location.assign(href) }
+  const go = createGo(besideRun, {
+    framed: window.parent !== window,
+    post: message => { window.parent.postMessage(message, location.origin) },
+    assign: href => { host.location.assign(href) },
+  })
 </script>
 
 {#if embeddedSchedule}
   <ScheduleView {client} {workspaceId} />
-{:else if demo === maintenanceDefinitionId && demoRun.success}
-  {@const run = demoRun.data}
-  <MaintenanceDemo {client} {run} initialOption={selectedOption.success ? selectedOption.data : null}
+{:else if demo === maintenanceDefinitionId && demoRun !== null}
+  {@const run = demoRun}
+  <MaintenanceDemo {client} {run} initialOption={query.option}
     worldHref={(objectId, elementId, option) => worldHref(run, objectId, elementId, option)} planHref={workspaceHref}
     onAgent={(room, option) => go(`${workspacePath}?${new URLSearchParams({ planning: 'demo', definition: maintenanceDefinitionId, run, agents: room.id, option })}`)} />
-{:else if demo === deliveryDemoDefinitionId && demoRun.success}
-  {@const run = demoRun.data}
+{:else if demo === deliveryDemoDefinitionId && demoRun !== null}
+  {@const run = demoRun}
   <DeliveryDemo {client} {run} mapHref={(objectId) => worldHref(run, objectId)} planHref={workspaceHref} />
 {:else if demo !== null}
   <p class="loading" role="alert">Open this planning demonstration from its World map. <a href={workspaceHref()} target="_top">Open Workspace</a></p>
+{:else if query.unreadableRun}
+  <p class="loading" role="alert">This address names a Run Planning cannot open. Open the Run again from the Workspace page. <a href={workspaceHref()} target="_top">Open Workspace</a></p>
 {:else if planId === null}
-  <Library {client} onOpen={(plan) => go(workspaceHref(plan))} />
+  <Library {client} run={besideRun} onOpen={(plan) => go(workspaceHref(plan))} />
 {:else}
-  <PlanScreen {client} {planId} onChanged={changed} onOpenWorkspace={() => go(workspaceHref())} onOpenLibrary={() => go(workspaceHref('library'))} />
+  <PlanScreen {client} {planId} {besideRun} onChanged={changed} onOpenWorkspace={() => go(workspaceHref())} onOpenLibrary={() => go(workspaceHref('library'))}
+    onOpenBeside={(run) => go(addresses.planBeside(planId, run))} />
 {/if}
 
 <style>

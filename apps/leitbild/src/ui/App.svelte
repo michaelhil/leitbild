@@ -37,8 +37,10 @@
   import { request, jsonRequest } from './api.ts'
   import { cardCapability } from './card-actions.ts'
   import { roomScopeIncludingRun, roomSelectsRun, roomServesRun, roomUsesFamily, runDeclaresRoles, runFamilyFor, sameResource } from './run-room-scope.ts'
-  import { keptSelection, planningDemoQuery } from './open-selection.ts'
-  import { withUnreadCount, workspacePageTitle } from './page-title.ts'
+  import { addressedRunAndPlanning, keptSelection, planningDemoQuery, planningFrameQuery } from './open-selection.ts'
+  import { openSubjectTitle, withUnreadCount, workspacePageTitle } from './page-title.ts'
+  import { RUN_VIEW_SWITCH_NARROW, runViewAddress, runViewMenuLabel, runViewOf, type RunView } from './run-view.ts'
+  import RunViewSwitch from './RunViewSwitch.svelte'
   import { ageText, moduleReadiness, moduleTitle, workspaceLabel } from './launch-workspace.ts'
   import { WORKSPACE_SCREEN_PARAMETER, workspacePath, workspaceUrl } from './launch-destination.ts'
   import { createPeopleSession, type PeopleSession, type PeopleState } from './people-session.ts'
@@ -99,9 +101,11 @@
   if (openingAddress !== null) history.replaceState(null, '', openingAddress)
   const initialSelection = new URLSearchParams(location.search)
   const initialAgentsVisible = initialSelection.get('agents') !== null
-  let selectedPlanningId = $state(initialSelection.get('planning'))
+  const initialOpen = addressedRunAndPlanning(initialSelection)
+  // Planning beside a selected Run shows the Run's plans in place of its simulation (run-view.ts).
+  let selectedPlanningId = $state(initialOpen.planning)
   let selectedDemoQuery = $state(planningDemoQuery(initialSelection))
-  let selectedWorldRunId = $state(initialSelection.has('planning') ? null : initialSelection.get('world'))
+  let selectedWorldRunId = $state(initialOpen.world)
   let selectedWorldFocus = $state(initialSelection.get('focus'))
   let selectedWorldElement = $state(initialSelection.get('element'))
   let selectedWorldOption = $state(initialSelection.get('option'))
@@ -161,17 +165,12 @@
   const selectedPlanningResource = $derived(resources.find(resource =>
     resource.ref.type === 'planning.plan' && resource.ref.id === selectedPlanningId,
   ))
-  const planningQuery = $derived(selectedPlanningId === 'demo' ? selectedDemoQuery
-    : selectedPlanningId === 'library' ? ''
-    : selectedPlanningId === null ? null : new URLSearchParams({ plan: selectedPlanningId }).toString())
-  const planningFrameQuery = $derived.by(() => {
-    if (planningQuery === null) return null
-    const selection = new URLSearchParams(planningQuery)
-    if (selectedAgentsRoomId !== null && agentsVisible) selection.set('agents', selectedAgentsRoomId)
-    return selection.toString()
-  })
-  const planningPath = $derived(workspace && planningFrameQuery !== null
-    ? `/workspaces/${encodeURIComponent(workspace.id)}/planning${planningFrameQuery === '' ? '' : `?${planningFrameQuery}`}` : null)
+  const planningQuery = $derived(planningFrameQuery({
+    planning: selectedPlanningId, demoQuery: selectedDemoQuery, world: selectedWorldRunId,
+    agents: selectedAgentsRoomId !== null && agentsVisible ? selectedAgentsRoomId : null,
+  }))
+  const planningPath = $derived(workspace && planningQuery !== null
+    ? `/workspaces/${encodeURIComponent(workspace.id)}/planning${planningQuery === '' ? '' : `?${planningQuery}`}` : null)
   const selectedRunFamily = $derived(selectedWorldResource?.links.find(link =>
     link.rel === 'member-of' && link.ref.type === 'world.run-family',
   )?.ref)
@@ -188,7 +187,10 @@
   ].slice(0, 4))
   const pageTitle = $derived(workspacePageTitle({
     workspace: workspace ? workspaceTitle : null,
-    run: selectedPlanningResource?.title ?? (planningPath !== null ? 'Planning' : selectedWorldResource?.title ?? null),
+    run: openSubjectTitle({
+      runSelected: selectedWorldRunId !== null, run: selectedWorldResource?.title ?? null,
+      planning: planningPath !== null, plan: selectedPlanningResource?.title ?? null,
+    }),
     room: selectedAgentsResource?.title ?? null,
   }))
 
@@ -726,6 +728,23 @@
     else history.pushState(null, '', url)
   }
 
+  // The Run's simulation or its plans (run-view.ts). Each switch is a history entry, as selecting a Run is, so Back
+  // undoes it. Only `planning` changes, so the World frame keeps its document behind the plans.
+  const runView = $derived<RunView>(runViewOf(selectedPlanningId))
+  const showRunView = (view: RunView): void => {
+    if (selectedWorldRunId === null || view === runView || (view === 'plans' && !planningAvailable)) return
+    selectedPlanningId = view === 'plans' ? 'library' : null
+    history.pushState(null, '', runViewAddress(location.href, view))
+  }
+  // At phone width the Run's More menu offers the other view, in place of the switch.
+  let runBarNarrow = $state(typeof matchMedia === 'function' && matchMedia(RUN_VIEW_SWITCH_NARROW).matches)
+  $effect(() => {
+    const query = matchMedia(RUN_VIEW_SWITCH_NARROW)
+    const update = (): void => { runBarNarrow = query.matches }
+    query.addEventListener('change', update)
+    return () => query.removeEventListener('change', update)
+  })
+
   // The process display window opens a chat display's Run beside the chat only
   // when this Workspace lists it, reading the catalog again on a miss (an agent
   // may just have started the Run), and when the shown room's scope contains it,
@@ -758,11 +777,13 @@
     location.replace(workspace ? `/workspaces/${encodeURIComponent(workspace.id)}` : '/workspaces')
   }
 
-  const restoreUrlSelection = (): void => {
+  /** The address's selection, applied as it stands; restoreUrlSelection and openAddressInPlace then judge it against the catalogue. */
+  const applyUrlSelection = (): void => {
     const selection = new URLSearchParams(location.search)
-    selectedPlanningId = selection.get('planning')
+    const opened = addressedRunAndPlanning(selection)
+    selectedPlanningId = opened.planning
     selectedDemoQuery = planningDemoQuery(selection)
-    selectedWorldRunId = selection.has('planning') ? null : selection.get('world')
+    selectedWorldRunId = opened.world
     selectedWorldFocus = selection.get('focus')
     selectedWorldElement = selection.get('element')
     selectedWorldOption = selection.get('option')
@@ -770,8 +791,23 @@
     selectedAgentsRoomId = selection.get('agents')
     agentsVisible = selectedAgentsRoomId !== null
     screenRunGone = false
+  }
+
+  const restoreUrlSelection = (): void => {
+    applyUrlSelection()
     // Back to a Run or conversation deleted since is the Workspace page, not a dead view.
     if (!loading) normalizeOpenSelection(resources, resourceOutcomes)
+  }
+
+  // The shown Planning page moves to another address of this Workspace (workspace-open-message.ts): one history
+  // entry, applied as Back and Forward apply theirs, so the frames beside it keep their documents.
+  const openAddressInPlace = (address: string): void => {
+    if (address === `${location.pathname}${location.search}`) return
+    history.pushState(null, '', address)
+    // The page may name what it has just made, such as a new plan, which the catalogue read so far does not list:
+    // the selection is judged against a fresh read of it, never against the old one.
+    applyUrlSelection()
+    if (workspace) void refreshResources(workspace.id).catch(cause => { refreshError = String(cause) })
   }
 
   const capabilityFor = (id: string): ModuleCapabilityDescriptor | undefined => capabilities.find(item => item.id === id)
@@ -944,8 +980,11 @@
         runUrl={peopleRunUrl} runId={selectedWorldResource.ref.id} onOpenChat={openPeopleChat} />{/if}
       {#if fromGuide}<a class="guide-back" href={guideHref('ask')}>← Getting started</a>{/if}</div>
     <div class="workspace-actions">
-      {#if planningAvailable}<a href={workspaceUrl(workspace.id, { planning: 'library' })}>Planning</a>{/if}
-      {#if selectedPlanningResource}<span class="planning-title">{selectedPlanningResource.title}</span>{/if}
+      <!-- A Run reaches its plans from its own bar; the Workspace's Planning link stays in the other views (decision D4). -->
+      {#if planningAvailable && selectedWorldRunId === null}<a href={workspaceUrl(workspace.id, { planning: 'library' })}>Planning</a>{/if}
+      {#if planningAvailable && selectedWorldRunId !== null}<RunViewSwitch shown={runView} onswitch={showRunView} />{/if}
+      <!-- Beside a Run the plan screen names its plan itself; the bar keeps room for the Run's controls. -->
+      {#if selectedPlanningResource && !selectedWorldResource}<span class="planning-title">{selectedPlanningResource.title}</span>{/if}
       {#if selectedWorldResource}
         <SimulationRunControls
           workspaceId={workspace.id}
@@ -957,7 +996,11 @@
           refreshResources={() => refreshResources(workspace!.id)}
           reportError={message => { error = message }}
           retractError={message => { error = bannerAfterRetract(error, message) }}
-          moreItems={[{ label: 'Screens…', onselect: () => openScreensPanel(null) }]}
+          moreItems={[
+            ...(planningAvailable && runBarNarrow
+              ? [{ label: runViewMenuLabel(runView), onselect: () => showRunView(runView === 'plans' ? 'simulation' : 'plans') }] : []),
+            { label: 'Screens…', onselect: () => openScreensPanel(null) },
+          ]}
         />
         {#if showOnScreensOffered}<button class="screens-chip" type="button" title="Show this Run on every screen of this browser's screen setup" onclick={showRunOnScreens}><Icon name="screen" size={15} />Show on screens</button>{/if}
         {#if agentsVisible && selectedRunFamily && !runDeclaresRoles(selectedWorldResource)}
@@ -1035,7 +1078,7 @@
     <WorkspaceComposer workspaceId={workspace.id} worldRunId={selectedWorldRunId} worldFocus={selectedWorldFocus} worldElement={selectedWorldElement} worldOption={selectedWorldOption} worldSurface={selectedWorldSurface} {planningPath} planningResource={selectedPlanningResource?.ref ?? null} {resources} {rereadResources}
       onResourceCatalogChange={() => { void refreshResources(workspace!.id).catch(cause => { refreshError = String(cause) }) }}
       {focusedSubjects} agentsRoomId={selectedAgentsRoomId} {agentsVisible} onShowAgents={showRunAssistant}
-      {runRefusal} onOpenRun={runId => switchWorldRun(runId)} {runAssistantAvailable} onOpenRunAssistant={openRunAssistant}
+      {runRefusal} onOpenRun={runId => switchWorldRun(runId)} onShowSimulation={() => showRunView('simulation')} onOpenAddress={openAddressInPlace} {runAssistantAvailable} onOpenRunAssistant={openRunAssistant}
       onPlaceSurface={openScreensPanel} onError={message => { error = message }} bind:worldPane />
     {#if screenId === null && screensRun && selectedWorldResource}<ScreensPanel bind:open={screensPanelOpen} bind:placing={placingSurface} store={screens} run={screensRun}
       runTitle={selectedWorldResource.title} scenario={scenarioTitle(screensRun.definition, definitions)} onchange={() => { screensStored = readScreens() }} />{/if}
