@@ -80,6 +80,13 @@ const loadLeftFor = (state: EngineState, unit: UnitRecord, task: TaskRecord, tri
 
 /** Why a step for this target cannot join the end of the unit's chain, judged on what the unit will carry by then and on the task's coverage now. */
 const queueRefusal = (state: EngineState, unit: UnitRecord, target: Target, load: Counts, kind: StepKind): Refused | undefined => {
+  // A task the chain already holds is taken again only as a further trip for load still waiting; otherwise the answer is where the plan holds it, whatever the unit will carry by then.
+  const trips = target.kind === 'task' ? unit.orders.filter(step => 'taskId' in step.target && step.target.taskId === target.task.id).length : 0
+  if (target.kind === 'task' && trips > 0 && !loadLeftFor(state, unit, target.task, trips)) {
+    // Named by its latest trip there, the one a further trip would follow.
+    const latest = unit.orders.reduce((found, step, index) => 'taskId' in step.target && step.target.taskId === target.task.id ? index : found, -1)
+    return refused('already_in_plan', heldText(state, unit, latest))
+  }
   if (kind !== 'deliver' && total(load) > 0 && !deliversByOrder(state, unit)) {
     return refused('unit_loaded', `${unit.label} will have ${loadText(state.catalog, load)} on board by then; add a delivery stop first`)
   }
@@ -90,14 +97,8 @@ const queueRefusal = (state: EngineState, unit: UnitRecord, target: Target, load
   if (target.kind !== 'task') return undefined
   const task = target.task
   if (!linksToTask(unit, task)) return refused('cross_side_reference', `${unit.label} cannot serve another side's ${task.label}`)
-  // A task the chain already holds is taken again only as a further trip for load still waiting.
-  const trips = unit.orders.filter(step => 'taskId' in step.target && step.target.taskId === task.id).length
-  if (trips > 0) {
-    if (loadLeftFor(state, unit, task, trips)) return undefined
-    // Named by its latest trip there, the one a further trip would follow.
-    const latest = unit.orders.reduce((found, step, index) => 'taskId' in step.target && step.target.taskId === task.id ? index : found, -1)
-    return refused('already_in_plan', heldText(state, unit, latest))
-  }
+  // A further trip for load still waiting there.
+  if (trips > 0) return undefined
   // By then the unit carries nothing and serves no other task.
   const free = patch(unit, { load: {}, taskId: undefined })
   const contribution = contributionOf(state.catalog, task, assignedTo(state.units.values(), task), free)

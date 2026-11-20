@@ -53,7 +53,11 @@ const fillOf = (coverage: TaskCoverage): number[] => [
 ]
 /** The units counted on their way before any proposal: assigned to the task, and those holding it as a later stop. */
 type Base = ReadonlyArray<UnitRecord>
-const counted = (task: TaskRecord, base: Base, units: ReadonlyArray<UnitRecord>): UnitRecord[] => [...base, ...asAssigned(units, task)]
+/** The base and the judged units as if sent now; a judged unit that holds the task as a later stop counts once, as sent. */
+const counted = (task: TaskRecord, base: Base, units: ReadonlyArray<UnitRecord>): UnitRecord[] => {
+  const judged = new Set(units.map(unit => unit.id))
+  return [...base.filter(unit => !judged.has(unit.id)), ...asAssigned(units, task)]
+}
 const fillWith = (state: EngineState, task: TaskRecord, base: Base, units: ReadonlyArray<UnitRecord>): number[] =>
   fillOf(coverageOf(state.catalog, task, counted(task, base, units)))
 const sameFill = (a: ReadonlyArray<number>, b: ReadonlyArray<number>): boolean => a.every((value, index) => value === b[index])
@@ -153,13 +157,20 @@ interface Survey {
   readonly whyNot: RecommendAnswer['whyNot']
 }
 
-/** The caller's units of the task's side that provide what it requires or carry what it holds, sorted into free and why not; a unit that adds only what a later stop will cover is neither. */
+/**
+ * The caller's units of the task's side that provide what it requires or
+ * carry what it holds, sorted into free and why not. Units the base counts
+ * (on the task, or holding it as a later stop) are neither: they are
+ * already on their way. A unit that adds only what a later stop will cover
+ * is neither either.
+ */
 const survey = (state: EngineState, task: TaskRecord, base: Base, commandable: (unit: UnitRecord) => boolean): Survey => {
+  const onTheirWay = new Set(base.map(unit => unit.id))
   const requires = templateOf(state.catalog, task).requires
   const free: UnitRecord[] = []
   const whyNot: Array<RecommendAnswer['whyNot'][number]> = []
   for (const unit of [...state.units.values()].sort(byId)) {
-    if (!commandable(unit) || !linksToTask(unit, task) || unit.taskId === task.id) continue
+    if (!commandable(unit) || !linksToTask(unit, task) || unit.taskId === task.id || onTheirWay.has(unit.id)) continue
     if (freeToHelp(state, task, base, unit)) {
       free.push(unit)
       continue

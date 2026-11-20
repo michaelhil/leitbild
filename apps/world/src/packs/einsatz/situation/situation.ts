@@ -6,7 +6,7 @@ import type { PriorityRef } from '../recommendation-schema.ts'
 import type { StepKind, StepTarget } from '../steps.ts'
 import { assignedTo, coverageOf, freeToHelp } from '../engine/coverage.ts'
 import { coverageWithPlanned, plannedStops } from '../engine/planned.ts'
-import { priorityOf, priorityRankOf, templateOf, unitTypeOf, type EngineState, type TaskRecord, type UnitRecord } from '../engine/model.ts'
+import { priorityOf, priorityRankOf, templateOf, unitTypeOf, type EngineState, type TaskCoverage, type TaskRecord, type UnitRecord } from '../engine/model.ts'
 import { committedPhases, isDestroyed, isFree } from '../engine/rules.ts'
 import { takesArrivals } from '../engine/delivery.ts'
 import type { EngineActor } from '../engine/intents.ts'
@@ -154,6 +154,13 @@ const overdueOf = (state: EngineState, task: TaskRecord): boolean | undefined =>
   return !reached && (state.timeMs - task.createdAtMs) / 1_000 > target
 }
 
+/** How much of a waiting load class a coverage covers; every class the task holds has an entry. */
+const coveredIn = (task: TaskRecord, coverage: TaskCoverage, classId: string): number => {
+  const entry = coverage.loads.find(other => other.classId === classId)
+  if (entry === undefined) throw new Error(`${task.id}: its coverage names no load class ${classId}`)
+  return entry.covered
+}
+
 const callRow = (state: EngineState, viewer: EinsatzViewer, task: TaskRecord, rows: ReadonlyMap<string, SituationUnit>): SituationCall => {
   const template = templateOf(state.catalog, task)
   const assigned = [...state.units.values()].filter(unit => unit.taskId === task.id && committedPhases.includes(unit.phase)).sort(naturalOrder)
@@ -205,7 +212,7 @@ const callRow = (state: EngineState, viewer: EinsatzViewer, task: TaskRecord, ro
       }),
       ...task.coverage.loads.map(entry => {
         const loadClass = state.catalog.classes.find(candidate => candidate.id === entry.classId)!
-        const later = Math.max(0, (then.loads.find(other => other.classId === entry.classId)?.covered ?? 0) - (now.loads.find(other => other.classId === entry.classId)?.covered ?? 0))
+        const later = Math.max(0, coveredIn(task, then, entry.classId) - coveredIn(task, now, entry.classId))
         return { kind: 'load' as const, classId: entry.classId, code: loadClass.code, label: loadText(state.catalog, { [entry.classId]: entry.waiting }), waiting: entry.waiting, covered: entry.covered, planned: later }
       }),
     ],
@@ -221,7 +228,7 @@ const callRow = (state: EngineState, viewer: EinsatzViewer, task: TaskRecord, ro
         by: actorWords(active?.by ?? unit.lastAction?.by ?? 'scenario', viewer),
       }
     }),
-    planned: planned.map(entry => ({ unitId: entry.unit.id, label: entry.unit.label, stop: entry.stop, eta: rows.get(entry.unit.id)!.plan[entry.stop - 1]?.eta ?? null })),
+    planned: planned.map(entry => ({ unitId: entry.unit.id, label: entry.unit.label, stop: entry.stop, eta: rows.get(entry.unit.id)!.plan[entry.stop - 1]!.eta })),
     states: [
       ...task.alerts.map(alert => ({ code: alert.code, text: alert.message })),
       ...(overdue === true ? [{ code: 'overdue', text: `Waiting past its ${priorityOf(state.catalog, task.priority).code} response target` }] : []),

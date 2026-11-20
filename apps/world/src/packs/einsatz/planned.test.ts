@@ -75,6 +75,31 @@ describe('Einsatz later stops', () => {
     expect(callOf(sent, 'later')).toMatchObject({ assigned: [{ unitId: 'c2' }], needs: [{ covered: 1, planned: 0 }] })
   })
 
+  test('a free unit that holds the call as a later stop counts once in a proposal, as sent', async () => {
+    // G1 first moves to a point, then serves PAIR, which needs two guards: free, and planned there.
+    const state = await run(await runAll(emptyState(), [
+      newUnit('g1', types.pairServer, at(0.009)),
+      newUnit('g2', types.pairServer, at(0.03)),
+      newTask('pair', templates.pair, at(0.01)),
+    ]), { kind: 'order', units: ['g1'], stops: [{ point: at(0.0095) }, { taskId: 'pair' }] })
+    expect(callOf(state, 'pair').planned).toMatchObject([{ unitId: 'g1', stop: 2 }])
+    const proposal = (await recommend({ state, viewer: openViewer, taskId: 'pair', routing })).proposal
+    expect(proposal?.order.units).toEqual(['g2'])
+    expect(proposal?.covers).toEqual({ covered: 2, needed: 2 })
+  })
+
+  test('a carrier without a deliver order is told where its plan holds a call, not that it will be loaded', async () => {
+    const state = await runAll(emptyState(), [
+      newUnit('d1', types.directCarrier, at(0)),
+      newUnit('clinic', types.publicSite, at(0.02)),
+      newTask('near', templates.load, at(0.005), { [top]: 1 }),
+      newTask('t', templates.load, at(0.01), { [top]: 1 }),
+      { kind: 'order', units: ['d1'], stops: [{ taskId: 'near' }, { siteId: 'clinic' }, { taskId: 't' }] },
+    ])
+    expect(await refusalOf(state, append('d1', { taskId: 'near' }))).toEqual({ code: 'already_in_plan', reason: 'already_in_plan: NEAR is D1\'s current stop' })
+    expect((await options(state, 'd1')).refused.find(entry => entry.label === 'T')).toMatchObject({ code: 'already_in_plan', text: 'T is already stop 3 of D1\'s plan' })
+  })
+
   test('a call its later stops cover needs no free unit', async () => {
     const state = await runAll(emptyState(), [
       newUnit('c1', types.roadCarrier, at(0)),
