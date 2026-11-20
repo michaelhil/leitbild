@@ -39,6 +39,7 @@
   import { roomScopeIncludingRun, roomSelectsRun, roomServesRun, roomUsesFamily, runDeclaresRoles, runFamilyFor, sameResource } from './run-room-scope.ts'
   import { addressedRunAndPlanning, keptSelection, planningDemoQuery, planningFrameQuery } from './open-selection.ts'
   import { openSubjectTitle, withUnreadCount, workspacePageTitle } from './page-title.ts'
+  import { runViewAddress, runViewOf, type RunView } from './run-view.ts'
   import { ageText, moduleReadiness, moduleTitle, workspaceLabel } from './launch-workspace.ts'
   import { WORKSPACE_SCREEN_PARAMETER, workspacePath, workspaceUrl } from './launch-destination.ts'
   import { createPeopleSession, type PeopleSession, type PeopleState } from './people-session.ts'
@@ -726,6 +727,15 @@
     else history.pushState(null, '', url)
   }
 
+  // The Run's simulation or its plans (run-view.ts). Each switch is a history entry, as selecting a Run is, so Back
+  // undoes it. Only `planning` changes, so the World frame keeps its document behind the plans.
+  const runView = $derived<RunView>(runViewOf(selectedPlanningId))
+  const showRunView = (view: RunView): void => {
+    if (selectedWorldRunId === null || view === runView || (view === 'plans' && !planningAvailable)) return
+    selectedPlanningId = view === 'plans' ? 'library' : null
+    history.pushState(null, '', runViewAddress(location.href, view))
+  }
+
   // The process display window opens a chat display's Run beside the chat only
   // when this Workspace lists it, reading the catalog again on a miss (an agent
   // may just have started the Run), and when the shown room's scope contains it,
@@ -1036,7 +1046,7 @@
     <WorkspaceComposer workspaceId={workspace.id} worldRunId={selectedWorldRunId} worldFocus={selectedWorldFocus} worldElement={selectedWorldElement} worldOption={selectedWorldOption} worldSurface={selectedWorldSurface} {planningPath} planningResource={selectedPlanningResource?.ref ?? null} {resources} {rereadResources}
       onResourceCatalogChange={() => { void refreshResources(workspace!.id).catch(cause => { refreshError = String(cause) }) }}
       {focusedSubjects} agentsRoomId={selectedAgentsRoomId} {agentsVisible} onShowAgents={showRunAssistant}
-      {runRefusal} onOpenRun={runId => switchWorldRun(runId)} {runAssistantAvailable} onOpenRunAssistant={openRunAssistant}
+      {runRefusal} onOpenRun={runId => switchWorldRun(runId)} onShowSimulation={() => showRunView('simulation')} {runAssistantAvailable} onOpenRunAssistant={openRunAssistant}
       onPlaceSurface={openScreensPanel} onError={message => { error = message }} bind:worldPane />
     {#if screenId === null && screensRun && selectedWorldResource}<ScreensPanel bind:open={screensPanelOpen} bind:placing={placingSurface} store={screens} run={screensRun}
       runTitle={selectedWorldResource.title} scenario={scenarioTitle(screensRun.definition, definitions)} onchange={() => { screensStored = readScreens() }} />{/if}
