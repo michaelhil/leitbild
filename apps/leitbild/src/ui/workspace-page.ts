@@ -4,14 +4,16 @@
 // them by, as the Demos modal shows it) and what to continue. The Svelte
 // files only render these.
 
-import type {
-  FeaturedDefinitionCatalog,
-  ModuleDefinitionDescriptor,
-  ModuleFeaturedDefinition,
-  ModuleListedDefinition,
-  ModuleResourceDescriptor,
-  ResourceSummaryItem,
+import {
+  ABOUT_RELATION,
+  type FeaturedDefinitionCatalog,
+  type ModuleDefinitionDescriptor,
+  type ModuleFeaturedDefinition,
+  type ModuleListedDefinition,
+  type ModuleResourceDescriptor,
+  type ResourceSummaryItem,
 } from '@leitbild/contracts'
+import { workspaceUrl } from './launch-destination.ts'
 
 export const PUBLIC_NOTE = 'Public: anyone can see, open, change or delete this Workspace.'
 /** The guide hands a conversation over with `?agents=<room>&from=guide`; the shell then links back. */
@@ -142,6 +144,19 @@ export const continueItems = (resources: ReadonlyArray<ModuleResourceDescriptor>
   }).sort((left, right) => order[left.kind] - order[right.kind] || (right.at ?? '').localeCompare(left.at ?? ''))
 
 export const CONTINUE_LIMIT = 3
+
+/**
+ * Where a Continue card opens: a Run in its pane, a conversation in the Agents
+ * pane, a plan in Planning, beside the Run its catalogue entry is about.
+ */
+export const continueHref = (workspaceId: string, resource: Pick<ModuleResourceDescriptor, 'ref' | 'links'>): string => {
+  if (resource.ref.type === ROOM) return workspaceUrl(workspaceId, { agents: resource.ref.id })
+  if (resource.ref.type === PLAN) {
+    const run = resource.links.find(link => link.rel === ABOUT_RELATION && link.ref.moduleId === 'world' && link.ref.type === RUN)
+    return workspaceUrl(workspaceId, { world: run?.ref.id ?? null, planning: resource.ref.id })
+  }
+  return workspaceUrl(workspaceId, { world: resource.ref.id })
+}
 
 // ---------- Scenario rows ----------
 
