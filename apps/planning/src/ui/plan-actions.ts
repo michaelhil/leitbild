@@ -32,6 +32,13 @@ export const worldReadNotice = (model: PlanModel): string => {
   return `World values read: ${facts.length} ${facts.length === 1 ? 'value' : 'values'}, describing simulation time ${createTimeFormat(model.inputs.settings.timeZone).when(latest)}.`
 }
 
+/**
+ * Beside its own Run, a linked plan whose World values were never read reads them when it opens, so a refused
+ * read is said on the plan screen: the Library opens a new plan for the Run even when its first read was refused.
+ */
+export const readsOnOpen = (model: PlanModel, besideRun: string | null): boolean =>
+  besideRun !== null && model.inputs.settings.run?.id === besideRun && model.inputs.world.refreshedAt === null
+
 /** An edit that names a World item or links a Run: World values are read again after it is saved. */
 export const readsWorld = (edits: readonly Edit[]): boolean =>
   edits.some(edit => ('locator' in edit && typeof edit.locator === 'string') || (edit.edit === 'plan' && typeof edit.run === 'string'))

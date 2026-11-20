@@ -3,9 +3,10 @@
   import { goalChoiceWords, gridChoices, planEdits, type GoalChoice, type PlanForm } from './edit-forms.ts'
 
   // A new plan from empty: name, window, site time zone and goal order. The plan's own currency comes
-  // from the Workspace, so the goals are sent once the plan exists.
-  let { busy = false, defaultZone, defaultStart, defaultEnd, onCreate, onCancel }: {
+  // from the Workspace, so the goals are sent once the plan exists. Beside a Run it is linked to that Run.
+  let { busy = false, forRun = false, defaultZone, defaultStart, defaultEnd, onCreate, onCancel }: {
     busy?: boolean
+    forRun?: boolean
     defaultZone: string
     defaultStart: string
     defaultEnd: string
@@ -45,7 +46,7 @@
 </script>
 
 <form class="mini-form new-plan" onsubmit={submit}>
-  <h2>New plan</h2>
+  <h2>{forRun ? 'New plan for this Run' : 'New plan'}</h2>
   <label>Name<input bind:value={title} placeholder="e.g. Week 47 maintenance" /></label>
   <Choice label="Time step" bind:value={grid} options={gridChoices} />
   <Choice label="Site time zone" bind:value={timeZone} options={zones.map(zone => ({ value: zone, label: zone.replaceAll('_', ' ') }))} />
@@ -69,7 +70,7 @@
     {/each}
   </fieldset>
   <div class="actions">
-    <button type="submit" class="primary" disabled={busy}>Create the plan</button>
+    <button type="submit" class="primary" disabled={busy}>{forRun ? 'Create the plan and link this Run' : 'Create the plan'}</button>
     <button type="button" onclick={onCancel}>Cancel</button>
   </div>
   {#if problems.length > 0}<ul class="problems">{#each problems as problem (problem)}<li>{problem}</li>{/each}</ul>{/if}

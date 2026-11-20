@@ -10,12 +10,15 @@
 
   // Link a simulation the person started in World, find items in it by name, and add them as equipment
   // or as crews and tools. Planning only reads World; every value shows its basis and read time.
-  let { context, runs, linkedRun, busy = false, onLink, onRefresh, onOpenWorkspace, onFindRuns, onSearch, onDetail, onPreview }: {
+  // Beside a Run (`besideRun`) an unlinked plan links that Run, and a plan linked to another Run says so.
+  let { context, runs, linkedRun, besideRun = null, busy = false, onLink, onOpenBeside, onRefresh, onOpenWorkspace, onFindRuns, onSearch, onDetail, onPreview }: {
     context: Context
     runs: readonly RunChoice[]
     linkedRun: string | null
+    besideRun?: string | null
     busy?: boolean
     onLink: (run: string) => void
+    onOpenBeside: (run: string) => void
     onRefresh: () => void
     onOpenWorkspace: () => void
     onFindRuns: () => void
@@ -62,7 +65,11 @@
 
 <section class="picker" aria-labelledby="picker-title">
   <h2 id="picker-title">Equipment and World</h2>
-  {#if settings.run === null}
+  {#if settings.run === null && besideRun !== null}
+    {@const beside = besideRun}
+    <p>Link this Run to read its values into the plan. Planning only reads World; it never starts, pauses or changes a simulation.</p>
+    <button type="button" class="primary" disabled={busy} onclick={() => onLink(beside)}>Link this Run</button>
+  {:else if settings.run === null}
     <p>Planning reads values from a simulation you start in World. It never starts, pauses or changes one.</p>
     {#if matching.length === 0 && scenario !== undefined}<p class="hint">No “{scenario.title}” simulation is running yet. Start it from its card on the Workspace page, then come back.</p>{/if}
     <div class="actions">
@@ -84,6 +91,12 @@
       </form>
     {/if}
   {:else}
+    {#if besideRun !== null && settings.run.id !== besideRun}
+      {@const other = settings.run.id}
+      <!-- Beside one Run, a plan linked to another says so and opens beside that one; it is not listed under this Run. -->
+      <p class="linked-elsewhere">{linkedRun === null ? 'This plan is linked to another simulation, not to this Run.' : `This plan is linked to “${linkedRun}”, not to this Run.`}</p>
+      {#if linkedRun !== null}<button type="button" disabled={busy} onclick={() => onOpenBeside(other)}>Open this plan beside “{linkedRun}”</button>{/if}
+    {/if}
     <p><MarkTag mark={{ shape: '◉', word: 'Linked' }} tone="world" /> {linkedRun ?? 'A simulation in this Workspace'}.
       {latestRead !== null ? `Values describe simulation time ${context.format.when(latestRead)}.` : context.inputs.world.refreshedAt === null ? 'Its values are not read yet.' : 'Values read; this plan names no World items yet.'}</p>
     <button type="button" disabled={busy} onclick={onRefresh}>Read the World values again</button>
