@@ -64,7 +64,7 @@ export const createLibraryActions = (client: PlanningClient, progress: Progress 
    */
   const readValues = async (plan: string, revision: number): Promise<void> => {
     progress('Reading World values…')
-    try { await client.refresh(plan, revision) } catch { /* The plan screen reads again and says why (PlanScreen onMount). */ }
+    try { await client.refresh(plan, revision) } catch { /* The plan screen reads again on open and says why (readsOnOpen). */ }
   }
   return {
     /**

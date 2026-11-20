@@ -29,7 +29,7 @@
   import type { Preview } from './preview.ts'
   import RulesPanel from './RulesPanel.svelte'
   import { alignWindowEdit, simulationNow } from './edit-forms.ts'
-  import { createPlanActions, type Shown } from './plan-actions.ts'
+  import { createPlanActions, readsOnOpen, type Shown } from './plan-actions.ts'
   import { createPreviewGate } from './preview-gate.ts'
   import { crewHourPurchases, requestText } from './request.ts'
   import { revealPanel } from './reveal.ts'
@@ -55,16 +55,21 @@
   const firstRefused = (plan: PlanModel | null): string | null =>
     (plan === null ? [] : planOptions(plan)).find(option => option.fresh && option.status.word !== 'validated feasible')?.key ?? null
 
-  let { client, planId, initial = null, initialRuns = [], initialView = 'schedule', onChanged, onOpenWorkspace, onOpenLibrary }: {
+  // `besideRun`: the plan is shown beside this Run (the Run's Plans tab); the Library link returns to its plans.
+  let { client, planId, besideRun = null, initial = null, initialRuns = [], initialView = 'schedule', onChanged, onOpenWorkspace, onOpenLibrary, onOpenBeside }: {
     client: PlanningClient
     planId: string
+    besideRun?: string | null
     initial?: PlanModel | null
     initialRuns?: readonly RunChoice[]
     initialView?: PlanView
     onChanged: () => void
     onOpenWorkspace: () => void
     onOpenLibrary: () => void
+    /** Opens this plan beside the Run it is linked to. */
+    onOpenBeside: (run: string) => void
   } = $props()
+  const libraryWords = $derived(besideRun === null ? '← All plans' : '← Plans for this Run')
 
   // The initial props seed the screen once (a test renders a plan it already has); later reads replace them.
   // svelte-ignore state_referenced_locally
@@ -178,7 +183,7 @@
   const compareMore = $derived(context === null || compareMoreMoved.length === 0 ? null : moreMoved({ moved: compareMoreMoved }, context))
   const rows = $derived(model !== null && selectedOption !== null ? model.rows[selectedOption] ?? [] : [])
   const layout = $derived(model !== null && context !== null ? layoutTimeline(model.inputs, rows, context.format) : null)
-  const cards = $derived(model !== null && context !== null ? attentionCards(model, context) : [])
+  const cards = $derived(model !== null && context !== null ? attentionCards(model, context, Date.now(), besideRun !== null) : [])
   const banner = $derived(model !== null && context !== null ? outcomeBanner(model, context, wide ? 'on the right' : 'below') : null)
   const shifts = $derived(model !== null && context !== null ? shiftList(model.inputs, rows, context.format) : [])
   const shown = $derived(model?.options?.items.find(option => option.key === selectedOption) ?? null)
@@ -336,6 +341,12 @@
     void attempt(async () => {
       if (model === null) show(await actions.load(null))
       runs = await actions.runs(model?.inputs.settings.scenario?.id)
+      // Beside its own Run, a linked plan whose World values were never read reads them now (readsOnOpen).
+      const current = model
+      if (current !== null && readsOnOpen(current, besideRun)) {
+        show(await actions.refresh(current, selectedOption))
+        onChanged()
+      }
     })
     return () => detailColumn.removeEventListener('change', follow)
   })
@@ -462,6 +473,7 @@
   const baseline = (option: string, name: string, note: string): void => withModel(async current => { show(await actions.baseline(current, option, name, note)); onChanged() })
   const onAction = (action: CardAction): void => {
     if (action === 'open-workspace') onOpenWorkspace()
+    else if (action === 'link-this-run') { if (besideRun !== null) link(besideRun) }
     else if (action === 'link-run' || action === 'add-work') view = 'equipment'
     else if (action === 'refresh') refresh()
     else if (action === 'generate') generate({})
@@ -538,7 +550,7 @@
 
 {#if model !== null && context !== null}
   <div class="plan-screen">
-    <p class="back"><button type="button" class="link" onclick={onOpenLibrary}>← All plans</button></p>
+    <p class="back"><button type="button" class="link" onclick={onOpenLibrary}>{libraryWords}</button></p>
     <PlanHeader {context} title={model.title} {size} generating={generating !== null} {busy} {needsWorld} onGenerate={generate} onCancel={() => generating?.abort()} />
     {#if error}<ErrorNotice text={error} cause={errorCause} />{/if}
     {#if notice}<p class="notice" aria-live="polite">{notice}</p>{/if}
@@ -569,7 +581,7 @@
           {#key applied}<JobForm {context} busy={busy || generating !== null} onPreview={previewEdits} />{/key}
         {:else if view === 'equipment'}
           <!-- The World picker keeps its search and results across an Apply, so several items take one search. -->
-          <EquipmentPicker {context} {runs} {linkedRun} busy={busy || generating !== null} onLink={link} onRefresh={refresh} {onOpenWorkspace} onFindRuns={findRuns} onSearch={search} onDetail={detail} onPreview={previewEdits} />
+          <EquipmentPicker {context} {runs} {linkedRun} {besideRun} busy={busy || generating !== null} onLink={link} {onOpenBeside} onRefresh={refresh} {onOpenWorkspace} onFindRuns={findRuns} onSearch={search} onDetail={detail} onPreview={previewEdits} />
         {:else if view === 'crews'}
           {#key applied}<CrewForm {context} busy={busy || generating !== null} onPreview={previewEdits} />{/key}
         {:else if view === 'rules'}
@@ -593,7 +605,7 @@
     </div>
   </div>
 {:else if error}
-  <div class="plan-screen"><ErrorNotice text={error} cause={errorCause} /><button type="button" onclick={onOpenLibrary}>← All plans</button></div>
+  <div class="plan-screen"><ErrorNotice text={error} cause={errorCause} /><button type="button" onclick={onOpenLibrary}>{libraryWords}</button></div>
 {:else}
   <p class="loading">Opening the plan…</p>
 {/if}

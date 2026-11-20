@@ -53,7 +53,8 @@
 {:else if planId === null}
   <Library {client} run={besideRun} onOpen={(plan) => go(workspaceHref(plan))} />
 {:else}
-  <PlanScreen {client} {planId} onChanged={changed} onOpenWorkspace={() => go(workspaceHref())} onOpenLibrary={() => go(workspaceHref('library'))} />
+  <PlanScreen {client} {planId} {besideRun} onChanged={changed} onOpenWorkspace={() => go(workspaceHref())} onOpenLibrary={() => go(workspaceHref('library'))}
+    onOpenBeside={(run) => go(addresses.planBeside(planId, run))} />
 {/if}
 
 <style>

@@ -13,6 +13,7 @@
   const actionWords: Readonly<Record<CardAction, string>> = {
     'open-workspace': 'Open the Workspace',
     'link-run': 'Link the running simulation',
+    'link-this-run': 'Link this Run',
     refresh: 'Read the World values',
     'add-work': 'Add equipment and jobs',
     generate: 'Generate',
