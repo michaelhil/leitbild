@@ -253,7 +253,19 @@ export const railStartsCollapsed = (packs: ReadonlyArray<WorldPackView>): boolea
  * Whether a surface panel is open: what this tab chose for it, else the
  * panel's declared `defaultOpen`. A panel the tab never touched opens as its
  * Pack declares, so a Pack whose only list and map-target handler is its
- * panel (Einsatz) is usable without first finding it in the View menu.
+ * panel (Einsatz) is usable without first finding it under the rail's Tools.
  */
 export const surfacePanelIsOpen = (panel: Pick<PackSurfacePanelContribution, 'id' | 'defaultOpen'>, chosen: Readonly<Record<string, boolean>>): boolean =>
   chosen[panel.id] ?? panel.defaultOpen
+
+/**
+ * Whether a press on a panel's toggle must leave the panel open: the open
+ * map-target panel stays while it arms an order, which it shows by its
+ * targeting. Hidden, it would leave the order armed with nothing to show or
+ * cancel it.
+ */
+export const armedPanelStays = (
+  panelId: string,
+  openMapTargetPanel: Pick<PackSurfacePanelContribution, 'id'> | null,
+  targetings: Readonly<Record<string, MapTargeting | null>>,
+): boolean => openMapTargetPanel?.id === panelId && targetings[panelId] != null

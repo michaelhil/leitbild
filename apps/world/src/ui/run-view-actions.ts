@@ -19,19 +19,23 @@ export const fitObjectsTarget = (objects: ReadonlyArray<Pick<OperationalObject, 
   return { kind: 'bounds', bounds: [[west, south], [east, north]] }
 }
 
-export interface RunViewChoice {
-  readonly id: string
+export type RunCameraActionId = 'home' | 'fit-visible' | 'fit-selected'
+
+export interface RunCameraButton {
+  readonly id: RunCameraActionId
+  /** Names the button's target: its accessible name and hover text. */
   readonly label: string
-  readonly visible: boolean
-  readonly disabledReason?: string
+  /** Why a press does nothing now; null when it acts. */
+  readonly disabledReason: string | null
 }
 
-export interface RunViewCameraAction {
-  readonly id: string
-  readonly label: string
-  readonly disabledReason?: string
-}
-
-/** Camera recovery stays in reach. Selection fitting only matters with an actionable selection. */
-export const arrangeRunViewCamera = (actions: ReadonlyArray<RunViewCameraAction>): ReadonlyArray<RunViewCameraAction> =>
-  actions.filter(action => action.id !== 'fit-selected' || !action.disabledReason)
+/**
+ * The map's camera buttons, in row order. Home and Fit all visible are always
+ * in reach; Fit selection is present only while an object with a map position
+ * is selected.
+ */
+export const runCameraButtons = (input: { readonly visiblePositions: boolean; readonly selectionOnMap: boolean }): ReadonlyArray<RunCameraButton> => [
+  { id: 'home', label: 'Home: the scenario\u2019s starting view', disabledReason: null },
+  { id: 'fit-visible', label: 'Fit everything visible', disabledReason: input.visiblePositions ? null : 'No visible object positions' },
+  ...(input.selectionOnMap ? [{ id: 'fit-selected' as const, label: 'Fit the selected object', disabledReason: null }] : []),
+]

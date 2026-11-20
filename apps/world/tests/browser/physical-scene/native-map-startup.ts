@@ -1,4 +1,4 @@
-/** Test driver for the World-owned View sheet. No private state or product hook.
+/** Test driver for the World-owned Run page controls: the rail's Tools and the Guide. No private state or product hook.
  * Kept self-contained so isolated CDP runners can evaluate this function. */
 export const nativeMapStartup = async (openControls = true) => {
   const wait = async <T>(read: () => T | null | undefined | false, label: string): Promise<T> => {
@@ -13,16 +13,14 @@ export const nativeMapStartup = async (openControls = true) => {
   await wait(() => frame.contentDocument?.querySelector('.maplibregl-canvas'), 'the geographic map')
   const doc = frame.contentDocument!
   await wait(() => !doc.querySelector('.startup-modal-frame'), 'the completed public map startup')
-  if (document.querySelector('button[aria-label="View"]')) throw new Error('World controls must not be rendered in the Host header')
-  const view = await wait(() => doc.querySelector<HTMLButtonElement>('button[aria-label="View"]'), 'the World View control')
-  view.click()
-  const menu = await wait(() => doc.querySelector<HTMLElement>('[aria-label="Run view"]'), 'the Run view disclosure')
-  const panels = await wait(() => [...menu.querySelectorAll<HTMLHeadingElement>('h3')].find(heading => heading.textContent?.trim() === 'Panels')?.parentElement, 'declared panel choices')
-  const initial = [...panels.querySelectorAll('label')].map(label => ({ label: label.textContent?.trim() ?? '', checked: label.querySelector<HTMLInputElement>('input[type=checkbox]')?.checked ?? null }))
-  const toggle = [...panels.querySelectorAll('label')].find(label => label.textContent?.trim().startsWith('Layout controls'))?.querySelector<HTMLInputElement>('input[type=checkbox]')
-  if (!toggle) throw new Error('World View did not list Layout controls')
-  if (openControls && !toggle.checked) toggle.click()
-  if (view.getAttribute('aria-expanded') === 'true') view.click()
+  // The rail's Tools section is the one home of the panel toggles. A scripted click is sent to them without opening a
+  // collapsed rail or a narrow window's Menu drawer first.
+  const tools = await wait(() => doc.querySelector<HTMLElement>('.control-rail .pack-tools'), 'the rail\'s Tools')
+  const toggles = [...tools.querySelectorAll<HTMLButtonElement>('button[aria-pressed]')]
+  const initial = toggles.map(button => ({ label: button.textContent?.trim() ?? '', checked: button.getAttribute('aria-pressed') === 'true' }))
+  const toggle = toggles.find(button => button.textContent?.trim() === 'Layout controls')
+  if (!toggle) throw new Error('The rail\'s Tools did not list Layout controls')
+  if (openControls && toggle.getAttribute('aria-pressed') !== 'true') toggle.click()
   const briefingInitiallyVisible = Boolean(doc.querySelector('.scenario-guidance'))
   if (openControls && briefingInitiallyVisible) {
     const guide = await wait(() => doc.querySelector<HTMLButtonElement>('button[aria-label^="Guide"]'), 'the separate Guide control')

@@ -41,6 +41,9 @@
   import { noMapCover, type MapPrompt, type MapTargeting } from './surface-panel-interaction.ts'
   import type { MapCover } from './surface-panel-contract.ts'
   import { createMapPromptController } from './map/map-prompt.ts'
+  import { createCameraControl, type CameraControl } from './map/camera-control.ts'
+  import type { ViewMode } from './map/view-mode-control.ts'
+  import type { RunCameraActionId, RunCameraButton } from './run-view-actions.ts'
   import { createMapStackChooser } from './map/map-stack-chooser.ts'
   import { needsSingleTargetChoice, objectsUnder, stackPick } from './map/map-stack.ts'
   import { disksPickFor, hoverCardsFor, pickingRadiusFor } from './map/map-pointer.ts'
@@ -120,6 +123,10 @@
     readonly referenceStyles?: ReadonlyArray<PackReferenceDatasetStyle>
     readonly liveMapLayers?: ReadonlyArray<PackLiveMapLayerBinding>
     physicalLayoutControlsOpen?: boolean
+    /** The physical layouts' remembered Plan or 3D: a remembered 3D is brought back once the layouts are on the map. */
+    readonly physicalLayoutMode?: ViewMode
+    /** The map's 3D switch changed the layouts' representation. */
+    readonly onPhysicalLayoutMode?: (mode: ViewMode) => void
     readonly physicalLayoutBindings?: ReadonlyArray<PhysicalLayoutBinding>
     readonly onPhysicalDisplay?: (listing: EmbeddedViewListing) => void
     readonly physicalLayoutSuspended: boolean
@@ -139,6 +146,9 @@
     readonly cameraInteraction: CameraInteraction
     /** How far open surface panels reach over the map: the camera centres and fits clear of them, and so do the map's own controls. */
     readonly cameraPadding?: MapCover
+    /** The camera group's buttons, in the map's lower-right control stack above the 3D switch (`camera-control.ts`). */
+    readonly cameraButtons: ReadonlyArray<RunCameraButton>
+    readonly onCameraAction: (id: RunCameraActionId) => void
     /**
      * Whether map taps pick targets for an order, so each must reach exactly
      * the object it lands on; the surface opts in while a panel takes map
@@ -202,6 +212,8 @@
     liveMapLayers = [],
     physicalLayoutBindings = [],
     physicalLayoutControlsOpen = $bindable(false),
+    physicalLayoutMode = '2d',
+    onPhysicalLayoutMode = () => {},
     onPhysicalDisplay = () => {},
     physicalLayoutSuspended,
     layoutClearTop = 0,
@@ -216,6 +228,8 @@
     onPackFeatureSelected = () => {},
     cameraInteraction,
     cameraPadding = noMapCover,
+    cameraButtons,
+    onCameraAction,
     targetPicking = false,
     onGroundSelected,
     targetPreviewFor,
@@ -224,6 +238,8 @@
 
   let mapElement = $state<HTMLDivElement | null>(null)
   let runtime = $state<MapRuntimeHandle | null>(null)
+  let cameraControl = $state.raw<CameraControl | null>(null)
+  $effect(() => { cameraControl?.update(cameraButtons) })
   let mapInputDebugEntries = $state<ReadonlyArray<string>>([])
   let mapInputDebugSummary = $state('Waiting for map input')
   let cachedPackMapFeatures = $state<ReadonlyArray<PackMapFeature>>([])
@@ -668,6 +684,12 @@
     jumpToStartingView(current)
   }
 
+  // A change between Plan and 3D frames the layouts: the map no longer shows the Starting View, so a panel opening later must not jump back to it.
+  const changedPhysicalLayoutMode = (mode: ViewMode): void => {
+    startingCamera = false
+    onPhysicalLayoutMode(mode)
+  }
+
   const notifyMapReady = (): void => {
     if (mapReadyNotified) return
     mapReadyNotified = true
@@ -746,6 +768,9 @@
         return
       }
       runtime = nextRuntime
+      // Removed with the map: runtime.destroy() takes every control with it.
+      cameraControl = createCameraControl({ initial: cameraButtons, onAction: id => onCameraAction(id) })
+      nextRuntime.map.addControl(cameraControl, 'bottom-right')
       // Icons that would overlap fan out anew at each zoom step (point-declutter.ts).
       nextRuntime.map.on('zoom', () => operationalRenderController.syncZoom())
       const canvas = nextRuntime.map.getCanvas()
@@ -833,6 +858,7 @@
       referenceLayerController.reset()
       runtime?.destroy()
       runtime = null
+      cameraControl = null
       appliedTheme = null
       appliedCameraKey = null
       startingCamera = true
@@ -1007,7 +1033,7 @@
   {#key runtime.map}
   {#key simulationRunId}
   {#await import('./physical-layout/PhysicalExplorer.svelte') then { default: PhysicalExplorer }}
-    <PhysicalExplorer suspendPickingForNavigation={runtime.suspendPickingForNavigation} bind:controlsOpen={physicalLayoutControlsOpen} map={runtime.map} {objects} bindings={physicalLayoutBindings} hiddenCategoryIds={hiddenObjectCategoryIds}
+    <PhysicalExplorer suspendPickingForNavigation={runtime.suspendPickingForNavigation} bind:controlsOpen={physicalLayoutControlsOpen} rememberedMode={physicalLayoutMode} onmode={changedPhysicalLayoutMode} map={runtime.map} {objects} bindings={physicalLayoutBindings} hiddenCategoryIds={hiddenObjectCategoryIds}
       {presentationFor} runId={simulationRunId as SimulationRunId} {perspectiveEpoch} {theme} clearTop={layoutClearTop} reservedPadding={cameraPadding} onDetailedOwners={setDetailedLayoutOwners}
       suspended={physicalLayoutSuspended}
       onoverview={onObjectSelected} onopen={onPhysicalDisplay} onerror={onMapError} onconnect={interaction => physicalLayoutInteraction = interaction} />
@@ -1039,6 +1065,56 @@
   .map :global(.maplibregl-ctrl-top-left),
   .map :global(.maplibregl-ctrl-bottom-left) {
     left: var(--map-cover-left);
+  }
+
+  /* The camera group keeps the footprint of its three 29 px buttons and draws its row at the right of it, so nothing
+     that keeps clear of the control stack moves when Fit selection comes and goes. The empty part takes no clicks. */
+  .map :global(.maplibregl-ctrl-group.camera-control) {
+    display: flex;
+    justify-content: flex-end;
+    width: 87px;
+    background: none;
+    box-shadow: none;
+    pointer-events: none;
+  }
+
+  /* The row is the visible group. MapLibre's control stack is white in both themes, so its ink matches the navigation icons. */
+  .map :global(.camera-control-row) {
+    display: flex;
+    border-radius: 4px;
+    background: #fff;
+    box-shadow: 0 0 0 2px rgb(0 0 0 / 10%);
+    pointer-events: auto;
+  }
+
+  @media (forced-colors: active) {
+    .map :global(.camera-control-row) {
+      box-shadow: 0 0 0 2px ButtonText;
+    }
+  }
+
+  .map :global(.camera-control-row button) {
+    display: grid;
+    place-items: center;
+    color: #333;
+  }
+
+  .map :global(.camera-control-row button + button) {
+    border-top: 0;
+    border-left: 1px solid #ddd;
+  }
+
+  .map :global(.camera-control-row button:first-child) {
+    border-radius: 4px 0 0 4px;
+  }
+
+  .map :global(.camera-control-row button:last-child) {
+    border-radius: 0 4px 4px 0;
+  }
+
+  .map :global(.camera-control-row button[aria-disabled="true"]) {
+    color: #aaa;
+    cursor: not-allowed;
   }
 
   /* A panel's prompt: the × first, a rule, then the options (map-prompt.ts). */
