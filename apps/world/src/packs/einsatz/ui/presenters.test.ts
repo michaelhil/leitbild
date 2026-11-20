@@ -294,6 +294,9 @@ describe('Call card', () => {
     const card = callCard(planned, call, pinnedOf({ answer: answer({ taskId: 'job-2', proposal: null, deliverTo: [] }), callId: 'job-2' }, planned), opened, 0)
     expect(card.needs).toEqual([{ text: '1 crate 0/1 · 1 planned', met: false }])
     expect(card.planned).toEqual([{ unitId: 'r3', text: 'R3 · planned as leg 2 · 14 min' }])
+    // A road crew's later stop is not routed until it comes up: the line names no estimate.
+    const unrouted = { ...call, planned: [{ ...call.planned[0]!, eta: { kind: 'unavailable' as const, reason: 'routing_unavailable: Not routed until the stop comes up', straightDistanceM: 900 } }] }
+    expect(callCard(planned, unrouted, null, opened, 0).planned).toEqual([{ unitId: 'r3', text: 'R3 · planned as leg 2' }])
     expect(card.proposal.button).toEqual({ label: 'Task', enabled: false, reason: dispatchWords.plannedCover })
     expect(overview(planned, none, opened, 0).calls.rows[1]!.needs).toBe('1 crate 0/1 · 1 planned')
   })

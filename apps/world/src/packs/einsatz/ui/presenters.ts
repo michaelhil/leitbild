@@ -397,7 +397,7 @@ export interface CallCardView {
   readonly whyNot: ReadonlyArray<{ readonly label: string; readonly reasons: string }>
   /** Below the commands, so an order landing never moves a command. */
   readonly assigned: ReadonlyArray<{ readonly unitId: string; readonly text: string }>
-  /** Other units whose plan holds the call as a later stop: "A4 · planned as stop 2 · 14 min". */
+  /** Other units whose plan holds the call as a later stop: "A4 · planned as stop 2", with its ETA once one is estimated. */
   readonly planned: ReadonlyArray<{ readonly unitId: string; readonly text: string }>
   readonly close: { readonly label: string; readonly confirm: string }
   readonly states: ReadonlyArray<string>
@@ -502,7 +502,8 @@ export const callCard = (situation: Situation, call: SituationCall, pinned: Pinn
     })),
     planned: call.planned.map(entry => ({
       unitId: entry.unitId,
-      text: [entry.label, `${dispatchWords.plannedAs} ${words.stop.toLowerCase()} ${entry.stop}`, ...(entry.eta === null ? [] : [etaText(entry.eta, elapsedS)!])].join(' · '),
+      // As in the unit card's plan: a road unit's later stop has no estimate until it comes up, and says nothing.
+      text: [entry.label, `${dispatchWords.plannedAs} ${words.stop.toLowerCase()} ${entry.stop}`, ...(entry.eta === null || entry.eta.kind === 'unavailable' ? [] : [etaText(entry.eta, elapsedS)!])].join(' · '),
     })),
     close: {
       label: frees.length === 0 ? words.close : `${words.close} (frees ${joined(frees)})`,
