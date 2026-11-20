@@ -223,6 +223,30 @@ describe('Einsatz job chains: rules', () => {
     expect(unitOf(state, 'd1')).toMatchObject({ phase: 'holding', load: { [low]: 1 }, orders: [] })
   })
 
+  test('T7: a carrier under a deliver standing order takes a call after its plan while it holds or will hold load: it delivers to the nearest accepting site first, then serves the call', async () => {
+    const base = await runAll(emptyState(), [
+      newUnit('c1', types.roadCarrier, at(0)),
+      newUnit('s1', types.publicSite, at(0.01)),
+      newTask('t1', templates.load, at(0.005), { [top]: 1 }),
+      newTask('t2', templates.load, at(0.006), { [low]: 1 }),
+      send(['c1'], { taskId: 't1' }),
+    ])
+    // Busy on the call it picks up at: the call after it is queued; the standing order delivers in between.
+    const onScene = await run(base, queue('c1', { taskId: 't2' }))
+    expect(stepsOf(unitOf(onScene, 'c1'))).toEqual([['step-1', 'serve', 'active'], ['step-2', 'serve', 'queued']])
+    // Taking its load to the site, with no task: a call now is refused, one after the delivery is queued behind it.
+    let transporting = await advance(base, arrivalAt(base, 'c1') + 10_000)
+    expect(unitOf(transporting, 'c1')).toMatchObject({ phase: 'transporting', load: { [top]: 1 } })
+    expect((await refusalOf(transporting, send(['c1'], { taskId: 't2' }))).code).toBe('unit_loaded')
+    transporting = await run(transporting, queue('c1', { taskId: 't2' }))
+    expect(unitOf(transporting, 'c1').orders.map(step => [step.kind, step.state])).toEqual([['deliver', 'active'], ['serve', 'queued']])
+    for (const state of [onScene, transporting]) {
+      const done = await advance(state, start + 900_000)
+      expect(taskOf(done, 't2').closedAtMs).toBeDefined()
+      expect(unitOf(done, 's1').received).toEqual({ [top]: 1, [low]: 1 })
+    }
+  })
+
   test('a task the chain already holds is queued again only as a further trip for load still waiting; a do-now send takes its queued copy with it', async () => {
     let state = await runAll(emptyState(), [
       newUnit('c1', types.roadCarrier, at(0)),
@@ -233,7 +257,7 @@ describe('Einsatz job chains: rules', () => {
       send(['c1'], { taskId: 'one' }),
       send(['c2'], { taskId: 'two' }),
     ])
-    expect(await refusalOf(state, queue('c1', { taskId: 'one' }))).toEqual({ code: 'requirement_covered', reason: 'requirement_covered: ONE needs nothing more that C1 provides' })
+    expect(await refusalOf(state, queue('c1', { taskId: 'one' }))).toEqual({ code: 'requirement_covered', reason: 'requirement_covered: ONE needs nothing more than C1 provides' })
     // Two wait at TWO and C2 carries one: a second trip there is work, a third is not.
     const second = await runAll(state, [queue('c2', { siteId: 's1' }), queue('c2', { taskId: 'two' })])
     expect(stepsOf(unitOf(second, 'c2'))).toEqual([['step-1', 'serve', 'active'], ['step-2', 'deliver', 'queued'], ['step-3', 'serve', 'queued']])

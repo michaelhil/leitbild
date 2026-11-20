@@ -1,5 +1,6 @@
 import { capabilityRejection } from '../../../simulation/capability-rejection.ts'
 import { etasFrom, turnoutFor, type TablePort } from '../eta.ts'
+import { loadAfter } from '../engine/chain.ts'
 import { planIntent } from '../engine/engine.ts'
 import { freeInS } from '../engine/estimates.ts'
 import type { EngineActor } from '../engine/intents.ts'
@@ -7,6 +8,7 @@ import { taskIn } from '../engine/draft.ts'
 import { motionOf, priorityOf, unitTypeOf, type EngineState } from '../engine/model.ts'
 import { isBusy } from '../engine/plan-order.ts'
 import { hasLoad, isDestroyed } from '../engine/rules.ts'
+import { total } from '../engine/values.ts'
 import { refusal, refusalCode } from '../refusal.ts'
 import type { StepTarget } from '../steps.ts'
 import { targetLabel } from '../engine/chain-steps.ts'
@@ -23,13 +25,23 @@ import { stopVerb } from './situation.ts'
  * own order validation on the current state, so a target listed as valid is
  * one `world.einsatz.unit.order` accepts, unless the Run moves on meanwhile.
  * Each target has independent verdicts for starting now or adding to the
- * queue. A busy unit names its current job once, with its priority code.
+ * queue. A target the unit's plan already holds, active or queued, is
+ * judged by adding it only: an order "now" to it would send the unit where
+ * its plan already leads, so its replace verdict is not offered and the
+ * answer says it is already in the plan. A busy unit names its current job
+ * once, with its priority code.
  * ETAs are routed for road units in one router request, as an
  * order would route them; a target the router cannot reach is refused with
  * that refusal. Points on open ground are not listed: any may be named.
  */
 
 const messageOf = (reason: string): string => reason.slice(refusalCode(reason).length + 2)
+
+/** Whether two stops lead to the same task, site or track. A candidate is never a point. */
+const sameObject = (a: StepTarget, b: StepTarget): boolean =>
+  'taskId' in a ? 'taskId' in b && a.taskId === b.taskId
+    : 'siteId' in a ? 'siteId' in b && a.siteId === b.siteId
+      : 'trackId' in a && 'trackId' in b && a.trackId === b.trackId
 
 export const readUnitOptions = async (input: {
   readonly state: EngineState
@@ -62,12 +74,15 @@ export const readUnitOptions = async (input: {
   }, input.actor)
   const replaceWhen = plan.length === 0 ? undefined : 'now'
   const judged = candidates.map(target => {
+    const held = unit.orders.some(step => sameObject(step.target, target))
+    const replace = held ? undefined : verdict(target, replaceWhen)
     // With no plan, an order to add starts immediately and has the same verdict.
-    const replace = verdict(target, replaceWhen)
-    const add = plan.length === 0 ? replace : verdict(target, 'after')
+    const add = plan.length === 0 && replace !== undefined ? replace : verdict(target, 'after')
+    const canReplace = replace?.ok === true
     return {
-      target, replace, add,
-      refusal: replace.ok || add.ok ? undefined : plan.length === 0 ? replace.reason : add.reason,
+      target, canReplace, add,
+      replaceRefusal: replace === undefined ? `${targetLabel(state, target)} is already in ${unit.label}'s plan` : replace.ok ? undefined : messageOf(replace.reason),
+      refusal: canReplace || add.ok ? undefined : add.reason,
     }
   })
   const accepted = judged.filter(entry => entry.refusal === undefined)
@@ -87,12 +102,13 @@ export const readUnitOptions = async (input: {
     }
     targets.push({
       target: entry.target,
-      verb: stopVerb(state, unit, stepKindFor(entry.target, hasLoad(unit)), entry.target),
+      // Only "after" takes it: the verb is the one the stop gets once the plan is done, as the engine queues it.
+      verb: stopVerb(state, unit, stepKindFor(entry.target, entry.canReplace ? hasLoad(unit) : total(loadAfter(state, unit)) > 0), entry.target),
       label: targetLabel(state, entry.target),
-      afterOnly: !entry.replace.ok,
-      canReplace: entry.replace.ok,
+      afterOnly: !entry.canReplace,
+      canReplace: entry.canReplace,
       canAdd: entry.add.ok,
-      ...(!entry.replace.ok ? { replaceRefusal: messageOf(entry.replace.reason) } : {}),
+      ...(entry.replaceRefusal === undefined ? {} : { replaceRefusal: entry.replaceRefusal }),
       ...(!entry.add.ok ? { addRefusal: messageOf(entry.add.reason) } : {}),
       etaS: eta === undefined ? 0 : eta.seconds,
     })

@@ -98,6 +98,13 @@ const unitRowSchema = z.object({
   lastOrder: z.object({
     by: actorSchema,
     commandId: commandIdSchema.nullable().describe('The latest command that changed the unit\'s plan, the one world.einsatz.unit.undo names; null while no command has.'),
+    undo: z.discriminatedUnion('applies', [
+      z.object({ applies: z.literal(true).describe('world.einsatz.unit.undo of commandId would take it back now.') }).strict(),
+      z.object({
+        applies: z.literal(false).describe('world.einsatz.unit.undo of commandId would be refused now.'),
+        refusal: text.describe('Why, in the engine\'s words.'),
+      }).strict(),
+    ]).nullable().describe('The engine\'s own verdict on undoing commandId, judged on the state this read shows and not applied; null while commandId is null.'),
   }).strict().nullable().describe('The unit\'s last order, by whoever gave it, a standing order and the plan going on included; null before its first.'),
   carry: z.object({
     capacity: count.describe('How much load the unit carries at most.'),
@@ -176,7 +183,6 @@ const siteRowSchema = z.object({
 export const situationInputSchema = z.object({
   group: configIdSchema.optional().describe('Only the units of this declared group; calls and sites are listed in full.'),
 }).strict()
-export type SituationInput = z.output<typeof situationInputSchema>
 
 /** The `world.einsatz.situation` answer. It makes no suggestions: who should go comes from `world.einsatz.recommend`. */
 export const situationSchema = z.object({
@@ -215,7 +221,6 @@ export type SituationSite = Situation['sites'][number]
 export const unitOptionsInputSchema = z.object({
   unitId: idSchema.describe('The unit to list targets for.'),
 }).strict()
-export type UnitOptionsInput = z.output<typeof unitOptionsInputSchema>
 
 /** The `world.einsatz.unit.options` answer: where the unit may be ordered now, and where not and why. */
 export const unitOptionsSchema = z.object({
@@ -233,9 +238,9 @@ export const unitOptionsSchema = z.object({
     verb: z.enum(stopVerbs).describe('What the unit would do there.'),
     label: text.describe('The target\'s label.'),
     afterOnly: z.boolean().describe('True when this stop requires when: after. It cannot replace the current job or delivery.'),
-    canReplace: z.boolean().describe('Whether this target can start now or replace the active stop.'),
+    canReplace: z.boolean().describe('Whether this target can start now or replace the active stop; false for a target the plan already holds, which is judged by adding it only.'),
     canAdd: z.boolean().describe('Whether this target can join the end of the plan.'),
-    replaceRefusal: text.optional().describe('Why this target cannot replace the active stop.'),
+    replaceRefusal: text.optional().describe('Why this target cannot replace the active stop, or that the plan already holds it.'),
     addRefusal: text.optional().describe('Why this target cannot join the end of the plan.'),
     etaS: seconds.describe('Travel estimate from the current position, including turnout; excludes time on earlier stops.'),
   }).strict()).describe('Valid targets, nearest first; for a busy unit, those an order "after" its current job or "now" would take.'),

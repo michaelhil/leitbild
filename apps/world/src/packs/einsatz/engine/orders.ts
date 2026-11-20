@@ -112,7 +112,7 @@ const checkTaskCoverage = (state: EngineState, task: TaskRecord, movers: Readonl
     const contribution = contributionOf(state.catalog, task, counted, unit)
     if (contribution.adds) continue
     if (contribution.unmet[0] !== undefined) return refused('requirement_unmet', contribution.unmet[0])
-    if (contribution.covered) return refused('requirement_covered', `${task.label} needs nothing more that ${unit.label} provides`)
+    if (contribution.covered) return refused('requirement_covered', `${task.label} needs nothing more than ${unit.label} provides`)
     return refused('requirement_unmet', `${unit.label} provides nothing ${task.label} needs`)
   }
   const diverted = movers.filter(mover => mover.fromTaskId !== undefined)

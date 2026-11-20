@@ -116,29 +116,26 @@ test('selecting a unit allows direct dispatch and editing its assigned stops', a
     const triage = unit.getByRole('button', { name: /Remmen triage post/ })
     await triage.click()
     await unitCommand(page, 'order', () => add.click())
-    const earlier = unit.getByRole('button', { name: /Move stop 3 earlier:.*Remmen triage post/ })
     const removeTriage = unit.getByRole('button', { name: /Remove stop 3:.*Remmen triage post/ })
+
+    // Only the × on a stop's row removes it, after its confirmation; a map tap is only ever a target.
+    await removeTriage.click()
+    const removal = world.getByRole('dialog', { name: 'Remove stop?' })
+    await expect(removal).toBeVisible()
     const inFlight = Promise.withResolvers<void>()
-    await page.route('**/capabilities/world.einsatz.unit.plan.reorder/invoke', async route => {
+    await page.route('**/capabilities/world.einsatz.unit.stop.remove/invoke', async route => {
       await inFlight.promise
       await route.continue()
     }, { times: 1 })
-    const reorder = unitCommand(page, 'plan.reorder', () => earlier.click(), false)
+    const removed = unitCommand(page, 'stop.remove', () => removal.getByRole('button', { name: 'Remove stop', exact: true }).click())
     try {
       await expect(removeTriage).toBeDisabled()
       await expect(unit.getByText('Updating plan…', { exact: true })).toBeVisible()
     } finally {
       inFlight.resolve()
-      await reorder
+      await removed
     }
-    await expect(unit.getByRole('alert')).toContainText('must follow the pickup it delivers')
     await expect(panel.locator('.selection')).toHaveAttribute('aria-busy', 'false')
-
-    // The numbered stop row exercises the same confirmation as clicking a red map destination.
-    await removeTriage.click()
-    const removal = world.getByRole('dialog', { name: 'Remove stop?' })
-    await expect(removal).toBeVisible()
-    await unitCommand(page, 'stop.remove', () => removal.getByRole('button', { name: 'Remove stop', exact: true }).click())
     await expect(removeTriage).toBeHidden()
     await expect(unit.getByRole('button', { name: /Remove stop 1:.*C-1 Tistedal fall/ })).toBeVisible()
     expect(orders).toHaveLength(3)

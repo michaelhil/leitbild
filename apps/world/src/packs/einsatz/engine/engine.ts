@@ -1,7 +1,7 @@
 import type { RouteImpact } from '../../../core/model/index.ts'
 import { standingOrderBy } from '../ids.ts'
 import { refusalCode } from '../refusal.ts'
-import { planChainNext, planReorder, planStopRemove, skipHead } from './chain.ts'
+import { planChainNext, planStopRemove, skipHead } from './chain.ts'
 import { chainBy } from './chain-steps.ts'
 import { nearestAcceptingSite } from './delivery.ts'
 import { planEngage, planSetRoe } from './engagement-orders.ts'
@@ -46,7 +46,6 @@ export const planIntent = (state: EngineState, intent: Intent, actor: EngineActo
     case 'recall': return planRecall(state, intent, actor)
     case 'undo': return planUndo(state, intent, actor)
     case 'stop.remove': return planStopRemove(state, intent, actor)
-    case 'plan.reorder': return planReorder(state, intent, actor)
     case 'task.create': return planTaskCreate(state, intent, actor)
     case 'task.close': return planTaskClose(state, intent, actor)
     case 'site.set': return planSiteSet(state, intent, actor)

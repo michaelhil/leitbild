@@ -1,9 +1,10 @@
 <script lang="ts">
-  import { ArrowDown, ArrowUp, House, X } from 'lucide-svelte'
+  import { House, X } from 'lucide-svelte'
   import { einsatzColors } from '../colors.ts'
   import type { Stop, UnitOrderInput } from '../order-schema.ts'
   import { svgImageSource } from './einsatz-client.ts'
-  import { dispatchWords, type CardView, type PlanStopView } from './presenters.ts'
+  import { dispatchWords } from './dispatch-words.ts'
+  import type { CardView, PlanStopView } from './presenters.ts'
 
   /**
    * The unit card keeps the plan and map selection controls in reach.
@@ -15,14 +16,17 @@
     readonly unitPending: boolean
     /** The last refusal or failure the panel reports, shown in the card's reserved slot. */
     readonly feedback: string | null
+    /** Changes each time the panel says something there, so the same words said again are a new line. */
+    readonly feedbackKey: number
     readonly icon: (id: string) => string | undefined
     /** Whether this call's Close waits for its confirm. */
     readonly confirming: boolean
     readonly back: () => void
     readonly targetRow: (target: Stop) => void
     readonly recall: (unitId: string) => void
-    readonly chooseStop: (stopId: string) => void
-    readonly moveStop: (stopId: string, direction: -1 | 1) => void
+    readonly undo: (unitId: string, commandId: string) => void
+    /** The × on a plan row: asks to confirm removing that stop. */
+    readonly removeStop: (stopId: string) => void
     readonly order: (input: UnitOrderInput) => void
     readonly toggleChip: (unitId: string) => void
     readonly refresh: (callId: string) => void
@@ -42,7 +46,7 @@
 {/snippet}
 
 {#snippet slot()}
-  <p class="slot refusal" role="alert">{props.feedback ?? ''}</p>
+  {#key props.feedbackKey}<p class="slot refusal" class:said={props.feedback !== null} role="alert">{props.feedback ?? ''}</p>{/key}
 {/snippet}
 
 {#snippet chosen(label: string)}
@@ -75,29 +79,18 @@
       </button>
     </header>
     {#if card.readOnly !== null}<p class="note">{card.readOnly}</p>{/if}
-    {#if props.feedback !== null}<p class="refusal" role="alert">{props.feedback}</p>{/if}
+    {#if props.feedback !== null}{#key props.feedbackKey}<p class="refusal said" role="alert">{props.feedback}</p>{/key}{/if}
     {#each card.states as state, index (index)}<p class="state">{state}</p>{/each}
     {#if card.plan.length > 0 || card.predicted !== null}
       <h4>{card.planHeading}</h4>
       <ol class="plan">
         {#each card.plan as stop (stop.id)}
           <li class:active={stop.active} aria-current={stop.active ? 'step' : undefined}>
+            <span class="stop-target">{@render planStop(stop)}</span>
             {#if card.removable}
-              <button type="button" class="stop-target" title={stop.removeLabel} aria-label={stop.removeLabel} disabled={props.unitPending} onclick={() => props.chooseStop(stop.id)}>
-                {@render planStop(stop)}
+              <button type="button" class="icon-action" title={stop.removeLabel} aria-label={stop.removeLabel} disabled={props.unitPending} onclick={() => props.removeStop(stop.id)}>
+                <X size={16} aria-hidden="true" />
               </button>
-            {:else}
-              <span class="stop-target">{@render planStop(stop)}</span>
-            {/if}
-            {#if stop.canMoveUp || stop.canMoveDown}
-              <div class="move-controls">
-                <button type="button" class="icon-action" title="Move earlier" aria-label={`Move stop ${stop.index} earlier: ${stop.text}`} disabled={props.unitPending || !stop.canMoveUp} onclick={() => props.moveStop(stop.id, -1)}>
-                  <ArrowUp size={16} aria-hidden="true" />
-                </button>
-                <button type="button" class="icon-action" title="Move later" aria-label={`Move stop ${stop.index} later: ${stop.text}`} disabled={props.unitPending || !stop.canMoveDown} onclick={() => props.moveStop(stop.id, 1)}>
-                  <ArrowDown size={16} aria-hidden="true" />
-                </button>
-              </div>
             {/if}
           </li>
         {/each}
@@ -105,6 +98,11 @@
       </ol>
     {/if}
     {#if card.readOnly === null}
+      {@const undo = card.undo}
+      <div class="undo-row">
+        <button type="button" disabled={props.unitPending || !undo.enabled} onclick={() => { if (undo.commandId !== null) props.undo(card.id, undo.commandId) }}>{undo.label}</button>
+        {#if undo.reason !== null}<span class="reason">{undo.reason}</span>{/if}
+      </div>
       {#if props.unitPending || card.targetNotice !== null}<p class="note" role="status">{props.unitPending ? 'Updating plan…' : card.targetNotice}</p>{/if}
       {#if card.targets.length > 0 || card.targetsLoading}
         <details class="unit-disclosure">
@@ -246,15 +244,17 @@
   .status[data-tone='attention'] .dot, .status[data-tone='out'] .dot { color: var(--critical); }
   .note, .reason, .facts, .by, .priority { color: var(--muted); font-size: 12px; }
   .refusal, .state, .overdue { color: var(--critical); font-size: 12px; }
+  /* Said again: a short highlight, so a repeated answer is seen to come; none where motion is reduced. */
+  .said { animation: said 700ms ease-out; }
+  @keyframes said { from { background: color-mix(in srgb, var(--critical) 18%, transparent); } }
+  @media (prefers-reduced-motion: reduce) { .said { animation: none; } }
   .code { font-weight: 750; color: var(--critical); }
   .new { padding: 1px 6px; border-radius: 6px; background: var(--warning); color: var(--panel); font-size: 11px; font-weight: 750; }
   .targets, .plan, .needs { display: grid; gap: 4px; margin: 0; padding: 0; list-style: none; }
   .target { width: 100%; display: flex; flex-wrap: wrap; gap: 6px; align-items: center; justify-content: space-between; }
   .plan li, .stop-target { display: flex; align-items: center; gap: 6px; }
   .stop-target { flex: 1; min-width: 44px; padding: 4px; }
-  button.stop-target { border-color: transparent; }
-  button.stop-target:hover { border-color: var(--border); }
-  .move-controls { display: flex; gap: 4px; }
+  .undo-row { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; }
   .plan li.active .what { font-weight: 650; }
   .plan .predicted { color: var(--muted); font-style: italic; }
   .index { flex: none; min-width: 18px; text-align: center; color: var(--critical); font-variant-numeric: tabular-nums; }

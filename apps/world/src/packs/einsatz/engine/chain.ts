@@ -1,7 +1,7 @@
 import { refusalCode } from '../refusal.ts'
 import type { PlanExpectation } from '../order-schema.ts'
 import { maxSteps, stepKindFor, stepTargetId, type Step, type StepKind, type StepTarget } from '../steps.ts'
-import { activeStep, clearedByOrder, newStep, restOf, skipSteps, targetLabel } from './chain-steps.ts'
+import { clearedByOrder, newStep, skipSteps, targetLabel } from './chain-steps.ts'
 import { assignedTo, contributionOf, loadAllocation } from './coverage.ts'
 import { putUnit, setMotion, unitIn, type Draft } from './draft.ts'
 import { engageRefusal } from './engagement-orders.ts'
@@ -91,13 +91,13 @@ const queueRefusal = (state: EngineState, unit: UnitRecord, target: Target, load
   if (!linksToTask(unit, task)) return refused('cross_side_reference', `${unit.label} cannot serve another side's ${task.label}`)
   // A task the chain already holds is taken again only as a further trip for load still waiting.
   const trips = unit.orders.filter(step => 'taskId' in step.target && step.target.taskId === task.id).length
-  if (trips > 0) return loadLeftFor(state, unit, task, trips) ? undefined : refused('requirement_covered', `${task.label} needs nothing more that ${unit.label} provides`)
+  if (trips > 0) return loadLeftFor(state, unit, task, trips) ? undefined : refused('requirement_covered', `${task.label} needs nothing more than ${unit.label} provides`)
   // By then the unit carries nothing and serves no other task.
   const free = patch(unit, { load: {}, taskId: undefined })
   const contribution = contributionOf(state.catalog, task, assignedTo(state.units.values(), task), free)
   if (contribution.adds) return undefined
   if (contribution.unmet[0] !== undefined) return refused('requirement_unmet', contribution.unmet[0])
-  if (contribution.covered) return refused('requirement_covered', `${task.label} needs nothing more that ${unit.label} provides`)
+  if (contribution.covered) return refused('requirement_covered', `${task.label} needs nothing more than ${unit.label} provides`)
   return refused('requirement_unmet', `${unit.label} provides nothing ${task.label} needs`)
 }
 
@@ -168,50 +168,6 @@ export const planStopRemove = (state: EngineState, intent: IntentOf<'stop.remove
   const delivery = deliveryRefusal(state, unit, index)
   if (delivery) return delivery
   return { ok: true, routes: [], notes: [], apply: draft => removeSteps(draft, actor, unit.id, [unit.orders[index]!], false) }
-}
-
-/** Recheck each proposed stop with the same load and coverage rules as adding a stop. */
-export const planReorder = (state: EngineState, intent: IntentOf<'plan.reorder'>, actor: EngineActor): Plan => {
-  const unit = state.units.get(intent.unitId)
-  if (unit === undefined) return notInPicture()
-  const changed = changedPlan(unit, intent.expectedPlan)
-  if (changed) return changed
-
-  const queued = restOf(unit)
-  const byId = new Map(queued.map(step => [step.id, step]))
-  if (intent.stopIds.length !== queued.length || new Set(intent.stopIds).size !== queued.length || intent.stopIds.some(id => !byId.has(id))) {
-    return refused('invalid_stop_order', 'Name every queued stop once. The active stop stays first')
-  }
-  if (queued.every((step, index) => step.id === intent.stopIds[index])) {
-    return { ok: true, routes: [], notes: ['The queued stops are already in that order'], apply: () => {} }
-  }
-
-  const head = activeStep(unit)
-  const orders: Step[] = head === undefined ? [] : [head]
-  for (const id of intent.stopIds) {
-    const step = byId.get(id)!
-    const target = resolveTarget(state, step.target)
-    if ('ok' in target) return target
-    const preceding = patch(unit, { orders })
-    const load = loadAfter(state, preceding)
-    const kind = stepKindFor(step.target, total(load) > 0)
-    if (step.kind === 'deliver' && kind !== 'deliver') {
-      return refused('invalid_stop_order', `${targetLabel(state, step.target)} must follow the pickup it delivers`)
-    }
-    const refusal = queueRefusal(state, preceding, target, load, kind)
-    if (refusal) return refusal
-    orders.push(patch(step, { kind }))
-  }
-  return {
-    ok: true, routes: [], notes: [],
-    apply: draft => {
-      const current = unitIn(draft, unit.id)
-      const command = actor.commandId === undefined ? {} : { lastCommand: { id: actor.commandId } }
-      putUnit(draft, patch(current, {
-        orders, ...command, lastAction: actionBy(draft, actor, 'queue', undefined, 'Reordered queued stops'),
-      }))
-    },
-  }
 }
 
 /**

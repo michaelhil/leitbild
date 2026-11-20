@@ -5,7 +5,7 @@
 // - Holds (hover, hidden tab, carousel mostly off screen) pause with the
 //   remaining time kept, and resume when the last hold is released.
 // - Stopped is the user's state: keyboard focus inside, keyboard navigation,
-//   Pause, reduced motion, opening by keyboard/deep link, or, with
+//   Pause, reduced motion, opening the Demos modal, or, with
 //   `navigationStops` (the Demos modal), any user navigation by any input: a
 //   pick on a dot or thumbnail, Prev/Next or a swipe. Only Play clears it.
 // - Otherwise pointer or touch navigation restarts the full interval and keeps rotating.
@@ -41,7 +41,7 @@ export interface CarouselSnapshot {
 export interface CarouselOptions {
   readonly count: number
   readonly intervalMs?: number
-  /** Reduced motion, or a carousel opened by keyboard or deep link. */
+  /** Reduced motion, or the Demos modal, which always opens stopped. */
   readonly startStopped?: boolean
   readonly initialIndex?: number
   /** Any user navigation (a dot or thumbnail pick, Prev/Next, a swipe) by tap or click stops rotation, so the slide chosen stays until Play. */

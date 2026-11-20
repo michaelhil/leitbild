@@ -6,8 +6,9 @@ import { einsatzColors } from './colors.ts'
 import type { TaskData } from './engine/model.ts'
 import { einsatzPackId, einsatzRuntimeId } from './ids.ts'
 import { neutralLexicon, type UnitPhase } from './lexicon.ts'
-import { contactIcon } from './situation/text.ts'
-import { dispatchWords, einsatzRecordOf, tierWord, trackAgeText, type EinsatzRecord } from './ui/presenters.ts'
+import { contactIcon } from './text.ts'
+import { dispatchWords } from './ui/dispatch-words.ts'
+import { einsatzRecordOf, tierWord, trackAgeText, type EinsatzRecord } from './ui/presenters.ts'
 
 /**
  * The browser-safe Einsatz view. It reads only the presentation each object
@@ -184,7 +185,7 @@ export const einsatzPackView = {
     id: einsatzPackId,
     version: '1.0.0',
     name: 'Einsatz',
-    description: 'Dispatch and command of configured units: unit types, typed properties, task templates, load classes and wording are scenario data. Units move by road or in straight lines, serve and carry counted demand to receiving sites, and follow closed standing orders. An open Run declares no roles or sides; declaring roles makes the Run refuse AI. Valid icon ids come from world.map.symbols. world.scenario.create validates, so world.scenario.preview is optional.',
+    description: 'Dispatch and command of configured units: unit types, typed properties, task templates, load classes and wording are scenario data. Units move by road or in straight lines, serve and carry counted demand to receiving sites, and follow closed standing orders. An open Run declares no roles or sides; declaring roles makes the Run refuse AI. Valid icon ids come from world.map.symbols.',
     contributions: ['runtime', 'knowledge', 'scenario', 'presentation', 'targeting', 'interactions'],
   }),
   runtime: {
@@ -200,7 +201,7 @@ export const einsatzPackView = {
       { id: trackIndexesCategory, label: 'Track indexes', emptyLabel: 'No track indexes', matches: object => typeOf(object) === 'track-index', rail: false },
     ],
     presentObject: (object, context) => presentEinsatzObject(object, context),
-    mapFeatures: context => plannedWaypointFeatures(context.objects, unitsCategory, einsatzDispatchPanelId, context.selectedObjectId),
+    mapFeatures: context => plannedWaypointFeatures(context.objects, unitsCategory, context.selectedObjectId),
     mapFeatureQueries: context => queuedPlanRoutesQuery(context.objects, context.selectedObjectId),
     mapFeaturesFollowSelection: true,
     mapFeatureLayers: ['routes'],

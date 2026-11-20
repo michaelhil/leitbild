@@ -5,17 +5,16 @@
   import { loadMapSymbols } from '../../../ui/map-runtime/map-symbols.ts'
   import type { SurfacePanelProps } from '../../../ui/surface-panel-interaction.ts'
   import { runOnMount } from '../../../ui/svelte-lifecycle.svelte.ts'
-  import { waypointItemId } from '../chain-path.ts'
   import { neutralLexicon } from '../lexicon.ts'
   import type { Stop, UnitOrderInput } from '../order-schema.ts'
   import type { Situation, SituationCall, UnitOptions } from '../situation/schema.ts'
   import { dispatchMapCover, panelBottomClearancePx, panelEdgeGapPx, panelLayoutFor, panelTopClearancePx, sheetOpen, shownClearOfPanel } from './dispatch-layout.ts'
+  import { dispatchWords } from './dispatch-words.ts'
   import { createIconCache, runEinsatzClient, situationIconIds, type CommandOutcome } from './einsatz-client.ts'
   import {
     cardFor,
     contactRows,
     dispatchKindOf,
-    dispatchWords,
     edgeTabText,
     einsatzRecordsKey,
     emptySelectionText,
@@ -25,21 +24,24 @@
     pinProposal,
     receiptsFromSituation,
     receiptText,
+    receiptUndoable,
+    saysBesideUndo,
+    stopLabelOf,
     targetingFor,
+    toggledChip,
     withReceipts,
     type PinnedProposal,
     type Receipt,
+    type UndoRefusal,
   } from './presenters.ts'
   import {
     activationActs,
-    canTarget,
+    answersLastTap,
     initialSelection,
-    moveQueuedStop,
-    planExpectation,
+    optionsAnswer,
     reduceSelection,
     selectedObjectOf,
     selectionChangeEvent,
-    stopKey,
     type ClickedObject,
     type DispatchObjectKind,
     type SelectionEffect,
@@ -67,8 +69,15 @@
   let opened = $state.raw<ReadonlySet<string>>(new Set())
   let lastSeenCall = $state.raw<SituationCall | null>(null)
   let receipts = $state.raw<ReadonlyArray<Receipt>>([])
+  let undoRefusal = $state.raw<UndoRefusal | null>(null)
   /** The last refusal or failure the panel reports outside a target, shown in the card's slot. */
   let feedback = $state<string | null>(null)
+  /** Counts what the panel said there, so the same words said again are drawn, and announced, as a new line. */
+  let feedbackKey = $state(0)
+  const say = (text: string | null): void => {
+    feedback = text
+    if (text !== null) feedbackKey += 1
+  }
   /** The call whose Close waits for its inline confirm. */
   let confirming = $state<string | null>(null)
   let surfaceWidth = $state(0)
@@ -77,6 +86,8 @@
   let sheetOpenedByOperator = $state(false)
   let iconRevision = $state(0)
   let root = $state<HTMLElement | null>(null)
+  /** The card and the lists, which scroll as one. */
+  let body = $state<HTMLElement | null>(null)
   let disposed = false
   /** When the last command acted: the double-click guard. */
   let quietFromMs: number | null = null
@@ -100,13 +111,18 @@
     const now = props.currentTime()
     return readAtRunMs === null || now === undefined ? 0 : Math.max(0, (Date.parse(now) - readAtRunMs) / 1_000)
   })
-  const card = $derived(situation === null ? null : cardFor(situation, selection.selection, { options, pinned, opened, lastSeenCall, elapsedS }))
+  const card = $derived(situation === null ? null : cardFor(situation, selection.selection, { options, pinned, opened, lastSeenCall, elapsedS, undoRefusal }))
   const lists = $derived(situation === null ? null : overview(situation, selection.selection, opened, elapsedS))
   const contacts = $derived.by(() => {
     if (lists === null || !lists.contacts) return []
     void clock
     const now = props.currentTime()
     return contactRows(props.objects, now === undefined ? null : Date.parse(now), selectedObjectOf(selection.selection))
+  })
+  /** Wall time, on the panel's clock, for the receipts' Undo window. */
+  const nowMs = $derived.by(() => {
+    void clock
+    return Date.now()
   })
   const missingArtwork = $derived.by(() => {
     void iconRevision
@@ -151,9 +167,12 @@
     try {
       const answer = await client.unitOptions(unitId)
       const selected = selection.selection
-      if (!disposed && read === optionsRead && selected.kind === 'unit' && selected.unitId === unitId) options = answer
+      if (!disposed && read === optionsRead && selected.kind === 'unit' && selected.unitId === unitId) {
+        options = answer
+        if (optionsAnswer(feedback, selectedUnit, answer)) say(null)
+      }
     } catch (error) {
-      if (!disposed && read === optionsRead) feedback = messageOf(error)
+      if (!disposed && read === optionsRead) say(messageOf(error))
     }
   }
 
@@ -168,7 +187,7 @@
     } catch (error) {
       if (!disposed && read === pinRead) {
         if (pinned !== null && pinned.callId === callId) pinned = { ...pinned, refreshing: false }
-        feedback = messageOf(error)
+        say(messageOf(error))
       }
     }
   }
@@ -178,15 +197,17 @@
   const send = (event: SelectionEvent): void => {
     if (unitPending && (event.kind === 'target-row' || event.kind === 'stop' || event.kind === 'decide' ||
       (event.kind === 'click' && event.on.kind !== 'unit' && selectedUnit !== undefined))) return
+    const before = selection
     const stepped = reduceSelection(selection, event, options, selectedUnit)
     selection = stepped.state
+    if (answersLastTap(event, before, stepped)) say(null)
     for (const effect of stepped.effects) perform(effect)
   }
 
   const perform = (effect: SelectionEffect): void => {
     switch (effect.kind) {
       case 'select':
-        feedback = null
+        say(null)
         confirming = null
         options = null
         props.onSelectObject(effect.objectId === null ? null : objectIdSchema.parse(effect.objectId))
@@ -201,7 +222,7 @@
       case 'submit': {
         const unitId = effect.input.units[0]!
         void editUnit(unitId, async () => await client.order(effect.input), {
-          unitIds: [unitId], target: stopLabel(effect.input.stops[0]!), dropped: effect.job === null ? null : jobText(effect.job),
+          unitIds: [unitId], target: stopLabel(effect.input.stops[0]!), dropped: effect.job === null ? null : jobText(effect.job), undoable: true,
         }, effect.input.when === undefined)
         return
       }
@@ -209,20 +230,13 @@
         void editUnit(effect.unitId, async () => await client.removeStop(effect.unitId, effect.stopId, effect.expectedPlan))
         return
       case 'feedback':
-        feedback = effect.text
+        say(effect.text)
         return
     }
   }
 
   const unitLabel = (unitId: string): string => situation?.units.find(unit => unit.id === unitId)?.label ?? unitId
-  const stopLabel = (stop: Stop): string => {
-    const listed = options?.targets.find(target => stopKey(target.target) === stopKey(stop))?.label
-    if (listed !== undefined) return listed
-    if ('taskId' in stop) return situation?.calls.find(call => call.id === stop.taskId)?.label ?? stop.taskId
-    if ('siteId' in stop) return situation?.sites.find(site => site.id === stop.siteId)?.label ?? stop.siteId
-    if ('trackId' in stop) return props.objects.find(object => object.id === stop.trackId)?.label ?? stop.trackId
-    return dispatchWords.mapPoint
-  }
+  const stopLabel = (stop: Stop): string => stopLabelOf(stop, situation, options, props.objects)
 
   const outcomeOf = async (run: () => Promise<CommandOutcome>): Promise<CommandOutcome> => {
     try {
@@ -232,23 +246,46 @@
     }
   }
 
-  /** A card's command: a refusal shows in the card's slot; an accepted order leaves a receipt. */
-  const command = async (run: () => Promise<CommandOutcome>, receipt: { readonly unitIds: ReadonlyArray<string>; readonly target: string; readonly dropped?: string | null } | null): Promise<boolean> => {
-    feedback = null
+  /**
+   * A card's command: a refusal shows in the card's slot, unless the shown card already says it beside its disabled Undo;
+   * an accepted order leaves a receipt, with Undo when the engine can take the order back.
+   */
+  const command = async (run: () => Promise<CommandOutcome>, receipt: { readonly unitIds: ReadonlyArray<string>; readonly target: string; readonly dropped?: string | null; readonly undoable: boolean } | null): Promise<boolean> => {
+    say(null)
     const outcome = await outcomeOf(run)
     if (disposed) return false
     if (!outcome.ok) {
-      feedback = outcome.text
+      say(open && saysBesideUndo(card, outcome.text) ? null : outcome.text)
       return false
     }
     if (receipt !== null) {
-      receipts = withReceipts(receipts, [ownReceipt({ commandId: outcome.commandId, unitIds: receipt.unitIds, unitLabel: receipt.unitIds.map(unitLabel).join(', '), targetLabel: receipt.target, dropped: receipt.dropped ?? null, atMs: Date.now() })])
+      receipts = withReceipts(receipts, [ownReceipt({ commandId: outcome.commandId, unitIds: receipt.unitIds, unitLabel: receipt.unitIds.map(unitLabel).join(', '), targetLabel: receipt.target, dropped: receipt.dropped ?? null, undoable: receipt.undoable, atMs: Date.now() })])
     }
     return true
   }
 
   const order = (input: UnitOrderInput): void => {
-    void command(async () => await client.order(input), { unitIds: input.units, target: input.stops.map(stopLabel).join(' → ') })
+    void command(async () => await client.order(input), { unitIds: input.units, target: input.stops.map(stopLabel).join(' → '), undoable: true })
+  }
+
+  /** Takes back a command's order of each unit it named, in turn; the engine's refusal stops there and leaves that unit card's Undo disabled with it. */
+  const undoEach = async (unitIds: ReadonlyArray<string>, commandId: string): Promise<CommandOutcome> => {
+    const [unitId, ...rest] = unitIds
+    if (unitId === undefined) throw new Error(`Undo of ${commandId} names no unit`)
+    const outcome = await client.undo(unitId, commandId)
+    if (!outcome.ok) {
+      undoRefusal = { unitId, commandId, text: outcome.text }
+      return outcome
+    }
+    return rest.length === 0 ? outcome : await undoEach(rest, commandId)
+  }
+  const undo = (unitIds: ReadonlyArray<string>, commandId: string): void => {
+    void editUnit(unitIds[0]!, async () => {
+      const outcome = await outcomeOf(async () => await undoEach(unitIds, commandId))
+      // An Undo from the folded sheet's tab that is refused opens the sheet, where its reason can be read.
+      if (!outcome.ok && !open) sheetOpenedByOperator = true
+      return outcome
+    })
   }
 
   const editUnit = async (unitId: string, run: () => Promise<CommandOutcome>, receipt: Parameters<typeof command>[1] = null, initialOrder = false): Promise<void> => {
@@ -266,27 +303,15 @@
     } finally { unitPending = false }
   }
 
-  const moveStop = (stopId: string, direction: -1 | 1): void => {
-    const unit = selectedUnit
-    if (!unit || !canTarget(unit)) return
-    const expectedPlan = planExpectation(unit.plan)
-    const stopIds = moveQueuedStop(expectedPlan, stopId, direction)
-    if (stopIds === null) return
-    void editUnit(unit.id, async () => await client.reorder(unit.id, expectedPlan, stopIds))
-  }
-
   const decisionTitle = $derived(decision === undefined ? '' : decision.kind === 'remove'
-    ? decision.stops.length === 1 ? 'Remove stop?' : 'Which stop should be removed?'
+    ? 'Remove stop?'
     : decision.assigned ? 'Change the plan?' : 'Move here?')
   const decisionText = $derived(decision === undefined ? '' : decision.kind === 'remove'
-    ? `${selectedUnit?.label ?? 'Unit'}: ${decision.stops.length === 1 ? `Stop ${decision.stops[0]!.index} · ` : ''}${decision.stops[0]?.label ?? 'selected stop'}`
+    ? `${selectedUnit?.label ?? 'Unit'}: Stop ${decision.stop.index} · ${decision.stop.label}`
     : `${selectedUnit?.label ?? 'Unit'} → ${stopLabel(decision.target)}${decision.currentLabel === null ? '' : ` · Current: ${decision.currentLabel}`}`)
   const decisionActions = $derived.by(() => {
     if (!decision) return []
-    if (decision.kind === 'remove') return decision.stops.map(stop => ({
-      label: decision.stops.length === 1 ? 'Remove stop' : `Remove stop ${stop.index}`,
-      danger: true, run: () => send({ kind: 'decide', choice: { remove: stop.id } }),
-    }))
+    if (decision.kind === 'remove') return [{ label: 'Remove stop', danger: true, run: () => send({ kind: 'decide', choice: 'remove' }) }]
     const replace = {
       label: decision.assigned ? 'Replace current target' : 'Move here',
       run: () => send({ kind: 'decide', choice: 'replace' }),
@@ -301,12 +326,7 @@
   })
 
   const toggleChip = (unitId: string): void => {
-    const current = pinned
-    if (current === null) return
-    const dropped = new Set(current.dropped)
-    if (dropped.has(unitId)) dropped.delete(unitId)
-    else dropped.add(unitId)
-    pinned = { ...current, dropped }
+    if (pinned !== null) pinned = toggledChip(pinned, unitId)
   }
 
   /** A row tap: that object's card, and a pan only when the map shows it under the panel or not at all. */
@@ -321,10 +341,15 @@
     props.onFocusMap({ kind: 'point', center: [point.coordinates[0], point.coordinates[1]] })
   }
 
-  /** A map click while one of the Pack's units is selected: the surface hands every one to the panel and never sends. */
+  /**
+   * A map click while one of the Pack's units is selected: the surface hands every one to the panel and never sends.
+   * One within the double-click interval of a row tap or a command is that double-click's second half: the lists
+   * folded under the pointer, so it lands on the map, and it does nothing.
+   */
   const onMapTarget = (selectedId: ObjectId, target: PackMapTarget): void => {
     const shown = selection.selection
     if (shown.kind !== 'unit' || shown.unitId !== selectedId) return
+    if (!activationActs(quietFromMs, Date.now())) return
     if (target.kind === 'point') {
       send({ kind: 'click', on: { kind: 'ground', point: target.point }, atMs: Date.now() })
       return
@@ -419,17 +444,10 @@
     untrack(() => props.onMapTargeting(targeting))
   })
 
-  // Ground waypoints have no object id. They select their stable plan stop instead.
+  // A card opens at the top of the scrolling body, where it is seen, however far the lists were scrolled.
   $effect(() => {
-    const item = props.selectedItemId
-    if (item === null) return
-    untrack(() => {
-      const unit = selectedUnit
-      const stop = unit?.plan.find(stop => 'point' in stop.target && waypointItemId(unit.id, stop.id) === item)
-      if (stop === undefined) return
-      send({ kind: 'stop', stopId: stop.id })
-      props.onSelectItem(null)
-    })
+    const shown = selectedObjectOf(selection.selection)
+    untrack(() => { if (shown !== null) body?.scrollTo({ top: 0 }) })
   })
 
   // The camera centres clear of the docked panel or the open sheet.
@@ -451,14 +469,19 @@
   style:max-height={layout.mode === 'docked' ? `${Math.max(0, surfaceHeight - panelTopClearancePx - panelBottomClearancePx)}px` : null}
   style:padding-bottom={layout.mode === 'sheet' && open ? `${panelBottomClearancePx}px` : null}
   style:right={layout.mode === 'docked' ? `${panelEdgeGapPx}px` : '0px'}
-  class:unit-selected={selection.selection.kind === 'unit'}
   aria-label={dispatchWords.panel}
 >
   {#if !open}
-    <button type="button" class="tab" onclick={act(() => { sheetOpenedByOperator = true })}>
-      <strong>{situation === null ? dispatchWords.panel : edgeTabText(situation)}</strong>
-      {#if receipts[0] !== undefined}<span class="receipt-line">{receiptText(receipts[0])}</span>{/if}
-    </button>
+    <div class="folded">
+      <button type="button" class="tab" onclick={act(() => { sheetOpenedByOperator = true })}>
+        <strong>{situation === null ? dispatchWords.panel : edgeTabText(situation)}</strong>
+        {#if receipts[0] !== undefined}<span class="receipt-line">{receiptText(receipts[0])}</span>{/if}
+      </button>
+      {#if receipts[0] !== undefined && receiptUndoable(receipts[0], nowMs)}
+        {@const latest = receipts[0]}
+        <button type="button" class="undo" disabled={unitPending} onclick={act(() => undo(latest.unitIds, latest.commandId))}>{latest.undo}</button>
+      {/if}
+    </div>
   {:else}
     <header class="head">
       <h2>{dispatchWords.panel}</h2>
@@ -470,43 +493,50 @@
     {#if situation === null}
       {#if problem === null}<p class="loading">{dispatchWords.loading}</p>{/if}
     {:else}
-      <div class="selection" aria-busy={unitPending}>
-        {#if card !== null}
-          <SelectionCard
-            {card}
-            {unitPending}
-            {feedback}
-            {icon}
-            confirming={confirming !== null && confirming === card.id}
-            back={act(() => send({ kind: 'back' }))}
-            targetRow={(target: Stop) => send({ kind: 'target-row', target })}
-            chooseStop={(stopId: string) => send({ kind: 'stop', stopId })}
-            {moveStop}
-            recall={(unitId: string) => { void editUnit(unitId, async () => await client.recall(unitId), { unitIds: [unitId], target: situation === null ? dispatchWords.panel : situation.words.return }) }}
-            order={act(order)}
-            toggleChip={act(toggleChip)}
-            refresh={act((callId: string) => { void pin(callId) })}
-            askClose={act((callId: string) => { confirming = callId })}
-            cancelClose={act(() => { confirming = null })}
-            closeTask={act((taskId: string) => { confirming = null; void command(async () => await client.closeTask(taskId), null) })}
-            setSite={act((siteId: string, accepting: boolean) => { void command(async () => await client.setSite(siteId, accepting), null) })}
-          />
-        {:else}
-          <p class="hint">{emptySelectionText(situation.words)}</p>
-          {#if feedback !== null}<p class="problem" role="alert">{feedback}</p>{/if}
-        {/if}
-      </div>
-      {#if lists !== null}
-        <div class="lists">
-          <OverviewLists view={lists} {icon} open={openRow} />
-          {#if lists.contacts && !lists.folded}
-            <ContactsSection heading={neutralLexicon.tracks} empty={neutralLexicon.noTracks} rows={contacts} {icon} open={openRow} />
+      <div class="body" bind:this={body}>
+        <div class="selection" aria-busy={unitPending}>
+          {#if card !== null}
+            <SelectionCard
+              {card}
+              {unitPending}
+              {feedback}
+              {feedbackKey}
+              {icon}
+              confirming={confirming !== null && confirming === card.id}
+              back={act(() => send({ kind: 'back' }))}
+              targetRow={(target: Stop) => send({ kind: 'target-row', target })}
+              removeStop={(stopId: string) => send({ kind: 'stop', stopId })}
+              recall={(unitId: string) => { void editUnit(unitId, async () => await client.recall(unitId), { unitIds: [unitId], target: situation === null ? dispatchWords.panel : situation.words.return, undoable: false }) }}
+              undo={act((unitId: string, commandId: string) => undo([unitId], commandId))}
+              order={act(order)}
+              toggleChip={act(toggleChip)}
+              refresh={act((callId: string) => { void pin(callId) })}
+              askClose={act((callId: string) => { confirming = callId })}
+              cancelClose={act(() => { confirming = null })}
+              closeTask={act((taskId: string) => { confirming = null; void command(async () => await client.closeTask(taskId), null) })}
+              setSite={act((siteId: string, accepting: boolean) => { void command(async () => await client.setSite(siteId, accepting), null) })}
+            />
+          {:else}
+            <p class="hint">{emptySelectionText(situation.words)}</p>
+            {#if feedback !== null}{#key feedbackKey}<p class="problem said" role="alert">{feedback}</p>{/key}{/if}
           {/if}
         </div>
-      {/if}
+        {#if lists !== null}
+          <div class="lists">
+            <OverviewLists view={lists} {icon} open={act(openRow)} />
+            {#if lists.contacts && !lists.folded}
+              <ContactsSection heading={neutralLexicon.tracks} empty={neutralLexicon.noTracks} rows={contacts} {icon} open={act(openRow)} />
+            {/if}
+          </div>
+        {/if}
+      </div>
       {#if missingArtwork !== null}<p class="artwork">{missingArtwork}</p>{/if}
       {#if receipts.length > 0}
-        <p class="receipt-line latest" role="status">{receiptText(receipts[0]!)}</p>
+        {@const latest = receipts[0]!}
+        <div class="footer">
+          <p class="receipt-line latest" role="status">{receiptText(latest)}</p>
+          {#if receiptUndoable(latest, nowMs)}<button type="button" class="undo" disabled={unitPending} onclick={act(() => undo(latest.unitIds, latest.commandId))}>{latest.undo}</button>{/if}
+        </div>
       {/if}
     {/if}
   {/if}
@@ -541,18 +571,27 @@
   .dispatch[data-mode='sheet'].folded { left: auto; padding: 0; border-radius: 10px 0 0 0; }
   .head { flex: none; display: flex; align-items: center; gap: 8px; }
   h2 { flex: 1; margin: 0; font-size: 12px; font-weight: 750; letter-spacing: .08em; text-transform: uppercase; color: var(--muted); }
-  .selection { flex: 0 1 auto; max-height: min(46dvh, 400px); min-height: 0; overflow: auto; overscroll-behavior: contain; }
-  .unit-selected .selection { max-height: none; flex: 1 1 auto; }
-  .unit-selected .lists { flex: none; }
-  .lists { flex: 1 1 auto; min-height: 0; overflow: auto; overscroll-behavior: contain; display: grid; align-content: start; gap: 4px; }
+  /* The card and the lists scroll as one, so a card gets the room it needs; the title and the receipt footer stay in place. */
+  .body { flex: 1 1 auto; min-height: 0; overflow: auto; overscroll-behavior: contain; display: flex; flex-direction: column; gap: 6px; }
+  .selection, .lists { flex: none; }
+  .lists { display: grid; align-content: start; gap: 4px; }
   .hint { margin: 0; padding: 10px 8px; border: 1px dashed var(--border); border-radius: 8px; color: var(--muted); }
   .loading { margin: 0; color: var(--muted); }
   .problem { margin: 0; color: var(--critical); }
+  /* Said again: a short highlight, so a repeated answer is seen to come; none where motion is reduced. */
+  .said { animation: said 700ms ease-out; }
+  @keyframes said { from { background: color-mix(in srgb, var(--critical) 18%, transparent); } }
+  @media (prefers-reduced-motion: reduce) { .said { animation: none; } }
   .artwork { flex: none; margin: 0; color: var(--warning); font-size: 11px; }
   button { min-height: 44px; min-width: 44px; padding: 4px 10px; border: 1px solid var(--border); border-radius: 8px; background: var(--panel); color: inherit; font: inherit; font-size: 12px; cursor: pointer; touch-action: manipulation; }
   button:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+  /* The folded sheet: its tab opens it; beside the tab, never inside it, the latest receipt's Undo while it lasts. */
+  .folded { display: flex; align-items: center; gap: 6px; min-width: 0; }
+  .folded .undo { margin-right: 8px; }
   .tab { display: grid; gap: 2px; padding: 8px 14px; border: 0; border-radius: 10px 0 0 0; background: transparent; text-align: left; }
   .receipt-line { color: var(--muted); font-size: 11px; }
-  .receipt-line.latest { flex: none; margin: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+  .footer { flex: none; display: flex; align-items: center; gap: 6px; min-width: 0; }
+  .receipt-line.latest { flex: 1; min-width: 0; margin: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+  .undo { flex: none; border-color: var(--accent); color: var(--accent); font-weight: 650; }
   .fold { font-size: 18px; line-height: 1; }
 </style>

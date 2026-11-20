@@ -1,7 +1,7 @@
 import type { StepTarget } from '../steps.ts'
 import { changedPlan, deliveryRefusal, planAppend, removeSteps } from './chain.ts'
 import { closeDraft, openDraft, putUnit, taskIn, unitIn } from './draft.ts'
-import { clockText } from '../situation/text.ts'
+import { clockText } from '../text.ts'
 import { freeInS } from './estimates.ts'
 import { notInPicture, refused, type Refused } from './intent-support.ts'
 import type { EngineActor, IntentOf, Plan, RouteNeed } from './intents.ts'

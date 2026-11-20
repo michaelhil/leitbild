@@ -44,7 +44,7 @@ export const unitOrderInputSchema = z.object({
     .refine(distinct, 'Each unit is named once')
     .describe(`The units to order, 1 to ${maxOrderUnits}, each named once. A busy unit must be the only one.`),
   stops: z.array(stopSchema).min(1).max(maxSteps)
-    .describe(`The plan's stops in order, 1 to ${maxSteps}. A carrier with no site stop delivers to the nearest accepting site.`),
+    .describe(`The plan's stops in order, 1 to ${maxSteps}. A carrier under a deliver standing order with no site stop delivers to the nearest accepting site.`),
   when: z.enum(orderWhen).optional()
     .describe('Required when a named unit is busy, else refused when_required: "after" appends after its current job; "now" replaces its current job and needs drops.'),
   drops: idSchema.optional()
@@ -68,14 +68,6 @@ export const unitStopRemoveInputSchema = z.object({
   stopId: idSchema.describe('The stop id, as world.einsatz.situation lists it in the unit\'s plan.'),
   expectedPlan: planExpectationSchema.optional(),
 }).strict().describe('Remove one stop from a unit\'s plan.')
-
-export const unitPlanReorderInputSchema = z.object({
-  unitId: idSchema.describe('The unit whose queued stops are reordered.'),
-  expectedPlan: planExpectationSchema,
-  stopIds: z.array(idSchema.describe('A queued stop id.')).min(1).max(maxSteps)
-    .refine(distinct, 'Each queued stop is named once.')
-    .describe('Every queued stop id, in the desired order. The active stop stays first.'),
-}).strict().describe('Reorder the queued stops of one unit’s plan.')
 
 /** Empty a unit's plan, releasing it from its task, and send it back to base; a unit carrying load is refused `unit_loaded`. */
 export const unitRecallInputSchema = z.object({

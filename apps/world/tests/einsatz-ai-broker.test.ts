@@ -76,7 +76,7 @@ describe('an AI agent dispatches in the open halden-emergency Run', () => {
     expect(listed.capabilities.filter(capability => capability.id.startsWith('world.einsatz.')).map(capability => String(capability.id)).sort()).toEqual([
       'world.einsatz.configuration', 'world.einsatz.recommend', 'world.einsatz.site.set', 'world.einsatz.situation', 'world.einsatz.task.close', 'world.einsatz.task.create',
       'world.einsatz.unit.adjust', 'world.einsatz.unit.create', 'world.einsatz.unit.engage', 'world.einsatz.unit.options', 'world.einsatz.unit.order',
-      'world.einsatz.unit.plan.reorder', 'world.einsatz.unit.plan.routes', 'world.einsatz.unit.recall', 'world.einsatz.unit.set-roe',
+      'world.einsatz.unit.plan.routes', 'world.einsatz.unit.recall', 'world.einsatz.unit.set-roe',
       'world.einsatz.unit.stop.remove', 'world.einsatz.unit.undo',
     ])
   })

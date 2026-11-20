@@ -2,7 +2,7 @@ import { describe, expect, test } from 'bun:test'
 import type { z } from 'zod'
 import { commandIdSchema } from '../../../core/model/index.ts'
 import { capabilityJsonSchema } from '../../../simulation/capabilities.ts'
-import { unitOrderInputSchema, unitPlanReorderInputSchema, unitRecallInputSchema, unitStopRemoveInputSchema, unitUndoInputSchema } from '../order-schema.ts'
+import { unitOrderInputSchema, unitRecallInputSchema, unitStopRemoveInputSchema, unitUndoInputSchema } from '../order-schema.ts'
 import { recommendAnswerSchema } from '../recommendation-schema.ts'
 import { refusal, refusalCode } from '../refusal.ts'
 import { situationInputSchema, situationSchema, unitOptionsInputSchema, unitOptionsSchema } from './schema.ts'
@@ -35,7 +35,7 @@ const situation = {
       { id: 'step-2', verb: 'go-to', target: { point }, label: 'a map point', state: 'queued', eta: { kind: 'straight-line', seconds: 300, distanceM: 4_000 }, by: { label: 'Assistant', isViewer: false } },
     ],
     predictedDelivery: { siteId: 'unit:s-1', label: 'S-1', eta: { kind: 'unavailable', reason: 'no_road_near_point: 1.4 km from a road', straightDistanceM: 2_000 } },
-    lastOrder: { by: viewer, commandId: 'cmd-1' },
+    lastOrder: { by: viewer, commandId: 'cmd-1', undo: { applies: false, refusal: 'U-2\'s last order has been carried out: it has arrived' } },
     carry: { capacity: 1, load: [] },
     properties: [{ id: 'cap', label: 'Capacity', value: '3,000 l' }],
     commandedBy: null,
@@ -87,6 +87,9 @@ describe('Einsatz wire schemas', () => {
     expect(situationSchema.safeParse({ ...situation, words: { ...situation.words, board: 'Board' } }).success).toBe(false)
     expect(unitOptionsSchema.safeParse({ ...options, refused: [{ ...options.refused[0], code: 'not_a_code' }] }).success).toBe(false)
     expect(situationSchema.safeParse({ ...situation, units: [{ ...situation.units[0], status: { word: 'Free', tone: 'green' } }] }).success).toBe(false)
+    // An undo verdict either applies or carries its refusal, never both.
+    const lastOrder = (undo: unknown) => situationSchema.safeParse({ ...situation, units: [{ ...situation.units[0], lastOrder: { by: viewer, commandId: 'cmd-1', undo } }] }).success
+    expect([lastOrder({ applies: true }), lastOrder(null), lastOrder({ applies: true, refusal: 'words' }), lastOrder({ applies: false })]).toEqual([true, true, false, false])
   })
 
   test('unit.order takes 1–10 distinct units, 1–20 stops, and drops only with when now', () => {
@@ -113,7 +116,6 @@ describe('Einsatz wire schemas', () => {
     expect(unitUndoInputSchema.parse({ unitId: 'unit:u-1', commandId: 'cmd-1' })).toEqual({ unitId: 'unit:u-1', commandId: commandIdSchema.parse('cmd-1') })
     expect(unitUndoInputSchema.safeParse({ unitId: 'unit:u-1' }).success).toBe(false)
     expect(unitStopRemoveInputSchema.parse({ unitId: 'unit:u-1', stopId: 'step-2' }).stopId).toBe('step-2')
-    expect(unitPlanReorderInputSchema.safeParse({ unitId: 'unit:u-1', expectedPlan: options.plan, stopIds: ['step-2', 'step-2'] }).success).toBe(false)
     expect(unitRecallInputSchema.safeParse({ unitId: 'unit:u-1', fromTaskId: 'task:t-1' }).success).toBe(false)
     expect(situationInputSchema.parse({})).toEqual({})
     expect(situationInputSchema.parse({ group: 'g1' }).group).toBe('g1')
@@ -142,7 +144,7 @@ describe('Einsatz wire schemas', () => {
         }
       }
     }
-    const schemas = { situationInputSchema, situationSchema, unitOptionsInputSchema, unitOptionsSchema, recommendAnswerSchema, unitOrderInputSchema, unitUndoInputSchema, unitStopRemoveInputSchema, unitPlanReorderInputSchema, unitRecallInputSchema }
+    const schemas = { situationInputSchema, situationSchema, unitOptionsInputSchema, unitOptionsSchema, recommendAnswerSchema, unitOrderInputSchema, unitUndoInputSchema, unitStopRemoveInputSchema, unitRecallInputSchema }
     for (const [name, schema] of Object.entries(schemas)) walk(capabilityJsonSchema(schema), name)
     expect(undescribed).toEqual([])
   })

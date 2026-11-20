@@ -4,7 +4,7 @@ import { einsatzCapabilities, einsatzGuidance } from './capabilities.ts'
 import { einsatzPack } from './pack.ts'
 
 /**
- * The Einsatz Capability surface an agent reads: eighteen Capabilities, each
+ * The Einsatz Capability surface an agent reads: seventeen Capabilities, each
  * public one described in at most 600 characters with an example, every
  * input field described, search terms set, and one line of Pack guidance.
  * The planning projection is World core's system read, not an agent's.
@@ -23,11 +23,11 @@ const fields = (schema: JsonSchema, path: string): Array<readonly [string, boole
 ]
 
 describe('Einsatz Capability descriptions', () => {
-  test('eighteen Capabilities: six queries, twelve commands, none of the cut ids', () => {
-    expect(einsatzCapabilities).toHaveLength(18)
+  test('seventeen Capabilities: six queries, eleven commands, none of the cut ids', () => {
+    expect(einsatzCapabilities).toHaveLength(17)
     expect(einsatzCapabilities.filter(capability => capability.kind === 'query')).toHaveLength(6)
     const ids = einsatzCapabilities.map(capability => capability.id)
-    for (const cut of ['send', 'queue', 'step.remove', 'resume', 'clear', 'hold']) expect(ids).not.toContain(`world.einsatz.unit.${cut}`)
+    for (const cut of ['send', 'queue', 'step.remove', 'resume', 'clear', 'hold', 'plan.reorder']) expect(ids).not.toContain(`world.einsatz.unit.${cut}`)
   })
 
   for (const capability of einsatzCapabilities.filter(isPublicCapability)) {

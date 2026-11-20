@@ -90,7 +90,7 @@ export const HERO_SLIDES: ReadonlyArray<HeroSlide> = [
     eyebrow: 'Emergency dispatch · Einsatz',
     title: 'Dispatch by touch',
     blurb: 'Send ambulances, patrol cars and fire engines to fictional calls on your own: tap a call, then Dispatch.',
-    alt: 'The Dispatch panel over a map of Halden: a waiting chest-pain call with its suggested unit and Dispatch button, above the list of calls.',
+    alt: 'The Dispatch panel over a map of Halden: a waiting chest-pain call with its suggested unit, Dispatch button, delivery site and other units.',
     image: 'hero-einsatz',
     link: { kind: 'demo', demo: DEMO_KEYS.dispatch, label: 'Try the dispatch demo' },
   },
