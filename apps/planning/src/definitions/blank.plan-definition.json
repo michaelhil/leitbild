@@ -1,7 +1,7 @@
 {
   "id": "blank",
   "title": "New plan",
-  "description": "An empty plan. Add the equipment, crews and calendars, the jobs and how they follow each other, and the rules that must hold, then generate schedules. Link a running simulation to use its equipment and live values.",
+  "description": "An empty plan. Add the equipment, crews and calendars, the jobs and how they follow each other, and the rules that must hold, then generate schedules. Started from a Run's Plans, it is linked to that simulation; otherwise link a running simulation later to use its equipment and live values.",
   "inputs": {
     "settings": {
       "title": "New plan",
