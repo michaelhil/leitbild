@@ -51,7 +51,16 @@
 //! With rod control the unit delivers `LD01.CORE.BANK.HOLD` and the values
 //! the law compares at the last frame, `LD01.CORE.BANK.TAVG` (its lagged
 //! Tavg) and `LD01.CORE.BANK.TREF` (its program at its lagged load), read
-//! from the rod client's own state: observation only.
+//! from the rod client's own state: observation only. Beside them
+//! `LD01.CORE.BANK.ERROR` (soak amendment A7) is the law's own error at that
+//! frame k, Tavg - Tref plus the power-mismatch term as `Controller::frame`
+//! forms it, NaN where AUTO decides nothing at k (HOLD, or the drive not
+//! engaged). The rate it decides is put in force at frame k + 1's instant
+//! and holds until frame k + 2's (R4-ROD-DELAY: decided at k, acting at
+//! k + 1), so the bank's travel from frame k + 1 to frame k + 2 is that
+//! decision's. With the governor, `LD01.TG.ADM.OPENING` is its admission
+//! opening at full precision (1 fully open), the value `LD01.TG.ADM.POS`'s
+//! I&C channel lags, samples, transports and rounds to 1 % steps.
 //!
 //! **Operator commands** (PROC T4, T5, T11; lane ELEC): `IncomingDevice`
 //! `{bus, source, target}`, `StartConsumer` `{consumer}`, `DcDistribution`
@@ -386,6 +395,11 @@ enum Reading {
     /// The AUTO rod law's lagged Tavg (0) and its program reference (1) at
     /// the last frame (`RodClient::tavg_and_reference_k`).
     RodLaw(usize),
+    /// A7: the AUTO rod law's error at the last frame k as
+    /// `Controller::frame` forms it, Tavg - Tref + K_pm (x - z) on the
+    /// client's state after that frame; NaN where AUTO decided nothing at k.
+    /// Its rate is in force from frame k + 1's instant to frame k + 2's.
+    RodError,
     ReleasedPower,
     PzrPressure,
     PzrCollapsedLevel,
@@ -736,6 +750,14 @@ fn channels(plant: &Plant, inputs: &Inputs) -> Result<Vec<Channel>, String> {
                 Reading::RodLaw(i),
             ));
         }
+        // A7: the law's own error, a temperature difference (degC = K).
+        out.push(channel(
+            "LD01.CORE.BANK.ERROR",
+            "degC",
+            "AUTO rod control's error at the exchange's last frame k, Tavg - Tref + K_pm (x - z) as the law forms it (NaN where AUTO decides nothing at k); its rate is in force from frame k+1 to frame k+2",
+            "X4.4 AUTO rod control",
+            Reading::RodError,
+        ));
     }
     let joined = &plant.ida.system().integrated().joined;
     // R4-RELIEF-ISO: the valve's position and the relief's direct lift
@@ -1061,6 +1083,19 @@ fn channels(plant: &Plant, inputs: &Inputs) -> Result<Vec<Channel>, String> {
             "the governor is in LOAD and takes a load request",
             "X4.3 governor",
             Reading::LoadActive,
+        ));
+        // A7: the opening LD01.TG.ADM.POS's I&C channel reads, unrounded.
+        let (opening, _) = plant
+            .ida
+            .system()
+            .admission_probe(plant.t0)
+            .ok_or("the governor's admission opening")?;
+        out.push(channel(
+            "LD01.TG.ADM.OPENING",
+            "1",
+            "the governor's admission opening at the exchange's last frame, full precision (1 fully open); LD01.TG.ADM.POS is its I&C channel (0.1 s lag, 0.1 s sample and transport, 1 % steps)",
+            "X4.3 governor",
+            Reading::Coordinate(opening, 1.),
         ));
     }
     let mut seen = std::collections::BTreeSet::new();
@@ -1631,6 +1666,20 @@ impl Unit {
                         .as_ref()
                         .ok_or("no AUTO rod control")?
                         .tavg_and_reference_k()[*i],
+                    Reading::RodError => {
+                        let r = rods.as_ref().ok_or("no AUTO rod control")?;
+                        if r.decided_m_s.is_none() {
+                            f64::NAN
+                        } else {
+                            // Controller::frame's own terms and order: the
+                            // temperature part, then the mismatch on its
+                            // rate-lag state after the frame.
+                            let [tavg, tref] = r.tavg_and_reference_k();
+                            let [lag, input, _] = r.controller.state();
+                            let gain = r.controller.law().section().mismatch_gain_k;
+                            (tavg - tref) + gain * (input - lag)
+                        }
+                    }
                     Reading::Latched(f) => divisions.iter().filter(|d| d.latched(f)).count() as f64,
                     Reading::DivisionTrip(d) => flag(divisions[*d].trip.is_some()),
                     Reading::DivisionPowered(d) => flag(divisions[*d].powered),
@@ -2616,6 +2665,9 @@ mod tests {
                 .unwrap_or_else(|| panic!("no channel {id}"))
         };
         let (tavg, tref) = (index("LD01.CORE.BANK.TAVG"), index("LD01.CORE.BANK.TREF"));
+        // A7: ERROR re-forms the law's error from the client's state, a second
+        // copy of Controller::frame's formula; it must stay the decision's own.
+        let error = index("LD01.CORE.BANK.ERROR");
         // The per-frame record is observation: it decides nothing.
         unit.plant
             .rods
@@ -2659,21 +2711,28 @@ mod tests {
             match last["decision"]["tref_k"].as_f64() {
                 Some(tref_k) => {
                     assert_eq!(values[tref].to_bits(), tref_k.to_bits(), "TREF at {at} s");
+                    let e = last["decision"]["error_k"].as_f64().expect("e");
+                    assert_eq!(values[error].to_bits(), e.to_bits(), "ERROR at {at} s");
                     auto += 1;
                     worst_t = worst_t.max((values[tavg] - values[tref]).abs());
-                    worst_e = worst_e.max(last["decision"]["error_k"].as_f64().expect("e").abs());
+                    worst_e = worst_e.max(e.abs());
                 }
                 None => {
                     let load = evidence["load"].as_f64().expect("the delivered load");
                     let program = rods.controller.law().tref_k(load);
                     assert_eq!(values[tref].to_bits(), program.to_bits(), "TREF at {at} s");
+                    assert!(
+                        values[error].is_nan(),
+                        "ERROR at {at} s with no decision: {}",
+                        values[error]
+                    );
                     not_auto += 1;
                 }
             }
         }
         println!(
-            "rod law channels: {frames} exchanges; {auto} in AUTO (TAVG = the evidence, TREF = the decision's, bitwise), \
-             {not_auto} not deciding (TREF = the program at the delivered load); in AUTO max |TAVG - TREF| {worst_t} K, max |e| {worst_e} K"
+            "rod law channels: {frames} exchanges; {auto} in AUTO (TAVG = the evidence, TREF and ERROR = the decision's, bitwise), \
+             {not_auto} not deciding (TREF = the program at the delivered load, ERROR NaN); in AUTO max |TAVG - TREF| {worst_t} K, max |e| {worst_e} K"
         );
     }
 }
