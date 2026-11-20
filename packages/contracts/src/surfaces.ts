@@ -7,11 +7,14 @@ export const WORKSPACE_SURFACE_PARAMETER = 'surface'
 export const WORKSPACE_SURFACE_MAX_LENGTH = 200
 
 // A surface is one thing a Module's page can show filling its pane, addressed
-// relative to a Resource: for World, a Run's unit overview or its procedure
-// window. The owning Module defines, validates and renders the string; the
-// Host stores and forwards it without reading it, so a browser window can be
-// opened on exactly that surface and reopened on the same surface of a later
-// Run. The string names no Workspace and no Run.
+// relative to a Resource: for World, a Run's map, a unit overview or its
+// procedure window. The owning Module defines, validates and renders the
+// string. The Host stores and forwards it whole and never reads into it, so a
+// browser window can be opened on exactly that surface and reopened on the
+// same surface of a later Run. The Host may know a surface that names no
+// object by its whole string, to offer it itself or carry it to another
+// scenario (World: the Run's map and its dashboard). The string names no
+// Workspace and no Run.
 export const workspaceSurfaceStringSchema = z.string()
   .min(3)
   .max(WORKSPACE_SURFACE_MAX_LENGTH)
@@ -33,8 +36,8 @@ export type WorkspaceSurface = z.infer<typeof workspaceSurfaceSchema>
 
 /**
  * Module page -> Host: the person asked to show this surface on another
- * screen. The Host offers its screens and remembers the choice; it never
- * learns what the surface string means.
+ * screen. The Host offers its screens and remembers the choice; it shows the
+ * title and never reads into the surface string.
  */
 export const workspaceSurfacePlaceMessageSchema = z.object({
   type: z.literal('leitbild:surface-place'),

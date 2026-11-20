@@ -16,8 +16,8 @@
   import Icon from '../Icon.svelte'
   import Modal from '../Modal.svelte'
   import {
-    addScreen, assign, assignmentFor, EMPTY_SCREEN_SETUP, hasStoredAssignment, isTarget, miniature, newStamp, removeScreen, renameScreen,
-    openScreenWindow, SCREEN_NAME_MAX_LENGTH, screenName, screenStorageChange, screenUrl, showOnScreens,
+    addScreen, assign, assignmentFor, EMPTY_SCREEN_SETUP, hasStoredAssignment, isTarget, MAP_SCREEN_CONTENT, miniature, newStamp, removeScreen, renameScreen,
+    openScreenWindow, SCREEN_NAME_MAX_LENGTH, screenChoice, screenName, screenStorageChange, screenUrl, showOnScreens,
     type ScreenBounds, type ScreenContent, type ScreenSetup, type ScreenStore, type ScreenTarget, type ScreensRun, type Stored, type Written,
   } from './screen-setup.ts'
 
@@ -130,8 +130,8 @@
   }
   const show = (screenId: string, choice: string): void => {
     if (view === null || choice === 'surface') return
-    save(assign(view, run.definition, screenId, choice === 'run' ? { kind: 'run' } : null),
-      choice === 'run' ? `Screen ${screenId} shows the map.` : `Screen ${screenId} shows nothing.`)
+    save(assign(view, run.definition, screenId, choice === 'map' ? MAP_SCREEN_CONTENT : choice === 'run' ? { kind: 'run' } : null),
+      choice === 'map' ? `Screen ${screenId} shows the map.` : choice === 'run' ? `Screen ${screenId} shows the whole Run page.` : `Screen ${screenId} shows nothing.`)
   }
 
   const showRun = (): void => {
@@ -227,7 +227,7 @@
           </figure>
         {/if}
         <h3 class="screens-heading">What each screen shows for {scenario}</h3>
-        {#if carried}<p class="screens-note">Nothing is stored for this scenario yet, so it starts from the last one set up. Only the map and the Run dashboard carry over.</p>{/if}
+        {#if carried}<p class="screens-note">Nothing is stored for this scenario yet, so it starts from the last one set up. Only the map, the whole Run page and the Run dashboard carry over.</p>{/if}
         {#if view.screens.length === 0}
           <p class="screens-note">No screens yet. Add one, then open its window and drag it to the display it belongs on.</p>
         {:else}
@@ -239,11 +239,12 @@
                 <div class="screens-fields">
                   <input class="lb-input" type="text" aria-label={`Name of screen ${screen.id}`} value={screen.name} maxlength={SCREEN_NAME_MAX_LENGTH} autocomplete="off"
                     onchange={event => rename(screen.id, event.currentTarget, screen.name)} />
-                  <select class="lb-input" aria-label={`What screen ${screen.id} shows`} value={content === null ? 'nothing' : content.kind}
+                  <select class="lb-input" aria-label={`What screen ${screen.id} shows`} value={screenChoice(content)}
                     onchange={event => show(screen.id, event.currentTarget.value)}>
                     <option value="nothing">Nothing</option>
-                    <option value="run">Map</option>
-                    {#if content?.kind === 'surface'}<option value="surface">{content.title}</option>{/if}
+                    <option value="map">Map</option>
+                    <option value="run">Whole Run page</option>
+                    {#if content?.kind === 'surface' && screenChoice(content) === 'surface'}<option value="surface">{content.title}</option>{/if}
                   </select>
                   <span class="screens-meta"><span class:blocked={windows.get(screen.id) === 'blocked'} class:present={answered.has(screen.id)}>{windowText(screen.id)}</span><span>{positionText(screen.id)}</span></span>
                 </div>

@@ -1,18 +1,18 @@
 import { describe, expect, test } from 'bun:test'
 import { NOT_FOLLOWING_TEXT, screenAddress, screenShows, standbyText, type FollowTrigger, type ScreenAddressSelection, type ScreenShow } from './screen-follow.ts'
-import { assign, type ScreenContent, type ScreenSetup, type ScreenTarget, type Stored } from './screen-setup.ts'
+import { assign, MAP_SCREEN_CONTENT, type ScreenContent, type ScreenSetup, type ScreenTarget, type Stored } from './screen-setup.ts'
 
 const here = '0b4b9a52-2f7e-4c1a-9d3e-000000000001'
 const there = '0b4b9a52-2f7e-4c1a-9d3e-000000000002'
 const nuclear = 'world:world.scenario:halden'
 const grid = 'world:world.scenario:grid'
-const map: ScreenContent = { kind: 'run' }
+const wholePage: ScreenContent = { kind: 'run' }
 const dashboard: ScreenContent = { kind: 'surface', moduleId: 'world', surface: 'display:dashboard', title: 'Dashboard' }
 const unitOne: ScreenContent = { kind: 'surface', moduleId: 'world', surface: 'display:unit-1', title: 'Unit 1 overview' }
 const procedures: ScreenContent = { kind: 'surface', moduleId: 'world', surface: 'procedures:unit-1', title: 'Unit 1 procedures' }
 const fourScreens: ScreenSetup = {
   screens: [{ id: 'A', name: 'Desk' }, { id: 'B', name: 'Left wall' }, { id: 'C', name: 'Right wall' }, { id: 'D', name: 'Table' }],
-  contentByDefinition: { [nuclear]: { A: procedures, B: unitOne, C: dashboard, D: map } },
+  contentByDefinition: { [nuclear]: { A: procedures, B: unitOne, C: dashboard, D: wholePage } },
   lastDefinition: nuclear,
 }
 const nothing: ScreenAddressSelection = { world: null, surface: null, planning: null }
@@ -91,7 +91,24 @@ describe('what a screen window shows', () => {
     }
   })
 
-  test('a scenario with no assignment of its own carries over only the map and the Run dashboard', () => {
+  test('a screen set to the map alone selects the Run with World\'s map surface, and a stored whole Run page still selects the Run with none', () => {
+    const withMap = stored(assign(fourScreens, nuclear, 'B', MAP_SCREEN_CONTENT))
+    for (const trigger of ['load', 'storage'] as const) {
+      expect(shows({ setup: withMap, trigger })).toEqual({ kind: 'select', runId: 'run-2', surface: 'map:run', definition: nuclear })
+      expect(shows({ setup: withMap, address: { world: 'run-2', surface: 'map:run', planning: null }, trigger })).toEqual({ kind: 'address', following: true })
+      // The whole page and the map alone are different things to show: an address of one does not stand for the other.
+      expect(shows({ setup: withMap, address: { world: 'run-2', surface: null, planning: null }, trigger })).toEqual({ kind: 'select', runId: 'run-2', surface: 'map:run', definition: nuclear })
+      expect(shows({ setup: withMap, screenId: 'D', address: { world: 'run-2', surface: 'map:run', planning: null }, trigger })).toEqual({ kind: 'select', runId: 'run-2', surface: null, definition: nuclear })
+      // It names no object, so a scenario that was never set up starts with it.
+      expect(shows({ setup: withMap, target: target({ runId: 'run-9', definition: grid }), trigger })).toEqual({ kind: 'select', runId: 'run-9', surface: 'map:run', definition: grid })
+    }
+    expect(shows({ setup: withMap, target: target({ workspaceId: there }), trigger: 'storage' }))
+      .toEqual({ kind: 'navigate', workspaceId: there, href: `/workspaces/${there}?world=run-2&surface=map%3Arun&screen=B` })
+    expect(screenAddress({ kind: 'select', runId: 'run-2', surface: 'map:run', definition: nuclear }, { workspaceId: here, screenId: 'B', agents: null }))
+      .toBe(`/workspaces/${here}?world=run-2&surface=map%3Arun&screen=B`)
+  })
+
+  test('a scenario with no assignment of its own carries over only the map, the whole Run page and the Run dashboard', () => {
     const newScenario = target({ runId: 'run-9', definition: grid })
     for (const trigger of ['load', 'storage'] as const) {
       expect(shows({ screenId: 'D', target: newScenario, trigger })).toEqual({ kind: 'select', runId: 'run-9', surface: null, definition: grid })

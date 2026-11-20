@@ -1,22 +1,23 @@
 import { describe, expect, test } from 'bun:test'
 import {
-  addScreen, assign, assignmentFor, contentFor, createBoundsReporter, createScreenStore, definitionKeyOf, EMPTY_SCREEN_SETUP, hasStoredAssignment, isTarget, miniature,
+  addScreen, assign, assignmentFor, contentFor, createBoundsReporter, createScreenStore, definitionKeyOf, EMPTY_SCREEN_SETUP, hasStoredAssignment, isTarget, MAP_SCREEN_CONTENT, miniature,
   newStamp, nextScreenId, offersShowOnScreens, openScreenWindow, removeScreen, renameScreen, scenarioTitle, SCREEN_ANSWER_KEY_PREFIX, SCREEN_BOUNDS_KEY_PREFIX,
-  SCREEN_IDENTIFY_KEY, SCREEN_ROLL_CALL_KEY, SCREEN_SETUP_KEY, SCREEN_TARGET_KEY, screenLabel, screenName, screenOfAddress, screenStorageChange, screenUrl,
-  screenWindowFeatures, screenWindowName, showOnScreens, windowBounds, type ScreenContent, type ScreenSetup, type ScreenStorage, type ScreensRun,
+  SCREEN_IDENTIFY_KEY, SCREEN_ROLL_CALL_KEY, SCREEN_SETUP_KEY, SCREEN_TARGET_KEY, screenChoice, screenLabel, screenName, screenOfAddress, screenStorageChange, screenUrl,
+  screenWindowFeatures, screenWindowName, showOnScreens, windowBounds, WORLD_SURFACES, type ScreenContent, type ScreenSetup, type ScreenStorage, type ScreensRun,
 } from './screen-setup.ts'
 
 const workspaceId = '0b4b9a52-2f7e-4c1a-9d3e-000000000001'
 const otherWorkspaceId = '0b4b9a52-2f7e-4c1a-9d3e-000000000002'
 const nuclear = 'world:world.scenario:halden'
 const grid = 'world:world.scenario:grid'
-const map: ScreenContent = { kind: 'run' }
+const wholePage: ScreenContent = { kind: 'run' }
+const mapAlone: ScreenContent = { kind: 'surface', moduleId: 'world', surface: 'map:run', title: 'Map' }
 const dashboard: ScreenContent = { kind: 'surface', moduleId: 'world', surface: 'display:dashboard', title: 'Dashboard' }
 const unitOne: ScreenContent = { kind: 'surface', moduleId: 'world', surface: 'display:unit-1', title: 'Unit 1 overview' }
 const procedures: ScreenContent = { kind: 'surface', moduleId: 'world', surface: 'procedures:unit-1', title: 'Unit 1 procedures' }
 const fourScreens: ScreenSetup = {
   screens: [{ id: 'A', name: 'Desk' }, { id: 'B', name: 'Left wall' }, { id: 'C', name: 'Right wall' }, { id: 'D', name: 'Table' }],
-  contentByDefinition: { [nuclear]: { A: procedures, B: unitOne, C: dashboard, D: map } },
+  contentByDefinition: { [nuclear]: { A: procedures, B: unitOne, C: dashboard, D: wholePage } },
   lastDefinition: nuclear,
 }
 const run: ScreensRun = { workspaceId, runId: 'run-1', definition: nuclear }
@@ -186,40 +187,72 @@ describe('screens of a setup', () => {
   })
 
   test('removing a screen removes what it shows in every scenario', () => {
-    const both = assign(fourScreens, grid, 'B', map)
+    const both = assign(fourScreens, grid, 'B', wholePage)
     const removed = removeScreen(both, 'B')
     expect(removed.screens.map(screen => screen.id)).toEqual(['A', 'C', 'D'])
-    expect(removed.contentByDefinition).toEqual({ [nuclear]: { A: procedures, C: dashboard, D: map }, [grid]: { C: dashboard, D: map } })
+    expect(removed.contentByDefinition).toEqual({ [nuclear]: { A: procedures, C: dashboard, D: wholePage }, [grid]: { C: dashboard, D: wholePage } })
     expect(createScreenStore(fakeStorage()).writeSetup(removed)).toEqual({ ok: true })
   })
 })
 
 describe('what each screen shows per scenario', () => {
   test('a scenario shows its stored assignment', () => {
-    expect(assignmentFor(fourScreens, nuclear)).toEqual({ A: procedures, B: unitOne, C: dashboard, D: map })
+    expect(assignmentFor(fourScreens, nuclear)).toEqual({ A: procedures, B: unitOne, C: dashboard, D: wholePage })
     expect(contentFor(fourScreens, nuclear, 'B')).toEqual(unitOne)
     expect(contentFor(fourScreens, nuclear, 'E')).toBeNull()
     expect(contentFor({ ...fourScreens, screens: fourScreens.screens.slice(1) }, nuclear, 'A')).toBeNull()
   })
 
-  test('a new scenario starts from the last one used, carrying over only the map and the Run dashboard', () => {
+  test('the panel\'s "Map" is the map alone, a surface of World\'s; the whole Run page is what "Map" stored before', () => {
+    expect(MAP_SCREEN_CONTENT).toEqual(mapAlone)
+    expect(WORLD_SURFACES).toEqual({ map: 'map:run', dashboard: 'display:dashboard' })
+    expect(screenChoice(null)).toBe('nothing')
+    expect(screenChoice(mapAlone)).toBe('map')
+    expect(screenChoice(wholePage)).toBe('run')
+    // Every other surface is the placed one, shown by its title; the map alone is never also offered as one.
+    for (const content of [dashboard, unitOne, procedures]) expect(screenChoice(content)).toBe('surface')
+    expect(screenChoice({ ...mapAlone, title: 'Wall map' })).toBe('map')
+    expect(screenChoice({ ...mapAlone, surface: 'map:x' })).toBe('surface')
+  })
+
+  test('a setup stored before the map-alone choice keeps its meaning: the whole Run page', () => {
+    const before = '{"screens":[{"id":"D","name":"Table"}],"contentByDefinition":{"world:world.scenario:halden":{"D":{"kind":"run"}}},"lastDefinition":"world:world.scenario:halden"}'
+    const storage = fakeStorage({ [SCREEN_SETUP_KEY]: before })
+    const read = createScreenStore(storage).readSetup()
+    if (read.status !== 'ok') throw new Error('the stored setup was expected to read')
+    const content = contentFor(read.value, nuclear, 'D')
+    expect(content).toEqual({ kind: 'run' })
+    expect(screenChoice(content)).toBe('run')
+    expect(screenUrl(workspaceId, 'D', { runId: 'run-1', content: content! })).toBe(`/workspaces/${workspaceId}?world=run-1&screen=D`)
+    // Reading rewrites nothing, and choosing "Map" for it is the one thing that changes it.
+    expect(storage.data.get(SCREEN_SETUP_KEY)).toBe(before)
+    expect(contentFor(assign(read.value, nuclear, 'D', MAP_SCREEN_CONTENT), nuclear, 'D')).toEqual(mapAlone)
+  })
+
+  test('a new scenario starts from the last one used, carrying over only the map, the whole Run page and the Run dashboard', () => {
     expect(hasStoredAssignment(fourScreens, grid)).toBe(false)
-    expect(assignmentFor(fourScreens, grid)).toEqual({ C: dashboard, D: map })
+    expect(assignmentFor(fourScreens, grid)).toEqual({ C: dashboard, D: wholePage })
     expect(contentFor(fourScreens, grid, 'A')).toBeNull()
     expect(contentFor(fourScreens, grid, 'B')).toBeNull()
     expect(contentFor(fourScreens, grid, 'C')).toEqual(dashboard)
-    expect(contentFor(fourScreens, grid, 'D')).toEqual(map)
+    expect(contentFor(fourScreens, grid, 'D')).toEqual(wholePage)
+    // The map alone names no object either, so it carries over as the dashboard does.
+    const withMap = assign(fourScreens, nuclear, 'A', mapAlone)
+    expect(hasStoredAssignment(withMap, grid)).toBe(false)
+    expect(assignmentFor(withMap, grid)).toEqual({ A: mapAlone, C: dashboard, D: wholePage })
+    expect(contentFor(withMap, grid, 'A')).toEqual(mapAlone)
+    expect(contentFor(withMap, grid, 'B')).toBeNull()
     expect(assignmentFor({ ...fourScreens, lastDefinition: null }, grid)).toEqual({})
     expect(assignmentFor(EMPTY_SCREEN_SETUP, grid)).toEqual({})
   })
 
   test('changing one screen gives the scenario an assignment of its own, from what was shown for it', () => {
     const placed = assign(fourScreens, grid, 'A', unitOne)
-    expect(placed.contentByDefinition[grid]).toEqual({ A: unitOne, C: dashboard, D: map })
+    expect(placed.contentByDefinition[grid]).toEqual({ A: unitOne, C: dashboard, D: wholePage })
     expect(placed.contentByDefinition[nuclear]).toEqual(fourScreens.contentByDefinition[nuclear]!)
     expect(placed.lastDefinition).toBe(grid)
     const cleared = assign(placed, grid, 'C', null)
-    expect(cleared.contentByDefinition[grid]).toEqual({ A: unitOne, D: map })
+    expect(cleared.contentByDefinition[grid]).toEqual({ A: unitOne, D: wholePage })
     // Once stored, an empty assignment is the scenario's own: nothing carries over into it again.
     const empty = assign(assign(cleared, grid, 'A', null), grid, 'D', null)
     expect(hasStoredAssignment(empty, grid)).toBe(true)
@@ -287,8 +320,9 @@ describe('screen windows', () => {
   })
 
   test('a screen window has a canonical address with its Workspace in the path', () => {
-    expect(screenUrl(workspaceId, 'D', { runId: 'run-1', content: map })).toBe(`/workspaces/${workspaceId}?world=run-1&screen=D`)
+    expect(screenUrl(workspaceId, 'D', { runId: 'run-1', content: wholePage })).toBe(`/workspaces/${workspaceId}?world=run-1&screen=D`)
     expect(screenUrl(workspaceId, 'B', { runId: 'run-1', content: unitOne })).toBe(`/workspaces/${workspaceId}?world=run-1&surface=display%3Aunit-1&screen=B`)
+    expect(screenUrl(workspaceId, 'C', { runId: 'run-1', content: MAP_SCREEN_CONTENT })).toBe(`/workspaces/${workspaceId}?world=run-1&surface=map%3Arun&screen=C`)
     expect(screenUrl(workspaceId, 'A', null)).toBe(`/workspaces/${workspaceId}?screen=A`)
   })
 

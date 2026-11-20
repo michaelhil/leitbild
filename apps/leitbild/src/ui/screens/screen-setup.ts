@@ -20,7 +20,7 @@
 // - Nothing here names or chooses a Workspace for a page. The target names
 //   one, and screen-follow.ts decides what a window may do with it.
 // - A surface string is World's. The Host stores and forwards it whole and
-//   never reads into it.
+//   never reads into it. It knows two by their whole string (`WORLD_SURFACES`).
 
 import { z } from 'zod'
 import { workspaceSurfaceStringSchema } from '@leitbild/contracts'
@@ -49,7 +49,7 @@ const screenNameSchema = z.string().min(1).max(SCREEN_NAME_MAX_LENGTH)
 const definitionKeySchema = z.string().min(1).max(400)
 
 export const screenContentSchema = z.discriminatedUnion('kind', [
-  /** The Run's page (the map). */
+  /** The Run's whole page. */
   z.object({ kind: z.literal('run') }).strict(),
   z.object({
     kind: z.literal('surface'),
@@ -244,11 +244,26 @@ export const removeScreen = (setup: ScreenSetup, screenId: string): ScreenSetup 
 // The setup: what each screen shows per scenario
 // ---------------------------------------------------------------------------
 
+/**
+ * The World surfaces the Host knows by their whole string: the two that name
+ * no object, so every scenario has them. World defines them
+ * (`apps/world/src/ui/surface-route.ts`); here they are compared and stored
+ * whole, never read into.
+ */
+export const WORLD_SURFACES = { map: 'map:run', dashboard: 'display:dashboard' } as const
+
+/** What the panel's "Map" stores: the Run's map alone. */
+export const MAP_SCREEN_CONTENT: ScreenContent = { kind: 'surface', moduleId: 'world', surface: WORLD_SURFACES.map, title: 'Map' }
+
+/** The panel's choice that a screen's content is: the map alone is "Map", never also a placed surface. */
+export const screenChoice = (content: ScreenContent | null): 'nothing' | 'map' | 'run' | 'surface' =>
+  content === null ? 'nothing' : content.kind === 'run' ? 'run' : content.surface === WORLD_SURFACES.map ? 'map' : 'surface'
+
 // A scenario with no stored assignment starts from the last one used, but
-// only with what exists in every scenario: the Run's page, and World's one
-// surface that names no object. The string is compared whole, never read into.
-const SURFACE_IN_EVERY_SCENARIO = 'display:dashboard'
-const carriesOver = (content: ScreenContent): boolean => content.kind === 'run' || content.surface === SURFACE_IN_EVERY_SCENARIO
+// only with what exists in every scenario: the Run's whole page, and World's
+// surfaces that name no object.
+const carriesOver = (content: ScreenContent): boolean =>
+  content.kind === 'run' || content.surface === WORLD_SURFACES.map || content.surface === WORLD_SURFACES.dashboard
 
 const own = <T>(record: Readonly<Record<string, T>>, key: string): T | undefined => Object.hasOwn(record, key) ? record[key] : undefined
 

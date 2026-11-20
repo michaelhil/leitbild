@@ -22,6 +22,7 @@ const unit1 = 'plant:u1' as ObjectId
 const unit2 = 'plant:u2' as ObjectId
 
 const surfaces: ReadonlyArray<readonly [string, WorldSurface]> = [
+  ['map:run', { kind: 'map' }],
   ['display:plant:u1', { kind: 'display', objectId: unit1 }],
   ['display:dashboard', { kind: 'dashboard' }],
   ['procedures:plant:u1', { kind: 'procedures', objectId: unit1 }],
@@ -40,7 +41,7 @@ describe('World\'s surface strings', () => {
   })
 
   test.each([
-    'map', 'display', 'display:', 'procedures:', 'dashboard', 'Display:plant:u1', 'displays:plant:u1', 'procedure:plant:u1',
+    'map', 'map:', 'map:x', 'map:run-1', 'map:plant:u1', 'map:Run', 'maps:run', 'display', 'display:', 'procedures:', 'dashboard', 'Display:plant:u1', 'displays:plant:u1', 'procedure:plant:u1',
     'chat:room-1', 'procedures:dashboard page', 'display:plant u1', 'display::u1', 'display:-u1', ' display:plant:u1',
     `display:${'a'.repeat(129)}`, `display:${'a'.repeat(300)}`,
   ])('%p is no surface', text => {
@@ -60,19 +61,22 @@ describe('World\'s surface strings', () => {
     expect(readSurfaceRoute('?surface=display%3Aplant%3Au1')).toEqual({ kind: 'surface', surface: { kind: 'display', objectId: unit1 } })
     expect(readSurfaceRoute('?focus=plant:u2&surface=procedures:plant:u1&roles=a')).toEqual({ kind: 'surface', surface: { kind: 'procedures', objectId: unit1 } })
     expect(readSurfaceRoute('?surface=display:dashboard')).toEqual({ kind: 'surface', surface: { kind: 'dashboard' } })
+    expect(readSurfaceRoute('?surface=map%3Arun&roles=a')).toEqual({ kind: 'surface', surface: { kind: 'map' } })
     // Text that is no surface is kept to be refused in place; it never reads as "no surface".
     expect(readSurfaceRoute('?surface=')).toEqual({ kind: 'unknown', text: '' })
     expect(readSurfaceRoute('?surface=map')).toEqual({ kind: 'unknown', text: 'map' })
+    expect(readSurfaceRoute('?surface=map:x')).toEqual({ kind: 'unknown', text: 'map:x' })
     expect(readSurfaceRoute('?surface=chat:room-1')).toEqual({ kind: 'unknown', text: 'chat:room-1' })
   })
 
   test('the page names the same surface again when it rewrites its address, and keeps text it will refuse', () => {
-    for (const search of ['?surface=display:plant:u1', '?surface=display:dashboard', '?surface=procedures:plant:u1', '?surface=map', '?surface=']) {
+    for (const search of ['?surface=map:run', '?surface=display:plant:u1', '?surface=display:dashboard', '?surface=procedures:plant:u1', '?surface=map', '?surface=map:x', '?surface=']) {
       const route = readSurfaceRoute(search)
       expect(readSurfaceRoute(`?${new URLSearchParams(surfaceRouteQuery(route))}`)).toEqual(route)
     }
     expect(surfaceRouteQuery(readSurfaceRoute('?focus=plant:u1'))).toEqual({})
     expect(surfaceRouteQuery(readSurfaceRoute('?surface=procedures:plant:u1'))).toEqual({ surface: 'procedures:plant:u1' })
+    expect(surfaceRouteQuery(readSurfaceRoute('?surface=map:run'))).toEqual({ surface: 'map:run' })
   })
 })
 
@@ -83,11 +87,24 @@ describe('what a surface opens in the joined Run', () => {
   }
   const asked: string[] = []
   const subjectOf = (objectId: ObjectId): SurfaceSubject | null => { asked.push(objectId); return subjects[objectId] ?? null }
-  const present = (text: string) => {
+  const present = (text: string, runHasMap = true) => {
     const route = readSurfaceRoute(`?${new URLSearchParams({ surface: text })}`)
     if (route.kind === 'run') throw new Error('a surface was expected')
-    return presentSurface(route, subjectOf)
+    return presentSurface(route, subjectOf, runHasMap)
   }
+
+  test('the map shows the Run\'s map alone, and asks about no object', () => {
+    asked.length = 0
+    expect(present('map:run')).toEqual({ kind: 'map' })
+    expect(asked).toEqual([])
+  })
+
+  test('a Run without a map refuses the map in place, and shows every other surface as it does with one', () => {
+    expect(present('map:run', false)).toEqual({ kind: 'refused', reason: 'This Run has no map.' })
+    for (const text of ['display:plant:u1', 'display:dashboard', 'procedures:plant:u1', 'display:plant:u2', 'display:weather:front', 'chat:room-1']) {
+      expect(present(text, false)).toEqual(present(text, true))
+    }
+  })
 
   test('an observed asset\'s overview opens the display window on that asset', () => {
     expect(present('display:plant:u1')).toEqual({ kind: 'display', target: { kind: 'asset', objectId: unit1 } })
@@ -104,7 +121,10 @@ describe('what a surface opens in the joined Run', () => {
   })
 
   test('text that is no surface is refused with what a screen can show', () => {
-    expect(present('map')).toEqual({ kind: 'refused', reason: 'World has nothing to show for “map”. A screen shows an asset\'s overview display, the Run\'s dashboard or a unit\'s procedures.' })
+    const canShow = 'A screen shows the Run\'s map, an asset\'s overview display, the Run\'s dashboard or a unit\'s procedures.'
+    expect(present('map')).toEqual({ kind: 'refused', reason: `World has nothing to show for “map”. ${canShow}` })
+    // Only `map:run` is the map: no other subject names it, and none is quietly read as it.
+    expect(present('map:x')).toEqual({ kind: 'refused', reason: `World has nothing to show for “map:x”. ${canShow}` })
     expect(present('')).toMatchObject({ kind: 'refused', reason: expect.stringContaining('World has nothing to show for “”.') })
     const long = present(`display:${'x'.repeat(400)}`)
     expect(long).toMatchObject({ kind: 'refused', reason: expect.stringContaining(`“display:${'x'.repeat(72)}…”`) })
@@ -127,7 +147,7 @@ describe('what a surface opens in the joined Run', () => {
     const only = (subject: SurfaceSubject) => (text: string) => {
       const route = readSurfaceRoute(`?surface=${text}`)
       if (route.kind === 'run') throw new Error('a surface was expected')
-      return presentSurface(route, () => subject).kind
+      return presentSurface(route, () => subject, true).kind
     }
     expect(only({ label: 'Unit 2', hasOverview: true, runsProcedures: false })('procedures:plant:u2')).toBe('refused')
     expect(only({ label: 'Unit 2', hasOverview: false, runsProcedures: true })('display:plant:u2')).toBe('refused')
