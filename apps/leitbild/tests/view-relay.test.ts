@@ -257,9 +257,10 @@ describe('process display relay', () => {
   test('while the Run\'s plans show, a subject\'s default display brings the simulation back too', () => {
     const { relay, state } = harness({ pane: 'behind-plans', runs: ['run-1'] })
     relay.fromWorld(ready)
-    relay.fromAgents({ type: 'leitbild:view-subject-open', resource: runRef('run-1'), subject: 'plant:halden-2#auxFeedwaterValveA', title: 'Review: THROTTLE to 40 % AFW-A-CV' })
+    const received = { type: 'leitbild:view-subject-open', resource: runRef('run-1'), subject: 'plant:halden-2#auxFeedwaterValveA', title: 'Review: THROTTLE to 40 % AFW-A-CV' }
+    relay.fromAgents(received)
     expect(state.shownWorld).toBe(1)
-    expect(state.world.at(-1)).toEqual({ type: 'leitbild:view-subject-open', resource: runRef('run-1'), subject: 'plant:halden-2#auxFeedwaterValveA', title: 'Review: THROTTLE to 40 % AFW-A-CV' })
+    expect(state.world.at(-1)).toEqual(received)
     expect(state.openedRuns).toEqual([])
     expect(state.errors).toEqual([])
   })
