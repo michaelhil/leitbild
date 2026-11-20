@@ -69,6 +69,7 @@
   import {
     DISPLAY_ZOOM_SLIDER,
     answerZoomStore,
+    awaitsFirstFit,
     displayZoomFromSlider,
     displayZoomPercent,
     fittedDisplayZoom,
@@ -289,8 +290,11 @@
   const placeable = $derived(placeOnScreen === null || current === null ? null : deckEntrySurface(current))
   // The display the shown one was opened after: Back returns there.
   const backTarget = $derived(current === null ? null : returnTo.get(current.key) ?? null)
+  // A screen's surface shows a display once it is fitted: it draws before it reports the room it needs, and until then
+  // its canvas would show at 100 %, cut off. The dashboard is drawn for its frame, so it is whole from the start.
+  const awaitingFit = $derived(asSurface && current !== null && current.source !== 'dashboard' && currentZoom !== null && awaitsFirstFit(currentZoom))
   const connecting = $derived(current !== null && currentDefault?.state !== 'failed' && currentRefusal === null
-    && (currentEnvelope === null || !framesUp.has(current.key)))
+    && (currentEnvelope === null || !framesUp.has(current.key) || awaitingFit))
   // A screen's surface is the pane itself; a maximised window keeps its margin.
   const effectiveBounds = $derived<ProcessDisplayWindowBounds>(asSurface
     ? { x: 0, y: 0, width: Math.max(1, viewport.width), height: Math.max(1, viewport.height) }

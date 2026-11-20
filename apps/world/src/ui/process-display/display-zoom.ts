@@ -263,6 +263,14 @@ export const initialDisplayZoom = (context: DisplayZoomContext, stored: StoredDi
  */
 export const fittedDisplayZoom = (context: DisplayZoomContext): DisplayZoomState => fitted(context, 1)
 
+/**
+ * Whether a fitted display still waits for the report its fit is taken from.
+ * Until then its zoom is a placeholder, and a canvas larger than the body
+ * shows cut off at it. The report comes only once the display has drawn and
+ * rested, so a screen's surface shows the display once this is false.
+ */
+export const awaitsFirstFit = (state: DisplayZoomState): boolean => state.fit && state.corrections > FIT_CORRECTIONS
+
 // A report under Fit or the advice default: followed both ways while a
 // correction is left, then only where it shrinks the zoom (advice), or not at
 // all (a generated display, whose report changes with its arrangement).
