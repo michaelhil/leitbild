@@ -152,6 +152,7 @@ const parseArgs = (argv: ReadonlyArray<string>): Config => {
   if (rollupS === null && (flags.has('channel-log-s') || stopFile !== null || flags.has('exchange-rows'))) throw new Error('--channel-log-s, --stop-file and --exchange-rows belong to soak recording: --rollup-s')
   if (rollupS !== null) {
     if (via !== 'adapter') throw new Error('--rollup-s: the soak runs through the World host: --via adapter')
+    if (exchangeMs !== 100) throw new Error('--rollup-s: the soak\'s rod line reads every 0.1 s frame: --exchange-ms 100')
     if (process.platform !== 'darwin') throw new Error('--rollup-s: its counters and machine protection read macOS (proc_pid_rusage, kern.memorystatus_vm_pressure_level); Linux collection is plan-x5 B')
     for (const [name, seconds] of [['rollup-s', rollupS], ['channel-log-s', channelLogS]] as const) {
       if (!(seconds > 0) || Math.round(seconds * 1_000) % exchangeMs !== 0) throw new Error(`--${name} is a positive whole number of exchanges`)
@@ -322,30 +323,39 @@ export const rodDecisionLagFrames = 1
 /**
  * Soak rule r2's rod line with amendment A7. e is the law's own error (LD01.CORE.BANK.ERROR: Tavg − Tref plus the power-mismatch term).
  * A frame passes when |e| ≤ deadBand_K, or when the bank's travel over the interval its decision is in force (from frame
- * k + lag to k + lag + 1) has the sign that reduces |e| (withdraws for e < 0, inserts for e > 0). Every frame also needs
+ * k + lag to k + lag + 1) has the sign that reduces |e| (withdraws for e < 0, inserts for e > 0); the run goes on lag + 1 frames past
+ * the span for the last span frames' travel (the evidence tail, not judged itself). Every span frame must be judged. Every frame also needs
  * |e| < maximumSpeedError_K, and the bank must move at least once. Every frame is judged, HOLD or not; frames under HOLD are also counted.
  */
-export const createRodLine = (law: RodLaw, lag = rodDecisionLagFrames) => {
-  // The last lag + 2 frames: the oldest is judged once the travel over its in-force interval is known.
+export const createRodLine = (law: RodLaw, spanFrames: number, lag = rodDecisionLagFrames) => {
+  // The last lag + 2 frames: the oldest is judged once the travel over its in-force interval is known. A span frame's decision acts
+  // after it, so its travel can lie past the span: the driver runs lag + 1 frames beyond it (the evidence tail), which are not judged.
   const recent: Array<{ readonly k: number; readonly e: number; readonly bank: number; readonly auto: boolean }> = []
-  const totals = { framesRead: 0, notAuto: 0, outsideBand: 0, notCorrecting: 0, atOrOverMaximum: 0, worstAbsE: -Infinity, worstAtK: -1, bankMin: Infinity, bankMax: -Infinity }
+  const totals = { framesRead: 0, spanRead: 0, judged: 0, tail: 0, notAuto: 0, outsideBand: 0, notCorrecting: 0, atOrOverMaximum: 0, worstAbsE: -Infinity, worstAtK: -1, bankMin: Infinity, bankMax: -Infinity }
   let interval = { outsideBand: 0, notCorrecting: 0 }
   let firstMove: { readonly k: number; readonly direction: 'withdraw' | 'insert'; readonly fromM: number; readonly toM: number } | null = null
   return {
     note: (k: number, e: number, bank: number, auto = true): void => {
       totals.framesRead += 1
-      const size = Math.abs(e)
-      if (size > totals.worstAbsE) { totals.worstAbsE = size; totals.worstAtK = k }
-      if (!(size < law.maximumSpeedErrorK)) totals.atOrOverMaximum += 1
-      totals.bankMin = Math.min(totals.bankMin, bank)
-      totals.bankMax = Math.max(totals.bankMax, bank)
       const previous = recent.at(-1)
-      if (previous !== undefined && firstMove === null && bank !== previous.bank) firstMove = { k, direction: bank > previous.bank ? 'withdraw' : 'insert', fromM: previous.bank, toM: bank }
+      if (k < spanFrames) {
+        totals.spanRead += 1
+        const size = Math.abs(e)
+        if (size > totals.worstAbsE) { totals.worstAbsE = size; totals.worstAtK = k }
+        if (!(size < law.maximumSpeedErrorK)) totals.atOrOverMaximum += 1
+        // Every frame is judged, HOLD or not: under HOLD the rods do not act, so a frame outside the band then fails.
+        if (!auto) totals.notAuto += 1
+        totals.bankMin = Math.min(totals.bankMin, bank)
+        totals.bankMax = Math.max(totals.bankMax, bank)
+        if (previous !== undefined && firstMove === null && bank !== previous.bank) firstMove = { k, direction: bank > previous.bank ? 'withdraw' : 'insert', fromM: previous.bank, toM: bank }
+      } else {
+        totals.tail += 1
+      }
       recent.push({ k, e, bank, auto })
       if (recent.length < lag + 2) return
       const judged = recent.shift()!
-      // Every frame is judged, HOLD or not: under HOLD the rods do not act, so a frame outside the band then fails.
-      if (!judged.auto) totals.notAuto += 1
+      if (judged.k >= spanFrames) return
+      totals.judged += 1
       if (Math.abs(judged.e) <= law.deadBandK) return
       totals.outsideBand += 1
       interval.outsideBand += 1
@@ -359,15 +369,16 @@ export const createRodLine = (law: RodLaw, lag = rodDecisionLagFrames) => {
       interval = { outsideBand: 0, notCorrecting: 0 }
       return taken
     },
-    summary: (frames: number) => {
-      const unjudged = recent.filter(frame => Math.abs(frame.e) > law.deadBandK).length
+    summary: () => {
       const bankMoved = totals.bankMax > totals.bankMin
       return {
-        dead_band_k: law.deadBandK, maximum_speed_error_k: law.maximumSpeedErrorK, e: 'LD01.CORE.BANK.ERROR', decision_lag_frames: lag, frames, frames_read: totals.framesRead,
+        dead_band_k: law.deadBandK, maximum_speed_error_k: law.maximumSpeedErrorK, e: 'LD01.CORE.BANK.ERROR', decision_lag_frames: lag,
+        frames: spanFrames, frames_read: totals.spanRead, frames_judged: totals.judged, frames_unjudged: spanFrames - totals.judged, evidence_tail_frames: totals.tail,
         frames_not_auto: totals.notAuto, frames_outside_band: totals.outsideBand, frames_outside_band_not_correcting: totals.notCorrecting,
-        frames_at_or_over_maximum_speed_error: totals.atOrOverMaximum, final_frames_outside_band_unjudged: unjudged,
+        frames_at_or_over_maximum_speed_error: totals.atOrOverMaximum,
         worst_abs_e_k: totals.worstAbsE, worst_at_k: totals.worstAtK, first_bank_move: firstMove, bank_min: totals.bankMin, bank_max: totals.bankMax, bank_moved: bankMoved,
-        holds: totals.framesRead === frames && totals.notCorrecting === 0 && totals.atOrOverMaximum === 0 && unjudged === 0 && bankMoved,
+        // Every span frame judged: a run that stops before its tail's travel is seen leaves frames unjudged and does not hold.
+        holds: totals.judged === spanFrames && totals.notCorrecting === 0 && totals.atOrOverMaximum === 0 && bankMoved,
       }
     },
   }
@@ -456,11 +467,11 @@ interface UnitRecord {
   readonly byInstructions: WorstEntry[]
 }
 
-const newRecord = (index: number, spec: UnitSpec, plantId: string, law: RodLaw | null): UnitRecord => ({
+const newRecord = (index: number, spec: UnitSpec, plantId: string, law: RodLaw | null, spanFrames: number): UnitRecord => ({
   index, plantId, spec, pid: 0, connectCost: null, rows: [], frameInstructions: [], instants: [],
   hasher: new Bun.CryptoHasher('sha256'), eventsHasher: new Bun.CryptoHasher('sha256'),
   firstFrameT: Number.NaN, commandT: null, failure: null, ended: null, last: null, first: null,
-  frames: 0, lastT: Number.NaN, wallWorst: highest(), exchangeWorst: highest(), lagWorst: highest(), lagging: 0, instructionsWorst: highest(), fiveWorst: highest(), five: [], admWorst: highest(), rodLine: law === null ? null : createRodLine(law), valveLine: law === null ? null : createValveLine(),
+  frames: 0, lastT: Number.NaN, wallWorst: highest(), exchangeWorst: highest(), lagWorst: highest(), lagging: 0, instructionsWorst: highest(), fiveWorst: highest(), five: [], admWorst: highest(), rodLine: law === null ? null : createRodLine(law, spanFrames), valveLine: law === null ? null : createValveLine(),
   totals: { instructions: 0, pInstructions: 0, userS: 0, systemS: 0, cpuHeaderS: 0, runnableS: 0, steps: 0, jacobians: 0, restartsR: 0 },
   resident: { first: null, max: -Infinity, last: null }, footprint: { first: null, max: -Infinity, last: null },
   interval: newInterval(), byWall: [], byInstructions: [],
@@ -612,7 +623,7 @@ const summarize = (record: UnitRecord, stepS: number): Record<string, unknown> =
     },
     admission_valve_worst: record.admWorst.k < 0 ? null : { value: record.admWorst.value, at_k: record.admWorst.k },
     // Soak rule r2's rod and valve lines with amendment A7 (createRodLine, createValveLine).
-    rod_line: record.rodLine?.summary(record.frames) ?? null,
+    rod_line: record.rodLine?.summary() ?? null,
     valve_line: record.valveLine?.summary(record.frames) ?? null,
     cpu_s_total_by_rusage: totals.userS + totals.systemS,
     cpu_s_total_by_child_header: totals.cpuHeaderS,
@@ -981,7 +992,10 @@ const runAdapter = async (config: Config, artifact: Ld01UnitArtifact, records: R
   const files = soak ? createSoakFiles(config, records, load, config.exchangeMs / 1_000) : null
   const exchanges: Array<readonly number[]> = []
   const stepMs = config.exchangeMs
-  const count = Math.round(config.spanS * 1_000 / stepMs)
+  // A soak's rod line judges every frame of the span on the travel its decision puts in force, after it: the run goes on for that
+  // evidence tail (rodDecisionLagFrames + 1 frames), which the rod line does not judge and every other line covers.
+  const evidenceTail = soak ? rodDecisionLagFrames + 1 : 0
+  const count = Math.round(config.spanS * 1_000 / stepMs) + evidenceTail
   const t0 = performance.now() + config.leadS * 1_000
   const hostAtStart = counters(process.pid)
   let commanded = false
@@ -1047,7 +1061,7 @@ const runAdapter = async (config: Config, artifact: Ld01UnitArtifact, records: R
     if (ended !== undefined) record.ended = (ended.payload as { readonly message: string }).message
   }
   const hostAtEnd = counters(process.pid)
-  return { exchanges_columns: ['k', 'scheduled_s', 'started_s', 'ended_s', 'overrun_s'], exchanges, commanded, failed: stop?.kind === 'refusal' ? stop.message : null, stop: stop ?? { kind: 'span end', message: `${count} exchanges`, atK: count - 1, atIso: new Date().toISOString() }, signals, via_adapter: true, load: load.samples, host_cpu_s: hostAtStart === null || hostAtEnd === null ? null : (hostAtEnd.userS + hostAtEnd.systemS) - (hostAtStart.userS + hostAtStart.systemS), host_instructions_g: hostAtStart === null || hostAtEnd === null ? null : (hostAtEnd.instructions - hostAtStart.instructions) / 1e9 }
+  return { exchanges_columns: ['k', 'scheduled_s', 'started_s', 'ended_s', 'overrun_s'], exchanges, commanded, failed: stop?.kind === 'refusal' ? stop.message : null, stop: stop ?? { kind: 'span end', message: `${count} exchanges${evidenceTail > 0 ? `: the span and ${evidenceTail} evidence-tail frames` : ''}`, atK: count - 1, atIso: new Date().toISOString() }, signals, via_adapter: true, load: load.samples, host_cpu_s: hostAtStart === null || hostAtEnd === null ? null : (hostAtEnd.userS + hostAtEnd.systemS) - (hostAtStart.userS + hostAtStart.systemS), host_instructions_g: hostAtStart === null || hostAtEnd === null ? null : (hostAtEnd.instructions - hostAtStart.instructions) / 1e9 }
 }
 
 /** deadBand_K and maximumSpeedError_K of the wiki block ld01-rod-control in the wiki the unit reads (its LOAD inputs' wiki root). */
@@ -1070,7 +1084,8 @@ const main = async (): Promise<void> => {
   const artifact = loadLd01UnitArtifact(config.artifact)
   const rodLine = config.rollupS === null ? null : rodLawOf(artifact)
   const law: RodLaw | null = rodLine === null ? null : { deadBandK: rodLine.dead_band_k, maximumSpeedErrorK: rodLine.maximum_speed_error_k }
-  const records = config.units.map((spec, index) => newRecord(index, spec, config.via === 'adapter' ? `plant:halden-${index + 1}` : `plant:ld01-multi-${index}`, law))
+  const spanFrames = Math.round(config.spanS * 1_000 / config.exchangeMs)
+  const records = config.units.map((spec, index) => newRecord(index, spec, config.via === 'adapter' ? `plant:halden-${index + 1}` : `plant:ld01-multi-${index}`, law, spanFrames))
   const startedIso = new Date().toISOString()
   const loadAtStart = loadavg()
   const memoryAtStart = { totalBytes: totalmem(), freeBytes: freemem() }
