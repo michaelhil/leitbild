@@ -229,6 +229,12 @@ const drawnWholeAt = (context: DisplayZoomContext, zoom: number): boolean =>
 // oscillate between two zooms.
 const FIT_CORRECTIONS = 1
 
+// A fit taken before the display's first report has measured nothing: that
+// report is the fit itself, and the correction follows it. A display fitted
+// before it reported so ends where Fit pressed after its first report does.
+const fitCorrections = (context: DisplayZoomContext): number =>
+  context.extent === null ? FIT_CORRECTIONS + 1 : FIT_CORRECTIONS
+
 const fitted = (context: DisplayZoomContext, zoom: number, options: { readonly tryFull: boolean } = { tryFull: false }): DisplayZoomState => {
   // Fit chosen while a generated display is drawn whole below 100 %: it may be
   // drawn whole larger too, so Fit tries 100 % and takes the next report's
@@ -237,7 +243,7 @@ const fitted = (context: DisplayZoomContext, zoom: number, options: { readonly t
   if (options.tryFull && context.kind === 'generated' && zoom < GENERATED_FIT_MAX - SAME_ZOOM && drawnWholeAt(context, zoom)) {
     return { zoom: GENERATED_FIT_MAX, fit: true, auto: false, corrections: FIT_CORRECTIONS }
   }
-  return { zoom: fitDisplayZoom(context, zoom), fit: true, auto: false, corrections: FIT_CORRECTIONS }
+  return { zoom: fitDisplayZoom(context, zoom), fit: true, auto: false, corrections: fitCorrections(context) }
 }
 
 const adviceDefault = (context: DisplayZoomContext): DisplayZoomState =>
@@ -249,6 +255,13 @@ export const initialDisplayZoom = (context: DisplayZoomContext, stored: StoredDi
   if (context.kind === 'generated') return manual(1)
   return adviceDefault(context)
 }
+
+/**
+ * A display's zoom when a screen's surface first shows it: fitted, as Fit
+ * pressed at 100 % fits it, and fitted still through every new body size
+ * until the operator zooms. A surface remembers no zoom.
+ */
+export const fittedDisplayZoom = (context: DisplayZoomContext): DisplayZoomState => fitted(context, 1)
 
 // A report under Fit or the advice default: followed both ways while a
 // correction is left, then only where it shrinks the zoom (advice), or not at
