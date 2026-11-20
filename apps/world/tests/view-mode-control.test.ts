@@ -30,11 +30,18 @@ test('the explorer enables the switch for its layouts and says why it waits whil
 // The map's bottom-right stack as MapLibre lays it out: the compact credit
 // (24 x 24, 10 px margins), the navigation group above it (29 x 87: zoom in,
 // zoom out, compass) and, new, the 3D switch above that (one 29 px button
-// after a 10 px margin, so the stack grows by 39 px).
-const stack = (size: { readonly width: number; readonly height: number }, withSwitch: boolean): ReadonlyArray<ExplorerViewportRect> => {
+// after a 10 px margin, so the stack grows by 39 px). The camera group tops
+// the stack on every map: one row of two or three 29 px buttons (Home, Fit all
+// visible and, with a selection on the map, Fit selection) after another 10 px
+// margin, so it is up to 58 px wider than the groups below it.
+const stack = (size: { readonly width: number; readonly height: number }, withSwitch: boolean, cameraButtons: 0 | 2 | 3 = 0): ReadonlyArray<ExplorerViewportRect> => {
   const credit = { x: size.width - 34, y: size.height - 34, width: 24, height: 24 }
   const navigation = { x: size.width - 39, y: size.height - 44 - 87, width: 29, height: 87 }
-  return withSwitch ? [credit, navigation, { x: navigation.x, y: navigation.y - 10 - 29, width: 29, height: 29 }] : [credit, navigation]
+  const viewMode = { x: navigation.x, y: navigation.y - 10 - 29, width: 29, height: 29 }
+  const below = withSwitch ? [credit, navigation, viewMode] : [credit, navigation]
+  if (cameraButtons === 0) return below
+  const top = below.at(-1)!
+  return [...below, { x: size.width - 10 - 29 * cameraButtons, y: top.y - 10 - 29, width: 29 * cameraButtons, height: 29 }]
 }
 const noPadding: ExplorerViewportPadding = { top: 0, right: 0, bottom: 0, left: 0 }
 
@@ -64,6 +71,42 @@ test('the taller bottom-right stack never squeezes a fitted layout into a strip'
       expect(before.height - after.height, label).toBeLessThanOrEqual(39)
     }
   }
+})
+
+test('the camera row above the switch costs a fitted layout at most its own width or height, never a strip', () => {
+  const targets = { wide: { width: 3, height: 1 }, square: { width: 1, height: 1 }, tall: { width: 1, height: 3 } }
+  // The last three are a short split pane, about 280 to 340 px high.
+  for (const size of [{ width: 350, height: 600 }, { width: 760, height: 600 }, { width: 1400, height: 800 }, { width: 350, height: 300 }, { width: 760, height: 280 }, { width: 1400, height: 340 }]) {
+    for (const [name, target] of Object.entries(targets)) for (const withSwitch of [false, true]) for (const buttons of [2, 3] as const) {
+      const scale = (padding: ExplorerViewportPadding): number => Math.min((size.width - padding.left - padding.right) / target.width, (size.height - padding.top - padding.bottom) / target.height)
+      const fit = (cameraButtons: 0 | 2 | 3): ExplorerViewportRect => {
+        const rect = physicalExplorerFitRect(size, noPadding, stack(size, withSwitch, cameraButtons), 12, scale)
+        if (rect === null) throw new Error(`no clear rectangle at ${size.width}x${size.height}`)
+        return rect
+      }
+      const drawn = (rect: ExplorerViewportRect): number => Math.min(rect.width / target.width, rect.height / target.height)
+      const before = fit(0), after = fit(buttons), label = `${size.width}x${size.height} ${name} ${withSwitch ? 'with' : 'without'} 3D, ${buttons} buttons`
+      const extraWidth = 29 * (buttons - 1)
+      // Bound 1: the layout is drawn smaller by at most what the row takes, its extra width or its 39 px of height, and no smaller at all in a pane of ordinary height.
+      expect(drawn(before) - drawn(after), label).toBeLessThanOrEqual(Math.max(extraWidth / target.width, 39 / target.height) + 1e-9)
+      if (size.height >= 600) expect(drawn(after), label).toBe(drawn(before))
+      // Bound 2: the rectangle is never narrower than the slab beside the whole stack, row included.
+      expect(after.width, label).toBeGreaterThanOrEqual(size.width - 63 - extraWidth)
+      // Bound 3: where the layout keeps its place beside or above the stack, the row costs at most its extra width or its own 39 px of height.
+      if (after.y === before.y) {
+        expect(before.width - after.width, label).toBeLessThanOrEqual(extraWidth)
+        expect(before.height - after.height, label).toBeLessThanOrEqual(39)
+      }
+    }
+  }
+})
+
+test('the camera group tops the lower-right stack on every map and keeps itself above the 3D switch', async () => {
+  const [map, control] = await Promise.all(['OperationalMap.svelte', 'map/camera-control.ts'].map(path => Bun.file(new URL(`../src/ui/${path}`, import.meta.url)).text()))
+  expect(map).toContain("nextRuntime.map.addControl(cameraControl, 'bottom-right')")
+  // The explorer adds the switch later and MapLibre would stack it above: the row moves itself back to the top of its corner.
+  expect(control).toContain("corner = map.getContainer().querySelector('.maplibregl-ctrl-bottom-right')")
+  expect(control).toContain('if (corner !== null && container.parentElement === corner && corner.firstElementChild !== container) corner.prepend(container)')
 })
 
 test('the map switch is the one place that changes the representation, added and removed by the explorer', async () => {

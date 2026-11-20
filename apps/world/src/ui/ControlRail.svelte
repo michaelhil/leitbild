@@ -65,6 +65,9 @@
     readonly onWeatherLayerToggle?: (visible: boolean) => void
     readonly surfacePanels?: ReadonlyArray<{ readonly id: string; readonly label: string; readonly open: boolean }>
     readonly toggleSurfacePanel?: (panelId: string) => void
+    /** Whether the layout toolbar is open; absent where the Run has no physical layouts. */
+    readonly layoutControlsOpen?: boolean | undefined
+    readonly toggleLayoutControls?: () => void
   }
 
   let {
@@ -104,6 +107,8 @@
     onWeatherLayerToggle = () => undefined,
     surfacePanels = [],
     toggleSurfacePanel = () => undefined,
+    layoutControlsOpen,
+    toggleLayoutControls = () => undefined,
   }: Props = $props()
 
   let collapsedCategoryIds = $state<Record<string, boolean>>({})
@@ -223,11 +228,18 @@
     onWeatherToggle={onWeatherLayerToggle}
   />
 
-  {#if surfacePanels.length > 0}
+  {#if surfacePanels.length > 0 || layoutControlsOpen !== undefined}
+    <!-- The one home of the panel toggles: each Pack panel and, in a Run with physical layouts, the layout toolbar. -->
     <section class="pack-tools">
       <h2>Tools</h2>
+      {#if layoutControlsOpen !== undefined}
+        <button type="button" class:active={layoutControlsOpen} aria-pressed={layoutControlsOpen} onclick={toggleLayoutControls}>
+          <PanelRightOpen size={14} />
+          <span>Layout controls</span>
+        </button>
+      {/if}
       {#each surfacePanels as panel}
-        <button type="button" class:active={panel.open} onclick={() => toggleSurfacePanel(panel.id)}>
+        <button type="button" class:active={panel.open} aria-pressed={panel.open} onclick={() => toggleSurfacePanel(panel.id)}>
           <PanelRightOpen size={14} />
           <span>{panel.label}</span>
         </button>

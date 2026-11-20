@@ -5,7 +5,6 @@ import { observableRefSchema } from '../model/alerts.ts'
 import { quantitySchema, quantityUnits } from '../observation/model.ts'
 
 export const guideControlTargets = [
-  { id: 'view', label: 'View controls', actions: ['reveal', 'highlight', 'explain'] },
   { id: 'guide', label: 'Guide', actions: ['reveal', 'highlight', 'explain'] },
   { id: 'alarms', label: 'Alarms', actions: ['reveal', 'highlight', 'explain'] },
   { id: 'dashboard', label: 'Dashboard', actions: ['reveal', 'explain'] },

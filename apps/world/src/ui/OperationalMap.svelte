@@ -41,6 +41,8 @@
   import { noMapCover, type MapPrompt, type MapTargeting } from './surface-panel-interaction.ts'
   import type { MapCover } from './surface-panel-contract.ts'
   import { createMapPromptController } from './map/map-prompt.ts'
+  import { createCameraControl, type CameraControl } from './map/camera-control.ts'
+  import type { RunCameraActionId, RunCameraButton } from './run-view-actions.ts'
   import { createMapStackChooser } from './map/map-stack-chooser.ts'
   import { needsSingleTargetChoice, objectsUnder, stackPick } from './map/map-stack.ts'
   import { disksPickFor, hoverCardsFor, pickingRadiusFor } from './map/map-pointer.ts'
@@ -139,6 +141,9 @@
     readonly cameraInteraction: CameraInteraction
     /** How far open surface panels reach over the map: the camera centres and fits clear of them, and so do the map's own controls. */
     readonly cameraPadding?: MapCover
+    /** The camera group's buttons, in the map's lower-right control stack above the 3D switch (`camera-control.ts`). */
+    readonly cameraButtons: ReadonlyArray<RunCameraButton>
+    readonly onCameraAction: (id: RunCameraActionId) => void
     /**
      * Whether map taps pick targets for an order, so each must reach exactly
      * the object it lands on; the surface opts in while a panel takes map
@@ -216,6 +221,8 @@
     onPackFeatureSelected = () => {},
     cameraInteraction,
     cameraPadding = noMapCover,
+    cameraButtons,
+    onCameraAction,
     targetPicking = false,
     onGroundSelected,
     targetPreviewFor,
@@ -224,6 +231,8 @@
 
   let mapElement = $state<HTMLDivElement | null>(null)
   let runtime = $state<MapRuntimeHandle | null>(null)
+  let cameraControl = $state.raw<CameraControl | null>(null)
+  $effect(() => { cameraControl?.update(cameraButtons) })
   let mapInputDebugEntries = $state<ReadonlyArray<string>>([])
   let mapInputDebugSummary = $state('Waiting for map input')
   let cachedPackMapFeatures = $state<ReadonlyArray<PackMapFeature>>([])
@@ -746,6 +755,9 @@
         return
       }
       runtime = nextRuntime
+      // Removed with the map: runtime.destroy() takes every control with it.
+      cameraControl = createCameraControl({ initial: cameraButtons, onAction: id => onCameraAction(id) })
+      nextRuntime.map.addControl(cameraControl, 'bottom-right')
       // Icons that would overlap fan out anew at each zoom step (point-declutter.ts).
       nextRuntime.map.on('zoom', () => operationalRenderController.syncZoom())
       const canvas = nextRuntime.map.getCanvas()
@@ -833,6 +845,7 @@
       referenceLayerController.reset()
       runtime?.destroy()
       runtime = null
+      cameraControl = null
       appliedTheme = null
       appliedCameraKey = null
       startingCamera = true
@@ -1039,6 +1052,35 @@
   .map :global(.maplibregl-ctrl-top-left),
   .map :global(.maplibregl-ctrl-bottom-left) {
     left: var(--map-cover-left);
+  }
+
+  /* The camera group is one row; MapLibre's control stack is white in both themes, so its ink matches the navigation icons. */
+  .map :global(.maplibregl-ctrl-group.camera-control) {
+    display: flex;
+  }
+
+  .map :global(.maplibregl-ctrl-group.camera-control button) {
+    display: grid;
+    place-items: center;
+    color: #333;
+  }
+
+  .map :global(.maplibregl-ctrl-group.camera-control button + button) {
+    border-top: 0;
+    border-left: 1px solid #ddd;
+  }
+
+  .map :global(.maplibregl-ctrl-group.camera-control button:first-child) {
+    border-radius: 4px 0 0 4px;
+  }
+
+  .map :global(.maplibregl-ctrl-group.camera-control button:last-child) {
+    border-radius: 0 4px 4px 0;
+  }
+
+  .map :global(.maplibregl-ctrl-group.camera-control button[aria-disabled="true"]) {
+    color: #aaa;
+    cursor: not-allowed;
   }
 
   /* A panel's prompt: the × first, a rule, then the options (map-prompt.ts). */

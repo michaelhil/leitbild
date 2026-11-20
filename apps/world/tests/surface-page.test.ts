@@ -134,6 +134,8 @@ describe('the Run page as a screen\'s surface', () => {
     expect(markup.match(/class="presentation-panel-host"/g)).toHaveLength(1)
     // What stays is drawn for every page: the map with its own controls, the status line with the clock, and the role bar.
     expect(markup).not.toMatch(/\{#if [^}]*(surfaceMode|mapSurface)[^}]*\}\s*<(OperationalMap|WorldStatusLine|RoleBar)\b/)
+    // The camera group belongs to the map, so the map surface has Home and Fit too.
+    expect(markup).toMatch(/<OperationalMap\b[\s\S]*?\{cameraButtons\}\s*onCameraAction=\{actOnCamera\}/)
     expect(markup).toMatch(/<WorldStatusLine \{clock\}/)
     expect(markup).toMatch(/\{#if runRoles && heldRoleIds\}\s*<RoleBar\b/)
   })

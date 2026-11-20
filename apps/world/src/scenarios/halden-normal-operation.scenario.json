@@ -405,7 +405,7 @@
       {
         "id": "unit",
         "title": "Find a unit",
-        "instruction": "Locate Halden Unit 1. View changes local presentation; the execution controls change shared time. Use Guide to resume after closing a card.",
+        "instruction": "Locate Halden Unit 1. The Home and Fit buttons on the map and the layer and panel switches in the left sidebar (in a narrow window, press Menu first) change only what this screen shows; the execution controls change shared time. Use Guide to resume after closing a card.",
         "effects": [
           {
             "id": "location",
