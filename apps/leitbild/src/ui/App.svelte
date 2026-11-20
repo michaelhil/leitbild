@@ -39,7 +39,8 @@
   import { roomScopeIncludingRun, roomSelectsRun, roomServesRun, roomUsesFamily, runDeclaresRoles, runFamilyFor, sameResource } from './run-room-scope.ts'
   import { addressedRunAndPlanning, keptSelection, planningDemoQuery, planningFrameQuery } from './open-selection.ts'
   import { openSubjectTitle, withUnreadCount, workspacePageTitle } from './page-title.ts'
-  import { runViewAddress, runViewOf, type RunView } from './run-view.ts'
+  import { RUN_VIEW_SWITCH_NARROW, runViewAddress, runViewMenuLabel, runViewOf, type RunView } from './run-view.ts'
+  import RunViewSwitch from './RunViewSwitch.svelte'
   import { ageText, moduleReadiness, moduleTitle, workspaceLabel } from './launch-workspace.ts'
   import { WORKSPACE_SCREEN_PARAMETER, workspacePath, workspaceUrl } from './launch-destination.ts'
   import { createPeopleSession, type PeopleSession, type PeopleState } from './people-session.ts'
@@ -735,6 +736,14 @@
     selectedPlanningId = view === 'plans' ? 'library' : null
     history.pushState(null, '', runViewAddress(location.href, view))
   }
+  // At phone width the Run's More menu offers the other view, in place of the switch.
+  let runBarNarrow = $state(typeof matchMedia === 'function' && matchMedia(RUN_VIEW_SWITCH_NARROW).matches)
+  $effect(() => {
+    const query = matchMedia(RUN_VIEW_SWITCH_NARROW)
+    const update = (): void => { runBarNarrow = query.matches }
+    query.addEventListener('change', update)
+    return () => query.removeEventListener('change', update)
+  })
 
   // The process display window opens a chat display's Run beside the chat only
   // when this Workspace lists it, reading the catalog again on a miss (an agent
@@ -955,7 +964,9 @@
         runUrl={peopleRunUrl} runId={selectedWorldResource.ref.id} onOpenChat={openPeopleChat} />{/if}
       {#if fromGuide}<a class="guide-back" href={guideHref('ask')}>← Getting started</a>{/if}</div>
     <div class="workspace-actions">
-      {#if planningAvailable}<a href={workspaceUrl(workspace.id, { planning: 'library' })}>Planning</a>{/if}
+      <!-- A Run reaches its plans from its own bar; the Workspace's Planning link stays in the other views (decision D4). -->
+      {#if planningAvailable && selectedWorldRunId === null}<a href={workspaceUrl(workspace.id, { planning: 'library' })}>Planning</a>{/if}
+      {#if planningAvailable && selectedWorldRunId !== null}<RunViewSwitch shown={runView} onswitch={showRunView} />{/if}
       {#if selectedPlanningResource}<span class="planning-title">{selectedPlanningResource.title}</span>{/if}
       {#if selectedWorldResource}
         <SimulationRunControls
@@ -968,7 +979,11 @@
           refreshResources={() => refreshResources(workspace!.id)}
           reportError={message => { error = message }}
           retractError={message => { error = bannerAfterRetract(error, message) }}
-          moreItems={[{ label: 'Screens…', onselect: () => openScreensPanel(null) }]}
+          moreItems={[
+            ...(planningAvailable && runBarNarrow
+              ? [{ label: runViewMenuLabel(runView), onselect: () => showRunView(runView === 'plans' ? 'simulation' : 'plans') }] : []),
+            { label: 'Screens…', onselect: () => openScreensPanel(null) },
+          ]}
         />
         {#if showOnScreensOffered}<button class="screens-chip" type="button" title="Show this Run on every screen of this browser's screen setup" onclick={showRunOnScreens}><Icon name="screen" size={15} />Show on screens</button>{/if}
         {#if agentsVisible && selectedRunFamily && !runDeclaresRoles(selectedWorldResource)}
