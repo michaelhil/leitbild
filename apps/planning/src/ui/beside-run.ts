@@ -38,8 +38,23 @@ export const startsHere = (definition: ModuleDefinitionDescriptor): boolean => d
 /** What Planning can read in this Run, from World's planning index: items by kind, or why it cannot read it. */
 export type RunOffer =
   | { readonly state: 'reading' }
-  | { readonly state: 'read'; readonly kinds: ReadonlyArray<{ readonly kind: string; readonly count: number }> }
+  /** `simulationAt`: the latest simulation time a read value describes, or null when the Run gave none. */
+  | { readonly state: 'read'; readonly kinds: ReadonlyArray<{ readonly kind: string; readonly count: number }>; readonly simulationAt: string | null }
   | { readonly state: 'not-read'; readonly text: string }
+
+/** Whether the Run declares roles, as its catalogue summary says. World reads planning values only from Runs without them. */
+export const declaresRoles = (run: ModuleResourceDescriptor): boolean => run.summary.some(item => item.key === 'roles')
+/** Said before any read: picking a role would not change it. */
+export const rolesOffer: RunOffer = { state: 'not-read', text: 'Planning does not read simulations with roles' }
+
+/**
+ * A new plan's window beside a Run: five days from the hour of the Run's simulation time, the hour rule of
+ * "Align the window to the simulation" (edit-forms.ts alignWindowEdit), so plan and World speak of the same days.
+ */
+export const windowBesideRun = (simulationAt: string): { readonly start: string; readonly end: string } => {
+  const hour = Math.floor(Date.parse(simulationAt) / 3_600_000) * 3_600_000
+  return { start: new Date(hour).toISOString(), end: new Date(hour + 5 * 86_400_000).toISOString() }
+}
 
 const ownFigures = 'A plan can still use the planner\'s own figures.'
 const sentence = (text: string): string => text.trim().replace(/\.?$/, '.')
@@ -103,16 +118,24 @@ export const createLibraryActions = (client: PlanningClient, progress: Progress 
     runOffer: async (run: string): Promise<RunOffer> => {
       try {
         const kinds = new Map<string, string>()
+        let latest: number | null = null
         let cursor: string | undefined
         for (let pages = 0; pages < indexPages; pages += 1) {
           const page = await client.facts(run, { limit: 20, ...(cursor === undefined ? {} : { cursor }) })
           // An item may continue on the next page under the same locator: it is counted once.
-          for (const item of page.items) kinds.set(item.locator, item.kind)
+          for (const item of page.items) {
+            kinds.set(item.locator, item.kind)
+            for (const fact of item.facts) latest = Math.max(latest ?? Date.parse(fact.at), Date.parse(fact.at))
+          }
           cursor = page.more
           if (cursor === undefined) {
             const counts = new Map<string, number>()
             for (const kind of kinds.values()) counts.set(kind, (counts.get(kind) ?? 0) + 1)
-            return { state: 'read', kinds: [...counts].map(([kind, count]) => ({ kind, count })).sort((a, b) => b.count - a.count || a.kind.localeCompare(b.kind)) }
+            return {
+              state: 'read',
+              kinds: [...counts].map(([kind, count]) => ({ kind, count })).sort((a, b) => b.count - a.count || a.kind.localeCompare(b.kind)),
+              simulationAt: latest === null ? null : new Date(latest).toISOString(),
+            }
           }
         }
         return { state: 'not-read', text: 'World kept answering with more items, so they were not all counted' }

@@ -2,7 +2,7 @@
   import { onMount } from 'svelte'
   import type { ModuleDefinitionDescriptor, ModuleResourceDescriptor } from '@leitbild/contracts'
   import { PLAN, refusalText, type PlanningClient } from './api.ts'
-  import { blankDefinitionId, createLibraryActions, definitionsForRun, plansBesideRun, runOfferText, runResourceOf, startsHere, type RunOffer } from './beside-run.ts'
+  import { blankDefinitionId, createLibraryActions, declaresRoles, definitionsForRun, plansBesideRun, rolesOffer, runOfferText, runResourceOf, startsHere, windowBesideRun, type RunOffer } from './beside-run.ts'
   import { localInputValue, planEdits, type PlanForm } from './edit-forms.ts'
   import { changedText } from './format.ts'
   import NewPlanForm from './NewPlanForm.svelte'
@@ -42,12 +42,16 @@
   const demos = $derived(shown.filter(definition => definition.ref.id !== blankDefinitionId))
   const worldDemoHref = (definition: ModuleDefinitionDescriptor): string => `/workspaces?${new URLSearchParams({ demos: `world:${definition.ref.id}` })}`
   const zone = Intl.DateTimeFormat().resolvedOptions().timeZone
+  // Beside a Run whose values carry a simulation time, a new plan's window starts there; otherwise tomorrow at 07:00.
+  const runWindow = $derived(offer.state === 'read' && offer.simulationAt !== null ? windowBesideRun(offer.simulationAt) : null)
   const startDefault = (): string => {
+    if (runWindow !== null) return localInputValue(runWindow.start, zone)
     const tomorrow = new Date(Date.now() + 86_400_000)
     tomorrow.setHours(7, 0, 0, 0)
     return localInputValue(tomorrow.toISOString(), zone)
   }
   const endDefault = (): string => {
+    if (runWindow !== null) return localInputValue(runWindow.end, zone)
     const later = new Date(Date.now() + 6 * 86_400_000)
     later.setHours(7, 0, 0, 0)
     return localInputValue(later.toISOString(), zone)
@@ -60,9 +64,11 @@
         resources = catalog.resources
         definitions = listing.definitions
       } catch (cause) { error = refusalText(cause) } finally { loading = false }
+      // What this Run offers is read once, after the catalogue: World reads no planning values from a Run with
+      // roles, whoever asks, so such a Run is not asked.
+      const described = run === null ? null : runResourceOf(resources, run)
+      if (run !== null && described !== null) offer = declaresRoles(described) ? rolesOffer : await actions.runOffer(run)
     })()
-    // What this Run offers is read once, beside the catalogue reads.
-    if (run !== null) void actions.runOffer(run).then(read => { offer = read })
   })
 
   const attempt = (work: () => Promise<string>) => {

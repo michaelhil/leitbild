@@ -13,7 +13,7 @@ type Any = Component<Record<string, unknown>>
 const { default: Library } = await import('./Library.svelte') as { default: Any }
 
 const offline = createPlanningClient(workspace, async () => { throw new Error('No Host in a render test') })
-const read: RunOffer = { state: 'read', kinds: [{ kind: 'pump', count: 4 }] }
+const read: RunOffer = { state: 'read', kinds: [{ kind: 'pump', count: 4 }], simulationAt: null }
 const render = (resources: readonly ModuleResourceDescriptor[], offer: RunOffer = read, run: string | null = 'run-1'): string =>
   renderHtml(Library, { client: offline, onOpen: () => {}, run, initialDefinitions: published, initialResources: resources, initialOffer: offer })
 const words = (html: string): string => readableText(html).replace(/\s+/g, ' ').trim()
@@ -63,7 +63,7 @@ describe('the Library beside a Run', () => {
   })
 
   test('a Run of another Scenario offers the blank plan only, and says what Planning can read, or why not', () => {
-    const grid = render([runResource('run-1', 'Nordic grid', 'nordic-grid')], { state: 'read', kinds: [] })
+    const grid = render([runResource('run-1', 'Nordic grid', 'nordic-grid')], { state: 'read', kinds: [], simulationAt: null })
     expect(buttons(grid)).toEqual(['New plan'])
     expect(readableText(grid)).toContain('This simulation has nothing Planning can read. A plan can still use the planner\'s own figures.')
     expect(readableText(grid)).toContain('No plan is linked to this Run yet.')

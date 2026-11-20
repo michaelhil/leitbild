@@ -4,7 +4,7 @@
 import { describe, expect, test } from 'bun:test'
 import { bundledPlanDefinitions, guidedPlanDefinitionIds } from '../definitions/index.ts'
 import { createPlanningClient } from './api.ts'
-import { createLibraryActions, definitionsForRun, linkedRunOf, plansBesideRun, runOfferText, runResourceOf } from './beside-run.ts'
+import { createLibraryActions, declaresRoles, definitionsForRun, linkedRunOf, plansBesideRun, rolesOffer, runOfferText, runResourceOf, windowBesideRun } from './beside-run.ts'
 import { planResource, published, runResource, workspace } from './fixtures/beside-run.ts'
 
 const planId = '0b4b9a52-2f7e-4c1a-9d3e-0000000000bb'
@@ -12,7 +12,7 @@ interface Call { readonly capability: string; readonly expectedRevision?: number
 type Refusal = { readonly status: number; readonly code: string; readonly message: string }
 
 /** Answers Planning's writes for one new plan (each saved write raises its revision) and World's planning index in pages. */
-const host = (options: { refuse?: Partial<Record<string, Refusal>>; pages?: ReadonlyArray<ReadonlyArray<{ locator: string; kind: string }>> } = {}) => {
+const host = (options: { refuse?: Partial<Record<string, Refusal>>; pages?: ReadonlyArray<ReadonlyArray<{ locator: string; kind: string; at?: string }>> } = {}) => {
   let revision = 0
   const calls: Call[] = []
   const blank = bundledPlanDefinitions.find(definition => definition.id === 'blank')!
@@ -30,7 +30,8 @@ const host = (options: { refuse?: Partial<Record<string, Refusal>>; pages?: Read
       case 'world.simulation-run.planning-facts': {
         const pages = options.pages ?? [[]]
         const at = body.input.cursor === undefined ? 0 : Number(body.input.cursor)
-        const items = pages[at]!.map(item => ({ ...item, label: item.locator, facts: [] }))
+        const items = pages[at]!.map(({ at: factAt, ...item }) => ({ ...item, label: item.locator,
+          facts: factAt === undefined ? [] : [{ id: `${item.locator}/running`, label: 'Running', quantity: 'state', value: 'yes', basis: 'observed', at: factAt }] }))
         return Response.json({ result: { run: { workspaceId: workspace, moduleId: 'world', type: 'world.simulation-run', id: 'run-1' }, observedAt: '2026-11-20T09:00:00.000Z', items, ...(at + 1 < pages.length ? { more: String(at + 1) } : {}) } })
       }
       default:
@@ -90,8 +91,24 @@ describe('what this Run offers', () => {
     ] })
     const offer = await double.actions.runOffer('run-1')
     expect(double.calls.map(call => call.input)).toEqual([{ limit: 20 }, { limit: 20, cursor: '1' }])
-    expect(offer).toEqual({ state: 'read', kinds: [{ kind: 'pump', count: 2 }, { kind: 'heat-exchanger', count: 1 }] })
+    expect(offer).toEqual({ state: 'read', kinds: [{ kind: 'pump', count: 2 }, { kind: 'heat-exchanger', count: 1 }], simulationAt: null })
     expect(runOfferText(offer)).toBe('Planning can read 3 items in this simulation (pump: 2, heat exchanger: 1). A plan can also use the planner\'s own figures.')
+  })
+
+  test('the latest simulation time a read value describes starts a new plan\'s window, on the hour, five days long', async () => {
+    const offer = await host({ pages: [
+      [{ locator: 'process-plant/pump/a', kind: 'pump', at: '2026-07-12T04:05:02.000Z' }],
+      [{ locator: 'process-plant/pump/b', kind: 'pump', at: '2026-07-12T04:05:31.500Z' }],
+    ] }).actions.runOffer('run-1')
+    expect(offer).toEqual({ state: 'read', kinds: [{ kind: 'pump', count: 2 }], simulationAt: '2026-07-12T04:05:31.500Z' })
+    expect(windowBesideRun('2026-07-12T04:05:31.500Z')).toEqual({ start: '2026-07-12T04:00:00.000Z', end: '2026-07-17T04:00:00.000Z' })
+  })
+
+  test('a Run with roles is not asked: picking a role would not change the answer', () => {
+    const plain = runResource('run-1', 'Halden border', 'halden-border')
+    expect(declaresRoles(plain)).toBe(false)
+    expect(declaresRoles({ ...plain, summary: [...plain.summary, { key: 'roles', label: 'Roles', kind: 'count' as const, value: 2 }] })).toBe(true)
+    expect(runOfferText(rolesOffer)).toBe('Planning does not read simulations with roles. A plan can still use the planner\'s own figures.')
   })
 
   test('a simulation with nothing Planning can read says so', async () => {
