@@ -219,17 +219,9 @@
     />
   {/each}
 
-  <RailLayerGroupSection
-    groups={mapLayerGroups}
-    legends={mapLegends}
-    visibility={mapLayerGroupVisibility}
-    onToggle={onMapLayerGroupToggle}
-    weatherVisible={weatherLayerVisible}
-    onWeatherToggle={onWeatherLayerToggle}
-  />
-
   {#if surfacePanels.length > 0 || layoutControlsOpen !== undefined}
-    <!-- The one home of the panel toggles: each Pack panel and, in a Run with physical layouts, the layout toolbar. -->
+    <!-- The one home of the panel toggles: each Pack panel and, in a Run with physical layouts, the layout toolbar.
+         It comes before the map layers, whose legends can be long, so the toggles stay within reach. -->
     <section class="pack-tools">
       <h2>Tools</h2>
       {#if layoutControlsOpen !== undefined}
@@ -246,6 +238,15 @@
       {/each}
     </section>
   {/if}
+
+  <RailLayerGroupSection
+    groups={mapLayerGroups}
+    legends={mapLegends}
+    visibility={mapLayerGroupVisibility}
+    onToggle={onMapLayerGroupToggle}
+    weatherVisible={weatherLayerVisible}
+    onWeatherToggle={onWeatherLayerToggle}
+  />
 
   {#if footerVisible}
     <SystemFooter
