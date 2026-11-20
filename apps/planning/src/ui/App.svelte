@@ -1,7 +1,7 @@
 <script lang="ts">
   import { resourceCatalogChangedMessageSchema } from '@leitbild/contracts'
   import { deliveryDemoDefinitionId } from '../definitions/delivery-demo.ts'
-  import { createHostAddresses, readPlanningQuery } from './address.ts'
+  import { createGo, createHostAddresses, readPlanningQuery } from './address.ts'
   import { createPlanningClient } from './api.ts'
   import DeliveryDemo from './DeliveryDemo.svelte'
   import MaintenanceDemo from './MaintenanceDemo.svelte'
@@ -33,7 +33,11 @@
       resource: client.planRef(id),
     }), location.origin)
   }
-  const go = (href: string): void => { host.location.assign(href) }
+  const go = createGo(besideRun, {
+    framed: window.parent !== window,
+    post: message => { window.parent.postMessage(message, location.origin) },
+    assign: href => { host.location.assign(href) },
+  })
 </script>
 
 {#if embeddedSchedule}

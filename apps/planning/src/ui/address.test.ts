@@ -1,7 +1,8 @@
 // Planning's frame address and the Host addresses it builds: `run` without `demo` is the Run Planning is
 // shown beside, and every address built beside it keeps it as `world` (lanes.md, Plans in the Run).
 import { describe, expect, test } from 'bun:test'
-import { createHostAddresses, readPlanningQuery } from './address.ts'
+import type { WorkspaceOpenMessage } from '@leitbild/contracts'
+import { createGo, createHostAddresses, readPlanningQuery } from './address.ts'
 
 const workspace = '0b4b9a52-2f7e-4c1a-9d3e-00000000000a'
 
@@ -45,6 +46,27 @@ describe('Host addresses', () => {
   test('a plan linked to another Run opens beside that Run', () => {
     const beside = createHostAddresses(workspace, { agents: null, besideRun: 'run-1' })
     expect(beside.planBeside('plan-7', 'run-9')).toBe(`/workspaces/${workspace}?world=run-9&planning=plan-7`)
+  })
+
+  test('beside a Run in the Host\'s frame Planning asks the Host to show the address in place, never loads it', () => {
+    const posted: WorkspaceOpenMessage[] = [], assigned: string[] = []
+    const ports = { post: (message: WorkspaceOpenMessage) => { posted.push(message) }, assign: (address: string) => { assigned.push(address) } }
+    const address = createHostAddresses(workspace, { agents: null, besideRun: 'run-1' }).workspace('plan-7')
+    createGo('run-1', { ...ports, framed: true })(address)
+    expect(posted).toEqual([{ type: 'leitbild:workspace-open', address: `/workspaces/${workspace}?world=run-1&planning=plan-7` }])
+    expect(assigned).toEqual([])
+    // Only a Workspace address is asked for.
+    expect(() => createGo('run-1', { ...ports, framed: true })('https://example.org/elsewhere')).toThrow()
+    expect(posted).toHaveLength(1)
+  })
+
+  test('beside no Run, or outside a Host frame, the address is loaded as before', () => {
+    const posted: WorkspaceOpenMessage[] = [], assigned: string[] = []
+    const ports = { post: (message: WorkspaceOpenMessage) => { posted.push(message) }, assign: (address: string) => { assigned.push(address) } }
+    createGo(null, { ...ports, framed: true })(`/workspaces/${workspace}?planning=library`)
+    createGo('run-1', { ...ports, framed: false })(`/workspaces/${workspace}?world=run-1&planning=library`)
+    expect(posted).toEqual([])
+    expect(assigned).toEqual([`/workspaces/${workspace}?planning=library`, `/workspaces/${workspace}?world=run-1&planning=library`])
   })
 
   test('beside no Run the addresses are as before', () => {

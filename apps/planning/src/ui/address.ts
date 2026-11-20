@@ -1,6 +1,6 @@
 // Planning's place in the Workspace page. The Host gives Planning its frame address; every address Planning
 // builds for the Host's page keeps the Run Planning is shown beside, so no link leaves that Run.
-import { resourceIdSchema } from '@leitbild/contracts'
+import { resourceIdSchema, workspaceOpenMessageSchema, type WorkspaceOpenMessage } from '@leitbild/contracts'
 
 export interface PlanningQuery {
   readonly plan: string | null
@@ -58,3 +58,19 @@ export const createHostAddresses = (workspaceId: string, query: Pick<PlanningQue
   }
 }
 export type HostAddresses = ReturnType<typeof createHostAddresses>
+
+/**
+ * How Planning moves the Host's page to an address. Beside a Run, inside the Host's frame, it asks the Host to
+ * show the address in place, so the Run's simulation kept behind the plans is not loaded again; the Host
+ * accepts the message only from the frame it shows and only for its own Workspace. Beside no Run, and on the
+ * guided demo pages, the Host page loads the address, as before.
+ */
+export const createGo = (besideRun: string | null, ports: {
+  /** Planning is shown in a Host frame, not as a page of its own. */
+  readonly framed: boolean
+  readonly post: (message: WorkspaceOpenMessage) => void
+  readonly assign: (address: string) => void
+}) => (address: string): void => {
+  if (besideRun !== null && ports.framed) ports.post(workspaceOpenMessageSchema.parse({ type: 'leitbild:workspace-open', address }))
+  else ports.assign(address)
+}
