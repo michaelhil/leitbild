@@ -65,6 +65,24 @@ export type MapClickRoute =
 
 const none: MapClickRoute = { kind: 'none' }
 
+/**
+ * The clicks of a map shown alone (a screen's map surface, `surface-route.ts`).
+ * Nothing there shows an order or cancels one: no rail, no panel. So no unit
+ * is ever chosen, no Pack targeting applies and no panel takes a click. Every
+ * routing function here then answers that a click orders nothing and selects
+ * nothing: it opens the object's display where its Pack opens one, and
+ * otherwise does nothing.
+ */
+export const mapAloneClicks = (click: Pick<MapClickContext, 'context' | 'opensDisplay'>): MapClickContext => ({
+  controller: null,
+  selectedObjectId: null,
+  targeting: undefined,
+  context: click.context,
+  panel: null,
+  closedMapTargetPanels: [],
+  opensDisplay: click.opensDisplay,
+})
+
 /** The open map-target panel when it takes this controller's orders: only its own Pack's controllers. */
 const panelFor = (panel: MapTargetPanel | null, controller: OperationalObject): MapTargetPanel | null =>
   panel !== null && controller.packId === panel.packId ? panel : null

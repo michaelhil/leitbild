@@ -6,7 +6,7 @@ import { defaultDroneVehicleModels, requireDroneVehicleModel } from '../src/pack
 import { navigateDroneCommandKind } from '../src/packs/drone/commands.ts'
 import { createScenarioDroneObject } from '../src/packs/drone/native/object-state.ts'
 import { dronePackView } from '../src/packs/drone/ui-pack.ts'
-import { groundClicksWanted, previewObjectTarget, routeGroundClick, routeObjectClick, targetPickingWanted, targetPreviewsWanted, type ClosedMapTargetPanel, type MapClickContext, type MapClickRoute, type MapTargetPanel } from '../src/ui/map-target-routing.ts'
+import { groundClicksWanted, mapAloneClicks, previewObjectTarget, routeGroundClick, routeObjectClick, targetPickingWanted, targetPreviewsWanted, type ClosedMapTargetPanel, type MapClickContext, type MapClickRoute, type MapTargetPanel } from '../src/ui/map-target-routing.ts'
 
 const at = '2026-10-12T08:00:00.000Z' as IsoTimestamp
 const ground = geoPointFromLonLat(11.38, 59.12)
@@ -256,6 +256,59 @@ describe('a click that orders nothing opens the object\'s display', () => {
     expect(routeObjectClick(other, clickContext(sendTargeting, { opensDisplay }))).toEqual({ kind: 'none' })
     expect(routeObjectClick(site, clickContext(sendTargeting, { opensDisplay: () => true })).kind).toBe('send')
     expect(routeObjectClick(other, clickContext(sendTargeting, { controller: null, panel: boardPanel, opensDisplay }))).toEqual({ kind: 'select', objectId: other.id, note: null })
+  })
+})
+
+describe('a map shown alone, with no rail or panel to show an order or cancel it', () => {
+  const opensDisplay = (object: OperationalObject): boolean => roleOf(object) === 'other'
+  const pointing: PackTargetingContribution = {
+    ...sendTargeting,
+    describeTarget: () => ({ text: 'To the site', refused: false }),
+    pointTargets: { isTarget: () => true, buildSetTargetCommand: controller => ({ kind: 'fixture.move', targetObjectIds: [controller.id], payload: {} }) },
+  }
+  const closed: ClosedMapTargetPanel = { panelId: 'fixture.dispatch', packId: 'fixture' }
+  const panel: MapTargetPanel = { label: 'Dispatch', packId: 'fixture', onMapTarget: () => undefined, previewMapTarget: () => ({ text: 'To the site', refused: false }) }
+  // Whatever the Run page's clicks would be: a unit chosen, a Pack that takes objects and points, a panel open or closed.
+  const pages = [
+    clickContext(sendTargeting, { opensDisplay }),
+    clickContext(pointing, { opensDisplay }),
+    clickContext(pointing, { opensDisplay, panel }),
+    clickContext(pointing, { controller: null, opensDisplay, closedMapTargetPanels: [closed] }),
+  ]
+
+  test('a click never selects an object and never sends an order: it opens the object\'s display where its Pack opens one, and otherwise does nothing', () => {
+    for (const page of pages) {
+      const click = mapAloneClicks(page)
+      expect(routeObjectClick(other, click)).toEqual({ kind: 'display', objectId: other.id })
+      for (const object of [unit, otherUnit, site]) expect(routeObjectClick(object, click)).toEqual({ kind: 'none' })
+      expect(routeGroundClick(ground, click)).toEqual({ kind: 'none' })
+      // A second click on the same objects changes nothing: there is no state to arm.
+      for (const object of [unit, site]) expect(routeObjectClick(object, click)).toEqual({ kind: 'none' })
+    }
+  })
+
+  test('nothing of an order is asked of the map: no ground clicks, no target picking, no order preview on hover, no controller to prefer in a stack', () => {
+    for (const page of pages) {
+      const click = mapAloneClicks(page)
+      expect([groundClicksWanted(click), targetPickingWanted(click), targetPreviewsWanted(click)]).toEqual([false, false, false])
+      for (const object of objects) expect(previewObjectTarget(object, click)).toBeNull()
+      expect(click.targeting).toBeUndefined()
+      expect([click.controller, click.selectedObjectId, click.panel, click.closedMapTargetPanels]).toEqual([null, null, null, []])
+      // The screen's role view and the Pack's display rule are the page's own.
+      expect(click.context).toBe(page.context)
+      expect(click.opensDisplay).toBe(page.opensDisplay)
+    }
+  })
+
+  test('a drone is neither selected nor sent', () => {
+    const drone = createScenarioDroneObject({ id: 'drone:a' as ObjectId, label: 'Drone A', model: requireDroneVehicleModel('native-survey-quad', defaultDroneVehicleModels), point: geoPointFromLonLat(10.75, 59.91), altitudeM: 40, headingDeg: 0, at })
+    const target = objectOf('t1', 'fixture', 'other')
+    const views = createActivePackViews([dronePackView, viewOf('fixture')])
+    const page: MapClickContext = { controller: drone, selectedObjectId: drone.id, targeting: views.targeting, context: { objects: [drone, target] }, panel: null, closedMapTargetPanels: [], opensDisplay: () => false }
+    expect(routeObjectClick(target, page).kind).toBe('send')
+    const click = mapAloneClicks(page)
+    expect(routeObjectClick(drone, click)).toEqual({ kind: 'none' })
+    expect(routeObjectClick(target, click)).toEqual({ kind: 'none' })
   })
 })
 

@@ -65,7 +65,7 @@
   import { completeControlSurfaceStartupFromSnapshot } from '../app/control-surface-session.ts'
   import { startupScenarioSource } from '../app/startup-scenario.ts'
   import { loadActivePackViews } from '../pack-loader.ts'
-  import { groundClicksWanted, previewObjectTarget, routeGroundClick, routeObjectClick, targetPickingWanted, targetPreviewsWanted, type ClosedMapTargetPanel, type MapClickContext, type MapClickRoute, type MapTargetPanel } from '../map-target-routing.ts'
+  import { groundClicksWanted, mapAloneClicks, previewObjectTarget, routeGroundClick, routeObjectClick, targetPickingWanted, targetPreviewsWanted, type ClosedMapTargetPanel, type MapClickContext, type MapClickRoute, type MapTargetPanel } from '../map-target-routing.ts'
   import { assertMapCover, assertMapPrompt, assertMapTargeting, assertPanelInteraction, cameraPaddingFor, mapCameraInteractionFor, openPanelDeclaring, railStartsCollapsed, startingControllerId, surfacePanelIsOpen, surfacePanelPackId, type MapPrompt, type MapTargeting, type SurfacePanelInteraction, type SurfacePanelProps } from '../surface-panel-interaction.ts'
   import type { MapCover } from '../surface-panel-contract.ts'
   import PanelKeyRouter from '../keys/PanelKeyRouter.svelte'
@@ -273,6 +273,9 @@
   // and placing on another screen.
   const surfaceRoute = readSurfaceRoute(location.search)
   const surfaceMode = surfaceRoute.kind !== 'run'
+  // The map surface is the Run's map alone. It leaves out the rail and the Pack panels too, waits for the map at
+  // startup, and its clicks order and select nothing (`mapAloneClicks`).
+  const mapSurface = surfaceRoute.kind === 'surface' && surfaceRoute.surface.kind === 'map'
   const routeFocus = surfaceMode ? null : objectIdSchema.safeParse(new URLSearchParams(location.search).get('focus')).data ?? null
   const routeElement = idSchema.safeParse(new URLSearchParams(location.search).get('element')).data ?? null
   let focusedMapObjectId = $state<ObjectId | null>(null)
@@ -361,12 +364,12 @@
   const mapVisible = $derived(mapConfig !== null)
   /** A press on an object's map icon or rail row that orders nothing opens its display where its Pack asks so (`map-target-routing.ts`). */
   const opensDisplay = (object: OperationalObject): boolean => activePack?.packForObject(object).ui?.displayOnPress === true
-  const railVisible = $derived(railConfig !== null)
+  const railVisible = $derived(railConfig !== null && !mapSurface)
   const footerVisible = true
   // The briefing card's bottom edge, as it last measured itself: the alarm strip starts below it while it shows.
   let guidanceBottom = $state(0)
   let categoryMapVisibility = $state<Record<string, boolean>>({})
-  const surfacePanels = $derived(activePack?.surfacePanels ?? [])
+  const surfacePanels = $derived(mapSurface ? [] : activePack?.surfacePanels ?? [])
   const surfacePanelLaunchers = $derived(surfacePanels.map(panel => ({ id: panel.id, label: panel.label, open: surfacePanelIsOpen(panel, surfacePanelOpen) })))
   // Handlers the mounted panels lend the surface; only panels whose contribution declares a hook connect one.
   let panelInteractions = $state.raw<Readonly<Record<string, SurfacePanelInteraction>>>({})
@@ -410,7 +413,12 @@
     return mutedOnMap ? objects.filter(object => mutedOnMap(object, targetContext)).map(object => object.id) : emptyStringArray
   })
   const mapCameraInteraction = $derived(mapCameraInteractionFor(activePack?.packs ?? []))
-  const mapClickContext = $derived<MapClickContext>({ controller: selectedControllerObject, selectedObjectId: selectedControllerId, targeting: activePack?.targeting, context: targetContext, panel: mapTargetPanel, closedMapTargetPanels, opensDisplay })
+  const mapClickContext = $derived<MapClickContext>(mapSurface
+    ? mapAloneClicks({ context: targetContext, opensDisplay })
+    : { controller: selectedControllerObject, selectedObjectId: selectedControllerId, targeting: activePack?.targeting, context: targetContext, panel: mapTargetPanel, closedMapTargetPanels, opensDisplay })
+  // The controller a screen starts with selected, at join and after a role switch; the map alone starts with none.
+  const startingSelection = (list: ReadonlyArray<OperationalObject>, context: PackTargetContext): ObjectId | null =>
+    mapSurface || !activePack ? null : startingControllerId(list, activePack, context, isSurfacePanelOpen)
   const physicalOperationalCapture = $derived(physicalExplorerOperationalCapture({ placement: placementMode !== null, targetPicking: targetPickingWanted(mapClickContext), controllerSelected: selectedControllerId !== null }))
   const mapStartupFailed = $derived(startupSteps.find(step => step.id === 'map')?.status === 'failed')
   const displayRunJoin = $derived.by<DeckRunJoin>(() => {
@@ -450,10 +458,11 @@
   const systemStatusTone = $derived<StatusTone>(
     startupHasFailed(startupSteps) ? 'error' : startupIsReady(startupSteps) ? 'ready' : 'working',
   )
-  // A surface needs nothing from the base map: its startup neither waits for the map nor fails with it. The map
-  // still starts underneath and reports where it always does.
-  const startupAwaitsMap = $derived(mapVisible && !surfaceMode)
-  const awaitedStartupSteps = $derived(startupStepsAwaited(startupSteps, { map: !surfaceMode }))
+  // A surface that fills the pane with a window needs nothing from the base map: its startup neither waits for the
+  // map nor fails with it. The map still starts underneath and reports where it always does. The map surface shows
+  // the map, so it waits for it as the Run page does.
+  const startupAwaitsMap = $derived(mapVisible && (!surfaceMode || mapSurface))
+  const awaitedStartupSteps = $derived(startupStepsAwaited(startupSteps, { map: !surfaceMode || mapSurface }))
   const startupModalVisible = $derived(rolePicker === null && (startupModalShouldShow({
     routeMode,
     dismissed: startupDismissed,
@@ -1438,7 +1447,7 @@
     : presentSurface(surfaceRoute, objectId => {
         const object = objectById.get(objectId)
         return object === undefined ? null : { label: object.label, hasOverview: observedAssetObjects.some(asset => asset.id === object.id), runsProcedures: procedureScopeForObject(object) !== null }
-      }))
+      }, mapVisible))
   const surfaceRefusal = $derived(surfacePresentation?.kind === 'refused' ? surfacePresentation.reason : null)
   const surfaceOpens = $derived(surfacePresentation !== null && surfacePresentation.kind !== 'refused')
   let surfaceProcedureWindowId = $state<string | null>(null)
@@ -1447,7 +1456,8 @@
     if (!surfaceOpens) return
     untrack(() => {
       const presentation = surfacePresentation
-      if (presentation === null || presentation.kind === 'refused') return
+      // The map surface opens no window: the map is already there.
+      if (presentation === null || presentation.kind === 'refused' || presentation.kind === 'map') return
       if (presentation.kind === 'display') {
         requestDisplayWindow(presentation.target, false)
         return
@@ -1881,7 +1891,7 @@
     const perspectiveContext: PackTargetContext = declaration !== null
       ? { objects: perspective.snapshot.objects, viewer: viewerForRoleSet(declaration, perspective.roleIds) }
       : { objects: perspective.snapshot.objects }
-    const startingId = activePack ? startingControllerId(perspective.snapshot.objects, activePack, perspectiveContext, isSurfacePanelOpen) : null
+    const startingId = startingSelection(perspective.snapshot.objects, perspectiveContext)
     const stores = storesForPerspective(
       perspective,
       { epoch: perspectiveEpoch, roleIds: heldRoleIds, feedback: commandFeedback },
@@ -2031,7 +2041,6 @@
     if (packScenario.id !== scenarioId || !activePack) throw new Error(`scenario packs failed to load for ${scenarioId}`)
     await completeControlSurfaceStartupFromSnapshot({
       response,
-      pack: activePack,
       startStep,
       completeStep,
       setActiveStartupStep: config.setActiveStartupStep,
@@ -2053,8 +2062,7 @@
       setSelectedControllerId: id => {
         selectedControllerId = id
       },
-      targetContext: targetContextFor,
-      isSurfacePanelOpen,
+      startingControllerId: list => startingSelection(list, targetContextFor(list)),
       setSeenRevisions: nextSeen => {
         seenRevisions = nextSeen
       },
@@ -2346,7 +2354,7 @@
     style={`--rail-width: ${railVisible ? railLayout.width : 0}px`}
     style:--drawer-width={`${railLayout.panelWidth}px`}
   >
-    {#if railConfig}
+    {#if railVisible && railConfig}
       {#if railLayout.drawer}
         {#if !railLayout.collapsed}<button class="rail-drawer-shade" type="button" aria-label="Close objects drawer" onclick={railLayout.collapse}></button>{/if}
         <button class="rail-drawer-toggle" type="button" aria-expanded={!railLayout.collapsed} onclick={railLayout.toggleDrawer}>{railLayout.collapsed ? 'Objects' : 'Close objects'}</button>
@@ -2403,7 +2411,7 @@
           {objects}
           {selectedControllerId}
           controllerHighlighted={selectedControllerObject !== null}
-          isController={object => activePack?.targeting?.isController(object, targetContext) === true}
+          isController={object => mapClickContext.targeting?.isController(object, targetContext) === true}
           {placementMode}
           {placementCursor}
           {placementPoints}
@@ -2564,7 +2572,7 @@
     focusMap={focusMapTarget}
     close={closeDisplayWindow}
     planningDemoHref={routeFocus === null ? null : planningDemoHref}
-    asSurface={surfaceRoute.kind === 'surface' && surfaceRoute.surface.kind !== 'procedures'}
+    asSurface={surfaceRoute.kind === 'surface' && (surfaceRoute.surface.kind === 'display' || surfaceRoute.surface.kind === 'dashboard')}
     placeOnScreen={surfaceMode ? null : placeOnScreen}
   />
 {/if}
