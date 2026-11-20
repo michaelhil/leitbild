@@ -18,7 +18,7 @@
   const workspaceId = decodeURIComponent(match[1])
   const embeddedSchedule = location.pathname.endsWith('/embed/planning.schedule')
   const query = readPlanningQuery(location.search)
-  const { plan: planId, demo, demoRun } = query
+  const { plan: planId, demo, demoRun, besideRun } = query
   const client = createPlanningClient(workspaceId)
   const host = window.parent === window ? window : window.parent
   const workspacePath = `/workspaces/${encodeURIComponent(workspaceId)}`
@@ -51,7 +51,7 @@
 {:else if query.unreadableRun}
   <p class="loading" role="alert">This address names a Run Planning cannot open. Open the Run again from the Workspace page. <a href={workspaceHref()} target="_top">Open Workspace</a></p>
 {:else if planId === null}
-  <Library {client} onOpen={(plan) => go(workspaceHref(plan))} />
+  <Library {client} run={besideRun} onOpen={(plan) => go(workspaceHref(plan))} />
 {:else}
   <PlanScreen {client} {planId} onChanged={changed} onOpenWorkspace={() => go(workspaceHref())} onOpenLibrary={() => go(workspaceHref('library'))} />
 {/if}
