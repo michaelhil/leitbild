@@ -88,6 +88,13 @@ describe('the Run page as a screen\'s surface', () => {
     expect(window.match(/flushZoomWrites/g)).toHaveLength(3)
     expect(window).toContain('zoomWriteTimer = setTimeout(flushZoomWrites, zoomWriteDelayMs)')
     expect(window).toMatch(/if \(zoomWriteTimer !== null\) \{\s*clearTimeout\(zoomWriteTimer\)\s*flushZoomWrites\(\)\s*\}/)
+    // Until a display's first report fits it, the surface shows the window's own connecting message over it, and the
+    // frame stays shown beneath so it draws and reports. The dashboard, drawn for its frame, is never held back.
+    expect(window).toContain("const awaitingFit = $derived(asSurface && current !== null && current.source !== 'dashboard' && currentZoom !== null && awaitsFirstFit(currentZoom))")
+    expect(window).toMatch(/const connecting = \$derived\(current !== null && currentDefault\?\.state !== 'failed' && currentRefusal === null\s*&& \(currentEnvelope === null \|\| !framesUp\.has\(current\.key\) \|\| awaitingFit\)\)/)
+    expect(window.match(/awaitingFit/g)).toHaveLength(2)
+    expect(window).toContain('shown={mounted.entry.key === current?.key}')
+    expect(source('ui/style.css').match(/\.display-window-message\s*\{[^}]*\}/)?.[0]).toMatch(/inset: 0;[\s\S]*z-index: 1;[\s\S]*background: var\(--panel\);/)
   })
 
   test('the surface\'s procedure window is the pane: it follows its size and neither moves, resizes nor closes', () => {
