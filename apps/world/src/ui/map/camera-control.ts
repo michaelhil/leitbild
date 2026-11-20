@@ -15,6 +15,10 @@ const order: ReadonlyArray<RunCameraActionId> = ['home', 'fit-visible', 'fit-sel
  * group, showing the buttons its owner lists (`runCameraButtons`). A button
  * that cannot act stays focusable and says why in its hover text.
  *
+ * The control keeps the footprint of all three buttons while it shows two, so
+ * the dock and a fitted layout, which both keep clear of the control stack,
+ * stay where they are when a selection comes and goes.
+ *
  * MapLibre puts a control added to a bottom corner above those already there,
  * and the 3D switch is added later, with the layouts. The row therefore keeps
  * itself the top of its corner, so 3D stays directly above zoom.
@@ -22,6 +26,9 @@ const order: ReadonlyArray<RunCameraActionId> = ['home', 'fit-visible', 'fit-sel
 export const createCameraControl = (options: { readonly initial: ReadonlyArray<RunCameraButton>; readonly onAction: (id: RunCameraActionId) => void }): CameraControl => {
   const container = document.createElement('div')
   container.className = 'maplibregl-ctrl maplibregl-ctrl-group camera-control'
+  const row = document.createElement('div')
+  row.className = 'camera-control-row'
+  container.append(row)
   let shown = new Map(options.initial.map(button => [button.id, button]))
   const elements = new Map(order.map(id => {
     const button = document.createElement('button')
@@ -40,8 +47,8 @@ export const createCameraControl = (options: { readonly initial: ReadonlyArray<R
       if (state.disabledReason === null) button.removeAttribute('aria-disabled')
       else button.setAttribute('aria-disabled', 'true')
       // A button already in its place is left there: moving it would drop keyboard focus.
-      const expected: Element | null = previous === null ? container.firstElementChild : previous.nextElementSibling
-      if (expected !== button) container.insertBefore(button, expected)
+      const expected: Element | null = previous === null ? row.firstElementChild : previous.nextElementSibling
+      if (expected !== button) row.insertBefore(button, expected)
       previous = button
     }
   }

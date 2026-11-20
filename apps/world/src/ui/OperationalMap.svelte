@@ -1067,31 +1067,52 @@
     left: var(--map-cover-left);
   }
 
-  /* The camera group is one row; MapLibre's control stack is white in both themes, so its ink matches the navigation icons. */
+  /* The camera group keeps the footprint of its three 29 px buttons and draws its row at the right of it, so nothing
+     that keeps clear of the control stack moves when Fit selection comes and goes. The empty part takes no clicks. */
   .map :global(.maplibregl-ctrl-group.camera-control) {
     display: flex;
+    justify-content: flex-end;
+    width: 87px;
+    background: none;
+    box-shadow: none;
+    pointer-events: none;
   }
 
-  .map :global(.maplibregl-ctrl-group.camera-control button) {
+  /* The row is the visible group. MapLibre's control stack is white in both themes, so its ink matches the navigation icons. */
+  .map :global(.camera-control-row) {
+    display: flex;
+    border-radius: 4px;
+    background: #fff;
+    box-shadow: 0 0 0 2px rgb(0 0 0 / 10%);
+    pointer-events: auto;
+  }
+
+  @media (forced-colors: active) {
+    .map :global(.camera-control-row) {
+      box-shadow: 0 0 0 2px ButtonText;
+    }
+  }
+
+  .map :global(.camera-control-row button) {
     display: grid;
     place-items: center;
     color: #333;
   }
 
-  .map :global(.maplibregl-ctrl-group.camera-control button + button) {
+  .map :global(.camera-control-row button + button) {
     border-top: 0;
     border-left: 1px solid #ddd;
   }
 
-  .map :global(.maplibregl-ctrl-group.camera-control button:first-child) {
+  .map :global(.camera-control-row button:first-child) {
     border-radius: 4px 0 0 4px;
   }
 
-  .map :global(.maplibregl-ctrl-group.camera-control button:last-child) {
+  .map :global(.camera-control-row button:last-child) {
     border-radius: 0 4px 4px 0;
   }
 
-  .map :global(.maplibregl-ctrl-group.camera-control button[aria-disabled="true"]) {
+  .map :global(.camera-control-row button[aria-disabled="true"]) {
     color: #aaa;
     cursor: not-allowed;
   }

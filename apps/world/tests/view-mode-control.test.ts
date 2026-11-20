@@ -62,17 +62,18 @@ test('the remembered mode is written where the switch changes it and restored on
 // (24 x 24, 10 px margins), the navigation group above it (29 x 87: zoom in,
 // zoom out, compass) and, new, the 3D switch above that (one 29 px button
 // after a 10 px margin, so the stack grows by 39 px). The camera group tops
-// the stack on every map: one row of two or three 29 px buttons (Home, Fit all
-// visible and, with a selection on the map, Fit selection) after another 10 px
-// margin, so it is up to 58 px wider than the groups below it.
-const stack = (size: { readonly width: number; readonly height: number }, withSwitch: boolean, cameraButtons: 0 | 2 | 3 = 0): ReadonlyArray<ExplorerViewportRect> => {
+// the stack on every map, after another 10 px margin: a row of two or three
+// 29 px buttons (Home, Fit all visible and, with a selection on the map, Fit
+// selection) that always keeps the footprint of three, so it is 58 px wider
+// than the groups below it whether or not anything is selected.
+const stack = (size: { readonly width: number; readonly height: number }, withSwitch: boolean, withCamera = false): ReadonlyArray<ExplorerViewportRect> => {
   const credit = { x: size.width - 34, y: size.height - 34, width: 24, height: 24 }
   const navigation = { x: size.width - 39, y: size.height - 44 - 87, width: 29, height: 87 }
   const viewMode = { x: navigation.x, y: navigation.y - 10 - 29, width: 29, height: 29 }
   const below = withSwitch ? [credit, navigation, viewMode] : [credit, navigation]
-  if (cameraButtons === 0) return below
+  if (!withCamera) return below
   const top = below.at(-1)!
-  return [...below, { x: size.width - 10 - 29 * cameraButtons, y: top.y - 10 - 29, width: 29 * cameraButtons, height: 29 }]
+  return [...below, { x: size.width - 10 - 87, y: top.y - 10 - 29, width: 87, height: 29 }]
 }
 const noPadding: ExplorerViewportPadding = { top: 0, right: 0, bottom: 0, left: 0 }
 
@@ -108,16 +109,16 @@ test('the camera row above the switch costs a fitted layout at most its own widt
   const targets = { wide: { width: 3, height: 1 }, square: { width: 1, height: 1 }, tall: { width: 1, height: 3 } }
   // The last three are a short split pane, about 280 to 340 px high.
   for (const size of [{ width: 350, height: 600 }, { width: 760, height: 600 }, { width: 1400, height: 800 }, { width: 350, height: 300 }, { width: 760, height: 280 }, { width: 1400, height: 340 }]) {
-    for (const [name, target] of Object.entries(targets)) for (const withSwitch of [false, true]) for (const buttons of [2, 3] as const) {
+    for (const [name, target] of Object.entries(targets)) for (const withSwitch of [false, true]) {
       const scale = (padding: ExplorerViewportPadding): number => Math.min((size.width - padding.left - padding.right) / target.width, (size.height - padding.top - padding.bottom) / target.height)
-      const fit = (cameraButtons: 0 | 2 | 3): ExplorerViewportRect => {
-        const rect = physicalExplorerFitRect(size, noPadding, stack(size, withSwitch, cameraButtons), 12, scale)
+      const fit = (withCamera: boolean): ExplorerViewportRect => {
+        const rect = physicalExplorerFitRect(size, noPadding, stack(size, withSwitch, withCamera), 12, scale)
         if (rect === null) throw new Error(`no clear rectangle at ${size.width}x${size.height}`)
         return rect
       }
       const drawn = (rect: ExplorerViewportRect): number => Math.min(rect.width / target.width, rect.height / target.height)
-      const before = fit(0), after = fit(buttons), label = `${size.width}x${size.height} ${name} ${withSwitch ? 'with' : 'without'} 3D, ${buttons} buttons`
-      const extraWidth = 29 * (buttons - 1)
+      const before = fit(false), after = fit(true), label = `${size.width}x${size.height} ${name} ${withSwitch ? 'with' : 'without'} 3D`
+      const extraWidth = 58
       // Bound 1: the layout is drawn smaller by at most what the row takes, its extra width or its 39 px of height, and no smaller at all in a pane of ordinary height.
       expect(drawn(before) - drawn(after), label).toBeLessThanOrEqual(Math.max(extraWidth / target.width, 39 / target.height) + 1e-9)
       if (size.height >= 600) expect(drawn(after), label).toBe(drawn(before))
@@ -133,11 +134,16 @@ test('the camera row above the switch costs a fitted layout at most its own widt
 })
 
 test('the camera group tops the lower-right stack on every map and keeps itself above the 3D switch', async () => {
-  const [map, control] = await Promise.all(['OperationalMap.svelte', 'map/camera-control.ts'].map(path => Bun.file(new URL(`../src/ui/${path}`, import.meta.url)).text()))
+  const source = (path: string): Promise<string> => Bun.file(new URL(`../src/ui/${path}`, import.meta.url)).text()
+  const [map, control] = await Promise.all([source('OperationalMap.svelte'), source('map/camera-control.ts')])
   expect(map).toContain("nextRuntime.map.addControl(cameraControl, 'bottom-right')")
   // The explorer adds the switch later and MapLibre would stack it above: the row moves itself back to the top of its corner.
   expect(control).toContain("corner = map.getContainer().querySelector('.maplibregl-ctrl-bottom-right')")
   expect(control).toContain('if (corner !== null && container.parentElement === corner && corner.firstElementChild !== container) corner.prepend(container)')
+  // Its footprint is three buttons wide whatever it shows, and only the row drawn inside it takes clicks.
+  expect(map.match(/\.map :global\(\.maplibregl-ctrl-group\.camera-control\) \{[^}]*\}/)?.[0].replace(/\s+/g, ' ')).toBe('.map :global(.maplibregl-ctrl-group.camera-control) { display: flex; justify-content: flex-end; width: 87px; background: none; box-shadow: none; pointer-events: none; }')
+  expect(map).toMatch(/\.map :global\(\.camera-control-row\) \{[^}]*pointer-events: auto;/)
+  expect(control).toMatch(/row\.className = 'camera-control-row'\s*container\.append\(row\)/)
 })
 
 test('the map switch is the one place that changes the representation, added and removed by the explorer', async () => {
