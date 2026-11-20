@@ -983,7 +983,8 @@
       <!-- A Run reaches its plans from its own bar; the Workspace's Planning link stays in the other views (decision D4). -->
       {#if planningAvailable && selectedWorldRunId === null}<a href={workspaceUrl(workspace.id, { planning: 'library' })}>Planning</a>{/if}
       {#if planningAvailable && selectedWorldRunId !== null}<RunViewSwitch shown={runView} onswitch={showRunView} />{/if}
-      {#if selectedPlanningResource}<span class="planning-title">{selectedPlanningResource.title}</span>{/if}
+      <!-- Beside a Run the plan screen names its plan itself; the bar keeps room for the Run's controls. -->
+      {#if selectedPlanningResource && !selectedWorldResource}<span class="planning-title">{selectedPlanningResource.title}</span>{/if}
       {#if selectedWorldResource}
         <SimulationRunControls
           workspaceId={workspace.id}
