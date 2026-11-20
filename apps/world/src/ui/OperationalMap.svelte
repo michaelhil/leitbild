@@ -42,6 +42,7 @@
   import type { MapCover } from './surface-panel-contract.ts'
   import { createMapPromptController } from './map/map-prompt.ts'
   import { createCameraControl, type CameraControl } from './map/camera-control.ts'
+  import type { ViewMode } from './map/view-mode-control.ts'
   import type { RunCameraActionId, RunCameraButton } from './run-view-actions.ts'
   import { createMapStackChooser } from './map/map-stack-chooser.ts'
   import { needsSingleTargetChoice, objectsUnder, stackPick } from './map/map-stack.ts'
@@ -122,6 +123,10 @@
     readonly referenceStyles?: ReadonlyArray<PackReferenceDatasetStyle>
     readonly liveMapLayers?: ReadonlyArray<PackLiveMapLayerBinding>
     physicalLayoutControlsOpen?: boolean
+    /** The physical layouts' remembered Plan or 3D: a remembered 3D is brought back once the layouts are on the map. */
+    readonly physicalLayoutMode?: ViewMode
+    /** The map's 3D switch changed the layouts' representation. */
+    readonly onPhysicalLayoutMode?: (mode: ViewMode) => void
     readonly physicalLayoutBindings?: ReadonlyArray<PhysicalLayoutBinding>
     readonly onPhysicalDisplay?: (listing: EmbeddedViewListing) => void
     readonly physicalLayoutSuspended: boolean
@@ -207,6 +212,8 @@
     liveMapLayers = [],
     physicalLayoutBindings = [],
     physicalLayoutControlsOpen = $bindable(false),
+    physicalLayoutMode = '2d',
+    onPhysicalLayoutMode = () => {},
     onPhysicalDisplay = () => {},
     physicalLayoutSuspended,
     layoutClearTop = 0,
@@ -677,6 +684,12 @@
     jumpToStartingView(current)
   }
 
+  // A change between Plan and 3D frames the layouts: the map no longer shows the Starting View, so a panel opening later must not jump back to it.
+  const changedPhysicalLayoutMode = (mode: ViewMode): void => {
+    startingCamera = false
+    onPhysicalLayoutMode(mode)
+  }
+
   const notifyMapReady = (): void => {
     if (mapReadyNotified) return
     mapReadyNotified = true
@@ -1020,7 +1033,7 @@
   {#key runtime.map}
   {#key simulationRunId}
   {#await import('./physical-layout/PhysicalExplorer.svelte') then { default: PhysicalExplorer }}
-    <PhysicalExplorer suspendPickingForNavigation={runtime.suspendPickingForNavigation} bind:controlsOpen={physicalLayoutControlsOpen} map={runtime.map} {objects} bindings={physicalLayoutBindings} hiddenCategoryIds={hiddenObjectCategoryIds}
+    <PhysicalExplorer suspendPickingForNavigation={runtime.suspendPickingForNavigation} bind:controlsOpen={physicalLayoutControlsOpen} rememberedMode={physicalLayoutMode} onmode={changedPhysicalLayoutMode} map={runtime.map} {objects} bindings={physicalLayoutBindings} hiddenCategoryIds={hiddenObjectCategoryIds}
       {presentationFor} runId={simulationRunId as SimulationRunId} {perspectiveEpoch} {theme} clearTop={layoutClearTop} reservedPadding={cameraPadding} onDetailedOwners={setDetailedLayoutOwners}
       suspended={physicalLayoutSuspended}
       onoverview={onObjectSelected} onopen={onPhysicalDisplay} onerror={onMapError} onconnect={interaction => physicalLayoutInteraction = interaction} />

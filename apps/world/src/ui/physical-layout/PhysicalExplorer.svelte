@@ -14,7 +14,7 @@
   import { physicalCollectionFloorGroups, physicalCollectionFloorChanges, physicalCollectionMixedSettings, physicalPlanLevelAfterModeChange } from './collection-floors.ts'
   import { physicalCollectionLayerChoices, physicalCollectionLayerChanges } from './collection-layers.ts'
   import { physicalExplorerCameraCovers, physicalExplorerFitPadding, type ExplorerViewportPadding, type ExplorerViewportRect } from './explorer-viewport.ts'
-  import { physicalExplorerKeyboardRoute, physicalExplorerNeedsLive, physicalExplorerStatusLine, physicalExplorerViewModeInput } from './explorer-interaction.ts'
+  import { physicalExplorerKeyboardRoute, physicalExplorerModeRestore, physicalExplorerNeedsLive, physicalExplorerStatusLine, physicalExplorerViewModeInput } from './explorer-interaction.ts'
   import { createViewModeControl, type ViewMode, type ViewModeControl } from '../map/view-mode-control.ts'
   import { createPhysicalSceneOverview } from '../map/physical-scene/overview.ts'
   import type { PhysicalSceneHit, PhysicalScenePresentation, PhysicalSceneView, PhysicalScenePalette, PhysicalSceneFitRequest } from '../map/physical-scene/types.ts'
@@ -40,9 +40,13 @@
   import { physicalScopeRegions } from '../map/physical-scene/scope-regions.ts'
   import { drawPhysicalFlowMark, type PhysicalFlowGlyph } from '../displays/physical-flow-marks.ts'
   import { physicalLayoutSources, type PhysicalLayoutBinding, type PhysicalLayoutMapInteraction } from './sources.ts'
-  let { suspendPickingForNavigation, controlsOpen = $bindable(false), map, active = true, objects, bindings, hiddenCategoryIds, presentationFor, runId, perspectiveEpoch, suspended, theme, clearTop = 0, reservedPadding = { top: 0, right: 0, bottom: 0, left: 0 }, onDetailedOwners = () => {}, onoverview, onopen, onerror, onconnect = () => {} }: {
+  let { suspendPickingForNavigation, controlsOpen = $bindable(false), rememberedMode = '2d', onmode = () => {}, map, active = true, objects, bindings, hiddenCategoryIds, presentationFor, runId, perspectiveEpoch, suspended, theme, clearTop = 0, reservedPadding = { top: 0, right: 0, bottom: 0, left: 0 }, onDetailedOwners = () => {}, onoverview, onopen, onerror, onconnect = () => {} }: {
     suspendPickingForNavigation?: (() => (() => void)) | undefined
     controlsOpen?: boolean
+    /** The representation remembered for this Run: 3D is brought back once, as a press on the switch would bring it. */
+    rememberedMode?: ViewMode
+    /** The map's 3D switch changed the representation. */
+    onmode?: (mode: ViewMode) => void
     map: MapLibreMap
     active?: boolean
     objects: ReadonlyArray<OperationalObject>
@@ -576,13 +580,26 @@
   $effect(() => { viewModeControl?.update(viewModeInput) })
   // The map's 3D switch. With nothing focused the whole collection is framed,
   // and 3D brings the layout toolbar with its camera strip, status and floors.
-  const changeMapViewMode = (mode: ViewMode): void => {
+  const changeMapViewMode = (mode: ViewMode, restored = false): void => {
     const scene = focused
     if (suspended || !scene) return
-    if (mode === '3d') controlsOpen = true
+    // A press before the remembered 3D came back is the newer choice.
+    restorePending = false
+    // A restored 3D leaves the toolbar's own remembered open state alone.
+    if (mode === '3d' && !restored) controlsOpen = true
     if (focusedId === null) collectionInspection = true
     changeView({ ...scene.view, mode }, { mode })
+    onmode(mode)
   }
+  // Once per mount: a remembered 3D comes back as a press on the switch brings it (mode, floors, pitch, the plant framed).
+  let restorePending = untrack(() => rememberedMode === '3d')
+  $effect(() => {
+    if (!restorePending) return
+    const decision = physicalExplorerModeRestore({ mode: focused?.view.mode ?? null, active, documentVisible, suspended })
+    if (decision === 'wait') return
+    restorePending = false
+    if (decision === 'restore') untrack(() => changeMapViewMode('3d', true))
+  })
   const changeCollectionFloor = (key: string, levelId: string): void => {
     if (suspended || focusedId !== null) return
     const group = collectionFloorGroups.find(group => group.key === key)

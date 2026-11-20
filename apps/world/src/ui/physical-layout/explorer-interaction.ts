@@ -49,6 +49,23 @@ export const physicalExplorerViewModeInput = (input: {
   : { mode: input.mode, disabledReason: input.suspended ? 'Plan and 3D wait while an object is being placed or directed on the map' : null }
 
 /**
+ * What the one-shot that brings back a remembered 3D does while it is still
+ * pending. It acts as a press on the switch would, so it waits until a press
+ * could act and its framing would be seen: a layout on the map, inspection
+ * not suspended, the explorer active and the page visible. Layouts already in
+ * 3D need nothing, so it is dropped.
+ */
+export const physicalExplorerModeRestore = (input: {
+  /** The layouts' shared representation; null means no layout is on the map. */
+  readonly mode: PhysicalSceneView['mode'] | null
+  readonly active: boolean
+  readonly documentVisible: boolean
+  readonly suspended: boolean
+}): 'wait' | 'restore' | 'drop' => input.mode === null ? 'wait'
+  : input.mode === '3d' ? 'drop'
+  : !input.active || !input.documentVisible || input.suspended ? 'wait' : 'restore'
+
+/**
  * The layout toolbar's status line, and whether it has nothing to report.
  * Quiet is a whitelist: only the all-ready collection text and the focused
  * steady text, each without a hint and without Retry, leave the map uncovered.

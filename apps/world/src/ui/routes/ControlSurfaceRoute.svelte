@@ -303,6 +303,8 @@
   })
   let alarmStripVisible = $state(false)
   let layoutControlsVisible = $state(false)
+  // The physical layouts' Plan or 3D, as the map's 3D switch last reported it; a reload brings a remembered 3D back.
+  let layoutMode = $state<RunViewPreferences['layoutMode']>('2d')
   let viewPreferencesKey = $state<string | null>(null)
   let appliedSurfacePanelKey = ''
   let procedureSystemModalLoadPromise: Promise<ProcedureSystemModalComponent> | null = null
@@ -368,6 +370,7 @@
   const footerVisible = true
   // The briefing card's bottom edge, as it last measured itself: the alarm strip starts below it while it shows.
   let guidanceBottom = $state(0)
+  // Only the eyes this tab switched, restored with the Run view record; every reader shows a category absent here.
   let categoryMapVisibility = $state<Record<string, boolean>>({})
   const surfacePanels = $derived(mapSurface ? [] : activePack?.surfacePanels ?? [])
   const surfacePanelLaunchers = $derived(surfacePanels.map(panel => ({ id: panel.id, label: panel.label, open: surfacePanelIsOpen(panel, surfacePanelOpen) })))
@@ -437,20 +440,6 @@
     ...(scenarioState?.highlightedObjectIds ?? emptyStringArray), ...presentationObjectIds,
     ...(focusedMapObject ? [focusedMapObject.id] : []),
   ])])
-  $effect(() => {
-    const rows = categoryRows
-    untrack(() => {
-      const current = categoryMapVisibility
-      const next: Record<string, boolean> = {}
-      let changed = Object.keys(current).length !== rows.length
-      for (const row of rows) {
-        const value = current[row.category.id] ?? true
-        next[row.category.id] = value
-        if (current[row.category.id] === undefined) changed = true
-      }
-      if (changed) categoryMapVisibility = next
-    })
-  })
   const hiddenObjectCategoryIds = $derived(
     Object.entries(categoryMapVisibility).flatMap(([categoryId, visible]) => visible ? [] : [categoryId]),
   )
@@ -577,24 +566,8 @@
     if (!runId) throw new Error('live map layers query a Simulation Run, and none is joined')
     return await querySimulationRunCapability(runId, request.capabilityId, request.input, { signal })
   }
+  // Only the choices this tab made, restored with the Run view record; every reader gives a group absent here its `defaultVisible`.
   let mapLayerGroupVisibility = $state<Record<string, boolean>>({})
-  // Re-seed when the group list changes. `untrack` keeps the write from
-  // re-triggering this effect (a new object literal every time would otherwise
-  // loop infinitely and block the event loop).
-  $effect(() => {
-    const groups = activeMapLayerGroups
-    untrack(() => {
-      const current = mapLayerGroupVisibility
-      const next: Record<string, boolean> = {}
-      let changed = Object.keys(current).length !== groups.length
-      for (const group of groups) {
-        const value = current[group.id] ?? group.defaultVisible
-        next[group.id] = value
-        if (current[group.id] === undefined) changed = true
-      }
-      if (changed) mapLayerGroupVisibility = next
-    })
-  })
   const toggleMapLayerGroup = (groupId: string): void => {
     mapLayerGroupVisibility = {
       ...mapLayerGroupVisibility,
@@ -639,7 +612,7 @@
   $effect(() => {
     const key = viewPreferencesKey
     if (key === null) return
-    try { writeRunViewPreferences(sessionStorage, key, { guidance: guidancePreferences, alarms: alarmStripVisible, layout: layoutControlsVisible, panels: surfacePanelOpen }) } catch { /* A denied storage getter must not prevent local presentation. */ }
+    try { writeRunViewPreferences(sessionStorage, key, { guidance: guidancePreferences, alarms: alarmStripVisible, layout: layoutControlsVisible, panels: surfacePanelOpen, layers: mapLayerGroupVisibility, weather: weatherLayerVisible, categories: categoryMapVisibility, layoutMode }) } catch { /* A denied storage getter must not prevent local presentation. */ }
   })
   const actOnCamera = (id: RunCameraActionId): void => {
     const target = id === 'home' ? mapConfig && homeMapTarget(mapConfig) : id === 'fit-selected' ? fitSelectedTarget : fitObjectsTarget(objects.filter(drawnOnMap))
@@ -2179,6 +2152,10 @@
     alarmStripVisible = preferences.alarms
     layoutControlsVisible = preferences.layout
     surfacePanelOpen = { ...preferences.panels }
+    mapLayerGroupVisibility = { ...preferences.layers }
+    weatherLayerVisible = preferences.weather
+    categoryMapVisibility = { ...preferences.categories }
+    layoutMode = preferences.layoutMode
     dismissedTimelineOutcome = ''
     viewPreferencesKey = key
     const receiveDisplayWindowMessage = (event: MessageEvent): void => {
@@ -2415,6 +2392,8 @@
           liveMapLayers={activeLiveMapLayers}
           physicalLayoutBindings={activePhysicalLayoutBindings}
           bind:physicalLayoutControlsOpen={layoutControlsVisible}
+          physicalLayoutMode={layoutMode}
+          onPhysicalLayoutMode={mode => { layoutMode = mode }}
           layoutClearTop={Math.max(alarmStripVisible ? alarmStripBottom : 0, visibleGuidanceBottom)}
           onPhysicalDisplay={listing => requestDisplayWindow({ kind: 'listing', listing }, true)}
           physicalLayoutSuspended={physicalOperationalCapture}

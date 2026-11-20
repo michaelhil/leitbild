@@ -1,6 +1,6 @@
 import { expect, test } from 'bun:test'
 import { viewModeControlState } from '../src/ui/map/view-mode-control.ts'
-import { physicalExplorerViewModeInput } from '../src/ui/physical-layout/explorer-interaction.ts'
+import { physicalExplorerModeRestore, physicalExplorerViewModeInput } from '../src/ui/physical-layout/explorer-interaction.ts'
 import { physicalExplorerFitRect, type ExplorerViewportPadding, type ExplorerViewportRect } from '../src/ui/physical-layout/explorer-viewport.ts'
 
 test('the 3D switch shows the representation and asks for the other one', () => {
@@ -25,6 +25,37 @@ test('the explorer enables the switch for its layouts and says why it waits whil
     expect(none).toEqual({ mode: '2d', disabledReason: 'No physical layout is shown on this map' })
     expect(viewModeControlState(none)).toMatchObject({ pressed: false, disabled: true, next: null })
   }
+})
+
+test('a remembered 3D waits until a press could act and be seen, then comes back once; layouts already in 3D need nothing', () => {
+  const ready = { mode: '2d' as const, active: true, documentVisible: true, suspended: false }
+  expect(physicalExplorerModeRestore(ready)).toBe('restore')
+  // No layout is on the map yet, an order is being placed or directed, the explorer is inactive, or the page is hidden.
+  expect(physicalExplorerModeRestore({ ...ready, mode: null })).toBe('wait')
+  expect(physicalExplorerModeRestore({ ...ready, suspended: true })).toBe('wait')
+  expect(physicalExplorerModeRestore({ ...ready, active: false })).toBe('wait')
+  expect(physicalExplorerModeRestore({ ...ready, documentVisible: false })).toBe('wait')
+  // Whatever else holds, 3D that is already shown is not framed again.
+  for (const state of [ready, { ...ready, suspended: true }, { ...ready, documentVisible: false }]) expect(physicalExplorerModeRestore({ ...state, mode: '3d' })).toBe('drop')
+})
+
+test('the remembered mode is written where the switch changes it and restored once, by a press that leaves the toolbar alone', async () => {
+  const source = (path: string): Promise<string> => Bun.file(new URL(`../src/ui/${path}`, import.meta.url)).text()
+  const [explorer, controller, route, map] = await Promise.all([source('physical-layout/PhysicalExplorer.svelte'), source('map/physical-scene/scene-controller.ts'), source('routes/ControlSurfaceRoute.svelte'), source('OperationalMap.svelte')])
+  const change = explorer.slice(explorer.indexOf('const changeMapViewMode = '), explorer.indexOf('const changeCollectionFloor = '))
+  // One callback, from the one place the switch changes the mode, after the guard that refuses a press.
+  expect(explorer.match(/\bonmode\(/g)).toHaveLength(1)
+  expect(change).toMatch(/if \(suspended \|\| !scene\) return\s[\s\S]*restorePending = false\s[\s\S]*if \(mode === '3d' && !restored\) controlsOpen = true\s[\s\S]*changeView\(\{ \.\.\.scene\.view, mode \}, \{ mode \}\)\s*onmode\(mode\)/)
+  // The restore: decided by the tested rule, cleared before it acts, and the same press with the toolbar left as it was.
+  expect(change).toMatch(/let restorePending = untrack\(\(\) => rememberedMode === '3d'\)\s*\$effect\(\(\) => \{\s*if \(!restorePending\) return\s*const decision = physicalExplorerModeRestore\(\{ mode: focused\?\.view\.mode \?\? null, active, documentVisible, suspended \}\)\s*if \(decision === 'wait'\) return\s*restorePending = false\s*if \(decision === 'restore'\) untrack\(\(\) => changeMapViewMode\('3d', true\)\)/)
+  expect(explorer.match(/restorePending = /g)).toHaveLength(3)
+  // The scene controller knows nothing of a remembered mode.
+  expect(controller).not.toMatch(/initialMode|rememberedMode/)
+  // The route keeps what the callback reported; it mirrors no explorer state.
+  expect(route).toContain('onPhysicalLayoutMode={mode => { layoutMode = mode }}')
+  expect(route.match(/layoutMode = /g)).toHaveLength(3)
+  // A mode change frames the layouts, so the map stops returning to the Starting View when a panel opens.
+  expect(map).toMatch(/const changedPhysicalLayoutMode = \(mode: ViewMode\): void => \{\s*startingCamera = false\s*onPhysicalLayoutMode\(mode\)\s*\}/)
 })
 
 // The map's bottom-right stack as MapLibre lays it out: the compact credit

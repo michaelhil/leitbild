@@ -28,6 +28,11 @@ describe('the Run page as a screen\'s surface', () => {
     expect(route.match(/writeRunViewPreferences\(/g)).toHaveLength(1)
     expect(route).toMatch(/const key = viewPreferencesKey\s*if \(key === null\) return\s*try \{ writeRunViewPreferences\(sessionStorage, key,/)
     expect(route).toContain('viewPreferencesKey = key')
+    // The record holds the panel choices and, with them, the layer groups, Weather, the category eyes and Plan or 3D.
+    expect(route).toContain('{ guidance: guidancePreferences, alarms: alarmStripVisible, layout: layoutControlsVisible, panels: surfacePanelOpen, layers: mapLayerGroupVisibility, weather: weatherLayerVisible, categories: categoryMapVisibility, layoutMode }')
+    // Nothing seeds or prunes the restored choices from the Pack's lists, which are still empty when the record is read.
+    expect(route.match(/\bmapLayerGroupVisibility = /g)).toHaveLength(3)
+    expect(route.match(/\bcategoryMapVisibility = /g)).toHaveLength(3)
   })
 
   test('the surface\'s window opens only once the Run is joined, and what the Run cannot show is said in the pane', () => {
