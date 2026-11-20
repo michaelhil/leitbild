@@ -104,9 +104,12 @@
   button:hover { border-color: var(--accent); } button:focus-visible, select:focus-visible, input:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
   button[aria-current="location"], button[aria-pressed="true"] { color: var(--accent); border-color: var(--accent); background: var(--panel-strong); font-weight: 700; }
   .toolbar { display: flex; flex-wrap: wrap; align-items: stretch; gap: 5px 6px; }.scope-row { display: flex; gap: 6px; flex: 1 1 200px; min-width: 0; } .scope { flex: 1; min-width: 0; text-align: left; display: grid; gap: 2px; }.scope strong,.scope span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }.scope span { color: var(--muted); font-size: 11px; }
-  .action-row, .camera-controls { display: flex; gap: 6px; flex: 0 0 auto; }.action-row button, .camera-controls button { flex: 1; }.action-row .close, .camera-controls .expand { flex: none; padding: 0; }
+  /* Squeezed below their own width, the button rows wrap inside the space given: no button, least of all Close, may be cut off. */
+  .action-row, .camera-controls { display: flex; flex-wrap: wrap; gap: 6px; flex: 0 1 auto; }.action-row button, .camera-controls button { flex: 1; }.action-row .close, .camera-controls .expand { flex: none; padding: 0; }
+  /* A label wider than its squeezed button stays centred on it instead of running out of its right edge. */
+  .action-row button { display: flex; align-items: center; justify-content: center; }
   .camera-controls button { padding: 4px; }.camera-controls button span { display: block; font-size: 10px; }.camera-controls .expand { font-size: 20px; }.camera-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }.camera-sheet p { margin: 2px 0; color: var(--muted); font-size: 11px; line-height: 1.5; }
-  .floor-row { display: flex; align-items: center; gap: 8px; padding-left: 8px; background: var(--panel); border-radius: 7px; }.floor-row select { flex: 1; min-width: 0; }.primary-floor { flex: 1 1 220px; min-width: 0; }.floors-toggle { flex: 0 0 auto; }.floors-toggle span { color: var(--muted); font-size: 11px; }
+  .floor-row { display: flex; align-items: center; gap: 8px; padding-left: 8px; background: var(--panel); border-radius: 7px; }.floor-row select { flex: 1; min-width: 0; }.primary-floor { flex: 1 1 220px; min-width: 0; }.floors-toggle { flex: 0 1 auto; }.floors-toggle span { color: var(--muted); font-size: 11px; }
   .collection-floors { display: grid; gap: 4px; }.collection-floor > span { min-width: 0; max-width: 42%; overflow-wrap: anywhere; }.collection-floor small { display: block; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; color: var(--muted); font-size: 10px; }.collection-floor select { width: 0; }
   .sheet { display: grid; gap: 6px; box-sizing: border-box; width: min(440px, 100%); margin-left: auto; padding: 10px; margin-top: 6px; border: 1px solid var(--border); border-radius: 8px; background: var(--panel); max-height: min(55dvh, 560px); overflow: auto; overscroll-behavior: contain; box-shadow: var(--shadow-floating); }
   header { display: flex; align-items: center; justify-content: space-between; gap: 8px; }header button { padding: 0; font-size: 21px; }.scopes > button { text-align: left; }.scopes small { color: var(--muted); }.scopes footer { display: grid; gap: 6px; border-top: 1px solid var(--border); padding-top: 6px; }
@@ -118,5 +121,5 @@
   .evidence { flex: 1 1 20rem; align-self: center; min-width: 0; margin: 0; color: var(--muted); background: var(--panel); border-radius: 4px; padding: 4px 6px; font-size: 11px; line-height: 1.4; }
   /* Nothing to report: still read by assistive technology, but out of the toolbar's rows, so it covers no map. */
   .evidence.quiet { position: absolute; width: 1px; height: 1px; padding: 0; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
-  @container (max-width: 440px) { .action-row, .camera-controls { flex: 1 0 auto; }.primary-floor { flex-basis: 100%; } }
+  @container (max-width: 440px) { .action-row, .camera-controls { flex: 1 1 auto; }.primary-floor { flex-basis: 100%; } }
 </style>
