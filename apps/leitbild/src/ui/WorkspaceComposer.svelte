@@ -10,6 +10,7 @@
   import type { RunAssistantResolution } from './run-assistant-opening.ts'
   import { workspaceSubjectFocusMessage } from './workspace-focus.ts'
   import { isCurrentResourceCatalogChange } from './resource-catalog-message.ts'
+  import { acceptedWorkspaceOpen } from './workspace-open-message.ts'
   import { readSurfacePlace } from './screens/surface-place.ts'
 
   interface Props {
@@ -38,6 +39,8 @@
     readonly onOpenRun: (runId: string) => void
     /** Shows the Run's simulation in place of its plans, as the Run bar's switch does. */
     readonly onShowSimulation: () => void
+    /** Shows another address of this Workspace in place, as one history entry; the shown Planning page asked for it. */
+    readonly onOpenAddress: (address: string) => void
     /** Whether the shown Run offers its Assistant, as the Host's own launcher does; its World page may then offer it too. */
     readonly runAssistantAvailable: boolean
     /** Shows the shown Run's Assistant room, creating it where none serves the Run; it never hides the room. */
@@ -57,7 +60,7 @@
 
   let {
     workspaceId, worldRunId, worldFocus = null, worldElement = null, worldOption = null, worldSurface = null, planningPath = null, planningResource = null, resources, rereadResources, onResourceCatalogChange, focusedSubjects, agentsRoomId, agentsVisible, onShowAgents, runRefusal, onOpenRun,
-    onShowSimulation, runAssistantAvailable, onOpenRunAssistant, onPlaceSurface, onError, worldPane = $bindable(null),
+    onShowSimulation, onOpenAddress, runAssistantAvailable, onOpenRunAssistant, onPlaceSurface, onError, worldPane = $bindable(null),
   }: Props = $props()
   let splitPercent = $state(initialSplit)
   let lastOpenSplit = $state(initialSplit)
@@ -237,7 +240,12 @@
     if (planningPath !== null && isCurrentResourceCatalogChange(event, {
       origin: location.origin, source: planningFrame?.contentWindow ?? null, resource: planningResource,
     })) onResourceCatalogChange()
-    const place = readSurfacePlace(event.data, { fromWorld: event.source === worldFrame?.contentWindow, workspaceId, runId: worldRunId })
+    // The shown Planning page moves in place, so the Run's simulation behind it is not loaded again.
+    const address = acceptedWorkspaceOpen(event, {
+      origin: location.origin, source: planningPath === null ? null : planningFrame?.contentWindow ?? null, workspaceId,
+    })
+    if (address !== null) onOpenAddress(address)
+    const place =readSurfacePlace(event.data, { fromWorld: event.source === worldFrame?.contentWindow, workspaceId, runId: worldRunId })
     if (place.kind === 'refused') onError(place.message)
     else if (place.kind === 'place') onPlaceSurface(place.surface)
     if (event.source === agentsFrame?.contentWindow) { relay.fromAgents(event.data); presentation.fromAgents(event.data) }

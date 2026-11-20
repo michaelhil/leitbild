@@ -794,6 +794,14 @@
     if (!loading) normalizeOpenSelection(resources, resourceOutcomes)
   }
 
+  // The shown Planning page moves to another address of this Workspace (workspace-open-message.ts): one history
+  // entry, applied as Back and Forward apply theirs, so the frames beside it keep their documents.
+  const openAddressInPlace = (address: string): void => {
+    if (address === `${location.pathname}${location.search}`) return
+    history.pushState(null, '', address)
+    restoreUrlSelection()
+  }
+
   const capabilityFor = (id: string): ModuleCapabilityDescriptor | undefined => capabilities.find(item => item.id === id)
   const assistantCapability = $derived(capabilities.find(item => item.id === 'agents.assistance.open' && item.scope.kind === 'workspace'))
   const openAssistant = async (prompt: string): Promise<void> => {
@@ -1061,7 +1069,7 @@
     <WorkspaceComposer workspaceId={workspace.id} worldRunId={selectedWorldRunId} worldFocus={selectedWorldFocus} worldElement={selectedWorldElement} worldOption={selectedWorldOption} worldSurface={selectedWorldSurface} {planningPath} planningResource={selectedPlanningResource?.ref ?? null} {resources} {rereadResources}
       onResourceCatalogChange={() => { void refreshResources(workspace!.id).catch(cause => { refreshError = String(cause) }) }}
       {focusedSubjects} agentsRoomId={selectedAgentsRoomId} {agentsVisible} onShowAgents={showRunAssistant}
-      {runRefusal} onOpenRun={runId => switchWorldRun(runId)} onShowSimulation={() => showRunView('simulation')} {runAssistantAvailable} onOpenRunAssistant={openRunAssistant}
+      {runRefusal} onOpenRun={runId => switchWorldRun(runId)} onShowSimulation={() => showRunView('simulation')} onOpenAddress={openAddressInPlace} {runAssistantAvailable} onOpenRunAssistant={openRunAssistant}
       onPlaceSurface={openScreensPanel} onError={message => { error = message }} bind:worldPane />
     {#if screenId === null && screensRun && selectedWorldResource}<ScreensPanel bind:open={screensPanelOpen} bind:placing={placingSurface} store={screens} run={screensRun}
       runTitle={selectedWorldResource.title} scenario={scenarioTitle(screensRun.definition, definitions)} onchange={() => { screensStored = readScreens() }} />{/if}
