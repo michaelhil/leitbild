@@ -1,7 +1,7 @@
 import { refusalCode } from '../refusal.ts'
 import type { PlanExpectation } from '../order-schema.ts'
 import { maxSteps, stepKindFor, stepTargetId, type Step, type StepKind, type StepTarget } from '../steps.ts'
-import { clearedByOrder, newStep, skipSteps, targetLabel } from './chain-steps.ts'
+import { clearedByOrder, heldText, newStep, skipSteps, targetLabel } from './chain-steps.ts'
 import { assignedTo, contributionOf, loadAllocation } from './coverage.ts'
 import { putUnit, setMotion, unitIn, type Draft } from './draft.ts'
 import { engageRefusal } from './engagement-orders.ts'
@@ -18,7 +18,8 @@ import { loadText } from './wording.ts'
  * Plans: adding a stop at the end, removing one, and the engine starting the
  * next stop once the active one is done. Every change is a transition of the
  * unit; motion is not. Only the active stop counts towards a task's
- * coverage.
+ * coverage; later stops count only where someone decides who else to send
+ * (`planned.ts`).
  */
 
 const orderOn = (draft: Draft, actor: EngineActor, verb: LastAction['verb'], step?: Step): LastAction => ({
@@ -91,7 +92,12 @@ const queueRefusal = (state: EngineState, unit: UnitRecord, target: Target, load
   if (!linksToTask(unit, task)) return refused('cross_side_reference', `${unit.label} cannot serve another side's ${task.label}`)
   // A task the chain already holds is taken again only as a further trip for load still waiting.
   const trips = unit.orders.filter(step => 'taskId' in step.target && step.target.taskId === task.id).length
-  if (trips > 0) return loadLeftFor(state, unit, task, trips) ? undefined : refused('requirement_covered', `${task.label} needs nothing more than ${unit.label} provides`)
+  if (trips > 0) {
+    if (loadLeftFor(state, unit, task, trips)) return undefined
+    // Named by its latest trip there, the one a further trip would follow.
+    const latest = unit.orders.reduce((found, step, index) => 'taskId' in step.target && step.target.taskId === task.id ? index : found, -1)
+    return refused('already_in_plan', heldText(state, unit, latest))
+  }
   // By then the unit carries nothing and serves no other task.
   const free = patch(unit, { load: {}, taskId: undefined })
   const contribution = contributionOf(state.catalog, task, assignedTo(state.units.values(), task), free)
@@ -183,7 +189,7 @@ export const removeSteps = (draft: Draft, actor: EngineActor, unitId: string, st
     : { ...actionBy(draft, actor, 'remove', stepTargetId(steps[0]!.target)), stepId: steps[0]!.id }
   const orders = current.orders.filter(entry => !ids.has(entry.id))
   const alerts = clearAlerts(current.alerts, clearedByOrder(actor))
-  const command = actor.commandId === undefined ? {} : { lastCommand: { id: actor.commandId } }
+  const command = actor.commandId === undefined ? {} : { lastCommand: { id: actor.commandId, ...(quietly ? { undo: true as const } : {}) } }
   const head = current.orders[0]
   if (head === undefined || head.state !== 'active' || !ids.has(head.id)) {
     putUnit(draft, patch(current, { orders, alerts, lastAction: order, ...command }))

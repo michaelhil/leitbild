@@ -21,10 +21,11 @@ const situation = {
   calls: [{
     id: 'task:t-1', label: 'T-1 First', icon: 'circle', templateLabel: 'Job', priority, waitingS: 160, overdue: false,
     needs: [
-      { kind: 'requirement', provides: 'svc', label: '2 movers', where: ['Capacity ≥ 2,000 l'], count: 2, enRoute: 1, onTask: 0, completed: 0 },
-      { kind: 'load', classId: 'k1', code: 'K', label: '1 item', waiting: 1, covered: 0 },
+      { kind: 'requirement', provides: 'svc', label: '2 movers', where: ['Capacity ≥ 2,000 l'], count: 2, enRoute: 1, onTask: 0, completed: 0, planned: 1 },
+      { kind: 'load', classId: 'k1', code: 'K', label: '1 item', waiting: 1, covered: 0, planned: 0 },
     ],
     assigned: [{ unitId: 'unit:u-2', label: 'U-2', phase: 'en-route', status: { word: 'En route', tone: 'busy' }, eta: routed, by: viewer }],
+    planned: [{ unitId: 'unit:u-3', label: 'U-3', stop: 2, eta: routed }],
     states: [{ code: 'overdue', text: 'Overdue' }],
   }],
   units: [{
@@ -53,7 +54,7 @@ const options = {
   unitId: 'unit:u-2',
   plan: [{ id: 'step-1', state: 'active' }, { id: 'step-2', state: 'queued' }],
   busy: { taskId: 'task:t-1', label: 'T-1 First', code: 'P1', freeInS: 400 },
-  targets: [{ target: { taskId: 'task:t-2' }, verb: 'serve', label: 'T-2 Second', etaS: 300, afterOnly: true, canReplace: false, canAdd: true, replaceRefusal: 'Current call has higher priority' }],
+  targets: [{ target: { taskId: 'task:t-2' }, verb: 'serve', label: 'T-2 Second', etaS: 300, afterOnly: true, canReplace: false, canAdd: true, replaceRefusal: 'Current call has higher priority', planned: 'T-2 Second is already stop 2 of U-3\'s plan' }],
   refused: [{ target: { siteId: 'unit:s-1' }, label: 'S-1', code: 'site_not_accepting', text: 'S-1 accepts no arrivals' }],
 }
 

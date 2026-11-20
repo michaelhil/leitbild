@@ -305,15 +305,15 @@
 
   const decisionTitle = $derived(decision === undefined ? '' : decision.kind === 'remove'
     ? 'Remove stop?'
-    : decision.assigned ? 'Change the plan?' : 'Move here?')
+    : decision.assigned ? 'Change the plan?' : decision.planned !== undefined ? dispatchWords.alreadyPlanned : 'Move here?')
   const decisionText = $derived(decision === undefined ? '' : decision.kind === 'remove'
     ? `${selectedUnit?.label ?? 'Unit'}: Stop ${decision.stop.index} · ${decision.stop.label}`
-    : `${selectedUnit?.label ?? 'Unit'} → ${stopLabel(decision.target)}${decision.currentLabel === null ? '' : ` · Current: ${decision.currentLabel}`}`)
+    : `${decision.planned === undefined ? '' : `${decision.planned}. `}${selectedUnit?.label ?? 'Unit'} → ${stopLabel(decision.target)}${decision.currentLabel === null ? '' : ` · Current: ${decision.currentLabel}`}`)
   const decisionActions = $derived.by(() => {
     if (!decision) return []
     if (decision.kind === 'remove') return [{ label: 'Remove stop', danger: true, run: () => send({ kind: 'decide', choice: 'remove' }) }]
     const replace = {
-      label: decision.assigned ? 'Replace current target' : 'Move here',
+      label: decision.assigned ? 'Replace current target' : decision.planned !== undefined ? dispatchWords.sendAnyway : 'Move here',
       run: () => send({ kind: 'decide', choice: 'replace' }),
       disabled: !decision.replace,
       ...(!decision.replace ? { reason: decision.replaceReason ?? 'The current stop cannot be replaced.' } : {}),
@@ -508,6 +508,7 @@
               removeStop={(stopId: string) => send({ kind: 'stop', stopId })}
               recall={(unitId: string) => { void editUnit(unitId, async () => await client.recall(unitId), { unitIds: [unitId], target: situation === null ? dispatchWords.panel : situation.words.return, undoable: false }) }}
               undo={act((unitId: string, commandId: string) => undo([unitId], commandId))}
+              explain={say}
               order={act(order)}
               toggleChip={act(toggleChip)}
               refresh={act((callId: string) => { void pin(callId) })}

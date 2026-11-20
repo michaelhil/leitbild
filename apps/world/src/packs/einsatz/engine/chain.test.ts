@@ -257,11 +257,11 @@ describe('Einsatz job chains: rules', () => {
       send(['c1'], { taskId: 'one' }),
       send(['c2'], { taskId: 'two' }),
     ])
-    expect(await refusalOf(state, queue('c1', { taskId: 'one' }))).toEqual({ code: 'requirement_covered', reason: 'requirement_covered: ONE needs nothing more than C1 provides' })
+    expect(await refusalOf(state, queue('c1', { taskId: 'one' }))).toEqual({ code: 'already_in_plan', reason: 'already_in_plan: ONE is C1\'s current stop' })
     // Two wait at TWO and C2 carries one: a second trip there is work, a third is not.
     const second = await runAll(state, [queue('c2', { siteId: 's1' }), queue('c2', { taskId: 'two' })])
     expect(stepsOf(unitOf(second, 'c2'))).toEqual([['step-1', 'serve', 'active'], ['step-2', 'deliver', 'queued'], ['step-3', 'serve', 'queued']])
-    expect((await refusalOf(await run(second, queue('c2', { siteId: 's1' })), queue('c2', { taskId: 'two' }))).code).toBe('requirement_covered')
+    expect(await refusalOf(await run(second, queue('c2', { siteId: 's1' })), queue('c2', { taskId: 'two' }))).toEqual({ code: 'already_in_plan', reason: 'already_in_plan: TWO is already stop 3 of C2\'s plan' })
 
     state = await run(state, queue('c1', { point: at(0.02) }))
     expect(stepsOf(unitOf(state, 'c1'))).toEqual([['step-1', 'serve', 'active'], ['step-2', 'move', 'queued']])

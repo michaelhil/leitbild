@@ -24,6 +24,8 @@
     readonly back: () => void
     readonly targetRow: (target: Stop) => void
     readonly recall: (unitId: string) => void
+    /** A tap on a greyed control: says why, in the card's slot, since a touch screen shows no tooltip. */
+    readonly explain: (text: string) => void
     readonly undo: (unitId: string, commandId: string) => void
     /** The × on a plan row: asks to confirm removing that stop. */
     readonly removeStop: (stopId: string) => void
@@ -70,7 +72,8 @@
         <p class="status" data-tone={card.status.tone}><span class="dot" aria-hidden="true">●</span> {card.status.word}{#if card.status.due !== null} · <span class="num">{card.status.due}</span>{/if}</p>
       </div>
       {#if card.readOnly === null}
-        <button type="button" class="icon-action" title={card.recall.reason ?? card.recall.label} aria-label={card.recall.label} disabled={props.unitPending || !card.recall.enabled} onclick={() => props.recall(card.id)}>
+        {@const recall = card.recall}
+        <button type="button" class="icon-action" title={recall.reason ?? recall.label} aria-label={recall.label} aria-disabled={recall.enabled ? undefined : 'true'} disabled={props.unitPending} onclick={() => { if (recall.enabled) props.recall(card.id); else if (recall.reason !== null) props.explain(recall.reason) }}>
           <House size={17} aria-hidden="true" />
         </button>
       {/if}
@@ -178,6 +181,7 @@
       </details>
     {/if}
     {#each card.assigned as unit (unit.unitId)}<p class="assigned">{unit.text}</p>{/each}
+    {#each card.planned as unit (unit.unitId)}<p class="assigned">{unit.text}</p>{/each}
     {#each card.states as state, index (index)}<p class="state">{state}</p>{/each}
     <div class="apart">
       <button type="button" class="destructive" disabled={props.confirming} onclick={() => props.askClose(card.id)}>{card.close.label}</button>
@@ -225,7 +229,7 @@
   .slot { min-height: 32px; }
   .reason { min-height: 16px; }
   button { min-height: 44px; min-width: 44px; padding: 4px 10px; border: 1px solid var(--border); border-radius: 8px; background: var(--panel); color: inherit; font: inherit; font-size: 13px; cursor: pointer; touch-action: manipulation; text-align: left; }
-  button:disabled { cursor: not-allowed; opacity: .55; }
+  button:disabled, button[aria-disabled='true'] { cursor: not-allowed; opacity: .55; }
   button:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
   .x { flex: none; text-align: center; font-size: 18px; line-height: 1; }
   .unit-name { flex: 1; min-width: 0; }

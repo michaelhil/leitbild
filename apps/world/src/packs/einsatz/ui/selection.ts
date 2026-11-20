@@ -16,7 +16,8 @@ type TargetingUnit = Pick<SituationUnit, 'id' | 'status' | 'commandedBy' | 'carr
 type PlannedStop = Pick<SituationUnit['plan'][number], 'id' | 'state' | 'label' | 'target'>
 
 export type Decision =
-  | { readonly kind: 'order'; readonly target: Stop; readonly expectedPlan: PlanExpectation; readonly job: CurrentJob | null; readonly replace: boolean; readonly add: boolean; readonly assigned: boolean; readonly currentLabel: string | null; readonly replaceReason?: string; readonly addReason?: string }
+  /** `planned`: other units' later stops already cover what this unit would add; the dialog says so before anything is sent. */
+  | { readonly kind: 'order'; readonly target: Stop; readonly expectedPlan: PlanExpectation; readonly job: CurrentJob | null; readonly replace: boolean; readonly add: boolean; readonly assigned: boolean; readonly currentLabel: string | null; readonly replaceReason?: string; readonly addReason?: string; readonly planned?: string }
   /** Asked by the × on a plan row, never by a map tap: a map tap is only ever a target. */
   | { readonly kind: 'remove'; readonly stop: { readonly id: string; readonly label: string; readonly index: number }; readonly expectedPlan: PlanExpectation }
 
@@ -119,8 +120,11 @@ const targetStep = (state: SelectionState, target: Stop, unit: TargetingUnit | u
   const loaded = unit.carry?.load.some(entry => entry.count > 0) ?? false
   const replace = listed?.canReplace ?? (current.moveRefusal === undefined && !loaded && (!assigned || unit.plan[0]?.state === 'active'))
   const add = listed?.canAdd ?? assigned
+  const planned = listed?.planned
   if (!assigned && !('point' in target)) {
     if (!replace) return feedback(state, dispatchWords.targetUnavailable)
+    // A call other units' later stops already cover asks first; any other target sends at once.
+    if (planned !== undefined) return decisionFor(state, unit.id, { kind: 'order', target, expectedPlan: current.plan, job: null, replace, add: false, assigned, currentLabel: null, planned })
     return { state, effects: [{ kind: 'submit', input: { units: [unit.id], stops: [target], expectedPlan: current.plan }, job: null }] }
   }
   if (!assigned && !replace) return feedback(state, current.moveRefusal ?? dispatchWords.cannotMoveHere)
@@ -129,6 +133,7 @@ const targetStep = (state: SelectionState, target: Stop, unit: TargetingUnit | u
     currentLabel: unit.plan.find(stop => stop.state === 'active')?.label ?? null,
     ...(listed?.replaceRefusal === undefined ? {} : { replaceReason: listed.replaceRefusal }),
     ...(listed?.addRefusal === undefined ? {} : { addReason: listed.addRefusal }),
+    ...(planned === undefined ? {} : { planned }),
   })
 }
 

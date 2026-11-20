@@ -129,6 +129,7 @@ const needSchema = z.discriminatedUnion('kind', [
     enRoute: count.describe('Assigned units turning out or on their way.'),
     onTask: count.describe('Assigned units working on it.'),
     completed: count.describe('Units that finished their part.'),
+    planned: count.describe('How many more of it the units under planned would meet once those stops come up, up to its count.'),
   }).strict(),
   z.object({
     kind: z.literal('load').describe('Load waiting to be carried.'),
@@ -137,6 +138,7 @@ const needSchema = z.discriminatedUnion('kind', [
     label: text.describe('The waiting load, counted with the load class\'s noun.'),
     waiting: count.describe('Load not yet picked up.'),
     covered: count.describe('How much of it assigned carriers\' free capacity covers.'),
+    planned: count.describe('How much more of it the carriers under planned will have room for once those stops come up.'),
   }).strict(),
 ]).describe('One need of a task and its coverage.')
 
@@ -161,6 +163,12 @@ const callRowSchema = z.object({
     eta: etaSchema.nullable().describe('Arrival at the task; null once there.'),
     by: actorSchema.describe('Who ordered the unit here.'),
   }).strict()).describe('Units whose current stop is this task.'),
+  planned: z.array(z.object({
+    unitId: idSchema.describe('The unit id.'),
+    label: text.describe('The unit\'s label.'),
+    stop: z.number().int().positive().describe('The task\'s place in the unit\'s plan, from 1 for its current stop.'),
+    eta: etaSchema.nullable().describe('Estimated arrival there, after the stops before it.'),
+  }).strict()).describe('Other units whose plan holds this task as a later stop, by unit id. They do not count in the needs\' coverage, which only current stops fill; each need says what they will add (planned). world.einsatz.recommend counts them as on their way, so it proposes no unit for what they will cover.'),
   states: rowStatesSchema,
 }).strict()
 
@@ -240,8 +248,9 @@ export const unitOptionsSchema = z.object({
     afterOnly: z.boolean().describe('True when this stop requires when: after. It cannot replace the current job or delivery.'),
     canReplace: z.boolean().describe('Whether this target can start now or replace the active stop; false for a target the plan already holds, which is judged by adding it only.'),
     canAdd: z.boolean().describe('Whether this target can join the end of the plan.'),
-    replaceRefusal: text.optional().describe('Why this target cannot replace the active stop, or that the plan already holds it.'),
+    replaceRefusal: text.optional().describe('Why this target cannot replace the active stop, or where the plan already holds it.'),
     addRefusal: text.optional().describe('Why this target cannot join the end of the plan.'),
+    planned: text.optional().describe('Set when other units\' later stops at this call already cover what this unit would add, naming them (see the situation\'s planned). An order is still accepted: warn before sending this unit as well.'),
     etaS: seconds.describe('Travel estimate from the current position, including turnout; excludes time on earlier stops.'),
   }).strict()).describe('Valid targets, nearest first; for a busy unit, those an order "after" its current job or "now" would take.'),
   refused: z.array(z.object({

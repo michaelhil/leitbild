@@ -58,6 +58,13 @@ export const targetLabel = (records: StepRecords, target: StepTarget): string =>
   return records.combat.tracks.get(target.trackId)?.label ?? target.trackId
 }
 
+/** "C-2 is already stop 2 of A4's plan", or "C-2 is A4's current stop" for the stop it carries out now; stops count from 1, as the plan lists them. */
+export const heldText = (records: StepRecords, unit: UnitRecord, index: number): string => {
+  const step = unit.orders[index]!
+  const label = targetLabel(records, step.target)
+  return step.state === 'active' ? `${label} is ${unit.label}'s current stop` : `${label} is already stop ${index + 1} of ${unit.label}'s plan`
+}
+
 const alertLimit = 500
 
 /** "Skipped C-12 (closed); Site 2 (deleted)", within an alert's length. */

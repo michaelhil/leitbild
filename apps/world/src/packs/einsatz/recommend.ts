@@ -1,6 +1,7 @@
 import { capabilityRejection } from '../../simulation/capability-rejection.ts'
 import type { Eta, RecommendAnswer } from './recommendation-schema.ts'
-import { assignedTo, contributionOf, countedFor, coverageOf, freeToHelp, loadAllocation, roleViewFor, stillNeeds, type RoleView } from './engine/coverage.ts'
+import { asAssigned, assignedTo, contributionOf, coverageOf, freeToHelp, loadAllocation, needsFrom, roleViewFor, type RoleView } from './engine/coverage.ts'
+import { countedWithPlanned, plannedStops } from './engine/planned.ts'
 import { committedText, loadedText } from './engine/intent-support.ts'
 import { templateOf, unitTypeOf, type EngineState, type TaskCoverage, type TaskRecord, type UnitRecord } from './engine/model.ts'
 import { acceptingSitesFor } from './engine/delivery.ts'
@@ -10,7 +11,7 @@ import { classCode, loadText, unitWord } from './engine/wording.ts'
 import { etaSeconds, etasFrom, etasTo, type TablePort } from './eta.ts'
 import { refusal } from './refusal.ts'
 import { priorityRefOf } from './situation/situation.ts'
-import { commandsUnit, taskAuthority, type EinsatzViewer } from './viewer.ts'
+import { commandsUnit, inPicture, taskAuthority, type EinsatzViewer } from './viewer.ts'
 import { motionOf } from './engine/model.ts'
 
 /**
@@ -20,7 +21,10 @@ import { motionOf } from './engine/model.ts'
  *
  * - Proposal: the smallest set of free units that serves the task for the
  *   caller's units, by fit then ETA; failing that, the free units' best
- *   partial set, with the remainder named. Only free units are proposed (no
+ *   partial set, with the remainder named. It counts the units already on
+ *   the task and those whose plan holds it as a later stop (`planned.ts`) as
+ *   on their way, so it never proposes a unit for what a later stop will
+ *   cover; once they cover it all, there is no proposal. Only free units are proposed (no
  *   task, no load), so an order between two recommendations never lets
  *   both propose the same unit. `proposal.order` is the order to send.
  * - Fit is how much of the task a unit fills. Units filling the same
@@ -47,8 +51,11 @@ const fillOf = (coverage: TaskCoverage): number[] => [
   ...coverage.requirements.map(entry => Math.min(entry.count, entry.enRoute + entry.onTask + entry.completed)),
   ...coverage.loads.map(entry => entry.covered),
 ]
-const fillWith = (state: EngineState, task: TaskRecord, units: ReadonlyArray<UnitRecord>): number[] =>
-  fillOf(coverageOf(state.catalog, task, countedFor(state, task, units)))
+/** The units counted on their way before any proposal: assigned to the task, and those holding it as a later stop. */
+type Base = ReadonlyArray<UnitRecord>
+const counted = (task: TaskRecord, base: Base, units: ReadonlyArray<UnitRecord>): UnitRecord[] => [...base, ...asAssigned(units, task)]
+const fillWith = (state: EngineState, task: TaskRecord, base: Base, units: ReadonlyArray<UnitRecord>): number[] =>
+  fillOf(coverageOf(state.catalog, task, counted(task, base, units)))
 const sameFill = (a: ReadonlyArray<number>, b: ReadonlyArray<number>): boolean => a.every((value, index) => value === b[index])
 const sum = (values: ReadonlyArray<number>): number => values.reduce((total, value) => total + value, 0)
 
@@ -77,7 +84,7 @@ const byEta = (a: Candidate, b: Candidate): number => etaSeconds(a.eta) - etaSec
  * the task and taken nearest first within a group; sizes are tried from the
  * smallest up.
  */
-const smallestCover = (state: EngineState, task: TaskRecord, view: RoleView, candidates: ReadonlyArray<Candidate>): ReadonlyArray<Candidate> | undefined => {
+const smallestCover = (state: EngineState, task: TaskRecord, base: Base, view: RoleView, candidates: ReadonlyArray<Candidate>): ReadonlyArray<Candidate> | undefined => {
   const grouped = new Map<string, Candidate[]>()
   for (const entry of [...candidates].sort(byEta)) {
     const signature = fillSignature(state, task, entry.unit)
@@ -88,7 +95,7 @@ const smallestCover = (state: EngineState, task: TaskRecord, view: RoleView, can
   const serves = (set: ReadonlyArray<Candidate>): boolean => {
     judged += 1
     if (judged > searchBudget) throw capabilityRejection('capability_work_limit', `${task.label} has too many unit combinations to recommend; send units directly`)
-    return !stillNeeds(state, task, view, set.map(entry => entry.unit))
+    return !needsFrom(state.catalog, task, coverageOf(state.catalog, task, counted(task, base, set.map(entry => entry.unit))), view)
   }
   // Coverage only grows as units are added, so when all of them together do not serve, no subset does.
   if (!serves(candidates)) return undefined
@@ -112,19 +119,19 @@ const smallestCover = (state: EngineState, task: TaskRecord, view: RoleView, can
  * Drops members that add nothing beside the rest, latest arrival first, so a
  * partial set fills as much as all of them with as few units as it can.
  */
-const pruned = (state: EngineState, task: TaskRecord, set: ReadonlyArray<Candidate>): ReadonlyArray<Candidate> => {
+const pruned = (state: EngineState, task: TaskRecord, base: Base, set: ReadonlyArray<Candidate>): ReadonlyArray<Candidate> => {
   let current = [...set]
-  const full = fillWith(state, task, current.map(entry => entry.unit))
+  const full = fillWith(state, task, base, current.map(entry => entry.unit))
   for (const entry of [...set].sort(byEta).reverse()) {
     const without = current.filter(other => other !== entry)
-    if (sameFill(fillWith(state, task, without.map(other => other.unit)), full)) current = without
+    if (sameFill(fillWith(state, task, base, without.map(other => other.unit)), full)) current = without
   }
   return current.sort(byEta)
 }
 
 /** What the task still needs from the caller's units after the proposal, in configuration words. */
-const remainderOf = (state: EngineState, task: TaskRecord, view: RoleView, proposal: ReadonlyArray<UnitRecord>): string[] => {
-  const coverage = coverageOf(state.catalog, task, countedFor(state, task, proposal))
+const remainderOf = (state: EngineState, task: TaskRecord, base: Base, view: RoleView, proposal: ReadonlyArray<UnitRecord>): string[] => {
+  const coverage = coverageOf(state.catalog, task, counted(task, base, proposal))
   const requirements = templateOf(state.catalog, task).requires
   return [
     ...coverage.requirements.flatMap((entry, index) => {
@@ -146,15 +153,14 @@ interface Survey {
   readonly whyNot: RecommendAnswer['whyNot']
 }
 
-/** The caller's units of the task's side that provide what it requires or carry what it holds, sorted into free and why not. */
-const survey = (state: EngineState, task: TaskRecord, commandable: (unit: UnitRecord) => boolean): Survey => {
-  const assigned = assignedTo(state.units.values(), task)
+/** The caller's units of the task's side that provide what it requires or carry what it holds, sorted into free and why not; a unit that adds only what a later stop will cover is neither. */
+const survey = (state: EngineState, task: TaskRecord, base: Base, commandable: (unit: UnitRecord) => boolean): Survey => {
   const requires = templateOf(state.catalog, task).requires
   const free: UnitRecord[] = []
   const whyNot: Array<RecommendAnswer['whyNot'][number]> = []
   for (const unit of [...state.units.values()].sort(byId)) {
     if (!commandable(unit) || !linksToTask(unit, task) || unit.taskId === task.id) continue
-    if (freeToHelp(state, task, assigned, unit)) {
+    if (freeToHelp(state, task, base, unit)) {
       free.push(unit)
       continue
     }
@@ -166,7 +172,7 @@ const survey = (state: EngineState, task: TaskRecord, commandable: (unit: UnitRe
     if (isDestroyed(unit)) refuse([`${unit.label} is ${unitWord(state.catalog, unit, 'destroyed')}`])
     else if (type.components.mobility === undefined) refuse([`${unit.label} cannot move`])
     else {
-      const contribution = contributionOf(state.catalog, task, assigned, unit)
+      const contribution = contributionOf(state.catalog, task, base, unit)
       if (!contribution.adds) {
         if (contribution.unmet.length > 0) refuse(contribution.unmet)
       } else refuse([hasLoad(unit) ? loadedText(state, unit) : committedText(state, unit)])
@@ -202,11 +208,12 @@ export const recommend = async (input: {
 
   const commandable = (unit: UnitRecord): boolean => commandsUnit(state.catalog, viewer, unit)
   const view = roleViewFor(state, commandable, task)
-  const units = survey(state, task, commandable)
+  const base = countedWithPlanned(state, task, plannedStops(state, task).filter(entry => inPicture(state.catalog, viewer, entry.unit)))
+  const units = survey(state, task, base, commandable)
   const etas = await etasTo(state, units.free, task.point, input.routing)
   const free = units.free.map((unit): Candidate => ({ unit, eta: etas.get(unit.id)! }))
 
-  const proposal = smallestCover(state, task, view, free) ?? pruned(state, task, free)
+  const proposal = smallestCover(state, task, base, view, free) ?? pruned(state, task, base, free)
   const proposed = proposal.map(entry => entry.unit)
   const inProposal = new Set(proposed.map(unit => unit.id))
   const unitEta = (entry: Candidate) => ({ unitId: entry.unit.id, label: entry.unit.label, eta: entry.eta })
@@ -237,7 +244,7 @@ export const recommend = async (input: {
     })),
   ].filter(entry => entry.units.length > 0)
 
-  const shares = loadAllocation(state.catalog, task, [...assigned, ...countedFor(state, task, proposed).filter(unit => inProposal.has(unit.id))])
+  const shares = loadAllocation(state.catalog, task, counted(task, base, proposed))
   const deliverTo: Array<RecommendAnswer['deliverTo'][number]> = []
   for (const carrier of proposed) {
     const share = shares.get(carrier.id) ?? {}
@@ -257,8 +264,8 @@ export const recommend = async (input: {
     proposal: proposal.length === 0 ? null : {
       order: orderFor(proposed.map(unit => unit.id)),
       units: proposal.map(unitEta),
-      covers: coversOf(coverageOf(state.catalog, task, countedFor(state, task, proposed))),
-      remainder: remainderOf(state, task, view, proposed),
+      covers: coversOf(coverageOf(state.catalog, task, counted(task, base, proposed))),
+      remainder: remainderOf(state, task, base, view, proposed),
     },
     alternatives,
     whyNot: units.whyNot.filter(entry => !offered.has(entry.unitId)),

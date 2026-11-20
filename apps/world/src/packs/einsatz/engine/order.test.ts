@@ -42,7 +42,7 @@ describe('Einsatz unit.order', () => {
   test('all or nothing: a refused stop leaves every unit as it was', async () => {
     const state = await field()
     const refused = await refusalOf(state, order(['c1'], [{ taskId: 't1' }, { taskId: 't1' }]))
-    expect(refused).toEqual({ code: 'requirement_covered', reason: 'requirement_covered: T1 needs nothing more than C1 provides' })
+    expect(refused).toEqual({ code: 'already_in_plan', reason: 'already_in_plan: T1 is C1\'s current stop' })
     const before = unitOf(state, 'c1')
     expect(unitOf(state, 'c1')).toEqual(before)
     expect(taskOf(state, 't1').coverage.loads).toEqual([{ classId: top, waiting: 1, covered: 0 }])

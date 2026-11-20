@@ -74,6 +74,7 @@ export const engineRefusalCodes = [
   'divert_after_arrival',
   'requirement_unmet',
   'requirement_covered',
+  'already_in_plan',
   'task_closed',
   'site_not_accepting',
   'property_out_of_range',

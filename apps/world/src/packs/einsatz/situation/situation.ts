@@ -4,7 +4,8 @@ import { wordFor, surfaceLexiconKeys } from '../lexicon.ts'
 import { refusal, refusalCode } from '../refusal.ts'
 import type { PriorityRef } from '../recommendation-schema.ts'
 import type { StepKind, StepTarget } from '../steps.ts'
-import { assignedTo, freeToHelp } from '../engine/coverage.ts'
+import { assignedTo, coverageOf, freeToHelp } from '../engine/coverage.ts'
+import { coverageWithPlanned, plannedStops } from '../engine/planned.ts'
 import { priorityOf, priorityRankOf, templateOf, unitTypeOf, type EngineState, type TaskRecord, type UnitRecord } from '../engine/model.ts'
 import { committedPhases, isDestroyed, isFree } from '../engine/rules.ts'
 import { takesArrivals } from '../engine/delivery.ts'
@@ -164,6 +165,13 @@ const callRow = (state: EngineState, viewer: EinsatzViewer, task: TaskRecord, ro
   const assignedNow = assignedTo(state.units.values(), task)
   // The units recommend would propose from: free, on the task's side, adding to it.
   const freeCanHelp = [...state.units.values()].some(unit => commandable(unit) && freeToHelp(state, task, assignedNow, unit))
+  // Later stops of the units this viewer sees, and what the needs reach once they come up.
+  const planned = plannedStops(state, task).filter(entry => rows.has(entry.unit.id))
+  const now = coverageOf(state.catalog, task, assignedNow)
+  const then = coverageWithPlanned(state, task, planned)
+  const reach = (entry: typeof now.requirements[number]): number => Math.min(entry.count, entry.enRoute + entry.onTask + entry.completed)
+  const plannedCovers = planned.length > 0
+    && then.requirements.every(entry => reach(entry) >= entry.count) && then.loads.every(entry => entry.covered >= entry.waiting)
   return {
     id: task.id,
     label: task.label,
@@ -192,11 +200,13 @@ const callRow = (state: EngineState, viewer: EinsatzViewer, task: TaskRecord, ro
           enRoute: entry.enRoute,
           onTask: entry.onTask,
           completed: entry.completed,
+          planned: Math.max(0, reach(then.requirements[index]!) - reach(now.requirements[index]!)),
         }
       }),
       ...task.coverage.loads.map(entry => {
         const loadClass = state.catalog.classes.find(candidate => candidate.id === entry.classId)!
-        return { kind: 'load' as const, classId: entry.classId, code: loadClass.code, label: loadText(state.catalog, { [entry.classId]: entry.waiting }), waiting: entry.waiting, covered: entry.covered }
+        const later = Math.max(0, (then.loads.find(other => other.classId === entry.classId)?.covered ?? 0) - (now.loads.find(other => other.classId === entry.classId)?.covered ?? 0))
+        return { kind: 'load' as const, classId: entry.classId, code: loadClass.code, label: loadText(state.catalog, { [entry.classId]: entry.waiting }), waiting: entry.waiting, covered: entry.covered, planned: later }
       }),
     ],
     assigned: assigned.map(unit => {
@@ -211,10 +221,12 @@ const callRow = (state: EngineState, viewer: EinsatzViewer, task: TaskRecord, ro
         by: actorWords(active?.by ?? unit.lastAction?.by ?? 'scenario', viewer),
       }
     }),
+    planned: planned.map(entry => ({ unitId: entry.unit.id, label: entry.unit.label, stop: entry.stop, eta: rows.get(entry.unit.id)!.plan[entry.stop - 1]?.eta ?? null })),
     states: [
       ...task.alerts.map(alert => ({ code: alert.code, text: alert.message })),
       ...(overdue === true ? [{ code: 'overdue', text: `Waiting past its ${priorityOf(state.catalog, task.priority).code} response target` }] : []),
-      ...(needs && !freeCanHelp ? [{ code: 'no_free_unit', text: 'No free unit can serve what it still needs' }] : []),
+      // Once its later stops cover it, a call needs no free unit.
+      ...(needs && !freeCanHelp && !plannedCovers ? [{ code: 'no_free_unit', text: 'No free unit can serve what it still needs' }] : []),
     ],
   }
 }
