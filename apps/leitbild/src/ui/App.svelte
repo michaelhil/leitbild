@@ -777,7 +777,8 @@
     location.replace(workspace ? `/workspaces/${encodeURIComponent(workspace.id)}` : '/workspaces')
   }
 
-  const restoreUrlSelection = (): void => {
+  /** The address's selection, applied as it stands; restoreUrlSelection and openAddressInPlace then judge it against the catalogue. */
+  const applyUrlSelection = (): void => {
     const selection = new URLSearchParams(location.search)
     const opened = addressedRunAndPlanning(selection)
     selectedPlanningId = opened.planning
@@ -790,6 +791,10 @@
     selectedAgentsRoomId = selection.get('agents')
     agentsVisible = selectedAgentsRoomId !== null
     screenRunGone = false
+  }
+
+  const restoreUrlSelection = (): void => {
+    applyUrlSelection()
     // Back to a Run or conversation deleted since is the Workspace page, not a dead view.
     if (!loading) normalizeOpenSelection(resources, resourceOutcomes)
   }
@@ -799,7 +804,10 @@
   const openAddressInPlace = (address: string): void => {
     if (address === `${location.pathname}${location.search}`) return
     history.pushState(null, '', address)
-    restoreUrlSelection()
+    // The page may name what it has just made, such as a new plan, which the catalogue read so far does not list:
+    // the selection is judged against a fresh read of it, never against the old one.
+    applyUrlSelection()
+    if (workspace) void refreshResources(workspace.id).catch(cause => { refreshError = String(cause) })
   }
 
   const capabilityFor = (id: string): ModuleCapabilityDescriptor | undefined => capabilities.find(item => item.id === id)
