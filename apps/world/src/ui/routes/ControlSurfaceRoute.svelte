@@ -7,7 +7,7 @@
   import GuidePanel from '../GuidePanel.svelte'
   import { createGuidanceSession, type GuidanceSession, type GuidanceScreen, type PresentationApplication } from '../guidance-session.ts'
   import type { PresentationRequest } from '@leitbild/contracts'
-  import { fitObjectsTarget, homeMapTarget, type RunViewChoice } from '../run-view-actions.ts'
+  import { fitObjectsTarget, homeMapTarget, runCameraButtons, type RunCameraActionId } from '../run-view-actions.ts'
   import { alertRows, unacknowledged } from '../../features/displays/alerts/rows.ts'
   import type { Component } from 'svelte'
   import { tick, untrack } from 'svelte'
@@ -65,8 +65,8 @@
   import { completeControlSurfaceStartupFromSnapshot } from '../app/control-surface-session.ts'
   import { startupScenarioSource } from '../app/startup-scenario.ts'
   import { loadActivePackViews } from '../pack-loader.ts'
-  import { groundClicksWanted, previewObjectTarget, routeGroundClick, routeObjectClick, targetPickingWanted, targetPreviewsWanted, type ClosedMapTargetPanel, type MapClickContext, type MapClickRoute, type MapTargetPanel } from '../map-target-routing.ts'
-  import { assertMapCover, assertMapPrompt, assertMapTargeting, assertPanelInteraction, cameraPaddingFor, mapCameraInteractionFor, openPanelDeclaring, railStartsCollapsed, startingControllerId, surfacePanelIsOpen, surfacePanelPackId, type MapPrompt, type MapTargeting, type SurfacePanelInteraction, type SurfacePanelProps } from '../surface-panel-interaction.ts'
+  import { groundClicksWanted, mapAloneClicks, previewObjectTarget, routeGroundClick, routeObjectClick, targetPickingWanted, targetPreviewsWanted, type ClosedMapTargetPanel, type MapClickContext, type MapClickRoute, type MapTargetPanel } from '../map-target-routing.ts'
+  import { assertMapCover, assertMapPrompt, assertMapTargeting, assertPanelInteraction, cameraPaddingFor, armedPanelStays, mapCameraInteractionFor, openPanelDeclaring, railStartsCollapsed, startingControllerId, surfacePanelIsOpen, surfacePanelPackId, type MapPrompt, type MapTargeting, type SurfacePanelInteraction, type SurfacePanelProps } from '../surface-panel-interaction.ts'
   import type { MapCover } from '../surface-panel-contract.ts'
   import PanelKeyRouter from '../keys/PanelKeyRouter.svelte'
   import type { PanelKey } from '../keys/panel-key.ts'
@@ -240,7 +240,7 @@
   let runAssistantOffered = $state(false)
   let guidanceSession: GuidanceSession | null = $state.raw(null)
   let guidanceScreen: GuidanceScreen = $state.raw({ recipient: null, guide: null, suggestion: null, cue: null, busy: false, error: null, restored: false, explored: false })
-  let viewControls: { reveal: (which: 'view' | 'guide', focus?: boolean) => Promise<void>; dismiss: () => void } | null = $state(null)
+  let viewControls: { revealGuide: (focus?: boolean) => Promise<void>; dismiss: () => void } | null = $state(null)
   let presentationObjectIds: ReadonlyArray<string> = $state([])
   let presentationElement: HTMLElement | null = null
   let presentationOwner: string | null = null
@@ -273,6 +273,9 @@
   // and placing on another screen.
   const surfaceRoute = readSurfaceRoute(location.search)
   const surfaceMode = surfaceRoute.kind !== 'run'
+  // The map surface is the Run's map alone. It leaves out the rail and the Pack panels too, waits for the map at
+  // startup, and its clicks order and select nothing (`mapAloneClicks`).
+  const mapSurface = surfaceRoute.kind === 'surface' && surfaceRoute.surface.kind === 'map'
   const routeFocus = surfaceMode ? null : objectIdSchema.safeParse(new URLSearchParams(location.search).get('focus')).data ?? null
   const routeElement = idSchema.safeParse(new URLSearchParams(location.search).get('element')).data ?? null
   let focusedMapObjectId = $state<ObjectId | null>(null)
@@ -300,6 +303,8 @@
   })
   let alarmStripVisible = $state(false)
   let layoutControlsVisible = $state(false)
+  // The physical layouts' Plan or 3D, as the map's 3D switch last reported it; a reload brings a remembered 3D back.
+  let layoutMode = $state<RunViewPreferences['layoutMode']>('2d')
   let viewPreferencesKey = $state<string | null>(null)
   let appliedSurfacePanelKey = ''
   let procedureSystemModalLoadPromise: Promise<ProcedureSystemModalComponent> | null = null
@@ -361,12 +366,13 @@
   const mapVisible = $derived(mapConfig !== null)
   /** A press on an object's map icon or rail row that orders nothing opens its display where its Pack asks so (`map-target-routing.ts`). */
   const opensDisplay = (object: OperationalObject): boolean => activePack?.packForObject(object).ui?.displayOnPress === true
-  const railVisible = $derived(railConfig !== null)
+  const railVisible = $derived(railConfig !== null && !mapSurface)
   const footerVisible = true
   // The briefing card's bottom edge, as it last measured itself: the alarm strip starts below it while it shows.
   let guidanceBottom = $state(0)
+  // Only the eyes this tab switched, restored with the Run view record; every reader shows a category absent here.
   let categoryMapVisibility = $state<Record<string, boolean>>({})
-  const surfacePanels = $derived(activePack?.surfacePanels ?? [])
+  const surfacePanels = $derived(mapSurface ? [] : activePack?.surfacePanels ?? [])
   const surfacePanelLaunchers = $derived(surfacePanels.map(panel => ({ id: panel.id, label: panel.label, open: surfacePanelIsOpen(panel, surfacePanelOpen) })))
   // Handlers the mounted panels lend the surface; only panels whose contribution declares a hook connect one.
   let panelInteractions = $state.raw<Readonly<Record<string, SurfacePanelInteraction>>>({})
@@ -410,7 +416,12 @@
     return mutedOnMap ? objects.filter(object => mutedOnMap(object, targetContext)).map(object => object.id) : emptyStringArray
   })
   const mapCameraInteraction = $derived(mapCameraInteractionFor(activePack?.packs ?? []))
-  const mapClickContext = $derived<MapClickContext>({ controller: selectedControllerObject, selectedObjectId: selectedControllerId, targeting: activePack?.targeting, context: targetContext, panel: mapTargetPanel, closedMapTargetPanels, opensDisplay })
+  const mapClickContext = $derived<MapClickContext>(mapSurface
+    ? mapAloneClicks({ context: targetContext, opensDisplay })
+    : { controller: selectedControllerObject, selectedObjectId: selectedControllerId, targeting: activePack?.targeting, context: targetContext, panel: mapTargetPanel, closedMapTargetPanels, opensDisplay })
+  // The controller a screen starts with selected, at join and after a role switch; the map alone starts with none.
+  const startingSelection = (list: ReadonlyArray<OperationalObject>, context: PackTargetContext): ObjectId | null =>
+    mapSurface || !activePack ? null : startingControllerId(list, activePack, context, isSurfacePanelOpen)
   const physicalOperationalCapture = $derived(physicalExplorerOperationalCapture({ placement: placementMode !== null, targetPicking: targetPickingWanted(mapClickContext), controllerSelected: selectedControllerId !== null }))
   const mapStartupFailed = $derived(startupSteps.find(step => step.id === 'map')?.status === 'failed')
   const displayRunJoin = $derived.by<DeckRunJoin>(() => {
@@ -429,20 +440,6 @@
     ...(scenarioState?.highlightedObjectIds ?? emptyStringArray), ...presentationObjectIds,
     ...(focusedMapObject ? [focusedMapObject.id] : []),
   ])])
-  $effect(() => {
-    const rows = categoryRows
-    untrack(() => {
-      const current = categoryMapVisibility
-      const next: Record<string, boolean> = {}
-      let changed = Object.keys(current).length !== rows.length
-      for (const row of rows) {
-        const value = current[row.category.id] ?? true
-        next[row.category.id] = value
-        if (current[row.category.id] === undefined) changed = true
-      }
-      if (changed) categoryMapVisibility = next
-    })
-  })
   const hiddenObjectCategoryIds = $derived(
     Object.entries(categoryMapVisibility).flatMap(([categoryId, visible]) => visible ? [] : [categoryId]),
   )
@@ -450,10 +447,11 @@
   const systemStatusTone = $derived<StatusTone>(
     startupHasFailed(startupSteps) ? 'error' : startupIsReady(startupSteps) ? 'ready' : 'working',
   )
-  // A surface needs nothing from the base map: its startup neither waits for the map nor fails with it. The map
-  // still starts underneath and reports where it always does.
-  const startupAwaitsMap = $derived(mapVisible && !surfaceMode)
-  const awaitedStartupSteps = $derived(startupStepsAwaited(startupSteps, { map: !surfaceMode }))
+  // A surface that fills the pane with a window needs nothing from the base map: its startup neither waits for the
+  // map nor fails with it. The map still starts underneath and reports where it always does. The map surface shows
+  // the map, so it waits for it as the Run page does.
+  const startupAwaitsMap = $derived(mapVisible && (!surfaceMode || mapSurface))
+  const awaitedStartupSteps = $derived(startupStepsAwaited(startupSteps, { map: !surfaceMode || mapSurface }))
   const startupModalVisible = $derived(rolePicker === null && (startupModalShouldShow({
     routeMode,
     dismissed: startupDismissed,
@@ -503,6 +501,7 @@
   const toggleSurfacePanel = (panelId: string): void => {
     const panel = surfacePanels.find(candidate => candidate.id === panelId)
     if (!panel) return
+    if (armedPanelStays(panelId, mapTargetPanelContribution, panelMapTargetings)) { status = 'Finish or cancel the armed order before hiding this panel'; return }
     setSurfacePanelOpen(panelId, !surfacePanelIsOpen(panel, surfacePanelOpen))
   }
 
@@ -544,7 +543,7 @@
   $effect(() => {
     if (surfaceMode || routeFocus !== null || planningGuideOpened || !planningDemoHref || !viewControls || !startupDismissed || foregroundProcedure) return
     planningGuideOpened = true
-    void viewControls.reveal('guide', false)
+    void viewControls.revealGuide(false)
   })
 
   // Pack-rail layer-group visibility. Active pack contributes mapLayerGroups
@@ -567,24 +566,8 @@
     if (!runId) throw new Error('live map layers query a Simulation Run, and none is joined')
     return await querySimulationRunCapability(runId, request.capabilityId, request.input, { signal })
   }
+  // Only the choices this tab made, restored with the Run view record; every reader gives a group absent here its `defaultVisible`.
   let mapLayerGroupVisibility = $state<Record<string, boolean>>({})
-  // Re-seed when the group list changes. `untrack` keeps the write from
-  // re-triggering this effect (a new object literal every time would otherwise
-  // loop infinitely and block the event loop).
-  $effect(() => {
-    const groups = activeMapLayerGroups
-    untrack(() => {
-      const current = mapLayerGroupVisibility
-      const next: Record<string, boolean> = {}
-      let changed = Object.keys(current).length !== groups.length
-      for (const group of groups) {
-        const value = current[group.id] ?? group.defaultVisible
-        next[group.id] = value
-        if (current[group.id] === undefined) changed = true
-      }
-      if (changed) mapLayerGroupVisibility = next
-    })
-  })
   const toggleMapLayerGroup = (groupId: string): void => {
     mapLayerGroupVisibility = {
       ...mapLayerGroupVisibility,
@@ -619,62 +602,23 @@
     return presentationComposer.present(object, options)
   }
 
-  const viewPanels = $derived<ReadonlyArray<RunViewChoice>>([
-    ...(activePhysicalLayoutBindings.length > 0 ? [{ id: 'layout-controls', label: 'Layout controls', visible: layoutControlsVisible }] : []),
-    // The open map-target panel stays while it arms an order, which it shows by its targeting (plan B.10: only in SA).
-    ...surfacePanels.map(panel => ({ id: `panel:${panel.id}`, label: panel.label, visible: isSurfacePanelOpen(panel), ...(mapTargetPanelContribution?.id === panel.id && panelMapTargetings[panel.id] != null ? { disabledReason: 'Finish or cancel the armed order before hiding this panel' } : {}) })),
-  ])
-  const viewLayers = $derived<ReadonlyArray<RunViewChoice>>([
-    ...activeMapLayerGroups.map(layer => ({ id: `layer:${layer.id}`, label: layer.label, visible: mapLayerGroupVisibility[layer.id] ?? layer.defaultVisible })),
-    ...(mapConfig?.layers.includes('weather') ? [{ id: 'weather', label: 'Weather', visible: weatherLayerVisible }] : []),
-  ])
-  const visiblePointObjects = (): ReadonlyArray<OperationalObject> => objects.filter(object => object.spatial.position !== undefined && !hiddenObjectCategoryIds.includes(presentationFor(object).categoryId))
+  const drawnOnMap = (object: OperationalObject): boolean => object.spatial.position !== undefined && !hiddenObjectCategoryIds.includes(presentationFor(object).categoryId)
   const fitSelectedTarget = $derived(fitObjectsTarget(selectedControllerId === null ? [] : objects.filter(object => object.id === selectedControllerId)))
-  const viewCamera = $derived([
-    { id: 'home', label: 'Home', ...(!mapReady ? { disabledReason: 'Map is not ready' } : {}) },
-    { id: 'fit-selected', label: 'Fit selection', ...(!mapReady ? { disabledReason: 'Map is not ready' } : !fitSelectedTarget ? { disabledReason: 'Select an object with a map position' } : {}) },
-    { id: 'fit-visible', label: 'Fit all visible', ...(!mapReady ? { disabledReason: 'Map is not ready' } : !objects.some(object => object.spatial.position !== undefined && !hiddenObjectCategoryIds.includes(presentationFor(object).categoryId)) ? { disabledReason: 'No visible object positions' } : {}) },
-  ])
-  const viewResetDisabledReason = $derived(viewPanels.find(panel => panel.disabledReason)?.disabledReason)
+  // The map's camera group (`camera-control.ts`): Home, Fit all visible and, with a selection on the map, Fit selection.
+  const anyDrawnOnMap = $derived(objects.some(drawnOnMap))
+  const selectionOnMap = $derived(fitSelectedTarget !== null)
+  const cameraButtons = $derived(runCameraButtons({ visiblePositions: anyDrawnOnMap, selectionOnMap }))
   const viewAlarmCount = $derived(alertRows(objects, object => ({ label: object.label, categoryId: presentationFor(object).categoryId })).filter(row => row.priority !== 'none' && unacknowledged(row)).length)
   $effect(() => {
     const key = viewPreferencesKey
     if (key === null) return
-    try { writeRunViewPreferences(sessionStorage, key, { guidance: guidancePreferences, alarms: alarmStripVisible, layout: layoutControlsVisible, panels: surfacePanelOpen }) } catch { /* A denied storage getter must not prevent local presentation. */ }
+    try { writeRunViewPreferences(sessionStorage, key, { guidance: guidancePreferences, alarms: alarmStripVisible, layout: layoutControlsVisible, panels: surfacePanelOpen, layers: mapLayerGroupVisibility, weather: weatherLayerVisible, categories: categoryMapVisibility, layoutMode }) } catch { /* A denied storage getter must not prevent local presentation. */ }
   })
-  const actOnView = (id: string): void => {
-    if (['home', 'fit-selected', 'fit-visible'].includes(id)) guidanceSession?.manualCamera()
-    if (id === 'home' && mapConfig) focusMapTarget(homeMapTarget(mapConfig))
-    else if (id === 'fit-selected' && fitSelectedTarget) focusMapTarget(fitSelectedTarget)
-    else if (id === 'fit-visible') {
-      const target = fitObjectsTarget(visiblePointObjects())
-      if (!target) throw new Error('No visible object positions')
-      focusMapTarget(target)
-    }
-    else throw new Error(`View action is unavailable: ${id}`)
-  }
-  const setViewChoice = (id: string, visible: boolean): void => {
-    const panel = viewPanels.find(choice => choice.id === id)
-    if (panel) {
-      if (panel.disabledReason) { status = panel.disabledReason; return }
-      if (id === 'layout-controls') layoutControlsVisible = visible
-      else setSurfacePanelOpen(id.slice('panel:'.length), visible)
-      return
-    }
-    if (id === 'weather') { weatherLayerVisible = visible; return }
-    const layer = activeMapLayerGroups.find(layer => `layer:${layer.id}` === id)
-    if (!layer) throw new Error(`View choice is unavailable: ${id}`)
-    mapLayerGroupVisibility = { ...mapLayerGroupVisibility, [layer.id]: visible }
-  }
-  const resetLocalView = (): void => {
-    if (viewResetDisabledReason) { status = viewResetDisabledReason; return }
-    alarmStripVisible = false
-    layoutControlsVisible = false
-    surfacePanelOpen = {}
-    mapLayerGroupVisibility = Object.fromEntries(activeMapLayerGroups.map(layer => [layer.id, layer.defaultVisible]))
-    categoryMapVisibility = {}
-    weatherLayerVisible = true
-    if (mapConfig && mapReady) { guidanceSession?.manualCamera(); focusMapTarget(homeMapTarget(mapConfig)) }
+  const actOnCamera = (id: RunCameraActionId): void => {
+    const target = id === 'home' ? mapConfig && homeMapTarget(mapConfig) : id === 'fit-selected' ? fitSelectedTarget : fitObjectsTarget(objects.filter(drawnOnMap))
+    if (!target) throw new Error(`Camera action is unavailable: ${id}`)
+    guidanceSession?.manualCamera()
+    focusMapTarget(target)
   }
   const setGuidanceMode = (mode: RunViewPreferences['guidance']['mode']): void => {
     guidancePreferences = { ...guidancePreferences, mode, ...(mode === 'running' ? { dismissedId: null } : {}) }
@@ -721,7 +665,7 @@
     if (document.hidden || !bounds || bounds.width <= 0 || bounds.height <= 0) throw new Error('The World surface is not visible; reopen it and request Show again')
     if (action.kind === 'explain') {
       requireWorldControls()
-      await viewControls?.reveal('guide', false)
+      await viewControls?.revealGuide(false)
       await tick()
       current()
       requireWorldControls()
@@ -737,11 +681,11 @@
         requestDisplayWindow({ kind: 'dashboard' }, false)
         return waitForPresentation(request, signal, presentationDisplayWaiters, displayWindowRequestSequence)
       }
-      if (!['view', 'guide', 'alarms'].includes(target.id)) throw new Error('This World control is unavailable')
+      if (target.id !== 'guide' && target.id !== 'alarms') throw new Error('This World control is unavailable')
       requireWorldControls()
       if (action.kind === 'reveal') {
         if (target.id === 'alarms') alarmStripVisible = true
-        else await viewControls?.reveal(target.id as 'view' | 'guide', false)
+        else await viewControls?.revealGuide(false)
         current()
       }
       if (action.kind !== 'reveal' && action.kind !== 'highlight') throw new Error('This control supports reveal or highlight')
@@ -749,7 +693,7 @@
       current()
       requireWorldControls()
       const controlId = action.kind === 'highlight' ? `run-${target.id}-trigger`
-        : target.id === 'view' ? 'run-view-sheet' : target.id === 'guide' ? 'run-guide-options' : 'run-alert-strip'
+        : target.id === 'guide' ? 'run-guide-options' : 'run-alert-strip'
       const element = document.getElementById(controlId)
       if (!element) throw new Error('The World control is not mounted')
       if (action.kind === 'highlight') markPresentation(request, element)
@@ -783,7 +727,7 @@
     if (action.kind === 'highlight') { presentationOwner = request.id; presentationObjectIds = [object.id]; await tick(); current(); return { status: 'applied' } }
     if (action.kind === 'focus' || action.kind === 'reveal') {
       if (!cameraAllowed) return { status: 'superseded', reason: 'Your map gesture took priority; use Show to request another camera move' }
-      if (viewResetDisabledReason) throw new Error('Finish or cancel the armed order before a guided camera move')
+      if (mapTargeting !== null) throw new Error('Finish or cancel the armed order before a guided camera move')
       if (action.kind === 'reveal') { presentationOwner = request.id; presentationObjectIds = [object.id] }
       const position = object.spatial.position.point.coordinates
       focusOnMapObject(position, action.kind === 'focus' ? action.zoom : undefined)
@@ -1438,7 +1382,7 @@
     : presentSurface(surfaceRoute, objectId => {
         const object = objectById.get(objectId)
         return object === undefined ? null : { label: object.label, hasOverview: observedAssetObjects.some(asset => asset.id === object.id), runsProcedures: procedureScopeForObject(object) !== null }
-      }))
+      }, mapVisible))
   const surfaceRefusal = $derived(surfacePresentation?.kind === 'refused' ? surfacePresentation.reason : null)
   const surfaceOpens = $derived(surfacePresentation !== null && surfacePresentation.kind !== 'refused')
   let surfaceProcedureWindowId = $state<string | null>(null)
@@ -1447,7 +1391,8 @@
     if (!surfaceOpens) return
     untrack(() => {
       const presentation = surfacePresentation
-      if (presentation === null || presentation.kind === 'refused') return
+      // The map surface opens no window: the map is already there.
+      if (presentation === null || presentation.kind === 'refused' || presentation.kind === 'map') return
       if (presentation.kind === 'display') {
         requestDisplayWindow(presentation.target, false)
         return
@@ -1881,7 +1826,7 @@
     const perspectiveContext: PackTargetContext = declaration !== null
       ? { objects: perspective.snapshot.objects, viewer: viewerForRoleSet(declaration, perspective.roleIds) }
       : { objects: perspective.snapshot.objects }
-    const startingId = activePack ? startingControllerId(perspective.snapshot.objects, activePack, perspectiveContext, isSurfacePanelOpen) : null
+    const startingId = startingSelection(perspective.snapshot.objects, perspectiveContext)
     const stores = storesForPerspective(
       perspective,
       { epoch: perspectiveEpoch, roleIds: heldRoleIds, feedback: commandFeedback },
@@ -2031,7 +1976,6 @@
     if (packScenario.id !== scenarioId || !activePack) throw new Error(`scenario packs failed to load for ${scenarioId}`)
     await completeControlSurfaceStartupFromSnapshot({
       response,
-      pack: activePack,
       startStep,
       completeStep,
       setActiveStartupStep: config.setActiveStartupStep,
@@ -2053,8 +1997,7 @@
       setSelectedControllerId: id => {
         selectedControllerId = id
       },
-      targetContext: targetContextFor,
-      isSurfacePanelOpen,
+      startingControllerId: list => startingSelection(list, targetContextFor(list)),
       setSeenRevisions: nextSeen => {
         seenRevisions = nextSeen
       },
@@ -2209,6 +2152,10 @@
     alarmStripVisible = preferences.alarms
     layoutControlsVisible = preferences.layout
     surfacePanelOpen = { ...preferences.panels }
+    mapLayerGroupVisibility = { ...preferences.layers }
+    weatherLayerVisible = preferences.weather
+    categoryMapVisibility = { ...preferences.categories }
+    layoutMode = preferences.layoutMode
     dismissedTimelineOutcome = ''
     viewPreferencesKey = key
     const receiveDisplayWindowMessage = (event: MessageEvent): void => {
@@ -2346,10 +2293,10 @@
     style={`--rail-width: ${railVisible ? railLayout.width : 0}px`}
     style:--drawer-width={`${railLayout.panelWidth}px`}
   >
-    {#if railConfig}
+    {#if railVisible && railConfig}
       {#if railLayout.drawer}
-        {#if !railLayout.collapsed}<button class="rail-drawer-shade" type="button" aria-label="Close objects drawer" onclick={railLayout.collapse}></button>{/if}
-        <button class="rail-drawer-toggle" type="button" aria-expanded={!railLayout.collapsed} onclick={railLayout.toggleDrawer}>{railLayout.collapsed ? 'Objects' : 'Close objects'}</button>
+        {#if !railLayout.collapsed}<button class="rail-drawer-shade" type="button" aria-label="Close menu drawer" onclick={railLayout.collapse}></button>{/if}
+        <button class="rail-drawer-toggle" type="button" aria-expanded={!railLayout.collapsed} onclick={railLayout.toggleDrawer}>{railLayout.collapsed ? 'Menu' : 'Close menu'}</button>
       {/if}
       <ControlRail
         status={mapWarnings || status}
@@ -2384,8 +2331,12 @@
         mapLegends={activeMapLegends}
         {mapLayerGroupVisibility}
         onMapLayerGroupToggle={toggleMapLayerGroup}
+        weatherLayerVisible={mapConfig?.layers.includes('weather') ? weatherLayerVisible : undefined}
+        onWeatherLayerToggle={visible => { weatherLayerVisible = visible }}
         surfacePanels={surfacePanelLaunchers}
         {toggleSurfacePanel}
+        layoutControlsOpen={activePhysicalLayoutBindings.length > 0 ? layoutControlsVisible : undefined}
+        toggleLayoutControls={() => { layoutControlsVisible = !layoutControlsVisible }}
       />
       <button
         class="rail-resize-handle"
@@ -2403,7 +2354,7 @@
           {objects}
           {selectedControllerId}
           controllerHighlighted={selectedControllerObject !== null}
-          isController={object => activePack?.targeting?.isController(object, targetContext) === true}
+          isController={object => mapClickContext.targeting?.isController(object, targetContext) === true}
           {placementMode}
           {placementCursor}
           {placementPoints}
@@ -2441,6 +2392,8 @@
           liveMapLayers={activeLiveMapLayers}
           physicalLayoutBindings={activePhysicalLayoutBindings}
           bind:physicalLayoutControlsOpen={layoutControlsVisible}
+          physicalLayoutMode={layoutMode}
+          onPhysicalLayoutMode={mode => { layoutMode = mode }}
           layoutClearTop={Math.max(alarmStripVisible ? alarmStripBottom : 0, visibleGuidanceBottom)}
           onPhysicalDisplay={listing => requestDisplayWindow({ kind: 'listing', listing }, true)}
           physicalLayoutSuspended={physicalOperationalCapture}
@@ -2452,6 +2405,8 @@
           cancelFocusRevision={cancelledMapFocusRevision}
           cameraInteraction={mapCameraInteraction}
           cameraPadding={mapCameraPadding}
+          {cameraButtons}
+          onCameraAction={actOnCamera}
           targetPicking={targetPickingWanted(mapClickContext)}
           onGroundSelected={groundClicksWanted(mapClickContext) ? selectGround : undefined}
           targetPreviewFor={targetPreviewsWanted(mapClickContext) ? previewTarget : undefined}
@@ -2466,8 +2421,7 @@
         <AlertStrip onClose={() => { alarmStripVisible = false; document.getElementById('run-alarms-trigger')?.focus({ preventScroll: true }) }} {objects} categoryOf={object => presentationFor(object).categoryId} openDisplay={openStripDisplay} {theme} raised={displayWindowOpen} onBounds={setAlarmStripBounds} belowRoles={Boolean(runRoles && heldRoleIds)} railWidth={railVisible ? railLayout.width : 0} clear={{ left: mapCameraPadding.left, right: mapCameraPadding.right, top: visibleGuidanceBottom }} />
       {/if}
       {#if !surfaceMode}
-      <RunViewControls bind:this={viewControls} camera={viewCamera} layers={viewLayers} panels={viewPanels} act={actOnView} toggle={setViewChoice}
-        reset={resetLocalView} resetDisabledReason={viewResetDisabledReason} alarms={viewAlarmCount} alarmsVisible={alarmStripVisible} showAlarms={visible => alarmStripVisible = visible}
+      <RunViewControls bind:this={viewControls} alarms={viewAlarmCount} alarmsVisible={alarmStripVisible} showAlarms={visible => alarmStripVisible = visible}
         guidance={{ available: Boolean(scenarioState?.guidance), visible: mapGuidanceVisible, unread: guidanceUnread, instruction: scenarioState?.guidance ?? null }} setGuidance={mode => { timedCardRequested = mode === 'running'; setGuidanceMode(mode) }}
         clear={mapCameraPadding} ready={mapReady} raised={displayWindowOpen} onReadUpdate={markGuidancePresented}
         hasGuide={Boolean(guidanceScreen.guide)} {guideBadge} {foregroundProcedure}>
@@ -2564,7 +2518,7 @@
     focusMap={focusMapTarget}
     close={closeDisplayWindow}
     planningDemoHref={routeFocus === null ? null : planningDemoHref}
-    asSurface={surfaceRoute.kind === 'surface' && surfaceRoute.surface.kind !== 'procedures'}
+    asSurface={surfaceRoute.kind === 'surface' && (surfaceRoute.surface.kind === 'display' || surfaceRoute.surface.kind === 'dashboard')}
     placeOnScreen={surfaceMode ? null : placeOnScreen}
   />
 {/if}

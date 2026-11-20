@@ -9,9 +9,12 @@ import { ASSET_CAPTION, DASHBOARD_CAPTION, DASHBOARD_TITLE, type DeckEntry } fro
 
 // A surface is one thing of a Run that its page shows filling the pane, so a
 // browser window can be opened on exactly that and reopened on the same thing
-// of a later Run. World owns the strings; the Host stores and forwards them
-// without reading them (packages/contracts/src/surfaces.ts). There are three:
+// of a later Run. World owns the strings and alone reads into them. The Host
+// stores and forwards them whole (packages/contracts/src/surfaces.ts); it
+// offers `map:run` itself as a screen's "Map" and knows that string and
+// `display:dashboard` as the two that name no object. There are four:
 //
+//   map:run                 the Run's map alone: no rail, dock or Pack panels
 //   display:<objectId>      that observed asset's overview display
 //   display:dashboard       the Run's dashboard
 //   procedures:<objectId>   that unit's procedure window
@@ -21,6 +24,7 @@ import { ASSET_CAPTION, DASHBOARD_CAPTION, DASHBOARD_TITLE, type DeckEntry } fro
 // about a surface is made here; the Run page only asks.
 
 export type WorldSurface =
+  | { readonly kind: 'map' }
   | { readonly kind: 'display'; readonly objectId: ObjectId }
   | { readonly kind: 'dashboard' }
   | { readonly kind: 'procedures'; readonly objectId: ObjectId }
@@ -31,11 +35,13 @@ export type SurfaceRoute =
   | { readonly kind: 'surface'; readonly surface: WorldSurface }
   | { readonly kind: 'unknown'; readonly text: string }
 
+const MAP_SURFACE = 'map:run'
 const DASHBOARD_SURFACE = 'display:dashboard'
 
 /** Null for text that is none of World's surfaces. */
 export const parseWorldSurface = (text: string): WorldSurface | null => {
   if (!workspaceSurfaceStringSchema.safeParse(text).success) return null
+  if (text === MAP_SURFACE) return { kind: 'map' }
   if (text === DASHBOARD_SURFACE) return { kind: 'dashboard' }
   const colon = text.indexOf(':')
   const kind = text.slice(0, colon)
@@ -45,6 +51,7 @@ export const parseWorldSurface = (text: string): WorldSurface | null => {
 }
 
 export const formatWorldSurface = (surface: WorldSurface): string => {
+  if (surface.kind === 'map') return MAP_SURFACE
   if (surface.kind === 'dashboard') return DASHBOARD_SURFACE
   const text = `${surface.kind}:${surface.objectId}`
   // The one string an object id cannot take: it is the Run dashboard's.
@@ -73,8 +80,9 @@ export interface SurfaceSubject {
   readonly runsProcedures: boolean
 }
 
-/** The window a surface opens filling the pane, or why this Run cannot show it. */
+/** The Run's map alone, or the window a surface opens filling the pane, or why this Run cannot show it. */
 export type SurfacePresentation =
+  | { readonly kind: 'map' }
   | { readonly kind: 'display'; readonly target: { readonly kind: 'dashboard' } | { readonly kind: 'asset'; readonly objectId: ObjectId } }
   | { readonly kind: 'procedures'; readonly objectId: ObjectId }
   | { readonly kind: 'refused'; readonly reason: string }
@@ -83,18 +91,22 @@ const refusedTextLimit = 80
 const quoted = (text: string): string => `“${text.length <= refusedTextLimit ? text : `${text.slice(0, refusedTextLimit)}…`}”`
 
 /**
- * What a surface opens in the joined Run. `subjectOf` answers null for an
- * object this screen does not see. A surface the Run cannot show is refused
- * with the sentence the pane shows in its place; nothing falls back to the map.
+ * What a surface shows in the joined Run. `subjectOf` answers null for an
+ * object this screen does not see; `runHasMap` is whether the Run's Starting
+ * View has a map at all, never whether it has loaded. A surface the Run
+ * cannot show is refused with the sentence the pane shows in its place;
+ * nothing falls back to the map or to the whole page.
  */
 export const presentSurface = (
   route: Exclude<SurfaceRoute, { readonly kind: 'run' }>,
   subjectOf: (objectId: ObjectId) => SurfaceSubject | null,
+  runHasMap: boolean,
 ): SurfacePresentation => {
   if (route.kind === 'unknown') {
-    return { kind: 'refused', reason: `World has nothing to show for ${quoted(route.text)}. A screen shows an asset's overview display, the Run's dashboard or a unit's procedures.` }
+    return { kind: 'refused', reason: `World has nothing to show for ${quoted(route.text)}. A screen shows the Run's map, an asset's overview display, the Run's dashboard or a unit's procedures.` }
   }
   const surface = route.surface
+  if (surface.kind === 'map') return runHasMap ? { kind: 'map' } : { kind: 'refused', reason: 'This Run has no map.' }
   if (surface.kind === 'dashboard') return { kind: 'display', target: { kind: 'dashboard' } }
   const subject = subjectOf(surface.objectId)
   if (subject === null) {

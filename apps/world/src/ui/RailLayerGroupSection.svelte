@@ -7,9 +7,12 @@
     readonly legends?: ReadonlyArray<PackMapLegend>
     readonly visibility: Readonly<Record<string, boolean>>
     readonly onToggle: (groupId: string) => void
+    /** Whether the weather layer is drawn; absent where the Scenario has no weather. */
+    readonly weatherVisible?: boolean | undefined
+    readonly onWeatherToggle?: (visible: boolean) => void
   }
 
-  const { groups, legends = [], visibility, onToggle }: Props = $props()
+  const { groups, legends = [], visibility, onToggle, weatherVisible, onWeatherToggle = () => undefined }: Props = $props()
 
   const isVisible = (group: PackMapLayerGroup): boolean =>
     visibility[group.id] ?? group.defaultVisible
@@ -44,7 +47,7 @@
   </svg>
 {/snippet}
 
-{#if groups.length > 0 || legends.length > 0}
+{#if groups.length > 0 || legends.length > 0 || weatherVisible !== undefined}
   <section class="rail-layer-groups" aria-label="Map layers">
     <header class="rail-layer-groups-header">Map layers</header>
     <ul class="rail-layer-groups-list">
@@ -61,6 +64,18 @@
           </label>
         </li>
       {/each}
+      {#if weatherVisible !== undefined}
+        <li>
+          <label>
+            <input
+              type="checkbox"
+              checked={weatherVisible}
+              onchange={event => onWeatherToggle(event.currentTarget.checked)}
+            />
+            <span>Weather</span>
+          </label>
+        </li>
+      {/if}
     </ul>
     {#each legends as legend (legend.id)}
       <div class="rail-legend" role="group" aria-label={legend.title}>

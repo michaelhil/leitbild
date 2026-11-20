@@ -41,7 +41,7 @@ test('a live renewed receiver works for a long admitted turn; guide takeover can
   time += 10
   // The trusted server lease is current; a model turn's original offer timestamp does not revoke a renewed document.
   expect(delivery.current(a).documentId).toBe('doc-a')
-  delivery.request({ id: 'late', recipient: a, source, target: { subject, type: 'world.control', id: 'view' }, action: { kind: 'reveal' }, purpose: 'Show view controls', mode: 'suggest', allowed: () => true })
+  delivery.request({ id: 'late', recipient: a, source, target: { subject, type: 'world.control', id: 'guide' }, action: { kind: 'reveal' }, purpose: 'Show the guide', mode: 'suggest', allowed: () => true })
   time += presentationDeliveryMs + 1
   expect(delivery.result(a, 'late').status).toBe('expired')
 })
@@ -49,7 +49,7 @@ test('a live renewed receiver works for a long admitted turn; guide takeover can
 test('cancel clears only its own cue, preserves the actual original outcome and is idempotent and bounded', () => {
   const delivery = createPresentationDelivery()
   const recipient = delivery.register({ subject, clientId: 'screen', documentId: 'doc' })
-  const request = (id: string) => delivery.request({ id, recipient, source, target: { subject, type: 'world.control', id: 'view' }, action: { kind: 'highlight' }, purpose: 'Locate the view control', mode: 'suggest', allowed: () => true })
+  const request = (id: string) => delivery.request({ id, recipient, source, target: { subject, type: 'world.control', id: 'guide' }, action: { kind: 'highlight' }, purpose: 'Locate the guide control', mode: 'suggest', allowed: () => true })
   request('original')
   delivery.receipt(recipient, { requestId: 'original', documentId: 'doc', status: 'applied', at: new Date().toISOString() })
   expect(() => delivery.cancel(recipient, 'original', 'another-agent')).toThrow('not available')

@@ -1,12 +1,14 @@
 import { describe, expect, test } from 'bun:test'
 import {
   answerZoomStore,
+  awaitsFirstFit,
   createDisplayZoomStore,
   displayFrameGeometry,
   displayZoomFromSlider,
   displayZoomPercent,
   FIT_MIN_ZOOM,
   fitDisplayZoom,
+  fittedDisplayZoom,
   initialDisplayZoom,
   minimumDisplayZoom,
   overviewZoomKey,
@@ -306,6 +308,137 @@ describe('display zoom defaults', () => {
     const fittedState = reduceDisplayZoom(manualAt(0.75), { type: 'toggle-fit' }, generated({ extent: { kind: 'generated', minWidth: 1, width: 1050, height: 600 } }))
     expect(fittedState.fit).toBe(true)
     expect(storedDisplayZoom(fittedState)).toBeNull()
+  })
+})
+
+describe('a display shown as a screen\'s surface', () => {
+  // A unit's overview: declared generated until its frame reports a complete canvas.
+  const canvas = { kind: 'advice' as const, minWidth: 1880, width: 1880, height: 1008, fit: 'complete' as const }
+  const canvasFit = (size: { readonly width: number; readonly height: number }, extent: { readonly width: number; readonly height: number } = canvas): number =>
+    Math.min(size.width / extent.width, size.height / extent.height)
+  const pane = { width: 1280, height: 800 }
+
+  test('opens fitted before the body is measured, whatever it shows, and nothing of it is remembered', () => {
+    const overview = fittedDisplayZoom(generated({ body: null }))
+    expect(overview).toEqual({ zoom: 1, fit: true, auto: false, corrections: 2 })
+    expect(storedDisplayZoom(overview)).toBeNull()
+    // The Run dashboard and an answer's advice alike.
+    expect(fittedDisplayZoom(generated())).toMatchObject({ zoom: 1, fit: true, auto: false })
+    expect(fittedDisplayZoom(advice({ body: null }))).toMatchObject({ zoom: 1, fit: true, auto: false })
+    // Measured before its frame reports, it is still fitted and still owed its fit.
+    expect(reduceDisplayZoom(overview, { type: 'body' }, generated({ body: pane }))).toEqual(overview)
+  })
+
+  test('a complete canvas takes its fit on the first extent report and refits through 1280×800 → 1920×1080 → 900×600', () => {
+    let state = reduceDisplayZoom(fittedDisplayZoom(generated({ body: null })), { type: 'body' }, generated({ body: pane }))
+    state = reduceDisplayZoom(state, { type: 'extent' }, advice({ body: pane, extent: canvas }))
+    expect(state.fit).toBe(true)
+    expect(state.zoom).toBe(canvasFit(pane))
+    for (const size of [pane, { width: 1920, height: 1080 }, { width: 900, height: 600 }]) {
+      const context = advice({ body: size, extent: canvas })
+      state = reduceDisplayZoom(state, { type: 'body' }, context)
+      expect(state.fit).toBe(true)
+      expect(state.zoom).toBe(canvasFit(size))
+      const frame = displayFrameGeometry({ ...context, body: size, zoom: state.zoom })
+      expect(frame.boxWidth).toBeLessThanOrEqual(size.width + 1e-9)
+      expect(frame.boxHeight).toBeLessThanOrEqual(size.height + 1e-9)
+    }
+  })
+
+  test('a manual zoom ends Fit and survives a resize', () => {
+    const context = advice({ body: pane, extent: canvas })
+    const opened = reduceDisplayZoom(fittedDisplayZoom(generated({ body: pane })), { type: 'extent' }, context)
+    expect(opened.fit).toBe(true)
+    for (const action of [{ type: 'set', zoom: 0.75 }, { type: 'step', step: 'in' }, { type: 'step', step: 'reset' }, { type: 'scale', factor: 1.1 }] as const) {
+      expect(reduceDisplayZoom(opened, action, context).fit).toBe(false)
+    }
+    let state = reduceDisplayZoom(opened, { type: 'set', zoom: 0.75 }, context)
+    for (const size of [{ width: 1920, height: 1080 }, { width: 900, height: 600 }]) {
+      state = reduceDisplayZoom(state, { type: 'body' }, advice({ body: size, extent: canvas }))
+      expect(state).toEqual({ zoom: 0.75, fit: false, auto: false, corrections: 0 })
+    }
+    expect(reduceDisplayZoom(state, { type: 'extent' }, advice({ body: pane, extent: { ...canvas, height: 1100 } })).zoom).toBe(0.75)
+  })
+
+  test('the opening fit is the fit a Fit press gives, also where the canvas reports again once it is rescaled', () => {
+    // Opened fitted, against an ordinary window in which Fit is pressed once the display has reported.
+    const first = advice({ body: pane, extent: canvas })
+    let opened = reduceDisplayZoom(fittedDisplayZoom(generated({ body: null })), { type: 'body' }, generated({ body: pane }))
+    opened = reduceDisplayZoom(opened, { type: 'extent' }, first)
+    let pressed = reduceDisplayZoom(initialDisplayZoom(generated({ body: null }), null), { type: 'body' }, generated({ body: pane }))
+    pressed = reduceDisplayZoom(pressed, { type: 'extent' }, first)
+    expect(pressed).toEqual({ zoom: 1, fit: false, auto: false, corrections: 0 })
+    pressed = reduceDisplayZoom(pressed, { type: 'toggle-fit' }, first)
+    expect(opened).toEqual(pressed)
+    expect(opened).toEqual({ zoom: canvasFit(pane), fit: true, auto: false, corrections: 1 })
+
+    // Rescaled, the canvas needs less room: both follow, so the first report did not spend the opening's correction.
+    const settled = { ...canvas, minWidth: 1840, width: 1840, height: 990 }
+    opened = reduceDisplayZoom(opened, { type: 'extent' }, advice({ body: pane, extent: settled }))
+    pressed = reduceDisplayZoom(pressed, { type: 'extent' }, advice({ body: pane, extent: settled }))
+    expect(opened).toEqual(pressed)
+    expect(opened.zoom).toBe(canvasFit(pane, settled))
+    // After that a report may only shrink either.
+    const smaller = advice({ body: pane, extent: { ...canvas, minWidth: 1800, width: 1800, height: 960 } })
+    expect(reduceDisplayZoom(opened, { type: 'extent' }, smaller)).toEqual(reduceDisplayZoom(pressed, { type: 'extent' }, smaller))
+    expect(reduceDisplayZoom(opened, { type: 'extent' }, smaller).zoom).toBe(canvasFit(pane, settled))
+  })
+
+  test('an overview draws before it reports: until that report the surface holds it back, then shows it fitted', () => {
+    // The order a browser showed at 1280×800 (body 1280×732): the window opens, its body is measured, the frame loads and
+    // listens, the display connects and draws its 1880×1008 canvas in a 1280×732 frame, and only once it has rested does
+    // it report its extent. Between the drawing and the report nothing reaches the zoom, so the canvas stood at 100 %.
+    const measured = { width: 1280, height: 732 }
+    let state = fittedDisplayZoom(generated({ body: null }))
+    expect(awaitsFirstFit(state)).toBe(true)
+    state = reduceDisplayZoom(state, { type: 'body' }, generated({ body: measured }))
+    // Frame ready, connected, drawn: no action. The zoom is still the placeholder, and the state says so.
+    expect(state).toEqual({ zoom: 1, fit: true, auto: false, corrections: 2 })
+    expect(awaitsFirstFit(state)).toBe(true)
+    expect(displayFrameGeometry({ kind: 'generated', zoom: state.zoom, body: measured, extent: null, envelopeHeight: 0 })).toMatchObject({ frameWidth: 1280, frameHeight: 732 })
+    // A resize while it waits changes nothing of that.
+    expect(awaitsFirstFit(reduceDisplayZoom(state, { type: 'body' }, generated({ body: { width: 1920, height: 1012 } })))).toBe(true)
+
+    const reported = advice({ body: measured, extent: canvas })
+    state = reduceDisplayZoom(state, { type: 'extent' }, reported)
+    expect(state).toEqual({ zoom: canvasFit(measured), fit: true, auto: false, corrections: 1 })
+    expect(awaitsFirstFit(state)).toBe(false)
+    // Fitted, it is never held back again: not by a resize, a later report or Fit pressed off and on.
+    expect(awaitsFirstFit(reduceDisplayZoom(state, { type: 'body' }, advice({ body: { width: 900, height: 532 }, extent: canvas })))).toBe(false)
+    expect(awaitsFirstFit(reduceDisplayZoom(state, { type: 'extent' }, advice({ body: measured, extent: { ...canvas, height: 1100 } })))).toBe(false)
+    const again = reduceDisplayZoom(reduceDisplayZoom(state, { type: 'toggle-fit' }, reported), { type: 'toggle-fit' }, reported)
+    expect(again).toEqual(state)
+  })
+
+  test('nothing but a fit still owed its first report is held back', () => {
+    // A zoom set by hand before the report is the person's, and shown.
+    const opened = fittedDisplayZoom(generated())
+    expect(awaitsFirstFit(reduceDisplayZoom(opened, { type: 'set', zoom: 0.75 }, generated()))).toBe(false)
+    expect(awaitsFirstFit(reduceDisplayZoom(opened, { type: 'toggle-fit' }, generated()))).toBe(false)
+    // A display that reported while another was shown is fitted from that report when it is shown again.
+    expect(awaitsFirstFit(reduceDisplayZoom(opened, { type: 'body' }, advice({ extent: canvas })))).toBe(false)
+    // An ordinary window's opening states owe nothing.
+    expect(awaitsFirstFit(initialDisplayZoom(generated({ body: null }), null))).toBe(false)
+    expect(awaitsFirstFit(initialDisplayZoom(advice({ body: null }), null))).toBe(false)
+    expect(awaitsFirstFit(initialDisplayZoom(generated(), { zoom: 0.75 }))).toBe(false)
+  })
+
+  test('the Run dashboard opens at the fit a Fit press gives and takes the same one correction', () => {
+    const needed = { kind: 'generated' as const, minWidth: 1, width: 1050, height: 600 }
+    let opened = reduceDisplayZoom(fittedDisplayZoom(generated()), { type: 'extent' }, generated({ extent: needed }))
+    let pressed = reduceDisplayZoom(initialDisplayZoom(generated(), null), { type: 'extent' }, generated({ extent: needed }))
+    pressed = reduceDisplayZoom(pressed, { type: 'toggle-fit' }, generated({ extent: needed }))
+    expect(opened).toEqual(pressed)
+    expect(opened).toEqual({ zoom: 0.952, fit: true, auto: false, corrections: 1 })
+    // Laid out again for 95.2 %, it needs more: one correction each, then both stay.
+    for (const width of [1080, 4000]) {
+      opened = reduceDisplayZoom(opened, { type: 'extent' }, generated({ extent: { ...needed, width } }))
+      pressed = reduceDisplayZoom(pressed, { type: 'extent' }, generated({ extent: { ...needed, width } }))
+      expect(opened).toEqual(pressed)
+      expect(opened).toEqual({ zoom: 0.925, fit: true, auto: false, corrections: 0 })
+    }
+    // Drawn whole at 100 %, it stays at 100 %.
+    expect(reduceDisplayZoom(fittedDisplayZoom(generated()), { type: 'extent' }, generated({ extent: { ...needed, width: 1000 } })).zoom).toBe(1)
   })
 })
 

@@ -28,6 +28,11 @@ describe('the Run page as a screen\'s surface', () => {
     expect(route.match(/writeRunViewPreferences\(/g)).toHaveLength(1)
     expect(route).toMatch(/const key = viewPreferencesKey\s*if \(key === null\) return\s*try \{ writeRunViewPreferences\(sessionStorage, key,/)
     expect(route).toContain('viewPreferencesKey = key')
+    // The record holds the panel choices and, with them, the layer groups, Weather, the category eyes and Plan or 3D.
+    expect(route).toContain('{ guidance: guidancePreferences, alarms: alarmStripVisible, layout: layoutControlsVisible, panels: surfacePanelOpen, layers: mapLayerGroupVisibility, weather: weatherLayerVisible, categories: categoryMapVisibility, layoutMode }')
+    // Nothing seeds or prunes the restored choices from the Pack's lists, which are still empty when the record is read.
+    expect(route.match(/\bmapLayerGroupVisibility = /g)).toHaveLength(3)
+    expect(route.match(/\bcategoryMapVisibility = /g)).toHaveLength(3)
   })
 
   test('the surface\'s window opens only once the Run is joined, and what the Run cannot show is said in the pane', () => {
@@ -35,12 +40,12 @@ describe('the Run page as a screen\'s surface', () => {
     expect(route).toContain('requestDisplayWindow(presentation.target, false)')
     expect(markup).toMatch(/\{#if surfaceRefusal !== null\}\s*<div class="surface-refusal" role="alert"><p>\{surfaceRefusal\}<\/p><\/div>/)
     // The page asks surface-route.ts and decides nothing about surface strings itself.
-    expect(route).not.toMatch(/['"`](display|procedures):/)
+    expect(route).not.toMatch(/['"`]((display|procedures):|map:run)/)
   })
 
-  test('a surface page\'s startup does not depend on the base map: it neither waits for it nor fails with it', () => {
-    expect(route).toContain('const startupAwaitsMap = $derived(mapVisible && !surfaceMode)')
-    expect(route).toContain('const awaitedStartupSteps = $derived(startupStepsAwaited(startupSteps, { map: !surfaceMode }))')
+  test('only the map surface\'s startup depends on the base map: every other surface neither waits for it nor fails with it', () => {
+    expect(route).toContain('const startupAwaitsMap = $derived(mapVisible && (!surfaceMode || mapSurface))')
+    expect(route).toContain('const awaitedStartupSteps = $derived(startupStepsAwaited(startupSteps, { map: !surfaceMode || mapSurface }))')
     // Readiness and the step before it wait for the map only where startup awaits it; no bare wait is left in either.
     const completion = route.slice(route.indexOf('const completeReadyWhenReady'), route.indexOf('const loadSurfaceForScenario'))
     expect(completion.match(/startupAwaitsMap && !mapReady/g)).toHaveLength(3)
@@ -50,9 +55,12 @@ describe('the Run page as a screen\'s surface', () => {
     // A failed map step does not bring the startup dialog back over the surface; the dialog still lists every step.
     expect(route).toMatch(/startupModalShouldShow\(\{\s*routeMode,\s*dismissed: startupDismissed,\s*steps: awaitedStartupSteps,\s*\}\)/)
     expect(markup).toMatch(/<StartupModal\s+steps=\{startupSteps\}/)
-    // The surface's window waits for the join, the snapshot and the Packs, and for nothing of the map.
+    // What a surface shows waits for the join, the snapshot and the Packs. Of the map it asks only whether the Run has one, never whether it is ready.
     const presentation = route.slice(route.indexOf('const surfacePresentation = $derived('), route.indexOf('const surfaceRefusal'))
-    expect(presentation).not.toMatch(/mapReady|mapVisible/)
+    expect(presentation).not.toContain('mapReady')
+    expect(presentation.match(/\bmap[A-Z]\w*/g)).toEqual(['mapVisible'])
+    expect(presentation).toMatch(/\}, mapVisible\)\)\s*$/)
+    expect(route).toContain('const mapVisible = $derived(mapConfig !== null)')
     // The map still mounts underneath: there is no map-less mode.
     expect(markup).toMatch(/\{#if effectiveMapConfig && OperationalMap\}\s*<OperationalMap\b/)
     expect(markup).not.toMatch(/\{#if [^}]*surfaceMode[^}]*\}\s*<OperationalMap\b/)
@@ -64,13 +72,34 @@ describe('the Run page as a screen\'s surface', () => {
     expect(window).toMatch(/const effectiveBounds = \$derived<ProcessDisplayWindowBounds>\(asSurface\s*\? \{ x: 0, y: 0, width: Math\.max\(1, viewport\.width\), height: Math\.max\(1, viewport\.height\) \}\s*: maximised\s*\? \{\s*x: windowConstraints\.margin,\s*y: windowConstraints\.margin,/)
     expect(window).toContain('class:as-surface={asSurface}')
     expect(source('ui/style.css').match(/\.display-window\.as-surface\s*\{[^}]*\}/)?.[0].replace(/\s+/g, ' ')).toBe('.display-window.as-surface { border: 0; border-radius: 0; box-shadow: none; }')
-    expect(markup).toContain("asSurface={surfaceRoute.kind === 'surface' && surfaceRoute.surface.kind !== 'procedures'}")
+    expect(markup).toContain("asSurface={surfaceRoute.kind === 'surface' && (surfaceRoute.surface.kind === 'display' || surfaceRoute.surface.kind === 'dashboard')}")
     expect(window).toContain('let maximised = $state(untrack(() => asSurface))')
     expect(window).toContain('if (asSurface || maximised === next) return')
     expect(window).toContain('if (maximised && !asSurface) postToHost(displayWindowMaximiseMessage(false))')
     expect(window).toMatch(/\{#if !asSurface\}\s*<button[^>]*aria-label=\{maximised \? 'Restore the display window' : 'Maximise the display window'\}/)
     expect(window).toMatch(/\{#if !asSurface\}\s*<button[^>]*aria-label="Close the display window"/)
     expect(window).toMatch(/\{#if !asSurface\}\s*<button[^>]*onclick=\{\(\) => \{ popover = null; setMaximised\(!maximised\) \}\}/)
+  })
+
+  test('a surface opens each display fitted and neither reads nor writes the remembered zooms', () => {
+    const window = source('ui/process-display/DisplayWindow.svelte')
+    // A display new to the window is fitted before the one read of the store is reached.
+    expect(window).toMatch(/if \(asSurface\) \{\s*setZoomState\(entry\.key, fittedDisplayZoom\(context\)\)\s*return\s*\}\s*let stored: StoredDisplayZoom \| null = null\s*try \{\s*stored = zoomStoreFor\(entry\)\.read\(zoomStorageKey\(entry\)\)/)
+    expect(window.match(/zoomStoreFor\(entry\)\.read\(/g)).toHaveLength(1)
+    // The one writer, which also forgets a zoom when Fit is chosen, runs only for a zoom change that asked to be remembered.
+    expect(window).toContain('if (!asSurface) rememberZoom(entry, next)')
+    expect(window.match(/rememberZoom\(/g)).toHaveLength(1)
+    expect(window.match(/zoomStoreFor\(entry\)\.(write|forget)\(/g)).toHaveLength(2)
+    expect(window.match(/flushZoomWrites/g)).toHaveLength(3)
+    expect(window).toContain('zoomWriteTimer = setTimeout(flushZoomWrites, zoomWriteDelayMs)')
+    expect(window).toMatch(/if \(zoomWriteTimer !== null\) \{\s*clearTimeout\(zoomWriteTimer\)\s*flushZoomWrites\(\)\s*\}/)
+    // Until a display's first report fits it, the surface shows the window's own connecting message over it, and the
+    // frame stays shown beneath so it draws and reports. The dashboard, drawn for its frame, is never held back.
+    expect(window).toContain("const awaitingFit = $derived(asSurface && current !== null && current.source !== 'dashboard' && currentZoom !== null && awaitsFirstFit(currentZoom))")
+    expect(window).toMatch(/const connecting = \$derived\(current !== null && currentDefault\?\.state !== 'failed' && currentRefusal === null\s*&& \(currentEnvelope === null \|\| !framesUp\.has\(current\.key\) \|\| awaitingFit\)\)/)
+    expect(window.match(/awaitingFit/g)).toHaveLength(2)
+    expect(window).toContain('shown={mounted.entry.key === current?.key}')
+    expect(source('ui/style.css').match(/\.display-window-message\s*\{[^}]*\}/)?.[0]).toMatch(/inset: 0;[\s\S]*z-index: 1;[\s\S]*background: var\(--panel\);/)
   })
 
   test('the surface\'s procedure window is the pane: it follows its size and neither moves, resizes nor closes', () => {
@@ -97,5 +126,48 @@ describe('the Run page as a screen\'s surface', () => {
     expect(more).toMatch(/\{#if placeable !== null\}[\s\S]*?<span>Open on another screen…<\/span>/)
     expect(window.slice(0, window.indexOf("{:else if popover === 'more'}"))).toMatch(/\{#if placeable !== null\}[\s\S]*?title="Open on another screen…"/)
     expect(modal).toMatch(/\{#if placeOnScreen\}\s*<button type="button" title="Open on another screen…"[^>]*onclick=\{placeOnScreen\}/)
+  })
+
+  test('the map surface is the Run\'s map alone: no rail and no Pack panel, and the map, its status line and the role bar stay', () => {
+    expect(route).toContain("const mapSurface = surfaceRoute.kind === 'surface' && surfaceRoute.surface.kind === 'map'")
+    // It opens no window: the map is the surface.
+    expect(route).toContain("if (presentation === null || presentation.kind === 'refused' || presentation.kind === 'map') return")
+    // The rail is not drawn. Its configuration stays, because the display deck and the dashboard take their assets from it.
+    expect(route).toContain('const railVisible = $derived(railConfig !== null && !mapSurface)')
+    expect(markup).toMatch(/\{#if railVisible && railConfig\}\s*\{#if railLayout\.drawer\}[\s\S]*?<ControlRail\b/)
+    expect(markup).not.toContain('{#if railConfig}')
+    expect(markup.match(/<ControlRail\b/g)).toHaveLength(1)
+    expect(route).toContain('const railConfig = $derived(startingView?.rail ?? null)')
+    expect(route).toContain('categoryRowsForStartingView(allCategoryRows, railConfig)')
+    // No Pack panel exists there: the one list every panel use reads is empty, so none is drawn, loaded or given keys, map targets or camera padding.
+    expect(route).toContain('const surfacePanels = $derived(mapSurface ? [] : activePack?.surfacePanels ?? [])')
+    expect(route.match(/activePack(\?)?\.surfacePanels/g)).toHaveLength(1)
+    expect(markup).toContain('{#each surfacePanels as panel (panel.id)}')
+    expect(markup.match(/class="presentation-panel-host"/g)).toHaveLength(1)
+    // What stays is drawn for every page: the map with its own controls, the status line with the clock, and the role bar.
+    expect(markup).not.toMatch(/\{#if [^}]*(surfaceMode|mapSurface)[^}]*\}\s*<(OperationalMap|WorldStatusLine|RoleBar)\b/)
+    // The camera group belongs to the map, so the map surface has Home and Fit too.
+    expect(markup).toMatch(/<OperationalMap\b[\s\S]*?\{cameraButtons\}\s*onCameraAction=\{actOnCamera\}/)
+    expect(markup).toMatch(/<WorldStatusLine \{clock\}/)
+    expect(markup).toMatch(/\{#if runRoles && heldRoleIds\}\s*<RoleBar\b/)
+  })
+
+  test('on the map surface a click orders nothing and leaves nothing selected, and a display it opens is an ordinary window', () => {
+    // One click context feeds every map-click decision; on the map surface it is the one that orders and selects nothing (map-target-routing.ts).
+    expect(route).toMatch(/const mapClickContext = \$derived<MapClickContext>\(mapSurface\s*\? mapAloneClicks\(\{ context: targetContext, opensDisplay \}\)\s*: \{ controller: selectedControllerObject,/)
+    expect(route.match(/routeObjectClick\(object, mapClickContext\)|routeGroundClick\(point, mapClickContext\)|previewObjectTarget\(object, mapClickContext\)/g)).toHaveLength(3)
+    expect(route.match(/\b(routeObjectClick|routeGroundClick|previewObjectTarget)\(/g)).toHaveLength(3)
+    expect(markup).toContain('targetPicking={targetPickingWanted(mapClickContext)}')
+    expect(markup).toContain('onGroundSelected={groundClicksWanted(mapClickContext) ? selectGround : undefined}')
+    expect(markup).toContain('targetPreviewFor={targetPreviewsWanted(mapClickContext) ? previewTarget : undefined}')
+    expect(markup).toContain('isController={object => mapClickContext.targeting?.isController(object, targetContext) === true}')
+    // No unit starts selected there either, at join or after a role switch: both ask the one rule.
+    expect(route).toContain('mapSurface || !activePack ? null : startingControllerId(list, activePack, context, isSurfacePanelOpen)')
+    expect(route.match(/\bstartingControllerId\(/g)).toHaveLength(1)
+    expect(route).toContain('const startingId = startingSelection(perspective.snapshot.objects, perspectiveContext)')
+    expect(route).toContain('startingControllerId: list => startingSelection(list, targetContextFor(list)),')
+    expect(source('ui/app/control-surface-session.ts')).toContain('config.setSelectedControllerId(config.startingControllerId(snapshot.objects))')
+    // The display a click opens is requested as from the Run page; only a display or dashboard surface fills the pane (pinned above).
+    expect(route).toMatch(/if \(route\.kind === 'display'\) \{[^}]*if \(placementMode === null\) openDisplayFromPress\(route\.objectId\)/)
   })
 })

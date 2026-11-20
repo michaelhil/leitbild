@@ -14,7 +14,7 @@
   import { physicalCollectionFloorGroups, physicalCollectionFloorChanges, physicalCollectionMixedSettings, physicalPlanLevelAfterModeChange } from './collection-floors.ts'
   import { physicalCollectionLayerChoices, physicalCollectionLayerChanges } from './collection-layers.ts'
   import { physicalExplorerCameraCovers, physicalExplorerFitPadding, type ExplorerViewportPadding, type ExplorerViewportRect } from './explorer-viewport.ts'
-  import { physicalExplorerKeyboardRoute, physicalExplorerNeedsLive, physicalExplorerViewModeInput } from './explorer-interaction.ts'
+  import { physicalExplorerKeyboardRoute, physicalExplorerModeRestore, physicalExplorerNeedsLive, physicalExplorerStatusLine, physicalExplorerViewModeInput } from './explorer-interaction.ts'
   import { createViewModeControl, type ViewMode, type ViewModeControl } from '../map/view-mode-control.ts'
   import { createPhysicalSceneOverview } from '../map/physical-scene/overview.ts'
   import type { PhysicalSceneHit, PhysicalScenePresentation, PhysicalSceneView, PhysicalScenePalette, PhysicalSceneFitRequest } from '../map/physical-scene/types.ts'
@@ -23,7 +23,6 @@
   import { runOnMount } from '../svelte-lifecycle.svelte.ts'
   import { createEmbeddedFrameHost } from '../process-display/embedded-frame-host.ts'
   import Controls from './Controls.svelte'
-  import CameraControls from './CameraControls.svelte'
   import { createLayoutLiveSession, layoutLiveFrozen, layoutLiveRoutes, type LayoutLiveSnapshot } from './client.ts'
   import { layoutInspectionEnvelope, layoutInspectionHostRoom, layoutInspectionMessageSchema, layoutInspectionSampleMessage, layoutInspectionSpaceMessage, type LayoutInspectionState } from './inspection.ts'
   import { physicalSubjectStatus, physicalSubjectStyle, physicalLayoutStatusSummary } from './status.ts'
@@ -41,9 +40,13 @@
   import { physicalScopeRegions } from '../map/physical-scene/scope-regions.ts'
   import { drawPhysicalFlowMark, type PhysicalFlowGlyph } from '../displays/physical-flow-marks.ts'
   import { physicalLayoutSources, type PhysicalLayoutBinding, type PhysicalLayoutMapInteraction } from './sources.ts'
-  let { suspendPickingForNavigation, controlsOpen = $bindable(false), map, active = true, objects, bindings, hiddenCategoryIds, presentationFor, runId, perspectiveEpoch, suspended, theme, clearTop = 0, reservedPadding = { top: 0, right: 0, bottom: 0, left: 0 }, onDetailedOwners = () => {}, onoverview, onopen, onerror, onconnect = () => {} }: {
+  let { suspendPickingForNavigation, controlsOpen = $bindable(false), rememberedMode = '2d', onmode = () => {}, map, active = true, objects, bindings, hiddenCategoryIds, presentationFor, runId, perspectiveEpoch, suspended, theme, clearTop = 0, reservedPadding = { top: 0, right: 0, bottom: 0, left: 0 }, onDetailedOwners = () => {}, onoverview, onopen, onerror, onconnect = () => {} }: {
     suspendPickingForNavigation?: (() => (() => void)) | undefined
     controlsOpen?: boolean
+    /** The representation remembered for this Run: 3D is brought back once, as a press on the switch would bring it. */
+    rememberedMode?: ViewMode
+    /** The map's 3D switch changed the representation. */
+    onmode?: (mode: ViewMode) => void
     map: MapLibreMap
     active?: boolean
     objects: ReadonlyArray<OperationalObject>
@@ -84,7 +87,6 @@
   const paintQueue = createPhysicalPaintCoalescer<() => void>({ flush: tick, paint: work => work(), reportError: error => onerror(error.message) })
   runOnMount(() => () => paintQueue.destroy())
   let controls = $state<{ dismiss: () => boolean } | null>(null)
-  let cameraControls = $state<{ dismiss: () => boolean } | null>(null)
   let overlayElement = $state<HTMLElement | null>(null)
   let controller = $state.raw<PhysicalSceneController | null>(null)
   let viewModeControl = $state.raw<ViewModeControl | null>(null)
@@ -522,16 +524,9 @@
     const anchor = projected?.visible ? projected : null
     return { x: Math.max(inspectionRoom.x, Math.min(inspectionRoom.x + inspectionRoom.width - inspectionWidth, (anchor?.x ?? size.width / 2) + 24)), y: Math.max(inspectionRoom.y, Math.min(inspectionRoom.y + inspectionRoom.height - allocatedInspectionHeight, (anchor?.y ?? 80) - 30)) }
   })
-  const baseStatusText = $derived(focusedId === null ? `${scenes.filter(scene => scene.status === 'ready').length} layouts ready · ${scenes.filter(scene => scene.status === 'loading').length} loading · ${scenes.filter(scene => scene.status === 'unavailable').length} unavailable · owner-qualified alarms remain in Run`
-    : focused?.status === 'loading' ? 'Loading this physical layout…'
-    : focused?.status === 'distant' ? 'Explore on map to load this physical layout'
-    : focused?.status === 'hidden' ? 'Physical detail hidden by view settings'
-    : focused?.status === 'unavailable' ? focused.reason ?? 'Layout unavailable'
-    : latest?.failure ?? (latest?.phase === 'inactive' ? 'Run not loaded; layout is not live' : latest?.phase === 'missing' ? 'Run missing' : latest?.latest === null || latest === null ? 'Waiting for live owner status'
-      : frozen ? `Not live · ${latest.phase === 'suspended' ? 'updates suspended' : latest.phase} · last acquired ${Math.max(0, Math.floor((wallNow - (latest.stamp?.receivedWallMs ?? wallNow)) / 1000))} s ago` : `${latest.latest.sample.at.paused ? 'Paused · fresh' : 'Live'} · ${latest.latest.subjects.length} modelled subjects · ${statusSummary?.census.total ?? 0} owner alerts`))
   const additionalLayerStatus = $derived((focusedId === null ? scenes.filter(scene => focusedGroupId === null || scene.descriptor.group?.id === focusedGroupId) : focused ? [focused] : []).map(physicalLayerPreparationText).filter((text): text is string => text !== null).join(' · '))
-  const statusText = $derived([baseStatusText, additionalLayerStatus].filter(Boolean).join(' · '))
   const retryableLayouts = $derived(retryablePhysicalLayouts(scenes, focusedId, focusedGroupId))
+  const statusLine = $derived(physicalExplorerStatusLine({ collection: focusedId === null ? scenes.map(scene => scene.status) : null, focused, live: latest, frozen, wallNowMs: wallNow, ownerAlerts: statusSummary?.census.total ?? 0, layerPreparation: additionalLayerStatus, floors: scopeLevels.length, suspended, retry: retryableLayouts.length > 0 }))
   const retryLabel = $derived(`Retry physical layout: ${retryableLayouts.map(id => objects.find(object => object.id === scenes.find(scene => scene.descriptor.id === id)?.descriptor.targetObjectId)?.label ?? id).join(', ')}`)
   const retryFailedLayouts = (): void => {
     if (suspended) return
@@ -585,13 +580,26 @@
   $effect(() => { viewModeControl?.update(viewModeInput) })
   // The map's 3D switch. With nothing focused the whole collection is framed,
   // and 3D brings the layout toolbar with its camera strip, status and floors.
-  const changeMapViewMode = (mode: ViewMode): void => {
+  const changeMapViewMode = (mode: ViewMode, restored = false): void => {
     const scene = focused
     if (suspended || !scene) return
-    if (mode === '3d') controlsOpen = true
+    // A press before the remembered 3D came back is the newer choice.
+    restorePending = false
+    // A restored 3D leaves the toolbar's own remembered open state alone.
+    if (mode === '3d' && !restored) controlsOpen = true
     if (focusedId === null) collectionInspection = true
     changeView({ ...scene.view, mode }, { mode })
+    onmode(mode)
   }
+  // Once per mount: a remembered 3D comes back as a press on the switch brings it (mode, floors, pitch, the plant framed).
+  let restorePending = untrack(() => rememberedMode === '3d')
+  $effect(() => {
+    if (!restorePending) return
+    const decision = physicalExplorerModeRestore({ mode: focused?.view.mode ?? null, active, documentVisible, suspended })
+    if (decision === 'wait') return
+    restorePending = false
+    if (decision === 'restore') untrack(() => changeMapViewMode('3d', true))
+  })
   const changeCollectionFloor = (key: string, levelId: string): void => {
     if (suspended || focusedId !== null) return
     const group = collectionFloorGroups.find(group => group.key === key)
@@ -608,8 +616,8 @@
     if (!choice) return
     for (const change of physicalCollectionLayerChanges(choice, visible)) controller?.setView(change.sceneId, change.view)
   }
-  const fit = (): void => { if (suspended) return; controls?.dismiss(); cameraControls?.dismiss(); componentsOpen = false; pendingFocus = null; pendingCameraFocus = null; const sceneId = focusedId, scopeId = focusedScopeId, ids = groups.get(focusedGroupId ?? '')?.sceneIds; if (sceneId === null) collectionInspection = true; void afterPanels(() => { if (sceneId === null) controller?.fitAll(ids); else controller?.focus(sceneId, { scopeId: scopeId ?? undefined, preservePose: true }) }) }
-  const home = (): void => { if (suspended) return; controls?.dismiss(); cameraControls?.dismiss(); componentsOpen = false; pendingFocus = null; pendingCameraFocus = null; const sceneId = focusedId, scopeId = focusedScopeId, ids = groups.get(focusedGroupId ?? '')?.sceneIds; if (sceneId === null) collectionInspection = true; void afterPanels(() => { if (sceneId === null) controller?.fitAll(ids, { preservePose: false }); else controller?.home(sceneId, scopeId ?? undefined) }) }
+  const fit = (): void => { if (suspended) return; controls?.dismiss(); componentsOpen = false; pendingFocus = null; pendingCameraFocus = null; const sceneId = focusedId, scopeId = focusedScopeId, ids = groups.get(focusedGroupId ?? '')?.sceneIds; if (sceneId === null) collectionInspection = true; void afterPanels(() => { if (sceneId === null) controller?.fitAll(ids); else controller?.focus(sceneId, { scopeId: scopeId ?? undefined, preservePose: true }) }) }
+  const home = (): void => { if (suspended) return; controls?.dismiss(); componentsOpen = false; pendingFocus = null; pendingCameraFocus = null; const sceneId = focusedId, scopeId = focusedScopeId, ids = groups.get(focusedGroupId ?? '')?.sceneIds; if (sceneId === null) collectionInspection = true; void afterPanels(() => { if (sceneId === null) controller?.fitAll(ids, { preservePose: false }); else controller?.home(sceneId, scopeId ?? undefined) }) }
   const focusOccurrence = (sceneId: string, occurrenceId: string, chosenLevel?: string): void => {
     if (suspended) return
     const scene = scenes.find(value => value.descriptor.id === sceneId), occurrence = controller?.scene(sceneId)?.objects.find(value => value.id === occurrenceId)
@@ -746,7 +754,7 @@
       else if (inspected !== null) closeInspection(true)
       else if (focusLocations !== null || floorChoice !== null || scopeFloorChoice !== null) { focusLocations = null; floorChoice = null; scopeFloorChoice = null }
       else if (componentsOpen) componentsOpen = false
-      else if (controls?.dismiss() || cameraControls?.dismiss()) { /* the active disclosure consumed Escape */ }
+      else if (controls?.dismiss()) { /* the active disclosure consumed Escape */ }
       else return
       next.cancelCamera(); event.preventDefault(); event.stopPropagation()
     }
@@ -772,12 +780,9 @@
   <canvas class="layout-plan-annotations" bind:this={draftingCanvas} aria-hidden="true"></canvas>
   {#if scenes.length > 0 && focused !== null}
     {#if controlsOpen}<div class="layout-tools" bind:this={toolsElement} style:right={`${coverRight + 12}px`} style:top={`${toolsTop}px`}>
-      {#snippet cameraNavigation()}
-        <CameraControls bind:this={cameraControls} {navigation} pitch={cameraReadout.pitch} bearing={cameraReadout.bearing} onnavigation={tool => { if (!suspended) { navigation = tool; controller?.setNavigationTool(tool) } }} ontilt={degrees => { if (!suspended) controller?.tiltBy(degrees) }} onturn={degrees => { if (!suspended) controller?.turnBy(degrees) }} onzoom={delta => { if (!suspended) controller?.zoomBy(delta) }} onfit={fit} onhome={home} />
-      {/snippet}
-      <Controls bind:this={controls} title={scopeTitle} path={scopePath} {choices} {scopeKey} levels={scopeLevels} layers={focusedId === null ? [] : focused.descriptor.layers ?? []} {collectionLayerChoices} floorGroups={collectionFloorGroups} {mixedSettings} onfloorchange={changeCollectionFloor} oncollectionlayerchange={changeCollectionLayer} view={focused.view} status={statusText} {suspended} {retryLabel} onretry={retryableLayouts.length > 0 ? retryFailedLayouts : undefined}
+      <Controls bind:this={controls} title={scopeTitle} path={scopePath} {choices} {scopeKey} levels={scopeLevels} layers={focusedId === null ? [] : focused.descriptor.layers ?? []} {collectionLayerChoices} floorGroups={collectionFloorGroups} {mixedSettings} onfloorchange={changeCollectionFloor} oncollectionlayerchange={changeCollectionLayer} view={focused.view} status={statusLine.text} statusQuiet={statusLine.quiet} {suspended} {retryLabel} onretry={retryableLayouts.length > 0 ? retryFailedLayouts : undefined}
           onscope={chooseScope} onviewchange={changeView} onfit={fit} onhome={home} onoverview={focusedId === null ? undefined : () => overview(focused)} onfind={() => { componentsOpen = !componentsOpen; componentScope = null }}
-          navigationControls={focused.view.mode === '3d' ? cameraNavigation : undefined} onclose={() => { controlsOpen = false; componentsOpen = false }} />
+          camera={focused.view.mode === '3d' ? { navigation, pitch: cameraReadout.pitch, bearing: cameraReadout.bearing, onnavigation: tool => { if (!suspended) { navigation = tool; controller?.setNavigationTool(tool) } }, ontilt: degrees => { if (!suspended) controller?.tiltBy(degrees) }, onturn: degrees => { if (!suspended) controller?.turnBy(degrees) } } : undefined} onclose={() => { controlsOpen = false; componentsOpen = false }} />
       {#if componentsOpen}
         <section data-layout-camera-cover class="layout-components" aria-label="Find physical equipment"><header><strong>Find equipment</strong><button type="button" aria-label="Close equipment search" onclick={() => componentsOpen = false}>×</button></header>
           <label>Find a component<input type="search" bind:value={filter} /></label>
