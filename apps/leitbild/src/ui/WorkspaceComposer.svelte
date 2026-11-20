@@ -245,7 +245,7 @@
       origin: location.origin, source: planningPath === null ? null : planningFrame?.contentWindow ?? null, workspaceId,
     })
     if (address !== null) onOpenAddress(address)
-    const place =readSurfacePlace(event.data, { fromWorld: event.source === worldFrame?.contentWindow, workspaceId, runId: worldRunId })
+    const place = readSurfacePlace(event.data, { fromWorld: event.source === worldFrame?.contentWindow, workspaceId, runId: worldRunId })
     if (place.kind === 'refused') onError(place.message)
     else if (place.kind === 'place') onPlaceSurface(place.surface)
     if (event.source === agentsFrame?.contentWindow) { relay.fromAgents(event.data); presentation.fromAgents(event.data) }
