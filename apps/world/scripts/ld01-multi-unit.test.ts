@@ -56,9 +56,11 @@ describe('the soak rod line (r2 amendment A7)', () => {
     expect([at.frames_at_or_over_maximum_speed_error, at.frames_outside_band_not_correcting, at.holds]).toEqual([1, 0, false])
   })
 
-  test('frames under HOLD are counted, not judged', () => {
-    const held = run([[0.1, 3], [-0.9, 3, false], [-0.9, 3, false], [0.1, 3.001], [0.1, 3.001]]).summary
-    expect([held.frames_not_auto, held.frames_outside_band, held.frames_outside_band_not_correcting, held.holds]).toEqual([2, 0, 0, true])
+  test('frames under HOLD are judged too, and counted: outside the band with no travel fails, inside it passes', () => {
+    const outside = run([[0.1, 3], [-0.9, 3, false], [-0.9, 3, false], [0.1, 3, false], [0.1, 3], [0.1, 3.001]]).summary
+    expect([outside.frames_not_auto, outside.frames_outside_band, outside.frames_outside_band_not_correcting, outside.holds]).toEqual([3, 2, 2, false])
+    const inside = run([[0.1, 3], [-0.5, 3, false], [0.7, 3, false], [0.1, 3, false], [0.1, 3.001], [0.1, 3.001]]).summary
+    expect([inside.frames_not_auto, inside.frames_outside_band, inside.frames_outside_band_not_correcting, inside.holds]).toEqual([3, 0, 0, true])
   })
 })
 

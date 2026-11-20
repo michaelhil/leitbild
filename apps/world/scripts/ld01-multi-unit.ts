@@ -34,7 +34,7 @@
  * - worst.json: per unit the 200 worst frames by unit wall and by instructions, each with its machine-load sample.
  * - start.json (at connect: each unit's composition read from its delivered channels, the rod line's numbers) and
  *   run.json (at the stop, with each unit's rod and valve lines, soak rule r2 amendment A7. Rod: e = LD01.CORE.BANK.ERROR,
- *   the law's own error; every AUTO frame |e| ≤ deadBand_K or the bank's travel over the interval its decision is in force
+ *   the law's own error; every frame |e| ≤ deadBand_K or the bank's travel over the interval its decision is in force
  *   reduces |e|; every frame |e| < maximumSpeedError_K; the bank moves at least once; both numbers from the wiki block
  *   ld01-rod-control the unit reads. Valve: LD01.TG.ADM.OPENING < 1 every frame, with the worst LD01.TG.ADM.POS).
  * It stops, keeps every receipt and restarts nothing on: a unit's failure (child death, refused exchange, the 10 s
@@ -321,9 +321,9 @@ export const rodDecisionLagFrames = 1
 
 /**
  * Soak rule r2's rod line with amendment A7. e is the law's own error (LD01.CORE.BANK.ERROR: Tavg − Tref plus the power-mismatch term).
- * An AUTO frame passes when |e| ≤ deadBand_K, or when the bank's travel over the interval its decision is in force (from frame
+ * A frame passes when |e| ≤ deadBand_K, or when the bank's travel over the interval its decision is in force (from frame
  * k + lag to k + lag + 1) has the sign that reduces |e| (withdraws for e < 0, inserts for e > 0). Every frame also needs
- * |e| < maximumSpeedError_K, and the bank must move at least once. Frames under HOLD are counted, not judged.
+ * |e| < maximumSpeedError_K, and the bank must move at least once. Every frame is judged, HOLD or not; frames under HOLD are also counted.
  */
 export const createRodLine = (law: RodLaw, lag = rodDecisionLagFrames) => {
   // The last lag + 2 frames: the oldest is judged once the travel over its in-force interval is known.
@@ -344,7 +344,8 @@ export const createRodLine = (law: RodLaw, lag = rodDecisionLagFrames) => {
       recent.push({ k, e, bank, auto })
       if (recent.length < lag + 2) return
       const judged = recent.shift()!
-      if (!judged.auto) { totals.notAuto += 1; return }
+      // Every frame is judged, HOLD or not: under HOLD the rods do not act, so a frame outside the band then fails.
+      if (!judged.auto) totals.notAuto += 1
       if (Math.abs(judged.e) <= law.deadBandK) return
       totals.outsideBand += 1
       interval.outsideBand += 1
@@ -359,7 +360,7 @@ export const createRodLine = (law: RodLaw, lag = rodDecisionLagFrames) => {
       return taken
     },
     summary: (frames: number) => {
-      const unjudged = recent.filter(frame => frame.auto && Math.abs(frame.e) > law.deadBandK).length
+      const unjudged = recent.filter(frame => Math.abs(frame.e) > law.deadBandK).length
       const bankMoved = totals.bankMax > totals.bankMin
       return {
         dead_band_k: law.deadBandK, maximum_speed_error_k: law.maximumSpeedErrorK, e: 'LD01.CORE.BANK.ERROR', decision_lag_frames: lag, frames, frames_read: totals.framesRead,
