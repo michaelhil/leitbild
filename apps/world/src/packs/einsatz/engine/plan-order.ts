@@ -164,8 +164,8 @@ const underWay: ReadonlyArray<UnitRecord['phase']> = ['mobilizing', 'en-route', 
  * unit's plan still holds the first stop it gave (`lastCommand.stepId`),
  * and the unit has not arrived there. Refused `newer_order_exists` when
  * another command changed the unit's plan since, `nothing_to_undo` once the
- * unit is past that first stop or has arrived at it, and for a command that
- * gave no stop (a return, a removed stop). As `unit.stop.remove`, an undo
+ * unit is past that first stop or has arrived at it, after an undo, and for
+ * a command that gave no stop (a return, a removed stop). As `unit.stop.remove`, an undo
  * never takes the stop that delivers the load a unit carries
  * (`unit_loaded`). The stops leave quietly: a task's work never left it. An
  * order that dropped a task gives the task back: the unit is sent to it
@@ -178,7 +178,8 @@ export const planUndo = (state: EngineState, intent: IntentOf<'undo'>, actor: En
   const last = unit.lastCommand
   if (last === undefined) return refused('nothing_to_undo', `${unit.label} has no order to undo`)
   if (last.id !== intent.commandId) return refused('newer_order_exists', `A newer order changed ${unit.label}'s plan since; undo that one, or give a new order`)
-  if (last.stepId === undefined) return refused('nothing_to_undo', `${unit.label}'s last order gave it no stop to take back`)
+  if (last.undo === true) return refused('nothing_to_undo', `${unit.label}'s last order is already undone`)
+  if (last.stepId === undefined) return refused('nothing_to_undo', `${unit.label}'s last order can't be undone: Undo takes back only an order that gave it a stop`)
   const firstIndex = unit.orders.findIndex(step => step.id === last.stepId)
   if (firstIndex < 0) return refused('nothing_to_undo', `${unit.label} is past the first stop of its last order`)
   const active = firstIndex === 0 && unit.orders[0]!.state === 'active'

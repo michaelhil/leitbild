@@ -21,6 +21,13 @@ export const dispatchWords = {
   cancel: 'Cancel',
   noFreeUnit: 'No free unit can help',
   covered: 'Every need is covered',
+  /** A need's count of what later stops in other units' plans will add: "0/1 · 1 planned". */
+  planned: 'planned',
+  plannedAs: 'planned as',
+  plannedCover: 'Planned stops cover every need',
+  /** The dialog a target tap opens when other units' later stops already cover what the unit would add. */
+  alreadyPlanned: 'Already planned',
+  sendAnyway: 'Send anyway',
   noUnitChosen: 'No unit chosen',
   closed: 'Closed',
   notListed: 'Not in the situation any more',

@@ -31,6 +31,20 @@ describe('map-first dispatch', () => {
     expect(reduceSelection(opened.state, click({ kind: 'call', id: 'call:c' }), options, free).effects).toEqual([{ kind: 'feedback', text: 'This need is covered' }])
   })
 
+  test('a call other units\' later stops already cover asks before sending: Send anyway submits the same order, Cancel sends nothing; a busy unit\'s dialog carries the warning too', () => {
+    const warning = 'New call is already stop 2 of B\'s plan'
+    const planned: UnitOptions = { ...options, targets: [{ ...options.targets[0]!, planned: warning }] }
+    const picked = reduceSelection(selected(), click(call), planned, free)
+    expect(picked.effects).toEqual([])
+    expect(picked.state.selection).toMatchObject({ decision: { kind: 'order', assigned: false, replace: true, add: false, planned: warning } })
+    expect(reduceSelection(picked.state, { kind: 'decide', choice: 'cancel' }, planned, free).effects).toEqual([])
+    expect(reduceSelection(picked.state, { kind: 'decide', choice: 'replace' }, planned, free).effects).toEqual([{
+      kind: 'submit', job: null, input: { units: [unit.id], stops: [{ taskId: call.id }], expectedPlan: [] },
+    }])
+    const plannedBusy: UnitOptions = { ...assigned, targets: [{ ...options.targets[0]!, planned: warning }] }
+    expect(reduceSelection(selected(), click(call), plannedBusy, busy).state.selection).toMatchObject({ decision: { kind: 'order', assigned: true, planned: warning } })
+  })
+
   test('an accepted first order clears targeting and lets the same unit rearm immediately', () => {
     const opened = selected()
     const finished = reduceSelection(opened, { kind: 'initial-order-accepted', unitId: unit.id })
@@ -103,10 +117,10 @@ describe('map-first dispatch', () => {
       expect(tapped.state.selection).toEqual({ kind: 'unit', unitId: unit.id })
     }
     // With load still waiting there, the read offers the planned call for a further trip only: Replace is disabled with its words.
-    const further: UnitOptions = { ...assigned, refused: [], targets: [{ target: old.target, label: old.label, verb: 'pick-up', etaS: 0, afterOnly: true, canReplace: false, canAdd: true, replaceRefusal: 'Old call is already in A\'s plan' }] }
+    const further: UnitOptions = { ...assigned, refused: [], targets: [{ target: old.target, label: old.label, verb: 'pick-up', etaS: 0, afterOnly: true, canReplace: false, canAdd: true, replaceRefusal: 'Old call is A\'s current stop' }] }
     const picked = reduceSelection(selected(), click({ kind: 'call', id: 'call:a' }), further, busy)
     expect(picked.effects).toEqual([])
-    expect(picked.state.selection).toMatchObject({ decision: { kind: 'order', replace: false, add: true, replaceReason: 'Old call is already in A\'s plan' } })
+    expect(picked.state.selection).toMatchObject({ decision: { kind: 'order', replace: false, add: true, replaceReason: 'Old call is A\'s current stop' } })
     expect(reduceSelection(picked.state, { kind: 'decide', choice: 'replace' }, further, busy).effects).toEqual([])
   })
 

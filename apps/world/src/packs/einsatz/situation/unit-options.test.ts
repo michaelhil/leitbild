@@ -79,7 +79,7 @@ describe('Einsatz unit options', () => {
     expect(answer.busy).toBeNull()
     expect(answer.targets.find(target => target.label === 'ANNEX')).toMatchObject({ verb: 'deliver', afterOnly: false, canReplace: true })
     // The site its delivery leads to is in its plan: judged by adding it, as a go-to once the load is delivered.
-    expect(answer.targets.find(target => target.label === 'CLINIC')).toMatchObject({ verb: 'go-to', afterOnly: true, canReplace: false, replaceRefusal: 'CLINIC is already in C1\'s plan' })
+    expect(answer.targets.find(target => target.label === 'CLINIC')).toMatchObject({ verb: 'go-to', afterOnly: true, canReplace: false, replaceRefusal: 'CLINIC is C1\'s current stop' })
     expect(answer.targets.find(target => target.label === 'FAR')).toMatchObject({ verb: 'pick-up', afterOnly: true, canReplace: false, canAdd: true })
     expect((await refusalOf(state, send(['c1'], { taskId: 'far' }))).code).toBe('unit_loaded')
     const after = await run(state, { kind: 'order', units: ['c1'], stops: [{ taskId: 'far' }], when: 'after' })
@@ -95,8 +95,8 @@ describe('Einsatz unit options', () => {
     expect(answer.targets.map(target => target.label)).not.toContain('NEAR')
     expect(answer.targets.map(target => target.label)).not.toContain('FAR')
     expect(answer.refused.filter(entry => entry.label === 'NEAR' || entry.label === 'FAR')).toEqual([
-      { target: { taskId: 'near' }, label: 'NEAR', code: 'requirement_covered', text: 'NEAR needs nothing more than C1 provides' },
-      { target: { taskId: 'far' }, label: 'FAR', code: 'requirement_covered', text: 'FAR needs nothing more than C1 provides' },
+      { target: { taskId: 'near' }, label: 'NEAR', code: 'already_in_plan', text: 'NEAR is C1\'s current stop' },
+      { target: { taskId: 'far' }, label: 'FAR', code: 'already_in_plan', text: 'FAR is already stop 2 of C1\'s plan' },
     ])
     // The engine itself still takes a "now" order to the active stop as an "already" no-op; the options read does not offer it.
     expect((await run(state, { kind: 'order', units: ['c1'], stops: [{ taskId: 'near' }], when: 'now', drops: 'near' })).units.get('c1')!.orders).toHaveLength(2)
@@ -105,7 +105,7 @@ describe('Einsatz unit options', () => {
   test('a held target with load still waiting can be added for a further trip, but not replace: the answer says it is already in the plan', async () => {
     const state = await run(await run(await field(), newTask('big', templates.load, at(0.008), { [top]: 2 })), send(['c1'], { taskId: 'big' }))
     const big = (await options(state, 'c1')).targets.find(target => target.label === 'BIG')
-    expect(big).toMatchObject({ canReplace: false, canAdd: true, afterOnly: true, replaceRefusal: 'BIG is already in C1\'s plan' })
+    expect(big).toMatchObject({ canReplace: false, canAdd: true, afterOnly: true, replaceRefusal: 'BIG is C1\'s current stop' })
     expect(big).not.toHaveProperty('addRefusal')
     expect(unitOf(await run(state, append('c1', { taskId: 'big' })), 'c1').orders.map(step => step.state)).toEqual(['active', 'queued'])
   })

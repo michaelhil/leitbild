@@ -72,13 +72,14 @@ const baseSituation = {
   calls: [
     {
       id: 'job-1', label: 'J-1 Ridge', icon: 'flag', templateLabel: 'Pickup', priority: priority(0, { responseTargetS: 600 }), waitingS: 250, overdue: false,
-      needs: [{ kind: 'load', classId: 'crate', code: 'C', label: '2 crates', waiting: 2, covered: 0 }, { kind: 'requirement', provides: 'survey', label: '1 kite', where: ['Camera = yes'], count: 1, enRoute: 0, onTask: 0, completed: 0 }],
-      assigned: [], states: [],
+      needs: [{ kind: 'load', classId: 'crate', code: 'C', label: '2 crates', waiting: 2, covered: 0, planned: 0 }, { kind: 'requirement', provides: 'survey', label: '1 kite', where: ['Camera = yes'], count: 1, enRoute: 0, onTask: 0, completed: 0, planned: 0 }],
+      assigned: [], planned: [], states: [],
     },
     {
       id: 'job-2', label: 'J-2 Bay', icon: 'flag', templateLabel: 'Pickup', priority: priority(1), waitingS: 60,
-      needs: [{ kind: 'load', classId: 'crate', code: 'C', label: '1 crate', waiting: 1, covered: 1 }],
+      needs: [{ kind: 'load', classId: 'crate', code: 'C', label: '1 crate', waiting: 1, covered: 1, planned: 0 }],
       assigned: [{ unitId: 'r2', label: 'R2', phase: 'en-route', status: { word: 'Moving', tone: 'busy' }, eta: routed(180), by: assistant }],
+      planned: [],
       states: [{ code: 'no_free_unit', text: 'No free crew can serve' }],
     },
   ],
@@ -154,7 +155,7 @@ describe('Compact unit card', () => {
     expect(card.undo).toEqual({ label: dispatchWords.undoLast, enabled: true, reason: null, commandId: 'cmd-7' })
     // The engine's verdict refuses: disabled with its words, before any click.
     const verdict = (text: string, by = assistant) => situationOf({ units: [unit('r2', { ...busy, lastOrder: { by, commandId: 'cmd-7', undo: { applies: false, refusal: text } } })] })
-    for (const text of ['R2\'s last order has been carried out: it has arrived', 'R2 is past the first stop of its last order', 'R2\'s last order gave it no stop to take back']) {
+    for (const text of ['R2\'s last order has been carried out: it has arrived', 'R2 is past the first stop of its last order', 'R2\'s last order is already undone', 'R2\'s last order can\'t be undone: Undo takes back only an order that gave it a stop']) {
       const refused = verdict(text)
       expect(unitCard(refused, refused.units[0]!, null, 0).undo).toEqual({ label: dispatchWords.undoLast, enabled: false, reason: text, commandId: 'cmd-7' })
     }
@@ -286,6 +287,20 @@ describe('Call card', () => {
     expect(covered.proposal.button).toEqual({ label: 'Task', enabled: false, reason: dispatchWords.covered })
   })
 
+  test('a later stop in another crew\'s route: the need says what it will add, the card names it with its leg and ETA, and with every need planned there is no proposal for that reason', () => {
+    const job = situation.calls[1]!
+    const planned = situationOf({ calls: [situation.calls[0]!, { ...job, assigned: [], needs: [{ ...job.needs[0]!, covered: 0, planned: 1 }], planned: [{ unitId: 'r3', label: 'R3', stop: 2, eta: routed(840) }], states: [] }] })
+    const call = planned.calls[1]!
+    const card = callCard(planned, call, pinnedOf({ answer: answer({ taskId: 'job-2', proposal: null, deliverTo: [] }), callId: 'job-2' }, planned), opened, 0)
+    expect(card.needs).toEqual([{ text: '1 crate 0/1 · 1 planned', met: false }])
+    expect(card.planned).toEqual([{ unitId: 'r3', text: 'R3 · planned as leg 2 · 14 min' }])
+    // A road crew's later stop is not routed until it comes up: the line names no estimate.
+    const unrouted = { ...call, planned: [{ ...call.planned[0]!, eta: { kind: 'unavailable' as const, reason: 'routing_unavailable: Not routed until the stop comes up', straightDistanceM: 900 } }] }
+    expect(callCard(planned, unrouted, null, opened, 0).planned).toEqual([{ unitId: 'r3', text: 'R3 · planned as leg 2' }])
+    expect(card.proposal.button).toEqual({ label: 'Task', enabled: false, reason: dispatchWords.plannedCover })
+    expect(overview(planned, none, opened, 0).calls.rows[1]!.needs).toBe('1 crate 0/1 · 1 planned')
+  })
+
   test('only a change since pinning invalidates: a unit returning when it was proposed (free to the engine) still holds; one that turns out of action or gains a stop does not', () => {
     const returning = situationOf({ units: [unit('r1', { status: { word: 'Returning', tone: 'returning' }, phase: 'returning' }), unit('k1')] })
     const pinned = pinnedOf({}, returning)
@@ -392,9 +407,10 @@ describe('Overview', () => {
       ...covered,
       id: 'job-3',
       assigned: [],
-      needs: [{ kind: 'requirement', provides: 'survey', label: 'Survey', where: [], count: 1, enRoute: 0, onTask: 0, completed: 1 }],
+      planned: [],
+      needs: [{ kind: 'requirement', provides: 'survey', label: 'Survey', where: [], count: 1, enRoute: 0, onTask: 0, completed: 1, planned: 0 }],
     }
-    const partial = { ...covered, id: 'job-4', needs: [{ kind: 'load', classId: 'crate', code: 'C', label: '2 crates', waiting: 2, covered: 1 }] }
+    const partial = { ...covered, id: 'job-4', needs: [{ kind: 'load', classId: 'crate', code: 'C', label: '2 crates', waiting: 2, covered: 1, planned: 0 }] }
     const view = overview(situationOf({ calls: [situation.calls[0], covered, finished, partial] }), none, opened, 0)
     expect(view.calls.rows.map(row => row.progress)).toEqual([null, 'active', 'covered', null])
     expect(view.calls.rows[2]!.isNew).toBeFalse()

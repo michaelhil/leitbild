@@ -72,11 +72,11 @@ export const recommendAnswerSchema = z.object({
     order: unitOrderInputSchema.describe('Send this to world.einsatz.unit.order unchanged.'),
     units: z.array(unitEtaSchema).min(1).describe('The proposed free units with their ETAs.'),
     covers: z.object({
-      covered: z.number().int().nonnegative().describe('How many of the needed units are covered once the proposal goes, those already assigned included.'),
+      covered: z.number().int().nonnegative().describe('How many of the needed units are covered once the proposal goes, those already assigned and those planned as a later stop included.'),
       needed: z.number().int().nonnegative().describe('How many units the task\'s needs add up to.'),
     }).strict().describe('"covers n of m".'),
     remainder: z.array(z.string().min(1)).describe('What the task still needs after the proposal, in configuration words; empty when covered.'),
-  }).strict().nullable().describe('The smallest set of free units covering what the task needs, by fit then ETA; null when no free unit can help.'),
+  }).strict().nullable().describe('The smallest set of free units covering what the task needs beyond the units assigned to it and those holding it as a later stop (the situation\'s planned), by fit then ETA; null when those cover it, or no free unit can help.'),
   alternatives: z.array(z.object({
     need: needRefSchema.describe('The need these units can serve.'),
     units: z.array(unitEtaSchema.extend({

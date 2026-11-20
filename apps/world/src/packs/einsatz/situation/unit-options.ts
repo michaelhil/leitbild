@@ -11,7 +11,8 @@ import { hasLoad, isDestroyed } from '../engine/rules.ts'
 import { total } from '../engine/values.ts'
 import { refusal, refusalCode } from '../refusal.ts'
 import type { StepTarget } from '../steps.ts'
-import { targetLabel } from '../engine/chain-steps.ts'
+import { heldText, targetLabel } from '../engine/chain-steps.ts'
+import { plannedWarning } from '../engine/planned.ts'
 import { stepKindFor } from '../steps.ts'
 import { inPicture, unitAuthority, type EinsatzViewer } from '../viewer.ts'
 import type { ScenarioRole } from '../../../core/model/index.ts'
@@ -28,8 +29,10 @@ import { stopVerb } from './situation.ts'
  * queue. A target the unit's plan already holds, active or queued, is
  * judged by adding it only: an order "now" to it would send the unit where
  * its plan already leads, so its replace verdict is not offered and the
- * answer says it is already in the plan. A busy unit names its current job
- * once, with its priority code.
+ * answer says where the plan holds it. A call another unit's plan holds as
+ * a later stop that already covers what this unit would add carries that
+ * warning (`planned`): an order is still accepted. A busy unit names its
+ * current job once, with its priority code.
  * ETAs are routed for road units in one router request, as an
  * order would route them; a target the router cannot reach is refused with
  * that refusal. Points on open ground are not listed: any may be named.
@@ -74,14 +77,14 @@ export const readUnitOptions = async (input: {
   }, input.actor)
   const replaceWhen = plan.length === 0 ? undefined : 'now'
   const judged = candidates.map(target => {
-    const held = unit.orders.some(step => sameObject(step.target, target))
-    const replace = held ? undefined : verdict(target, replaceWhen)
+    const held = unit.orders.findIndex(step => sameObject(step.target, target))
+    const replace = held >= 0 ? undefined : verdict(target, replaceWhen)
     // With no plan, an order to add starts immediately and has the same verdict.
     const add = plan.length === 0 && replace !== undefined ? replace : verdict(target, 'after')
     const canReplace = replace?.ok === true
     return {
-      target, canReplace, add,
-      replaceRefusal: replace === undefined ? `${targetLabel(state, target)} is already in ${unit.label}'s plan` : replace.ok ? undefined : messageOf(replace.reason),
+      target, canReplace, add, held: held >= 0,
+      replaceRefusal: replace === undefined ? heldText(state, unit, held) : replace.ok ? undefined : messageOf(replace.reason),
       refusal: canReplace || add.ok ? undefined : add.reason,
     }
   })
@@ -100,6 +103,7 @@ export const readUnitOptions = async (input: {
       refused.push({ target: entry.target, label: targetLabel(state, entry.target), code: refusalCode(eta.reason), text: messageOf(eta.reason) })
       continue
     }
+    const planned = entry.held ? undefined : 'taskId' in entry.target ? plannedWarning(state, taskIn(state, entry.target.taskId), unit) : undefined
     targets.push({
       target: entry.target,
       // Only "after" takes it: the verb is the one the stop gets once the plan is done, as the engine queues it.
@@ -110,6 +114,7 @@ export const readUnitOptions = async (input: {
       canAdd: entry.add.ok,
       ...(entry.replaceRefusal === undefined ? {} : { replaceRefusal: entry.replaceRefusal }),
       ...(!entry.add.ok ? { addRefusal: messageOf(entry.add.reason) } : {}),
+      ...(planned === undefined ? {} : { planned }),
       etaS: eta === undefined ? 0 : eta.seconds,
     })
   }

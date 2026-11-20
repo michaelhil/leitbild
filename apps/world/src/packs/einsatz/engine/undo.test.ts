@@ -93,9 +93,13 @@ describe('Einsatz unit.undo', () => {
     expect(await refusedBy(state, undo('d1', 'deliver'), commanding('undo-1'))).toEqual({ code: 'unit_loaded', reason: 'unit_loaded: D1 has 1 person on board, deliver first' })
   })
 
-  test('a return gives no stop to take back', async () => {
+  test('a return gives no stop to take back, and an undo leaves its order already undone', async () => {
     let state = await by(await field(), send(['c1'], { taskId: 't1' }), commanding('first'))
+    const ordered = state
     state = await by(state, { kind: 'recall', unitId: 'c1' }, commanding('recall'))
-    expect(await refusedBy(state, undo('c1', 'recall'), commanding('undo-1'))).toEqual({ code: 'nothing_to_undo', reason: 'nothing_to_undo: C1\'s last order gave it no stop to take back' })
+    expect(await refusedBy(state, undo('c1', 'recall'), commanding('undo-1'))).toEqual({ code: 'nothing_to_undo', reason: 'nothing_to_undo: C1\'s last order can\'t be undone: Undo takes back only an order that gave it a stop' })
+    const undone = await by(ordered, undo('c1', 'first'), commanding('undo-1'))
+    expect(unitOf(undone, 'c1').lastCommand).toEqual({ id: 'undo-1' as CommandId, undo: true })
+    expect(await refusedBy(undone, undo('c1', 'undo-1'), commanding('undo-2'))).toEqual({ code: 'nothing_to_undo', reason: 'nothing_to_undo: C1\'s last order is already undone' })
   })
 })

@@ -397,6 +397,8 @@ export interface CallCardView {
   readonly whyNot: ReadonlyArray<{ readonly label: string; readonly reasons: string }>
   /** Below the commands, so an order landing never moves a command. */
   readonly assigned: ReadonlyArray<{ readonly unitId: string; readonly text: string }>
+  /** Other units whose plan holds the call as a later stop: "A4 · planned as stop 2", with its ETA once one is estimated. */
+  readonly planned: ReadonlyArray<{ readonly unitId: string; readonly text: string }>
   readonly close: { readonly label: string; readonly confirm: string }
   readonly states: ReadonlyArray<string>
 }
@@ -409,15 +411,22 @@ export interface ClosedCallView {
   readonly text: string
 }
 
-const needText = (need: SituationCall['needs'][number]): { readonly text: string; readonly met: boolean } => {
-  if (need.kind === 'load') return { text: `${need.label} ${need.covered}/${need.waiting}`, met: need.covered >= need.waiting }
+/** A need, "1 crate 0/1 · 1 planned": met by current stops, and whether it is once later stops come up. */
+const needText = (need: SituationCall['needs'][number]): { readonly text: string; readonly met: boolean; readonly metOncePlanned: boolean } => {
+  const later = need.planned > 0 ? ` · ${need.planned} ${dispatchWords.planned}` : ''
+  if (need.kind === 'load') return { text: `${need.label} ${need.covered}/${need.waiting}${later}`, met: need.covered >= need.waiting, metOncePlanned: need.covered + need.planned >= need.waiting }
   const have = need.enRoute + need.onTask + need.completed
   const where = need.where.length === 0 ? '' : ` (${need.where.join(', ')})`
-  return { text: `${need.label}${where} ${have}/${need.count}`, met: have >= need.count }
+  return { text: `${need.label}${where} ${have}/${need.count}${later}`, met: have >= need.count, metOncePlanned: have + need.planned >= need.count }
 }
 
-/** No proposal: every need is covered, else no free unit can help. */
-const proposalView = (situation: Situation, pinned: PinnedProposal | null, covered: boolean): ProposalView => {
+/** How far a call's needs are covered: by current stops, or once later stops come up. */
+type Cover = 'covered' | 'planned' | null
+const coverOf = (needs: ReadonlyArray<ReturnType<typeof needText>>): Cover =>
+  needs.every(need => need.met) ? 'covered' : needs.every(need => need.metOncePlanned) ? 'planned' : null
+
+/** No proposal: every need is covered, or will be by later stops, else no free unit can help. */
+const proposalView = (situation: Situation, pinned: PinnedProposal | null, cover: Cover): ProposalView => {
   const { words } = situation
   const proposal = pinned?.answer.proposal ?? null
   const kept = proposal === null || pinned === null ? [] : proposal.units.filter(unit => !pinned.dropped.has(unit.unitId))
@@ -429,7 +438,7 @@ const proposalView = (situation: Situation, pinned: PinnedProposal | null, cover
     ? dispatchWords.loading
     : pinned.refreshing
       ? dispatchWords.refreshing
-      : proposal === null ? (covered ? dispatchWords.covered : dispatchWords.noFreeUnit) : stale ?? (kept.length === 0 ? dispatchWords.noUnitChosen : null)
+      : proposal === null ? (cover === 'covered' ? dispatchWords.covered : cover === 'planned' ? dispatchWords.plannedCover : dispatchWords.noFreeUnit) : stale ?? (kept.length === 0 ? dispatchWords.noUnitChosen : null)
   const refreshable = pinned !== null && !pinned.refreshing && (proposal === null || stale !== null)
   return {
     button: button(label, reason),
@@ -464,8 +473,8 @@ export const callCard = (situation: Situation, call: SituationCall, pinned: Pinn
     waiting: `${dispatchWords.waiting} ${clockText(waitedS)}`,
     overdue: target === undefined ? null : waitedS < target ? `overdue in ${clockText(target - waitedS)}` : `${dispatchWords.overdue} by ${clockText(waitedS - target)}`,
     observed: call.observed === undefined ? null : `${dispatchWords.observedBy} ${call.observed.by} at ${call.observed.at.slice(11, 16)} UTC`,
-    needs,
-    proposal: proposalView(situation, answer, needs.every(need => need.met)),
+    needs: needs.map(({ text, met }) => ({ text, met })),
+    proposal: proposalView(situation, answer, coverOf(needs)),
     deliverTo: answer === null ? [] : answer.answer.deliverTo.map(entry => {
       const enabled = live && assignedIds.has(entry.unitId)
       const carrier = situation.units.find(unit => unit.id === entry.unitId)
@@ -490,6 +499,11 @@ export const callCard = (situation: Situation, call: SituationCall, pinned: Pinn
     assigned: call.assigned.map(unit => ({
       unitId: unit.unitId,
       text: [unit.label, unit.status.word, ...(unit.eta === null ? [] : [etaText(unit.eta, elapsedS)!]), `by ${unit.by.label}`].join(' · '),
+    })),
+    planned: call.planned.map(entry => ({
+      unitId: entry.unitId,
+      // As in the unit card's plan: a road unit's later stop has no estimate until it comes up, and says nothing.
+      text: [entry.label, `${dispatchWords.plannedAs} ${words.stop.toLowerCase()} ${entry.stop}`, ...(entry.eta === null || entry.eta.kind === 'unavailable' ? [] : [etaText(entry.eta, elapsedS)!])].join(' · '),
     })),
     close: {
       label: frees.length === 0 ? words.close : `${words.close} (frees ${joined(frees)})`,

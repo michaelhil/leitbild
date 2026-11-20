@@ -130,8 +130,10 @@ export const unitDataSchema = z.object({
    * name: the first stop an order gave the unit (`stepId`; an undo is
    * refused once the plan no longer holds it, and a command that gave no
    * stop has none), and the task the order dropped, which an undo gives back.
+   * An undo is itself such a command and says so (`undo`): it leaves nothing
+   * more to take back.
    */
-  lastCommand: z.object({ id: commandIdSchema, stepId: idSchema.optional(), drops: idSchema.optional() }).strict().optional(),
+  lastCommand: z.object({ id: commandIdSchema, stepId: idSchema.optional(), drops: idSchema.optional(), undo: z.literal(true).optional() }).strict().optional(),
 }).strict()
 
 const tally = z.number().int().nonnegative()

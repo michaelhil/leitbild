@@ -38,8 +38,8 @@ describe('Einsatz situation', () => {
     expect(situation.calls.map(call => [call.id, call.priority.code])).toEqual([['t-first', 'Q1'], ['t-first-later', 'Q1'], ['t-second', 'Q2'], ['t-low', 'Q3']])
     expect(situation.counts.calls).toEqual([{ priorityId: 'Q1', code: 'Q1', count: 2 }, { priorityId: 'Q2', code: 'Q2', count: 1 }, { priorityId: 'Q3', code: 'Q3', count: 1 }])
     expect(situation.counts).toMatchObject({ freeUnits: 3, units: 3, acceptingSites: 1, sites: 1, oldestWaitingS: 0 })
-    expect(situation.calls.find(call => call.id === 't-second')!.needs).toEqual([{ kind: 'requirement', provides: 'guard', label: '2 guards', where: [], count: 2, enRoute: 0, onTask: 0, completed: 0 }])
-    expect(situation.calls.find(call => call.id === 't-low')!.needs).toEqual([{ kind: 'load', classId: low, code: 'C3', label: '1 person', waiting: 1, covered: 0 }])
+    expect(situation.calls.find(call => call.id === 't-second')!.needs).toEqual([{ kind: 'requirement', provides: 'guard', label: '2 guards', where: [], count: 2, enRoute: 0, onTask: 0, completed: 0, planned: 0 }])
+    expect(situation.calls.find(call => call.id === 't-low')!.needs).toEqual([{ kind: 'load', classId: low, code: 'C3', label: '1 person', waiting: 1, covered: 0, planned: 0 }])
   })
 
   test('a unit shows its plan with verbs and ETAs, its predicted delivery and who ordered it', async () => {
@@ -76,7 +76,8 @@ describe('Einsatz situation', () => {
     // As the wire carries it: command ids are plain strings there.
     const lastOrderOf = (state: EngineState): unknown => read(state).units.find(entry => entry.id === 'c1')!.lastOrder
     const refusedWith = (commandId: string, text: string) => ({ commandId, undo: { applies: false, refusal: text } })
-    const noStop = 'C1\'s last order gave it no stop to take back'
+    const noStop = 'C1\'s last order can\'t be undone: Undo takes back only an order that gave it a stop'
+    const undone = 'C1\'s last order is already undone'
 
     expect(lastOrderOf(await field())).toBeNull()
     const ordered = await command(await field(), { kind: 'order', units: ['c1'], stops: [{ taskId: 't-low' }] }, 'cmd-order')
@@ -84,7 +85,7 @@ describe('Einsatz situation', () => {
     // Reading the verdict applies nothing.
     expect(unitOf(ordered, 'c1').orders).toHaveLength(1)
 
-    expect(lastOrderOf(await command(ordered, { kind: 'undo', unitId: 'c1', commandId: commandIdSchema.parse('cmd-order') }, 'cmd-undo'))).toMatchObject(refusedWith('cmd-undo', noStop))
+    expect(lastOrderOf(await command(ordered, { kind: 'undo', unitId: 'c1', commandId: commandIdSchema.parse('cmd-order') }, 'cmd-undo'))).toMatchObject(refusedWith('cmd-undo', undone))
     expect(lastOrderOf(await command(ordered, { kind: 'recall', unitId: 'c1' }, 'cmd-return'))).toMatchObject(refusedWith('cmd-return', noStop))
 
     const added = await command(ordered, append('c1', { taskId: 't-first' }), 'cmd-add')
