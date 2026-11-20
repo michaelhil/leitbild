@@ -15,8 +15,9 @@
 </div>
 
 <style>
-  .run-view-switch { flex: none; display: inline-flex; gap: 2px; padding: 2px; border: 1px solid #536157; border-radius: 8px; background: #1b281f; }
-  button { min-height: 26px; padding: 0 .6rem; border: 0; border-radius: 6px; color: #b9c6bc; background: transparent; font-size: .74rem; font-weight: 600; white-space: nowrap; }
+  .run-view-switch { flex: none; display: inline-flex; gap: 0; padding: 2px; border: 1px solid #536157; border-radius: 8px; background: #1b281f; }
+  /* Compact, so the Run's bar keeps one row on a 1,024 px screen beside the Workspace name and people (live check 20 Nov). */
+  button { min-height: 26px; padding: 0 .45rem; border: 0; border-radius: 6px; color: #b9c6bc; background: transparent; font-size: .72rem; font-weight: 600; white-space: nowrap; }
   button:hover { color: white; background: #2b3a30; }
   button[aria-pressed='true'] { color: white; background: #3d5544; }
   button:focus-visible { outline: 2px solid var(--lb-focus-on-dark); outline-offset: 2px; }
