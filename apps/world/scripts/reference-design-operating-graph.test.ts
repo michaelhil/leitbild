@@ -81,14 +81,20 @@ test('composes the bank HOLD and its release only where the section declares rod
   // The law's own Tavg and Tref, read in °C from the unit's K.
   expect(declared.tagMap.channels['CORE.bankTavg' as never]).toBe('LD01.CORE.BANK.TAVG')
   expect(declared.tagMap.channels['CORE.bankTref' as never]).toBe('LD01.CORE.BANK.TREF')
+  // A7: the law's own error, a temperature difference the unit delivers in degC, read as it is.
+  expect(declared.tagMap.channels['CORE.bankError' as never]).toBe('LD01.CORE.BANK.ERROR')
+  expect(compiled.tagMap.channels['CORE.bankError' as never]).toBeUndefined()
   const graph = compilePlantGraph(declared.graph, processPlantComponentRegistry)
-  const rodUnits: Record<string, string> = { 'LD01.CORE.BANK.HOLD': '1', 'LD01.CORE.BANK.TAVG': 'K', 'LD01.CORE.BANK.TREF': 'K' }
+  const rodUnits: Record<string, string> = { 'LD01.CORE.BANK.HOLD': '1', 'LD01.CORE.BANK.TAVG': 'K', 'LD01.CORE.BANK.TREF': 'K', 'LD01.CORE.BANK.ERROR': 'degC' }
   const channels = Object.values(declared.tagMap.channels).map(ld01ChannelIdOf).map(id => ({ id, unit: rodUnits[id] ?? unitOf(id), quantity: 'q', source: 's' }))
   const binding = bindLd01TagMap(graph, declared.tagMap, channels)
   const tref = binding.byPath.get('CORE.bankTref' as never)!
   if (tref.kind === 'command') throw new Error('CORE.bankTref is a command')
   expect(tref.variable.descriptor.unit).toBe('degC')
   expect(convertLd01Channel(tref, 573.15)).toBeCloseTo(300, 9)
+  const error = binding.byPath.get('CORE.bankError' as never)!
+  if (error.kind === 'command') throw new Error('CORE.bankError is a command')
+  expect(convertLd01Channel(error, -0.35)).toBe(-0.35)
   expect(ld01CommandSchema.parse({ kind: 'BankHold' })).toEqual({ kind: 'BankHold' })
   expect(ld01CommandSchema.parse({ kind: 'BankAuto' })).toEqual({ kind: 'BankAuto' })
 })
@@ -119,6 +125,7 @@ describe('the ECA0 binding: a section declaring the governor and the DC groups',
   const bound = compileOperatingGraph({ packet, ic: declared, elec, sha8: 'abcdef12', dcCharging })
   const graph = compilePlantGraph(bound.graph, processPlantComponentRegistry)
   const channels = channelsFor([...Object.values(bound.tagMap.channels).map(ld01ChannelIdOf), ...Object.values(bound.tagMap.setpoints).flatMap(setpoint => [setpoint.channel, setpoint.activeChannel])])
+    .map(channel => channel.id === 'LD01.TG.ADM.OPENING' ? { ...channel, unit: '1' } : channel)
   const binding = bindLd01TagMap(graph, bound.tagMap, channels)
   const tagged = (tag: string) => graph.variables.find(variable => variable.descriptor.tagId === tag)
   const command = (path: string) => bound.tagMap.commands[`TG.${path}` as never]
@@ -127,6 +134,12 @@ describe('the ECA0 binding: a section declaring the governor and the DC groups',
     expect(tagged('LD01.TG.ADM.POS')).toMatchObject({ path: 'TG.ADM_POS', descriptor: { unit: 'percent', quantity: 'ratio' } })
     expect(tagged('LD01.TG.STOP.POS')).toMatchObject({ path: 'TG.POS', descriptor: { unit: 'percent' } })
     expect(bound.tagMap.channels['TG.ADM_POS.quality' as never]).toBe('LD01.TG.ADM.POS.QUALITY')
+    // A7: the governor's opening beside it, unrounded, a fraction read as it is.
+    expect(bound.tagMap.channels['TG.admissionOpening' as never]).toBe('LD01.TG.ADM.OPENING')
+    const opening = binding.byPath.get('TG.admissionOpening' as never)!
+    if (opening.kind === 'command') throw new Error('TG.admissionOpening is a command')
+    expect(opening.variable.descriptor.unit).toBe('fraction')
+    expect(convertLd01Channel(opening, 0.9951)).toBe(0.9951)
   })
 
   test('binds the DC reports as booleans and the engineering values in kW, MJ and s, each under its tag', () => {

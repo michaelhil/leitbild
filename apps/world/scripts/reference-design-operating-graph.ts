@@ -446,6 +446,9 @@ export const compileOperatingGraph = (input: { readonly packet: unknown; readonl
       reading('bankHoldInForce', 'Control bank HOLD in force', 'discrete', 'control', 'boolean', 'boolean', 'LD01.CORE.BANK.HOLD', '1'),
       reading('bankTavg', 'Rod control Tavg (its lagged input)', 'derived', 'control', 'temperature', 'degC', 'LD01.CORE.BANK.TAVG', 'K'),
       reading('bankTref', 'Rod control Tref (the Tavg program at its lagged turbine load)', 'derived', 'control', 'temperature', 'degC', 'LD01.CORE.BANK.TREF', 'K'),
+      // Soak amendment A7: the law's own error at the frame (Tavg - Tref plus its mismatch term), a temperature difference
+      // the unit delivers in degC; the rate it decides is in force from the next frame to the one after.
+      reading('bankError', 'Rod control error (Tavg - Tref plus the power-mismatch term)', 'derived', 'control', 'temperature', 'degC', 'LD01.CORE.BANK.ERROR', 'degC'),
     )
     coreEquipment.commands.push(
       { path: 'bankHold', label: 'Control bank HOLD', actuation: 'command', command: { kind: 'BankHold' }, momentary: true },
@@ -500,6 +503,8 @@ export const compileOperatingGraph = (input: { readonly packet: unknown; readonl
   if (ic.families.some(family => family.quantity === 'admission_position')) {
     if (!ld01ConversionExists('W', 'MW')) throw new Error('no W to MW conversion for the load request')
     turbine.setpoints = [{ path: 'loadRequest', label: 'Load request', discipline: 'electrical', quantity: 'power', unit: 'MW', channel: 'LD01.TG.LOAD.REQUEST', activeChannel: 'LD01.TG.LOAD.ACTIVE' }]
+    // Soak amendment A7: the governor's opening at full precision, before the I&C channel rounds it into ADM.POS.
+    turbine.readings.push(reading('admissionOpening', 'Turbine admission opening (the governor\'s, unrounded)', 'derived', 'control', 'ratio', 'fraction', 'LD01.TG.ADM.OPENING', '1', 'position'))
   }
   equipment.set(turbine.id, turbine)
   // R4-GRID: the unit's port to a Grid. Its voltage and limits are the Halden 420 kV bays' (the Grid model addition
