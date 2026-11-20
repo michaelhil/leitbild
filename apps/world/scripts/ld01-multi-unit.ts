@@ -28,14 +28,15 @@
  * protection read macOS):
  * - rollups.ndjson: per unit per rollup interval: frames, worst and p99 unit wall, worst tick wall, worst lag,
  *   frames lagging, worst-frame and total instructions, CPU, resident and footprint at the interval's end, the
- *   worst admission valve position, the Tavg range, the worst |TAVG − TREF| of the rod law, the frames outside its
- *   dead band and those not corrected by the bank, the bank range, the machine's mean busy and load.
+ *   worst admission valve position and opening, the Tavg range, the worst |e| of the rod law's own error, the frames
+ *   outside its dead band and those not corrected by the bank, the bank range, the machine's mean busy and load.
  * - channels.ndjson: per unit every --channel-log-s (and at the start and the stop): the channels the drift line names.
  * - worst.json: per unit the 200 worst frames by unit wall and by instructions, each with its machine-load sample.
  * - start.json (at connect: each unit's composition read from its delivered channels, the rod line's numbers) and
- *   run.json (at the stop, with each unit's rod line, soak rule r2 amendment A2, e = LD01.CORE.BANK.TAVG − .TREF: every
- *   frame |e| ≤ deadBand_K or the bank corrects that frame, every frame |e| < maximumSpeedError_K, and the bank moves at
- *   least once; both numbers from the wiki block ld01-rod-control the unit reads).
+ *   run.json (at the stop, with each unit's rod and valve lines, soak rule r2 amendment A7. Rod: e = LD01.CORE.BANK.ERROR,
+ *   the law's own error; every frame |e| ≤ deadBand_K or the bank's travel over the interval its decision is in force
+ *   reduces |e|; every frame |e| < maximumSpeedError_K; the bank moves at least once; both numbers from the wiki block
+ *   ld01-rod-control the unit reads. Valve: LD01.TG.ADM.OPENING < 1 every frame, with the worst LD01.TG.ADM.POS).
  * It stops, keeps every receipt and restarts nothing on: a unit's failure (child death, refused exchange, the 10 s
  * ADVANCE limit, time-stopped), a named end, a refused advance, the stop file (checked once per rollup interval),
  * machine protection (free disk under 2 GiB, or memory pressure critical for 60 s: r2 A1, the Mac), or the span's end.
@@ -304,69 +305,103 @@ const unitWall = (row: Row): number => {
   return Number.isNaN(header) ? row[c('user_s')]! + row[c('system_s')]! + row[c('runnable_s')]! : header
 }
 
-/** One frame's soak readings: the admission valve, Tavg in the rod law's form, the bank. */
-interface FrameReading { readonly admPos: number; readonly tavg: number; readonly rodE: number; readonly bank: number }
+/** One frame's soak readings: the admission valve (its 1 % reading and its opening), Tavg in the rod law's form, the law's own error and its
+ * temperature part, the bank and whether AUTO is in force (no HOLD). */
+interface FrameReading { readonly admPos: number; readonly opening: number; readonly tavg: number; readonly lawError: number; readonly tavgMinusTref: number; readonly bank: number; readonly auto: boolean }
 
 /** The rod law's two numbers the line judges by (ld01-rod-control, as the unit reads it). */
 export interface RodLaw { readonly deadBandK: number; readonly maximumSpeedErrorK: number }
 
 /**
- * Soak rule r2's rod line with amendment A2, e = Tavg − Tref as the rod law forms them. A frame passes when |e| ≤ deadBand_K, or
- * when the bank moves in the direction that reduces |e| (withdraws for e < 0, inserts for e > 0) in the motion the frame's own
- * decision puts in force: the law samples at frame k and acts at k + 1 (R4-ROD-DELAY), so frame k is judged on the travel change
- * from k to k + 1, one frame later. Every frame also needs |e| < maximumSpeedError_K, and the bank must move at least once.
+ * The frames between a frame's decision and the start of the travel it puts in force: the AUTO law samples at frame k and the rate it
+ * decides there is set at frame k + 1 (R4-ROD-DELAY, operating water-ffi unit/rod_control.rs `RodClient::frame`: "the rate decided at
+ * frame k-1 acts now"), so frame k's decision moves the bank over k + 1 -> k + 2 (SOAK7's diag-l8b-1 measured the same).
  */
-export const createRodLine = (law: RodLaw) => {
-  let pending: { readonly k: number; readonly e: number; readonly bank: number } | null = null
-  const totals = { framesRead: 0, outsideBand: 0, notCorrecting: 0, atOrOverMaximum: 0, worstAbsE: -Infinity, worstAtK: -1, bankMin: Infinity, bankMax: -Infinity }
+export const rodDecisionLagFrames = 1
+
+/**
+ * Soak rule r2's rod line with amendment A7. e is the law's own error (LD01.CORE.BANK.ERROR: Tavg − Tref plus the power-mismatch term).
+ * A frame passes when |e| ≤ deadBand_K, or when the bank's travel over the interval its decision is in force (from frame
+ * k + lag to k + lag + 1) has the sign that reduces |e| (withdraws for e < 0, inserts for e > 0). Every frame also needs
+ * |e| < maximumSpeedError_K, and the bank must move at least once. Every frame is judged, HOLD or not; frames under HOLD are also counted.
+ */
+export const createRodLine = (law: RodLaw, lag = rodDecisionLagFrames) => {
+  // The last lag + 2 frames: the oldest is judged once the travel over its in-force interval is known.
+  const recent: Array<{ readonly k: number; readonly e: number; readonly bank: number; readonly auto: boolean }> = []
+  const totals = { framesRead: 0, notAuto: 0, outsideBand: 0, notCorrecting: 0, atOrOverMaximum: 0, worstAbsE: -Infinity, worstAtK: -1, bankMin: Infinity, bankMax: -Infinity }
   let interval = { outsideBand: 0, notCorrecting: 0 }
   let firstMove: { readonly k: number; readonly direction: 'withdraw' | 'insert'; readonly fromM: number; readonly toM: number } | null = null
   return {
-    note: (k: number, e: number, bank: number): void => {
+    note: (k: number, e: number, bank: number, auto = true): void => {
       totals.framesRead += 1
       const size = Math.abs(e)
       if (size > totals.worstAbsE) { totals.worstAbsE = size; totals.worstAtK = k }
       if (!(size < law.maximumSpeedErrorK)) totals.atOrOverMaximum += 1
       totals.bankMin = Math.min(totals.bankMin, bank)
       totals.bankMax = Math.max(totals.bankMax, bank)
-      if (pending !== null) {
-        const moved = bank - pending.bank
-        if (firstMove === null && moved !== 0) firstMove = { k, direction: moved > 0 ? 'withdraw' : 'insert', fromM: pending.bank, toM: bank }
-        if (Math.abs(pending.e) > law.deadBandK) {
-          totals.outsideBand += 1
-          interval.outsideBand += 1
-          if (!(moved !== 0 && Math.sign(moved) === -Math.sign(pending.e))) { totals.notCorrecting += 1; interval.notCorrecting += 1 }
-        }
-      }
-      pending = { k, e, bank }
+      const previous = recent.at(-1)
+      if (previous !== undefined && firstMove === null && bank !== previous.bank) firstMove = { k, direction: bank > previous.bank ? 'withdraw' : 'insert', fromM: previous.bank, toM: bank }
+      recent.push({ k, e, bank, auto })
+      if (recent.length < lag + 2) return
+      const judged = recent.shift()!
+      // Every frame is judged, HOLD or not: under HOLD the rods do not act, so a frame outside the band then fails.
+      if (!judged.auto) totals.notAuto += 1
+      if (Math.abs(judged.e) <= law.deadBandK) return
+      totals.outsideBand += 1
+      interval.outsideBand += 1
+      // recent[i] is frame judged.k + 1 + i: the in-force interval runs from frame k + lag to k + lag + 1.
+      const travel = recent[lag]!.bank - (lag === 0 ? judged.bank : recent[lag - 1]!.bank)
+      if (!(travel !== 0 && Math.sign(travel) === -Math.sign(judged.e))) { totals.notCorrecting += 1; interval.notCorrecting += 1 }
     },
-    /** The counts judged since the last call (a frame is judged when the next one arrives). */
+    /** The counts judged since the last call (a frame is judged once its decision's travel interval has passed). */
     takeInterval: (): { readonly outsideBand: number; readonly notCorrecting: number } => {
       const taken = interval
       interval = { outsideBand: 0, notCorrecting: 0 }
       return taken
     },
     summary: (frames: number) => {
-      const unjudged = pending !== null && Math.abs(pending.e) > law.deadBandK
+      const unjudged = recent.filter(frame => Math.abs(frame.e) > law.deadBandK).length
       const bankMoved = totals.bankMax > totals.bankMin
       return {
-        dead_band_k: law.deadBandK, maximum_speed_error_k: law.maximumSpeedErrorK, frames, frames_read: totals.framesRead,
-        frames_outside_band: totals.outsideBand, frames_outside_band_not_correcting: totals.notCorrecting, frames_at_or_over_maximum_speed_error: totals.atOrOverMaximum,
-        final_frame_outside_band_unjudged: unjudged, worst_abs_e_k: totals.worstAbsE, worst_at_k: totals.worstAtK, first_bank_move: firstMove,
-        bank_min: totals.bankMin, bank_max: totals.bankMax, bank_moved: bankMoved,
-        holds: totals.framesRead === frames && totals.notCorrecting === 0 && totals.atOrOverMaximum === 0 && !unjudged && bankMoved,
+        dead_band_k: law.deadBandK, maximum_speed_error_k: law.maximumSpeedErrorK, e: 'LD01.CORE.BANK.ERROR', decision_lag_frames: lag, frames, frames_read: totals.framesRead,
+        frames_not_auto: totals.notAuto, frames_outside_band: totals.outsideBand, frames_outside_band_not_correcting: totals.notCorrecting,
+        frames_at_or_over_maximum_speed_error: totals.atOrOverMaximum, final_frames_outside_band_unjudged: unjudged,
+        worst_abs_e_k: totals.worstAbsE, worst_at_k: totals.worstAtK, first_bank_move: firstMove, bank_min: totals.bankMin, bank_max: totals.bankMax, bank_moved: bankMoved,
+        holds: totals.framesRead === frames && totals.notCorrecting === 0 && totals.atOrOverMaximum === 0 && unjudged === 0 && bankMoved,
       }
     },
   }
 }
 type RodLine = ReturnType<typeof createRodLine>
 
+/**
+ * r2's valve line with amendment A7: the governor's admission opening at full precision (LD01.TG.ADM.OPENING, a fraction, 1 fully open)
+ * stays below its full-open stop every frame. The 1 % indication LD01.TG.ADM.POS is reported with its worst value.
+ */
+export const createValveLine = () => {
+  const totals = { framesRead: 0, atOrOverStop: 0, worstOpening: -Infinity, worstOpeningAtK: -1, worstPosition: -Infinity, worstPositionAtK: -1 }
+  return {
+    note: (k: number, opening: number, position: number): void => {
+      totals.framesRead += 1
+      if (opening > totals.worstOpening) { totals.worstOpening = opening; totals.worstOpeningAtK = k }
+      if (position > totals.worstPosition) { totals.worstPosition = position; totals.worstPositionAtK = k }
+      if (!(opening < 1)) totals.atOrOverStop += 1
+    },
+    summary: (frames: number) => ({
+      opening: 'LD01.TG.ADM.OPENING', frames, frames_read: totals.framesRead, frames_at_or_over_stop: totals.atOrOverStop,
+      worst_opening: totals.worstOpening, worst_opening_at_k: totals.worstOpeningAtK, worst_adm_pos: totals.worstPosition, worst_adm_pos_at_k: totals.worstPositionAtK,
+      holds: totals.framesRead === frames && totals.atOrOverStop === 0,
+    }),
+  }
+}
+type ValveLine = ReturnType<typeof createValveLine>
+
 interface Extreme { value: number; k: number }
 const highest = (): Extreme => ({ value: -Infinity, k: -1 })
 const raise = (extreme: Extreme, value: number, k: number): void => { if (value > extreme.value) { extreme.value = value; extreme.k = k } }
 
 /** The rollup interval's running figures for one unit. */
-const newInterval = () => ({ frames: 0, walls: [] as number[], exchangeWorst: 0, lagWorst: 0, lagging: 0, instructionsWorst: 0, instructions: 0, cpuS: 0, admWorst: -Infinity, tavgMin: Infinity, tavgMax: -Infinity, rodErrorWorst: -Infinity, bankMin: Infinity, bankMax: -Infinity })
+const newInterval = () => ({ frames: 0, walls: [] as number[], exchangeWorst: 0, lagWorst: 0, lagging: 0, instructionsWorst: 0, instructions: 0, cpuS: 0, admWorst: -Infinity, openingWorst: -Infinity, tavgMin: Infinity, tavgMax: -Infinity, rodErrorWorst: -Infinity, bankMin: Infinity, bankMax: -Infinity })
 
 /** A worst-frame entry: the frame and the machine-load sample standing when it was noted. */
 const worstColumns = ['k', 't_unit_s', 'unit_wall_s', 'exchange_wall_s', 'lag_s', 'instructions', 'p_instructions', 'cpu_s', 'runnable_s', 'load_t_s', 'load1', 'memory_pressure', 'core_busy'] as const
@@ -411,6 +446,8 @@ interface UnitRecord {
   readonly admWorst: Extreme
   /** The rod line (A2), fed every frame read; null without the rod law's numbers (not a soak). */
   readonly rodLine: RodLine | null
+  /** The valve line (A7), fed every frame read; null when the rod line is (not a soak). */
+  readonly valveLine: ValveLine | null
   totals: { instructions: number; pInstructions: number; userS: number; systemS: number; cpuHeaderS: number; runnableS: number; steps: number; jacobians: number; restartsR: number }
   readonly resident: { first: number | null; max: number; last: number | null }
   readonly footprint: { first: number | null; max: number; last: number | null }
@@ -423,7 +460,7 @@ const newRecord = (index: number, spec: UnitSpec, plantId: string, law: RodLaw |
   index, plantId, spec, pid: 0, connectCost: null, rows: [], frameInstructions: [], instants: [],
   hasher: new Bun.CryptoHasher('sha256'), eventsHasher: new Bun.CryptoHasher('sha256'),
   firstFrameT: Number.NaN, commandT: null, failure: null, ended: null, last: null, first: null,
-  frames: 0, lastT: Number.NaN, wallWorst: highest(), exchangeWorst: highest(), lagWorst: highest(), lagging: 0, instructionsWorst: highest(), fiveWorst: highest(), five: [], admWorst: highest(), rodLine: law === null ? null : createRodLine(law),
+  frames: 0, lastT: Number.NaN, wallWorst: highest(), exchangeWorst: highest(), lagWorst: highest(), lagging: 0, instructionsWorst: highest(), fiveWorst: highest(), five: [], admWorst: highest(), rodLine: law === null ? null : createRodLine(law), valveLine: law === null ? null : createValveLine(),
   totals: { instructions: 0, pInstructions: 0, userS: 0, systemS: 0, cpuHeaderS: 0, runnableS: 0, steps: 0, jacobians: 0, restartsR: 0 },
   resident: { first: null, max: -Infinity, last: null }, footprint: { first: null, max: -Infinity, last: null },
   interval: newInterval(), byWall: [], byInstructions: [],
@@ -469,7 +506,8 @@ const noteRow = (config: Config, load: LoadSampler, record: UnitRecord, row: Row
   }
   if (reading !== null) {
     raise(record.admWorst, reading.admPos, k)
-    record.rodLine?.note(k, reading.rodE, reading.bank)
+    record.rodLine?.note(k, reading.lawError, reading.bank, reading.auto)
+    record.valveLine?.note(k, reading.opening, reading.admPos)
   }
   if (config.rollupS === null) return
   const interval = record.interval
@@ -484,9 +522,10 @@ const noteRow = (config: Config, load: LoadSampler, record: UnitRecord, row: Row
   interval.cpuS += finiteOr0(cpuS)
   if (reading !== null) {
     interval.admWorst = Math.max(interval.admWorst, reading.admPos)
+    interval.openingWorst = Math.max(interval.openingWorst, reading.opening)
     interval.tavgMin = Math.min(interval.tavgMin, reading.tavg)
     interval.tavgMax = Math.max(interval.tavgMax, reading.tavg)
-    interval.rodErrorWorst = Math.max(interval.rodErrorWorst, Math.abs(reading.rodE))
+    interval.rodErrorWorst = Math.max(interval.rodErrorWorst, Math.abs(reading.lawError))
     interval.bankMin = Math.min(interval.bankMin, reading.bank)
     interval.bankMax = Math.max(interval.bankMax, reading.bank)
   }
@@ -572,8 +611,9 @@ const summarize = (record: UnitRecord, stepS: number): Record<string, unknown> =
       p_core_instruction_share: totals.instructions === 0 ? null : totals.pInstructions / totals.instructions,
     },
     admission_valve_worst: record.admWorst.k < 0 ? null : { value: record.admWorst.value, at_k: record.admWorst.k },
-    // Soak rule r2's rod line with amendment A2 (createRodLine).
+    // Soak rule r2's rod and valve lines with amendment A7 (createRodLine, createValveLine).
     rod_line: record.rodLine?.summary(record.frames) ?? null,
+    valve_line: record.valveLine?.summary(record.frames) ?? null,
     cpu_s_total_by_rusage: totals.userS + totals.systemS,
     cpu_s_total_by_child_header: totals.cpuHeaderS,
     runnable_wait_s_total: totals.runnableS,
@@ -607,8 +647,8 @@ const stoppingSignals: ReadonlySet<string> = new Set(['process-plant.engine.fail
 const exitCodeOf = (stop: Stop): number => (stop.kind === 'span end' || stop.kind === 'stop file' ? 0 : stop.kind === 'machine protection' ? 3 : 1)
 
 /** The channels the soak reads: each frame (the rod law's Tavg and Tref, valve, Tavg's legs, bank) and every channel-log interval (the drift line). */
-const frameChannels = ['LD01.CORE.BANK.TAVG', 'LD01.CORE.BANK.TREF', 'LD01.TG.ADM.POS', 'LD01.RCS.A.THOT', 'LD01.RCS.A.TCOLD', 'LD01.RCS.B.THOT', 'LD01.RCS.B.TCOLD', 'LD01.ROD.TRAVEL.MEAN'] as const
-const logChannels = [...frameChannels, 'LD01.CORE.BANK.HOLD', 'LD01.PZR.PRESSURE', 'LD01.PZR.LEVEL.COLLAPSED', 'LD01.SG.A.LEVEL.COLLAPSED', 'LD01.SG.B.LEVEL.COLLAPSED',
+const frameChannels = ['LD01.CORE.BANK.ERROR', 'LD01.CORE.BANK.TAVG', 'LD01.CORE.BANK.TREF', 'LD01.CORE.BANK.HOLD', 'LD01.TG.ADM.OPENING', 'LD01.TG.ADM.POS', 'LD01.RCS.A.THOT', 'LD01.RCS.A.TCOLD', 'LD01.RCS.B.THOT', 'LD01.RCS.B.TCOLD', 'LD01.ROD.TRAVEL.MEAN'] as const
+const logChannels = [...frameChannels, 'LD01.PZR.PRESSURE', 'LD01.PZR.LEVEL.COLLAPSED', 'LD01.SG.A.LEVEL.COLLAPSED', 'LD01.SG.B.LEVEL.COLLAPSED',
   'LD01.SG.A.LT.NR1', 'LD01.SG.B.LT.NR1', 'LD01.TG.GEN.WT', 'LD01.CORE.RELEASED_POWER', 'LD01.TG.LOAD.REQUEST', 'LD01.GRID.FREQUENCY', 'LD01.GRID.VOLTAGE', 'LD01.GRID.NET_EXPORT', 'LD01.GRID.OFFSITE_LOST'] as const
 /** Tavg as the rod law forms it (operating water-ffi unit/rod_control.rs): per loop the mean of hot and cold, the loops' mean. */
 const tavgOf = (values: ReadonlyMap<string, number>): number =>
@@ -646,8 +686,8 @@ const compositionOf = async (byChannel: ReadonlyMap<string, VariablePath>, read:
   const dcChannels = [...byChannel.keys()].filter(channel => channel.startsWith('LD01.DC.') && !channel.endsWith('.QUALITY')).sort()
   if (dcChannels.length === 0) throw new Error('the artifact binds no DC channel: no DC groups')
   const groups = {
-    rods: ['LD01.CORE.BANK.HOLD', 'LD01.CORE.BANK.TAVG', 'LD01.CORE.BANK.TREF'],
-    governor: ['LD01.TG.LOAD.REQUEST', 'LD01.TG.ADM.POS'],
+    rods: ['LD01.CORE.BANK.HOLD', 'LD01.CORE.BANK.ERROR', 'LD01.CORE.BANK.TAVG', 'LD01.CORE.BANK.TREF'],
+    governor: ['LD01.TG.LOAD.REQUEST', 'LD01.TG.ADM.OPENING', 'LD01.TG.ADM.POS'],
     dc: dcChannels,
     field_controller: ['LD01.TG.GEN.FIELD.INITIATED'],
   }
@@ -662,7 +702,7 @@ const compositionOf = async (byChannel: ReadonlyMap<string, VariablePath>, read:
 /** The soak's receipts on disk: written as the run goes, so a stop at any point keeps them. */
 const createSoakFiles = (config: Config, records: ReadonlyArray<UnitRecord>, load: LoadSampler, stepS: number) => {
   const rollupColumns = ['unit', 'interval', 'end_k', 't_unit_s', 'frames', 'unit_wall_worst_s', 'unit_wall_p99_s', 'exchange_wall_worst_s', 'lag_worst_s', 'frames_lagging',
-    'instructions_worst_frame', 'instructions_total', 'cpu_s', 'resident_bytes', 'footprint_bytes', 'adm_pos_worst', 'tavg_min', 'tavg_max', 'rod_error_worst_k', 'rod_frames_outside_band', 'rod_frames_not_correcting', 'bank_min', 'bank_max', 'core_busy_mean', 'load1'] as const
+    'instructions_worst_frame', 'instructions_total', 'cpu_s', 'resident_bytes', 'footprint_bytes', 'adm_pos_worst', 'opening_worst', 'tavg_min', 'tavg_max', 'rod_error_worst_k', 'rod_frames_outside_band', 'rod_frames_not_correcting', 'bank_min', 'bank_max', 'core_busy_mean', 'load1'] as const
   const rollups = join(config.out, 'rollups.ndjson')
   const channels = join(config.out, 'channels.ndjson')
   writeFileSync(rollups, `${JSON.stringify({ columns: rollupColumns, rollup_s: config.rollupS, unit_wall_basis: 'the unit\'s CPU plus runnable time over the tick (proc_pid_rusage); the exchange wall bounds it', exchange_wall_basis: 'the tick: every unit\'s exchange at once, then the commit to every Pack' })}\n`)
@@ -677,7 +717,7 @@ const createSoakFiles = (config: Config, records: ReadonlyArray<UnitRecord>, loa
       return JSON.stringify([record.index, interval, k, rounded(record.lastT), figures.frames,
         finite(Math.max(...figures.walls)), figures.walls.length === 0 ? null : rounded(percentile(figures.walls, 0.99)), rounded(figures.exchangeWorst), rounded(figures.lagWorst), figures.lagging,
         figures.instructionsWorst, figures.instructions, rounded(figures.cpuS), record.resident.last, record.footprint.last,
-        finite(figures.admWorst), finite(figures.tavgMin), finite(figures.tavgMax), finite(figures.rodErrorWorst), rod?.outsideBand ?? null, rod?.notCorrecting ?? null, finite(figures.bankMin), finite(figures.bankMax), rounded(machineInterval.busyMean), rounded(machineInterval.load1)])
+        finite(figures.admWorst), finite(figures.openingWorst), finite(figures.tavgMin), finite(figures.tavgMax), finite(figures.rodErrorWorst), rod?.outsideBand ?? null, rod?.notCorrecting ?? null, finite(figures.bankMin), finite(figures.bankMax), rounded(machineInterval.busyMean), rounded(machineInterval.load1)])
     })
     appendFileSync(rollups, `${lines.join('\n')}\n`)
     interval += 1
@@ -744,7 +784,10 @@ const readFrame = async (read: UnitReader, byChannel: ReadonlyMap<string, Variab
   const values = await read(frameChannels.map(channel => pathOf(byChannel, channel)))
   if (values === null) return null
   const byId = new Map<string, number>(frameChannels.map(channel => [channel, Number(values.get(pathOf(byChannel, channel))?.value)]))
-  return { admPos: byId.get('LD01.TG.ADM.POS')!, tavg: tavgOf(byId), rodE: byId.get('LD01.CORE.BANK.TAVG')! - byId.get('LD01.CORE.BANK.TREF')!, bank: byId.get('LD01.ROD.TRAVEL.MEAN')! }
+  return {
+    admPos: byId.get('LD01.TG.ADM.POS')!, opening: byId.get('LD01.TG.ADM.OPENING')!, tavg: tavgOf(byId), lawError: byId.get('LD01.CORE.BANK.ERROR')!,
+    tavgMinusTref: byId.get('LD01.CORE.BANK.TAVG')! - byId.get('LD01.CORE.BANK.TREF')!, bank: byId.get('LD01.ROD.TRAVEL.MEAN')!, auto: byId.get('LD01.CORE.BANK.HOLD') === 0,
+  }
 }
 
 const connectEngine = async (config: Config, artifact: Ld01UnitArtifact, record: UnitRecord): Promise<NativeProcessPlantEngine> => {
@@ -923,9 +966,13 @@ const runAdapter = async (config: Config, artifact: Ld01UnitArtifact, records: R
     }
   })
   const composition = soak ? await Promise.all(readers.map(read => compositionOf(byChannel, read))) : []
-  // The rod line compares a difference with deadBand_K (kelvin): both channels in one temperature scale of kelvin steps.
-  const rodUnits = new Set(composition.flatMap(unit => unit?.rods?.filter(channel => channel.channel !== 'LD01.CORE.BANK.HOLD').map(channel => channel.unit) ?? []))
-  if (soak && (rodUnits.size !== 1 || !['K', 'degC'].includes([...rodUnits][0] ?? ''))) throw new Error(`LD01.CORE.BANK.TAVG and .TREF read in ${[...rodUnits].join(', ')}: the rod line needs both in K or degC`)
+  // The rod line compares the law's error, a temperature difference, with deadBand_K (kelvin): it reads in K or degC (equal steps).
+  // TAVG and TREF, reported beside it, read in one such scale. The valve line compares the opening, a fraction, with 1.
+  const unitsOf = (channel: string) => new Set(composition.flatMap(unit => [...(unit?.rods ?? []), ...(unit?.governor ?? [])].filter(read => read.channel === channel).map(read => read.unit)))
+  const kelvinSteps = (units: Set<string | null>) => units.size === 1 && ['K', 'degC'].includes([...units][0] ?? '')
+  if (soak && !kelvinSteps(unitsOf('LD01.CORE.BANK.ERROR'))) throw new Error(`LD01.CORE.BANK.ERROR reads in ${[...unitsOf('LD01.CORE.BANK.ERROR')].join(', ')}: the rod line needs K or degC`)
+  if (soak && !kelvinSteps(new Set([...unitsOf('LD01.CORE.BANK.TAVG'), ...unitsOf('LD01.CORE.BANK.TREF')]))) throw new Error('LD01.CORE.BANK.TAVG and .TREF read in different scales or not in K or degC')
+  if (soak && [...unitsOf('LD01.TG.ADM.OPENING')].some(unit => unit !== 'fraction')) throw new Error(`LD01.TG.ADM.OPENING reads in ${[...unitsOf('LD01.TG.ADM.OPENING')].join(', ')}: the valve line needs a fraction`)
   onConnected({
     composition,
     scenario: { id: scenario.id, grid: config.grid, runtimes: resolved.runtimes.map(runtime => runtime.runtimeId), plants: records.map(record => ({ plant: record.plantId, pid: record.pid })), connections: scenario.connections.map(connection => ({ id: connection.id, system: connection.system, network: connection.network })) },
