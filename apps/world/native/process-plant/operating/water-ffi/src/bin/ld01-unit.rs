@@ -2665,6 +2665,9 @@ mod tests {
                 .unwrap_or_else(|| panic!("no channel {id}"))
         };
         let (tavg, tref) = (index("LD01.CORE.BANK.TAVG"), index("LD01.CORE.BANK.TREF"));
+        // A7: ERROR re-forms the law's error from the client's state, a second
+        // copy of Controller::frame's formula; it must stay the decision's own.
+        let error = index("LD01.CORE.BANK.ERROR");
         // The per-frame record is observation: it decides nothing.
         unit.plant
             .rods
@@ -2708,21 +2711,28 @@ mod tests {
             match last["decision"]["tref_k"].as_f64() {
                 Some(tref_k) => {
                     assert_eq!(values[tref].to_bits(), tref_k.to_bits(), "TREF at {at} s");
+                    let e = last["decision"]["error_k"].as_f64().expect("e");
+                    assert_eq!(values[error].to_bits(), e.to_bits(), "ERROR at {at} s");
                     auto += 1;
                     worst_t = worst_t.max((values[tavg] - values[tref]).abs());
-                    worst_e = worst_e.max(last["decision"]["error_k"].as_f64().expect("e").abs());
+                    worst_e = worst_e.max(e.abs());
                 }
                 None => {
                     let load = evidence["load"].as_f64().expect("the delivered load");
                     let program = rods.controller.law().tref_k(load);
                     assert_eq!(values[tref].to_bits(), program.to_bits(), "TREF at {at} s");
+                    assert!(
+                        values[error].is_nan(),
+                        "ERROR at {at} s with no decision: {}",
+                        values[error]
+                    );
                     not_auto += 1;
                 }
             }
         }
         println!(
-            "rod law channels: {frames} exchanges; {auto} in AUTO (TAVG = the evidence, TREF = the decision's, bitwise), \
-             {not_auto} not deciding (TREF = the program at the delivered load); in AUTO max |TAVG - TREF| {worst_t} K, max |e| {worst_e} K"
+            "rod law channels: {frames} exchanges; {auto} in AUTO (TAVG = the evidence, TREF and ERROR = the decision's, bitwise), \
+             {not_auto} not deciding (TREF = the program at the delivered load, ERROR NaN); in AUTO max |TAVG - TREF| {worst_t} K, max |e| {worst_e} K"
         );
     }
 }
