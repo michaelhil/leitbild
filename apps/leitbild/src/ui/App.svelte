@@ -37,8 +37,8 @@
   import { request, jsonRequest } from './api.ts'
   import { cardCapability } from './card-actions.ts'
   import { roomScopeIncludingRun, roomSelectsRun, roomServesRun, roomUsesFamily, runDeclaresRoles, runFamilyFor, sameResource } from './run-room-scope.ts'
-  import { keptSelection, planningDemoQuery } from './open-selection.ts'
-  import { withUnreadCount, workspacePageTitle } from './page-title.ts'
+  import { addressedRunAndPlanning, keptSelection, planningDemoQuery, planningFrameQuery } from './open-selection.ts'
+  import { openSubjectTitle, withUnreadCount, workspacePageTitle } from './page-title.ts'
   import { ageText, moduleReadiness, moduleTitle, workspaceLabel } from './launch-workspace.ts'
   import { WORKSPACE_SCREEN_PARAMETER, workspacePath, workspaceUrl } from './launch-destination.ts'
   import { createPeopleSession, type PeopleSession, type PeopleState } from './people-session.ts'
@@ -99,9 +99,11 @@
   if (openingAddress !== null) history.replaceState(null, '', openingAddress)
   const initialSelection = new URLSearchParams(location.search)
   const initialAgentsVisible = initialSelection.get('agents') !== null
-  let selectedPlanningId = $state(initialSelection.get('planning'))
+  const initialOpen = addressedRunAndPlanning(initialSelection)
+  // Planning beside a selected Run shows the Run's plans in place of its simulation (run-view.ts).
+  let selectedPlanningId = $state(initialOpen.planning)
   let selectedDemoQuery = $state(planningDemoQuery(initialSelection))
-  let selectedWorldRunId = $state(initialSelection.has('planning') ? null : initialSelection.get('world'))
+  let selectedWorldRunId = $state(initialOpen.world)
   let selectedWorldFocus = $state(initialSelection.get('focus'))
   let selectedWorldElement = $state(initialSelection.get('element'))
   let selectedWorldOption = $state(initialSelection.get('option'))
@@ -161,17 +163,12 @@
   const selectedPlanningResource = $derived(resources.find(resource =>
     resource.ref.type === 'planning.plan' && resource.ref.id === selectedPlanningId,
   ))
-  const planningQuery = $derived(selectedPlanningId === 'demo' ? selectedDemoQuery
-    : selectedPlanningId === 'library' ? ''
-    : selectedPlanningId === null ? null : new URLSearchParams({ plan: selectedPlanningId }).toString())
-  const planningFrameQuery = $derived.by(() => {
-    if (planningQuery === null) return null
-    const selection = new URLSearchParams(planningQuery)
-    if (selectedAgentsRoomId !== null && agentsVisible) selection.set('agents', selectedAgentsRoomId)
-    return selection.toString()
-  })
-  const planningPath = $derived(workspace && planningFrameQuery !== null
-    ? `/workspaces/${encodeURIComponent(workspace.id)}/planning${planningFrameQuery === '' ? '' : `?${planningFrameQuery}`}` : null)
+  const planningQuery = $derived(planningFrameQuery({
+    planning: selectedPlanningId, demoQuery: selectedDemoQuery, world: selectedWorldRunId,
+    agents: selectedAgentsRoomId !== null && agentsVisible ? selectedAgentsRoomId : null,
+  }))
+  const planningPath = $derived(workspace && planningQuery !== null
+    ? `/workspaces/${encodeURIComponent(workspace.id)}/planning${planningQuery === '' ? '' : `?${planningQuery}`}` : null)
   const selectedRunFamily = $derived(selectedWorldResource?.links.find(link =>
     link.rel === 'member-of' && link.ref.type === 'world.run-family',
   )?.ref)
@@ -188,7 +185,10 @@
   ].slice(0, 4))
   const pageTitle = $derived(workspacePageTitle({
     workspace: workspace ? workspaceTitle : null,
-    run: selectedPlanningResource?.title ?? (planningPath !== null ? 'Planning' : selectedWorldResource?.title ?? null),
+    run: openSubjectTitle({
+      runSelected: selectedWorldRunId !== null, run: selectedWorldResource?.title ?? null,
+      planning: planningPath !== null, plan: selectedPlanningResource?.title ?? null,
+    }),
     room: selectedAgentsResource?.title ?? null,
   }))
 
@@ -760,9 +760,10 @@
 
   const restoreUrlSelection = (): void => {
     const selection = new URLSearchParams(location.search)
-    selectedPlanningId = selection.get('planning')
+    const opened = addressedRunAndPlanning(selection)
+    selectedPlanningId = opened.planning
     selectedDemoQuery = planningDemoQuery(selection)
-    selectedWorldRunId = selection.has('planning') ? null : selection.get('world')
+    selectedWorldRunId = opened.world
     selectedWorldFocus = selection.get('focus')
     selectedWorldElement = selection.get('element')
     selectedWorldOption = selection.get('option')
