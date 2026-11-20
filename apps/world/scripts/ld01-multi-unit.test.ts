@@ -5,10 +5,11 @@ import { createRodLine, createValveLine, rodDecisionLagFrames } from './ld01-mul
 // (m, larger is withdrawn), the governor's opening (a fraction, 1 fully open). The numbers are the test's own, not the wiki block's:
 // the driver reads those from the unit's ld01-rod-control block.
 const law = { deadBandK: 0.8, maximumSpeedErrorK: 1.6 }
-const run = (frames: ReadonlyArray<readonly [number, number] | readonly [number, number, boolean]>, lag = rodDecisionLagFrames) => {
-  const line = createRodLine(law, lag)
+// The span is the series less its evidence tail (lag + 1 frames), unless a test names it.
+const run = (frames: ReadonlyArray<readonly [number, number] | readonly [number, number, boolean]>, lag = rodDecisionLagFrames, span = frames.length - lag - 1) => {
+  const line = createRodLine(law, span, lag)
   frames.forEach(([e, bank, auto], k) => line.note(k, e, bank, auto ?? true))
-  return { summary: line.summary(frames.length), interval: line.takeInterval() }
+  return { summary: line.summary(), interval: line.takeInterval() }
 }
 
 describe('the soak rod line (r2 amendment A7)', () => {
@@ -35,9 +36,9 @@ describe('the soak rod line (r2 amendment A7)', () => {
 
   test('mismatch: the law\'s own error inside the band passes, where Tavg - Tref alone would read outside it', () => {
     // The law's error carries the mismatch term: 0.79 K while Tavg - Tref is 0.81 K, and the law, inside its band, leaves the bank still.
-    const lawError = run([[0.5, 3], [0.79, 3], [0.79, 3], [0.6, 3], [0.5, 3], [0.4, 3.001]]).summary
+    const lawError = run([[0.5, 3], [0.79, 3], [0.79, 3], [0.6, 3.001], [0.5, 3.001], [0.4, 3.001]]).summary
     expect([lawError.frames_outside_band, lawError.frames_outside_band_not_correcting, lawError.holds]).toEqual([0, 0, true])
-    const temperatureOnly = run([[0.5, 3], [0.81, 3], [0.81, 3], [0.6, 3], [0.5, 3], [0.4, 3.001]]).summary
+    const temperatureOnly = run([[0.5, 3], [0.81, 3], [0.81, 3], [0.6, 3.001], [0.5, 3.001], [0.4, 3.001]]).summary
     expect([temperatureOnly.frames_outside_band_not_correcting, temperatureOnly.holds]).toEqual([2, false])
   })
 
@@ -46,9 +47,17 @@ describe('the soak rod line (r2 amendment A7)', () => {
     expect([still.frames_outside_band, still.frames_outside_band_not_correcting, still.holds]).toEqual([2, 1, false])
     const wrongWay = run([[-0.9, 3], [-0.5, 3], [0.1, 2.999], [0.1, 2.999]]).summary
     expect([wrongWay.frames_outside_band_not_correcting, wrongWay.holds]).toEqual([1, false])
-    // The last frames outside the band have no in-force interval yet: not judged, so the line does not hold.
-    const last = run([[0.1, 3], [0.2, 3.001], [0.3, 3.001], [0.9, 3.001]]).summary
-    expect([last.final_frames_outside_band_unjudged, last.holds]).toEqual([1, false])
+  })
+
+  test('a span ending mid-correction holds on its evidence tail; without the tail (an early stop) it does not', () => {
+    // The span is frames 0-3; its last decisions withdraw the bank over frames 4 and 5, past the span.
+    const frames = [[-0.7, 3], [-0.85, 3], [-0.84, 3], [-0.83, 3.002], [-0.82, 3.004], [-0.81, 3.006]] as const
+    const tail = run(frames, rodDecisionLagFrames, 4).summary
+    expect([tail.frames, tail.frames_judged, tail.evidence_tail_frames, tail.frames_outside_band, tail.frames_outside_band_not_correcting, tail.holds]).toEqual([4, 4, 2, 3, 0, true])
+    const early = run(frames.slice(0, 4), rodDecisionLagFrames, 4).summary
+    expect([early.frames_judged, early.frames_unjudged, early.evidence_tail_frames, early.holds]).toEqual([2, 2, 0, false])
+    const shifted = run(frames, 0, 4).summary
+    expect([shifted.frames_outside_band_not_correcting, shifted.holds]).toEqual([1, false])
   })
 
   test('at or past maximumSpeedError_K fails, however the bank moves', () => {
@@ -59,7 +68,7 @@ describe('the soak rod line (r2 amendment A7)', () => {
   test('frames under HOLD are judged too, and counted: outside the band with no travel fails, inside it passes', () => {
     const outside = run([[0.1, 3], [-0.9, 3, false], [-0.9, 3, false], [0.1, 3, false], [0.1, 3], [0.1, 3.001]]).summary
     expect([outside.frames_not_auto, outside.frames_outside_band, outside.frames_outside_band_not_correcting, outside.holds]).toEqual([3, 2, 2, false])
-    const inside = run([[0.1, 3], [-0.5, 3, false], [0.7, 3, false], [0.1, 3, false], [0.1, 3.001], [0.1, 3.001]]).summary
+    const inside = run([[0.1, 3], [0.1, 3.001], [-0.5, 3.001, false], [0.7, 3.001, false], [0.1, 3.001, false], [0.1, 3.001], [0.1, 3.001]]).summary
     expect([inside.frames_not_auto, inside.frames_outside_band, inside.frames_outside_band_not_correcting, inside.holds]).toEqual([3, 0, 0, true])
   })
 })
