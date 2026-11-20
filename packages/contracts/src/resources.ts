@@ -384,3 +384,13 @@ export const resourceCatalogChangedMessageSchema = z.object({
   type: z.literal('leitbild:resource-catalog-changed'),
   resource: workspaceResourceReferenceSchema,
 }).strict()
+
+// A Module page shown in a Host frame asks the Host to show another address of
+// the same Workspace in place, as one history entry, instead of loading the
+// Host page again (which would also reload the frames beside it). The Host
+// accepts it only from the frame it shows and only for its own Workspace.
+export const workspaceOpenMessageSchema = z.object({
+  type: z.literal('leitbild:workspace-open'),
+  address: z.string().max(2048).regex(/^\/workspaces\/[^/?#]+(\?[^#]*)?$/, 'A Workspace address: /workspaces/<id> with an optional query'),
+}).strict()
+export type WorkspaceOpenMessage = z.infer<typeof workspaceOpenMessageSchema>
