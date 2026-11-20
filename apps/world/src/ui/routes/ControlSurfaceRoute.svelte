@@ -633,10 +633,6 @@
     // The open map-target panel stays while it arms an order, which it shows by its targeting (plan B.10: only in SA).
     ...surfacePanels.map(panel => ({ id: `panel:${panel.id}`, label: panel.label, visible: isSurfacePanelOpen(panel), ...(mapTargetPanelContribution?.id === panel.id && panelMapTargetings[panel.id] != null ? { disabledReason: 'Finish or cancel the armed order before hiding this panel' } : {}) })),
   ])
-  const viewLayers = $derived<ReadonlyArray<RunViewChoice>>([
-    ...activeMapLayerGroups.map(layer => ({ id: `layer:${layer.id}`, label: layer.label, visible: mapLayerGroupVisibility[layer.id] ?? layer.defaultVisible })),
-    ...(mapConfig?.layers.includes('weather') ? [{ id: 'weather', label: 'Weather', visible: weatherLayerVisible }] : []),
-  ])
   const visiblePointObjects = (): ReadonlyArray<OperationalObject> => objects.filter(object => object.spatial.position !== undefined && !hiddenObjectCategoryIds.includes(presentationFor(object).categoryId))
   const fitSelectedTarget = $derived(fitObjectsTarget(selectedControllerId === null ? [] : objects.filter(object => object.id === selectedControllerId)))
   const viewCamera = $derived([
@@ -664,16 +660,10 @@
   }
   const setViewChoice = (id: string, visible: boolean): void => {
     const panel = viewPanels.find(choice => choice.id === id)
-    if (panel) {
-      if (panel.disabledReason) { status = panel.disabledReason; return }
-      if (id === 'layout-controls') layoutControlsVisible = visible
-      else setSurfacePanelOpen(id.slice('panel:'.length), visible)
-      return
-    }
-    if (id === 'weather') { weatherLayerVisible = visible; return }
-    const layer = activeMapLayerGroups.find(layer => `layer:${layer.id}` === id)
-    if (!layer) throw new Error(`View choice is unavailable: ${id}`)
-    mapLayerGroupVisibility = { ...mapLayerGroupVisibility, [layer.id]: visible }
+    if (!panel) throw new Error(`View choice is unavailable: ${id}`)
+    if (panel.disabledReason) { status = panel.disabledReason; return }
+    if (id === 'layout-controls') layoutControlsVisible = visible
+    else setSurfacePanelOpen(id.slice('panel:'.length), visible)
   }
   const resetLocalView = (): void => {
     if (viewResetDisabledReason) { status = viewResetDisabledReason; return }
@@ -2356,8 +2346,8 @@
   >
     {#if railVisible && railConfig}
       {#if railLayout.drawer}
-        {#if !railLayout.collapsed}<button class="rail-drawer-shade" type="button" aria-label="Close objects drawer" onclick={railLayout.collapse}></button>{/if}
-        <button class="rail-drawer-toggle" type="button" aria-expanded={!railLayout.collapsed} onclick={railLayout.toggleDrawer}>{railLayout.collapsed ? 'Objects' : 'Close objects'}</button>
+        {#if !railLayout.collapsed}<button class="rail-drawer-shade" type="button" aria-label="Close menu drawer" onclick={railLayout.collapse}></button>{/if}
+        <button class="rail-drawer-toggle" type="button" aria-expanded={!railLayout.collapsed} onclick={railLayout.toggleDrawer}>{railLayout.collapsed ? 'Menu' : 'Close menu'}</button>
       {/if}
       <ControlRail
         status={mapWarnings || status}
@@ -2392,6 +2382,8 @@
         mapLegends={activeMapLegends}
         {mapLayerGroupVisibility}
         onMapLayerGroupToggle={toggleMapLayerGroup}
+        weatherLayerVisible={mapConfig?.layers.includes('weather') ? weatherLayerVisible : undefined}
+        onWeatherLayerToggle={visible => { weatherLayerVisible = visible }}
         surfacePanels={surfacePanelLaunchers}
         {toggleSurfacePanel}
       />
@@ -2474,7 +2466,7 @@
         <AlertStrip onClose={() => { alarmStripVisible = false; document.getElementById('run-alarms-trigger')?.focus({ preventScroll: true }) }} {objects} categoryOf={object => presentationFor(object).categoryId} openDisplay={openStripDisplay} {theme} raised={displayWindowOpen} onBounds={setAlarmStripBounds} belowRoles={Boolean(runRoles && heldRoleIds)} railWidth={railVisible ? railLayout.width : 0} clear={{ left: mapCameraPadding.left, right: mapCameraPadding.right, top: visibleGuidanceBottom }} />
       {/if}
       {#if !surfaceMode}
-      <RunViewControls bind:this={viewControls} camera={viewCamera} layers={viewLayers} panels={viewPanels} act={actOnView} toggle={setViewChoice}
+      <RunViewControls bind:this={viewControls} camera={viewCamera} panels={viewPanels} act={actOnView} toggle={setViewChoice}
         reset={resetLocalView} resetDisabledReason={viewResetDisabledReason} alarms={viewAlarmCount} alarmsVisible={alarmStripVisible} showAlarms={visible => alarmStripVisible = visible}
         guidance={{ available: Boolean(scenarioState?.guidance), visible: mapGuidanceVisible, unread: guidanceUnread, instruction: scenarioState?.guidance ?? null }} setGuidance={mode => { timedCardRequested = mode === 'running'; setGuidanceMode(mode) }}
         clear={mapCameraPadding} ready={mapReady} raised={displayWindowOpen} onReadUpdate={markGuidancePresented}

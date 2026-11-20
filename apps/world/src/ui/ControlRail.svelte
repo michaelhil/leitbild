@@ -61,6 +61,8 @@
     readonly mapLegends?: ReadonlyArray<PackMapLegend>
     readonly mapLayerGroupVisibility?: Readonly<Record<string, boolean>>
     readonly onMapLayerGroupToggle?: (groupId: string) => void
+    readonly weatherLayerVisible?: boolean | undefined
+    readonly onWeatherLayerToggle?: (visible: boolean) => void
     readonly surfacePanels?: ReadonlyArray<{ readonly id: string; readonly label: string; readonly open: boolean }>
     readonly toggleSurfacePanel?: (panelId: string) => void
   }
@@ -98,6 +100,8 @@
     mapLegends = [],
     mapLayerGroupVisibility = {},
     onMapLayerGroupToggle = () => undefined,
+    weatherLayerVisible,
+    onWeatherLayerToggle = () => undefined,
     surfacePanels = [],
     toggleSurfacePanel = () => undefined,
   }: Props = $props()
@@ -215,6 +219,8 @@
     legends={mapLegends}
     visibility={mapLayerGroupVisibility}
     onToggle={onMapLayerGroupToggle}
+    weatherVisible={weatherLayerVisible}
+    onWeatherToggle={onWeatherLayerToggle}
   />
 
   {#if surfacePanels.length > 0}

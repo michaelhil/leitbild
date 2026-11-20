@@ -7,7 +7,6 @@
 
   interface Props {
     camera: ReadonlyArray<RunViewCameraAction>
-    layers: ReadonlyArray<RunViewChoice>
     panels: ReadonlyArray<RunViewChoice>
     act: (id: string) => void
     toggle: (id: string, visible: boolean) => void
@@ -28,7 +27,7 @@
     hasGuide?: boolean
     guideBadge: 'Start' | 'Resume' | 'Suggestion' | undefined
   }
-  let { camera, layers, panels, act, toggle, reset, resetDisabledReason, alarms, alarmsVisible, showAlarms, guidance, setGuidance, onReadUpdate, clear, ready, raised, foregroundProcedure = false, guideContent, hasGuide = false, guideBadge }: Props = $props()
+  let { camera, panels, act, toggle, reset, resetDisabledReason, alarms, alarmsVisible, showAlarms, guidance, setGuidance, onReadUpdate, clear, ready, raised, foregroundProcedure = false, guideContent, hasGuide = false, guideBadge }: Props = $props()
   let root = $state<HTMLDivElement | null>(null)
   let viewTrigger = $state<HTMLButtonElement | null>(null)
   let alarmsTrigger = $state<HTMLButtonElement | null>(null)
@@ -206,9 +205,6 @@
           <h3>Panels</h3>
           {@render viewChoices(panels)}
         </div>
-      {/if}
-      {#if layers.length > 0}
-        <details class="view-section"><summary>Map layers</summary>{@render viewChoices(layers)}</details>
       {/if}
       <div class="view-section">
         <button type="button" disabled={Boolean(resetDisabledReason)} onclick={reset}>Reset view</button>
