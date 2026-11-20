@@ -71,6 +71,7 @@
     answerZoomStore,
     displayZoomFromSlider,
     displayZoomPercent,
+    fittedDisplayZoom,
     initialDisplayZoom,
     isActualSize,
     minimumDisplayZoom,
@@ -385,6 +386,11 @@
       setZoomState(entry.key, reduceDisplayZoom(existing, { type: 'body' }, context))
       return
     }
+    // A screen's surface opens each display fitted and leaves the remembered zooms, the main window's, alone.
+    if (asSurface) {
+      setZoomState(entry.key, fittedDisplayZoom(context))
+      return
+    }
     let stored: StoredDisplayZoom | null = null
     try {
       stored = zoomStoreFor(entry).read(zoomStorageKey(entry))
@@ -401,7 +407,7 @@
     if (!state) return
     const next = reduceDisplayZoom(state, action, zoomContextFor(entry))
     setZoomState(entry.key, next)
-    rememberZoom(entry, next)
+    if (!asSurface) rememberZoom(entry, next)
   }
 
   const receiveExtent = (key: string, extent: DisplayExtent): void => {

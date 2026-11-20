@@ -73,6 +73,20 @@ describe('the Run page as a screen\'s surface', () => {
     expect(window).toMatch(/\{#if !asSurface\}\s*<button[^>]*onclick=\{\(\) => \{ popover = null; setMaximised\(!maximised\) \}\}/)
   })
 
+  test('a surface opens each display fitted and neither reads nor writes the remembered zooms', () => {
+    const window = source('ui/process-display/DisplayWindow.svelte')
+    // A display new to the window is fitted before the one read of the store is reached.
+    expect(window).toMatch(/if \(asSurface\) \{\s*setZoomState\(entry\.key, fittedDisplayZoom\(context\)\)\s*return\s*\}\s*let stored: StoredDisplayZoom \| null = null\s*try \{\s*stored = zoomStoreFor\(entry\)\.read\(zoomStorageKey\(entry\)\)/)
+    expect(window.match(/zoomStoreFor\(entry\)\.read\(/g)).toHaveLength(1)
+    // The one writer, which also forgets a zoom when Fit is chosen, runs only for a zoom change that asked to be remembered.
+    expect(window).toContain('if (!asSurface) rememberZoom(entry, next)')
+    expect(window.match(/rememberZoom\(/g)).toHaveLength(1)
+    expect(window.match(/zoomStoreFor\(entry\)\.(write|forget)\(/g)).toHaveLength(2)
+    expect(window.match(/flushZoomWrites/g)).toHaveLength(3)
+    expect(window).toContain('zoomWriteTimer = setTimeout(flushZoomWrites, zoomWriteDelayMs)')
+    expect(window).toMatch(/if \(zoomWriteTimer !== null\) \{\s*clearTimeout\(zoomWriteTimer\)\s*flushZoomWrites\(\)\s*\}/)
+  })
+
   test('the surface\'s procedure window is the pane: it follows its size and neither moves, resizes nor closes', () => {
     const modal = source('ui/procedures/ProcedureSystemModal.svelte')
     expect(markup).toContain('asSurface={windowEntry.id === surfaceProcedureWindowId}')
