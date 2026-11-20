@@ -22,7 +22,7 @@ const until = async (body: string, label: string) => { const started = performan
 const settings = async () => { await world(`const b=[...d.querySelectorAll('.action-row button')].find(b=>b.textContent.trim()==='Options');if(b.getAttribute('aria-expanded')!=='true')b.click()`); await until(`return !!d.querySelector('.settings')`, 'View menu') }
 const closeSettings = () => world(`d.querySelector('[aria-label="Close view settings"]')?.click()`)
 const live = async (enabled: boolean) => { await settings(); await world(`const i=[...d.querySelectorAll('.settings label')].find(e=>e.textContent.trim().startsWith('Live status'))?.querySelector('input');if(!i)throw Error('No public Live status');if(i.checked!==${enabled}||i.indeterminate)i.click()`); await closeSettings() }
-const home = async () => { await settings(); await world(`[...d.querySelectorAll('.settings button')].find(e=>e.textContent==='Home · source view').click()`); await closeSettings() }
+const home = () => world(`[...d.querySelectorAll('.action-row button')].find(e=>e.textContent==='Home').click()`)
 const capture = async (name: string) => {
   let previous = '', equal = 0, value: any = null, started = performance.now()
   while (performance.now() - started < 60000) {

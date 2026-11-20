@@ -43,8 +43,8 @@ try{
   await until(`return !!d.querySelector('select[aria-label="Layout level"]')`,'area floor');await W(`const s=d.querySelector('select[aria-label="Layout level"]');s.value='operating';s.dispatchEvent(new w.Event('change',{bubbles:true}))`);await fresh();await W(`const b=d.querySelector('.view-mode-control');if(b.getAttribute('aria-pressed')!=='true')b.click()`);await fresh()
   await settings();const menu=await W(`const e=d.querySelector('.settings');return{labels:[...e.querySelectorAll('label')].map(e=>e.textContent.trim()),ranges:[...e.querySelectorAll('input[type=range]')].map(e=>e.getAttribute('aria-label')),opacityInputs:d.querySelectorAll('[aria-label="Wall opacity"],[aria-label="Floor opacity"]').length}`);await closeSettings()
   if(menu.opacityInputs||menu.labels.some((label:string)=>/wall opacity|floor opacity/i.test(label)))throw Error('Withdrawn transparency is still offered')
-  // The public menu Home is present in all supported responsive compositions.
-  await settings();await W(`[...d.querySelectorAll('.settings button')].find(e=>e.textContent==='Home · source view').click()`);await fresh();phase='fixed-home';const initial=await capture('fixed-home')
+  // The toolbar's Home is present in all supported responsive compositions.
+  await W(`[...d.querySelectorAll('.action-row button')].find(e=>e.textContent==='Home').click()`);await fresh();phase='fixed-home';const initial=await capture('fixed-home')
   if(!initial.paint?.points.length)throw Error('No real 3D flow marks were painted; resize proof would be vacuous')
   phase='resize-no-motion';await call('Emulation.setDeviceMetricsOverride',{width:1080,height:800,deviceScaleFactor:1,mobile:false});await until(`return d.querySelector('.maplibregl-canvas').getBoundingClientRect().width<${initial.map.width}`,'actual map resize');await fresh();const resized=await capture('resized-no-motion')
   phase='public-live-recomputation';await toggle('Live status',false);await toggle('Live status',true);await fresh();const recomputed=await capture('resized-public-recomputation')
